@@ -3,9 +3,8 @@
 ## Layers and dependency direction
 
 ```text
-business modules  ──┐
-                    ├──> integration adapters / app composition ──> core APIs and extension points
-core capabilities ──┘
+business/admin router + config ──> integration/admin config injection ──> core admin
+business/backend modules ───────> integration/backend Kernel ──────────> core Symfony app
 ```
 
 The diagram describes ownership, not a runtime network boundary: the frontend and backend are composed into one deployable application unless deployment needs later call for separation.
@@ -20,7 +19,7 @@ Owns all application-specific behavior, including frontend pages/components, men
 
 ### `integration/`
 
-Owns composition and adapters only: frontend bootstrap/config merging and route registration; backend module/service/route/entity registration; and translations between core contracts and business interfaces. It must not become a home for domain rules.
+Owns composition only. The admin side injects the business router and entity configuration at the core's `@/config` seam. The backend Kernel discovers modules by the `business/backend/<PascalCaseSingular>/src/` convention and automatically wires their namespaces, services, routes, Doctrine mappings, and migrations when present. It must not become a home for domain rules.
 
 ### `docs/`
 
@@ -28,10 +27,10 @@ Records layer boundaries, local development decisions, core compatibility, and s
 
 ## Integration constraints discovered in upstream
 
-- `crud-admin` is a Vite/Vue application whose current `src/main.js` creates and mounts the Vue app directly. Its router consumes `@/config`. Business modules should be registered through a project-owned config/bootstrap seam; if that seam is insufficient, add a generic upstream extension point rather than carrying product-specific edits in core.
-- `crud-skeleton` is a Symfony project. Its current service discovery, route resources, and Doctrine entity mapping are centered on the core project's `src/` tree. Integration must explicitly register project-owned business namespaces, service configuration, routes, and entity mappings. Do not assume simply creating a sibling `business/` directory makes Symfony discover it.
+- `crud-admin` is a Vite/Vue application whose router consumes `@/config`. `integration/admin/vite.config.ts` redirects only that exact specifier; all other `@/...` imports remain rooted in core. Business router and entity configuration are declared in `business/admin/`.
+- `crud-skeleton` is a Symfony project. `integration/backend/src/Kernel.php` extends the core Kernel and preserves the core project directory. `ModuleRegistry` discovers business modules by directory convention; module service/route overrides stay inside the module. A sibling `business/backend/<name>/` without a `src/` directory is not a module.
 
-These are initial integration requirements, not a claim that composition is already implemented. Validate each extension point with a small end-to-end business module before migrating broader functionality.
+The admin merge helpers have standalone Node tests. The backend has a `Note` example module and an isolated SQLite integration test configuration. The composed Vite build, Symfony console/routes, and integration tests have been validated locally after installing core dependencies. Interactive business flows still require separate validation. Project-owned environment loading and local commands are described in [the development guide](../operations/development.md).
 
 ## Change policy
 

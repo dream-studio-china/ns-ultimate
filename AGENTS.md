@@ -10,7 +10,7 @@ This repository composes two upstream cores with project-owned integration and b
 - `business/` owns all application-specific frontend and backend behavior. Organize by business capability. Avoid placing product code in either core.
 - `docs/design/` describes architecture and decisions; `docs/contracts/` describes validated cross-layer interfaces; `docs/operations/` describes workflows; `docs/sessions/` contains concise dated work records. See `docs/README.md`.
 
-The architecture documentation describes intended boundaries, not necessarily implemented integration behavior. Check current code before assuming external module discovery or registration exists. In particular, the frontend bootstraps directly from its core entrypoint, while the backend's Symfony service, route, and Doctrine entity discovery currently centers on the core project tree. Business code outside those paths requires explicit integration wiring.
+The architecture documentation describes boundaries and current integration behavior. Check current code before assuming an extension exists. The admin frontend bootstraps from core and only its `@/config` and `@/i18n` seams are injected. The backend integration Kernel discovers immediate `business/backend/<PascalCaseSingular>/src/` modules and wires their classes/routes/entities/migrations by convention; module-specific overrides stay with each business module.
 
 ## 2. Core and subtree policy
 
