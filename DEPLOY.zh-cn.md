@@ -206,7 +206,7 @@ server {
 
 ## 6. CI/CD 发布流程
 
-CI 应检出完整仓库（包括 Git 子树），按锁文件安装依赖、运行测试，并使用 Node.js 22 构建 `dist/admin/`。通过受限的 SSH/发布账号，将经过测试的同一提交/构建产物部署到新的不可变 release 目录；不要把生产凭据放入 CI 构建任务或提交到 Git。尽可能将 `.env.prod.local`、JWT 密钥、上传文件和可写运行数据放在 release 目录之外。在服务器使用 PHP 8.5 CLI 安装 Composer 生产依赖，验证生产环境，备份数据库，作为明确发布步骤审核/执行迁移，然后原子切换 `current`。不要在每个 Web worker 启动时自动迁移。保留上一 release 和数据库备份以便回滚；仅回滚代码未必能撤销 schema 变更。单目录原地更新可使用 [`scripts/deploy.sh`](scripts/deploy.sh)，它会快进拉取指定分支并构建前后端，但后端不是原子切换。
+CI 应检出完整仓库（包括 Git 子树），按锁文件安装依赖、运行测试，并使用 Node.js 22 构建 `dist/admin/`。通过受限的 SSH/发布账号，将经过测试的同一提交/构建产物部署到新的不可变 release 目录；不要把生产凭据放入 CI 构建任务或提交到 Git。尽可能将 `.env.prod.local`、JWT 密钥、上传文件和可写运行数据放在 release 目录之外。在服务器使用 PHP 8.5 CLI 安装 Composer 生产依赖，验证生产环境，备份数据库，作为明确发布步骤审核/执行迁移，然后原子切换 `current`。不要在每个 Web worker 启动时自动迁移。保留上一 release 和数据库备份以便回滚；仅回滚代码未必能撤销 schema 变更。单目录原地更新可使用 [`scripts/deploy.sh`](scripts/deploy.sh)：以 root 执行并指定 `--frontend`、`--backend` 或 `--all`。后端和全部更新模式会无交互地应用待处理迁移，因此务必先备份数据库。模式只决定执行哪些构建/安装/迁移步骤；Git 快进仍会更新整个 checkout。此方式不会原子切换后端版本。
 
 ## 7. 切换流量、验证和回滚
 
