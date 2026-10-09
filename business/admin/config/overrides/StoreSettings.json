@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "Business/StoreSettings",
+  "title": "Store Settings",
+  "description": "Store-local configuration (Store.settings). Mirrors the core bundle schema and adds paymentRate.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "paymentRate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "title": "Payment rate",
+      "description": "Payment fee rate as a decimal fraction (0.006 = 0.6%).",
+      "default": 0
+    },
+    "order": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireAcceptance": {
+          "type": "boolean",
+          "description": "When true, Trade confirm waits for the Store acceptance fact.",
+          "default": false
+        },
+        "requireInventory": {
+          "type": "boolean",
+          "description": "When true, StoreOrder awaits an inventory reservation before acceptance.",
+          "default": false
+        }
+      },
+      "required": []
+    },
+    "fulfillment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requireVerification": {
+          "type": "boolean",
+          "description": "When true, a fulfilled Store order must be verified before it can be completed.",
+          "default": false
+        }
+      },
+      "required": []
+    }
+  },
+  "required": []
+}

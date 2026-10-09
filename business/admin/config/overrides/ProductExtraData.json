@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "Business/ProductExtraData",
+  "title": "Product extra data",
+  "description": "Product display flags (Product.extraData).",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "soldOut": {
+      "type": "boolean",
+      "title": "Sold out",
+      "default": false
+    },
+    "recommendLevel": {
+      "type": "integer",
+      "title": "Recommendation level",
+      "minimum": 1,
+      "maximum": 10
+    }
+  },
+  "required": []
+}
