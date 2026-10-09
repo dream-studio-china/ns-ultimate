@@ -24,6 +24,50 @@ make dev
 
 Use `make help` for commands and [the development guide](docs/operations/development.md) for env management, debugging, and checks.
 
+## Quickstart and deployment
+
+- [README.zh-cn.md](README.zh-cn.md) — 简体中文项目介绍与架构概览。
+- [QUICKSTART.md](QUICKSTART.md) — install PHP 8.5, Composer 2, Node.js/npm, run the app, and execute tests.
+- [QUICKSTART.zh-cn.md](QUICKSTART.zh-cn.md) — 简体中文快速开始。
+- [DEPLOY.md](DEPLOY.md) — detailed non-Docker production deployment and `.env` configuration.
+- [DEPLOY.zh-cn.md](DEPLOY.zh-cn.md) — 简体中文部署指南。
+- [Docker Compose/Nginx foundation](infra/docker/README.md) — project-owned container build and service topology.
+- [Docker Compose/Nginx 基础设施（简体中文）](infra/docker/README.zh-cn.md)
+- [Local development and debugging](docs/operations/development.md) — env precedence, debugging, and validation reference.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph business["business/ — product behavior"]
+        BA["Admin routes, entities, translations"]
+        BB["Backend modules: entities, services, APIs"]
+    end
+
+    subgraph integration["integration/ — composition and adapters"]
+        IA["Vite aliases, config and i18n overlay"]
+        IB["Symfony bootstrap, module registry and Kernel"]
+    end
+
+    subgraph core["core/ — upstream frameworks"]
+        CA["crud-admin: Vue 3 / Vite"]
+        CB["crud-skeleton: Symfony / Doctrine"]
+    end
+
+    subgraph infra["infra/ — deployment"]
+        ID["Docker Compose, PHP-FPM and Nginx"]
+    end
+
+    BA --> IA --> CA
+    BB --> IB --> CB
+    CA -->|"HTTP /api requests"| ID
+    ID --> IB
+    ID -.->|Static admin build: dist/admin/| Browser["Browser"]
+    CB --> DB[("Database")]
+```
+
+Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
+
 ## Upstream licenses
 
 The admin core is MIT-licensed. The backend core currently identifies itself as Apache-2.0 in its `LICENSE` and `composer.json`. Preserve each core's license and notices when redistributing it.

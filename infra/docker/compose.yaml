@@ -1,0 +1,158 @@
+name: ns-ultimate
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      target: app
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        PHP_IMAGE: ${PHP_IMAGE:-php:8.5-fpm-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:stable-alpine}
+    restart: unless-stopped
+    environment: &app-environment
+      APP_ENV: prod
+      APP_DEBUG: "0"
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in infra/docker/.env}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?Set REFRESH_TOKEN_SECRET in infra/docker/.env}
+      DATABASE_URL: "mysql://${MYSQL_USER:?Set MYSQL_USER}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@database:3306/${MYSQL_DATABASE:?Set MYSQL_DATABASE}?serverVersion=8.4&charset=utf8mb4"
+      DEFAULT_URI: ${DEFAULT_URI:?Set DEFAULT_URI in infra/docker/.env}
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private.pem
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE:-}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-3600}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-2592000}
+      OTP_TTL: ${OTP_TTL:-300}
+      OTP_REDIS_DSN: redis://redis:6379/0
+      MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:-doctrine://default?auto_setup=0}
+      OUTBOX_PUBLISH_INTERVAL: ${OUTBOX_PUBLISH_INTERVAL:-5}
+      MAILER_DSN: ${MAILER_DSN:-null://null}
+      MEDIA_STORAGE_DEFAULT: ${MEDIA_STORAGE_DEFAULT:-local}
+      APP_SHARE_DIR: /srv/app/var/data
+      INVENTORY_ENABLED: ${INVENTORY_ENABLED:-0}
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_REGION: ${ALIYUN_SMS_REGION:-cn-hangzhou}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
+      ALIYUN_SMS_TEMPLATE_LOGIN_OTP: ${ALIYUN_SMS_TEMPLATE_LOGIN_OTP:-}
+      ALIYUN_SMS_TEMPLATE_VERIFY_PHONE: ${ALIYUN_SMS_TEMPLATE_VERIFY_PHONE:-}
+      ALIYUN_SMS_DRY_RUN: ${ALIYUN_SMS_DRY_RUN:-1}
+      WECHAT_MINIAPP_APP_ID: ${WECHAT_MINIAPP_APP_ID:-}
+      WECHAT_MINIAPP_SECRET: ${WECHAT_MINIAPP_SECRET:-}
+      WECHAT_OFFICIAL_APP_ID: ${WECHAT_OFFICIAL_APP_ID:-}
+      WECHAT_OFFICIAL_SECRET: ${WECHAT_OFFICIAL_SECRET:-}
+      WECHAT_OFFICIAL_TOKEN: ${WECHAT_OFFICIAL_TOKEN:-}
+      WECHAT_OFFICIAL_AES_KEY: ${WECHAT_OFFICIAL_AES_KEY:-}
+      WECHAT_PAY_MCH_ID: ${WECHAT_PAY_MCH_ID:-}
+      WECHAT_PAY_SECRET_KEY: ${WECHAT_PAY_SECRET_KEY:-}
+      WECHAT_PAY_PRIVATE_KEY: ${WECHAT_PAY_PRIVATE_KEY:-}
+      WECHAT_PAY_CERTIFICATE: ${WECHAT_PAY_CERTIFICATE:-}
+      WECHAT_PAY_NOTIFY_URL: ${WECHAT_PAY_NOTIFY_URL:-}
+      WECHAT_PAY_PLATFORM_CERT: ${WECHAT_PAY_PLATFORM_CERT:-}
+      WECHAT_PAY_PUB_KEY_ID: ${WECHAT_PAY_PUB_KEY_ID:-}
+      WECHAT_PAY_PUB_KEY_PATH: ${WECHAT_PAY_PUB_KEY_PATH:-}
+    volumes:
+      - app_var:/srv/app/var
+      - uploads:/srv/app/core/crud-skeleton/public/uploads
+      - type: bind
+        source: ${JWT_PRIVATE_KEY_FILE:?Set JWT_PRIVATE_KEY_FILE to an absolute host path}
+        target: /run/secrets/jwt_private.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${JWT_PUBLIC_KEY_FILE:?Set JWT_PUBLIC_KEY_FILE to an absolute host path}
+        target: /run/secrets/jwt_public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+  nginx:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      target: nginx
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        PHP_IMAGE: ${PHP_IMAGE:-php:8.5-fpm-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:stable-alpine}
+    restart: unless-stopped
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+    volumes:
+      - uploads:/srv/app/core/crud-skeleton/public/uploads:ro
+    depends_on:
+      app:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/health/live || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - internal
+
+  database:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE in infra/docker/.env}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in infra/docker/.env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in infra/docker/.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in infra/docker/.env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal
+
+  worker:
+    extends:
+      service: app
+    command: ["php", "integration/backend/bin/console", "messenger:consume", "async", "--time-limit=3600", "--memory-limit=256M", "--no-interaction"]
+    restart: unless-stopped
+    profiles: ["workers"]
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  app_var:
+  mysql_data:
+  redis_data:
+  uploads:

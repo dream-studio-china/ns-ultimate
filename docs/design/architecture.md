@@ -5,6 +5,8 @@
 ```text
 business/admin router + config ──> integration/admin config injection ──> core admin
 business/backend modules ───────> integration/backend Kernel ──────────> core Symfony app
+                                           ▲
+                              infra/docker Nginx + PHP-FPM
 ```
 
 The diagram describes ownership, not a runtime network boundary: the frontend and backend are composed into one deployable application unless deployment needs later call for separation.
@@ -20,6 +22,10 @@ Owns all application-specific behavior, including frontend pages/components, men
 ### `integration/`
 
 Owns composition only. The admin side injects the business router and entity configuration at the core's `@/config` seam. The backend Kernel discovers modules by the `business/backend/<PascalCaseSingular>/src/` convention and automatically wires their namespaces, services, routes, Doctrine mappings, and migrations when present. It must not become a home for domain rules.
+
+### `infra/`
+
+Owns project deployment assets. `infra/docker/` builds the composed frontend and backend and defines the project-level PHP-FPM, Nginx, MySQL, and Redis services; `infra/nginx/` routes `/admin/`, uploads, and backend requests to the integration front controller. These files do not modify or reuse the upstream core's Docker entrypoint. See the [Docker deployment foundation](../../infra/docker/README.md).
 
 ### `docs/`
 

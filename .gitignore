@@ -1,6 +1,7 @@
 # Local application configuration / secrets
 .env.local
 .env.*.local
+infra/docker/.env
 !.env.example
 !.env.*.example
 
