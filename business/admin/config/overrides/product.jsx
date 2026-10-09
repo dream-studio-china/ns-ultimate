@@ -4,7 +4,7 @@
 // List and specifications behavior mirror the core configuration.
 import { defineAsyncComponent } from 'vue'
 import { t } from '@/i18n'
-import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin/src/configs/collections/helpers'
+import { orderByIdDesc, statusFilterLabel } from '../../../../core/crud-admin/src/configs/collections/helpers'
 // Lazily resolve the admin UI here: this config module is eagerly pulled into
 // every FormAdmin through `@/configs/entities`, so static SFC imports would
 // close an eager cycle (FormAdmin -> entities -> Product.jsx -> ListAdmin ->
@@ -12,8 +12,8 @@ import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin
 // initialization" depending on module evaluation order.
 const ListAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/ListAdmin'))
 const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmin'))
-import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
-import ProductExtraDataSchema from '../../overrides/ProductExtraData.json'
+import specificationConfig from '../../../../core/crud-admin/src/configs/collections/trade/Specification'
+import ProductExtraDataSchema from './ProductExtraData.json'
 
 const SpecificationManager = {
   components: { ListAdmin, FormAdmin },
