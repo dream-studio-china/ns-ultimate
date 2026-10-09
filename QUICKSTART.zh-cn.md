@@ -93,7 +93,7 @@ GitHub Actions 会运行项目 workflow/admin 组合测试、后端集成/业务
 ```sh
 make help
 make console ARGS="about"
-make routes ARGS="business-notes-list"
+make routes ARGS="business-dummies-list"
 make container ARGS="--parameter=kernel.logs_dir"
 make logs
 make backend-debug   # 当前 PHP 安装必须包含 Xdebug

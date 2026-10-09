@@ -1,4 +1,4 @@
-business_notes:
+business_dummies:
     prefix: /api/v1
     resource: '../src/Controller/'
     type: attribute

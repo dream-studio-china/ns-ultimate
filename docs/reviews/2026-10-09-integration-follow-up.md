@@ -1,5 +1,7 @@
 # Core/business integration follow-up review
 
+> Historical snapshot: this review describes the starter module before its rename from `Note` to `Dummy`. Its recorded `/notes` route and `business/backend/Note/` paths were superseded by the rename; see the current [backend module registration contract](../contracts/backend-module-registration.md).
+
 **Date:** 2026-10-09
 **Scope:** Project-owned integration and business code, plus its contracts and validation notes. Upstream core files were not reviewed as change targets.
 **Status:** Follow-up findings remain open; this document records findings, not fixes.

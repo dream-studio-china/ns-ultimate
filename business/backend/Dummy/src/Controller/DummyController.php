@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NsUltimate\Business\Note\Controller;
+namespace NsUltimate\Business\Dummy\Controller;
 
 use App\Core\Controller\RestController;
 use App\Core\View\ApiView;
@@ -11,13 +11,13 @@ use App\Core\View\DeleteApiViewMixin;
 use App\Core\View\DetailApiViewMixin;
 use App\Core\View\ListApiViewMixin;
 use App\Core\View\UpdateApiViewMixin;
-use NsUltimate\Business\Note\Service\NoteService;
+use NsUltimate\Business\Dummy\Service\DummyService;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/manage/notes', name: 'business-notes-')]
+#[Route('/manage/dummies', name: 'business-dummies-')]
 #[IsGranted('ROLE_ADMIN')]
-final class NoteController extends RestController
+final class DummyController extends RestController
 {
     use ApiView, CreateApiViewMixin, DeleteApiViewMixin, DetailApiViewMixin, ListApiViewMixin, UpdateApiViewMixin;
 
@@ -30,7 +30,7 @@ final class NoteController extends RestController
     /** @var list<string> */
     protected array $acceptedUpdateProperties = ['title', 'body'];
 
-    public function __construct(protected readonly NoteService $service)
+    public function __construct(protected readonly DummyService $service)
     {
     }
 }

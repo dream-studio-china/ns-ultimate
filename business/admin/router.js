@@ -14,7 +14,7 @@ export default {
         roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
       },
       children: [
-        ...r('Note', t('Notes'))
+        ...r('Dummy', t('Dummies'))
       ]
     }
   ],

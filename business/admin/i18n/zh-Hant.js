@@ -1,4 +1,4 @@
 export default {
   Business: '業務管理',
-  Notes: '筆記'
+  Dummies: '範例項目'
 }

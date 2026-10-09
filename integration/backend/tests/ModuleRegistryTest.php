@@ -13,20 +13,21 @@ final class ModuleRegistryTest extends TestCase
     public function testDiscoversModulesFromTheirSourceDirectories(): void
     {
         $businessRoot = sys_get_temp_dir().'/ns-ultimate-modules-'.bin2hex(random_bytes(8));
-        mkdir($businessRoot.'/Note/src', 0777, true);
+        mkdir($businessRoot.'/Dummy/src', 0777, true);
         mkdir($businessRoot.'/MemberCenter/src', 0777, true);
         mkdir($businessRoot.'/documentation');
 
         try {
             $modules = ModuleRegistry::discover($businessRoot);
 
-            self::assertSame(['MemberCenter', 'Note'], array_column($modules, 'name'));
-            self::assertSame('NsUltimate\\Business\\MemberCenter\\', $modules[0]['namespace']);
-            self::assertSame('BusinessMemberCenter', $modules[0]['doctrine_alias']);
-            self::assertSame('NsUltimate\\Business\\Note\\Migrations', $modules[1]['migration_namespace']);
+            self::assertSame(['Dummy', 'MemberCenter'], array_column($modules, 'name'));
+            self::assertSame('NsUltimate\\Business\\Dummy\\', $modules[0]['namespace']);
+            self::assertSame('NsUltimate\\Business\\MemberCenter\\', $modules[1]['namespace']);
+            self::assertSame('BusinessMemberCenter', $modules[1]['doctrine_alias']);
+            self::assertSame('NsUltimate\\Business\\Dummy\\Migrations', $modules[0]['migration_namespace']);
         } finally {
-            rmdir($businessRoot.'/Note/src');
-            rmdir($businessRoot.'/Note');
+            rmdir($businessRoot.'/Dummy/src');
+            rmdir($businessRoot.'/Dummy');
             rmdir($businessRoot.'/MemberCenter/src');
             rmdir($businessRoot.'/MemberCenter');
             rmdir($businessRoot.'/documentation');

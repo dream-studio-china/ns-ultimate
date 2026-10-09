@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace NsUltimate\Business\Note\Tests\Integration;
+namespace NsUltimate\Business\Dummy\Tests\Integration;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
-use NsUltimate\Business\Note\Entity\Note;
+use NsUltimate\Business\Dummy\Entity\Dummy;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Routing\Route;
 
-final class NotesModuleTest extends KernelTestCase
+final class DummyModuleTest extends KernelTestCase
 {
     protected function setUp(): void
     {
@@ -33,23 +33,23 @@ final class NotesModuleTest extends KernelTestCase
             ->getAllMetadata();
         $entityNames = array_map(static fn ($metadata): string => $metadata->getName(), $entityMetadata);
 
-        self::assertInstanceOf(Route::class, $routes->get('business-notes-list'));
-        self::assertInstanceOf(Route::class, $routes->get('business-notes-create'));
-        self::assertContains(Note::class, $entityNames);
+        self::assertInstanceOf(Route::class, $routes->get('business-dummies-list'));
+        self::assertInstanceOf(Route::class, $routes->get('business-dummies-create'));
+        self::assertContains(Dummy::class, $entityNames);
     }
 
     public function testBusinessEntityCanBePersistedAndReadBack(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $note = (new Note())->setTitle('Integration test')->setBody('Persisted outside the core subtree.');
-        $entityManager->persist($note);
+        $dummy = (new Dummy())->setTitle('Integration test')->setBody('Persisted outside the core subtree.');
+        $entityManager->persist($dummy);
         $entityManager->flush();
-        $id = $note->getId();
+        $id = $dummy->getId();
         $entityManager->clear();
 
-        $reloaded = $entityManager->find(Note::class, $id);
+        $reloaded = $entityManager->find(Dummy::class, $id);
 
-        self::assertInstanceOf(Note::class, $reloaded);
+        self::assertInstanceOf(Dummy::class, $reloaded);
         self::assertSame('Integration test', $reloaded->getTitle());
         self::assertSame('Persisted outside the core subtree.', $reloaded->getBody());
     }

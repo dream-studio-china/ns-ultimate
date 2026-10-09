@@ -52,6 +52,16 @@ final class Kernel extends CoreKernel
         $businessRoot = self::repositoryRoot().'/business/backend';
         $builder->addResource(new GlobResource($businessRoot, '/*/src', true, true));
 
+        // Keep the original migration FQCN discoverable after the example module rename.
+        $legacyDummyMigrations = $businessRoot.'/Dummy/legacy-migrations';
+        if (is_dir($legacyDummyMigrations)) {
+            $container->extension('doctrine_migrations', [
+                'migrations_paths' => [
+                    'NsUltimate\\Business\\Note\\Migrations' => $legacyDummyMigrations,
+                ],
+            ]);
+        }
+
         $container->import(__DIR__.'/../config/services.yaml');
         $services = $container->services()
             ->defaults()

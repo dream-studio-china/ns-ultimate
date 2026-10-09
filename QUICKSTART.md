@@ -93,7 +93,7 @@ GitHub Actions runs the project workflow/admin composition tests, backend integr
 ```sh
 make help
 make console ARGS="about"
-make routes ARGS="business-notes-list"
+make routes ARGS="business-dummies-list"
 make container ARGS="--parameter=kernel.logs_dir"
 make logs
 make backend-debug   # Requires Xdebug in this PHP installation

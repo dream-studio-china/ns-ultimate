@@ -7,7 +7,7 @@
     <testsuites>
         <testsuite name="Business integration">
             <directory>tests</directory>
-            <directory>../../business/backend/Note/tests/Integration</directory>
+            <directory>../../business/backend/Dummy/tests/Integration</directory>
         </testsuite>
     </testsuites>
 </phpunit>

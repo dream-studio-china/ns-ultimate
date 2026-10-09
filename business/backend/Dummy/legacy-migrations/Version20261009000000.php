@@ -11,7 +11,7 @@ final class Version20261009000000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Create the business notes table.';
+        return 'Create the original example table (legacy Note migration identity).';
     }
 
     public function up(Schema $schema): void

@@ -1,4 +1,4 @@
 export default {
   Business: 'Business',
-  Notes: 'Notes'
+  Dummies: 'Dummies'
 }

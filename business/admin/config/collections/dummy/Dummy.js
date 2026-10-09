@@ -1,5 +1,5 @@
 export default {
-  Note: {
+  Dummy: {
     form: {
       fields: [
         { property: 'title', required: true },

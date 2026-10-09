@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace NsUltimate\Business\Note\Entity;
+namespace NsUltimate\Business\Dummy\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
-#[ORM\Table(name: 'business_note')]
-class Note
+#[ORM\Table(name: 'business_dummy')]
+class Dummy
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]

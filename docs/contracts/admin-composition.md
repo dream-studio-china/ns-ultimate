@@ -5,7 +5,8 @@
 ## Inputs
 
 - `business/admin/router.js` exports `{ add, replace, remove }`.
-- `business/admin/config/collections/` follows the core collection layout. Each entity file (for example, `note/Note.js`) default-exports an entity-name-to-CRUD-config object; `business/admin/config/index.js` eagerly collects these files and exports `{ add, replace, remove }`.
+- `business/admin/config/collections/` follows the core collection layout. Each entity file (for example, `dummy/Dummy.js`) default-exports an entity-name-to-CRUD-config object; `business/admin/config/index.js` eagerly collects these files and exports `{ add, replace, remove }`.
+- The optional `Dummy` example adds its admin menu and CRUD definition; its API is available at `/api/v1/manage/dummies` and is not required for the composition contract.
 - `business/admin/i18n/` contains one translation resource per supported locale. `integration/admin/i18n.js` overlays business keys on the core translator while preserving core locale selection and fallback behavior.
 - `integration/admin/config.ts` supplies the core's `{ routes, entities }` shape to the exact `@/config` import. The Vite config also redirects only `@/i18n` to the translation overlay.
 

@@ -47,7 +47,7 @@ Manual migrations retain Symfony's interactive confirmation. Migrations do not r
 ```sh
 make help
 make console ARGS="about"
-make routes ARGS="business-notes-list"
+make routes ARGS="business-dummies-list"
 make container ARGS="--parameter=kernel.logs_dir"
 make cache-clear
 make logs

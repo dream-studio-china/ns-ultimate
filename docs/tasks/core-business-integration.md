@@ -30,16 +30,17 @@ business/
     config/collections/
     i18n/
   backend/
-    Note/
+    Dummy/
       src/
       config/
       migrations/
+      legacy-migrations/ # preserved migration identities after module renames
       tests/
 ```
 
 The initial implementation uses these paths. Admin code is not divided into backend-style modules. Custom admin components and pages remain in `business/admin/` and are referenced by business routes or configuration.
 
-Implemented files include the exact `@/config` Vite alias, explicit route/entity merge operations and duplicate checks, and convention-based backend module discovery consumed by a project-owned Kernel. The `Note` vertical slice demonstrates the core's generic CRUD controller/service conventions without modifying either subtree; adding another module does not require editing `integration/`.
+Implemented files include the exact `@/config` Vite alias, explicit route/entity merge operations and duplicate checks, and convention-based backend module discovery consumed by a project-owned Kernel. The `Dummy` vertical slice demonstrates the core's generic CRUD controller/service conventions without modifying either subtree; adding another module does not require editing `integration/`.
 
 ## Admin composition
 
@@ -80,9 +81,9 @@ Frontend route visibility is not backend authorization. New business APIs must e
 
 ### Module ownership and registration
 
-Each `business/backend/<module>/` owns its domain code, controllers, services, configuration, migrations, and tests. Use a project-owned namespace such as `NsUltimate\Business\<Module>\`, distinct from the core's `App\` namespace. Integration code uses `NsUltimate\Integration\`.
+Each `business/backend/<module>/` owns its domain code, controllers, services, configuration, migrations, and tests. Use a project-owned namespace such as `NsUltimate\Business\<Module>\`, distinct from the core's `App\` namespace. Integration code uses `NsUltimate\Integration\`. When renaming a deployed module, preserve historical migration class namespaces through an explicit legacy migration mapping and add a forward migration; do not rewrite a migration already recorded in a database.
 
-Discover backend modules by the `business/backend/<PascalCaseSingular>/src/` convention (for example, `business/backend/Note/`). Keep service and optional route configuration inside each module; register Doctrine mappings and migrations when their conventional directories exist. Avoid scanning arbitrary repository paths. Do not require every module to be a Symfony bundle or invent a plugin registry.
+Discover backend modules by the `business/backend/<PascalCaseSingular>/src/` convention (for example, `business/backend/Dummy/`). Keep service and optional route configuration inside each module; register Doctrine mappings and migrations when their conventional directories exist. Avoid scanning arbitrary repository paths. Do not require every module to be a Symfony bundle or invent a plugin registry.
 
 ### Kernel and entrypoints
 

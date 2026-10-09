@@ -28,8 +28,8 @@ test('rejects duplicate nested route names and normalized paths', () => {
     add: [{ path: '/reports', name: 'Reports', children: [{ path: 'daily', name: 'Reports' }] }]
   }), /Duplicate route name/)
 
-  assert.throws(() => mergeRoutes([{ path: '/notes/:id', name: 'CoreNote' }], {
-    add: [{ path: '/notes/:slug', name: 'BusinessNote' }]
+  assert.throws(() => mergeRoutes([{ path: '/dummies/:id', name: 'CoreDummy' }], {
+    add: [{ path: '/dummies/:slug', name: 'BusinessDummy' }]
   }), /Duplicate route path/)
 })
 
