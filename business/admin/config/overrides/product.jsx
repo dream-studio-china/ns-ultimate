@@ -162,7 +162,6 @@ const SpecificationManager = {
 }
 
 export default {
-  Product: {
     form: {
       fields: [
         'name',
@@ -202,5 +201,4 @@ export default {
     detail: {
       detail_display: '__all__'
     }
-  }
 }
