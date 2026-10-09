@@ -1,0 +1,18 @@
+# Local application configuration / secrets
+.env.local
+.env.*.local
+!.env.example
+!.env.*.example
+
+# Dependencies and build output
+node_modules/
+vendor/
+dist/
+coverage/
+var/cache/
+var/log/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
