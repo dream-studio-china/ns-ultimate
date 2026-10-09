@@ -9,6 +9,8 @@ make env-check
 make dev
 ```
 
+For a local MySQL-backed setup, run `make dev-init` instead of manually configuring `DATABASE_URL`. It prompts for the MySQL connection (defaults to `127.0.0.1:3306`, user `root`, and database `ns_ultimate`), hides the password while typing, and saves the URL to the ignored `integration/backend/.env.local`. After confirmation it creates the database if needed, applies pending project migrations, and creates an admin (`admin@example.com` / `admin`) if one does not already exist. The generated initial password is stored in `var/keys/admin-initial-password.txt` with mode `0600`; change it after first login. Existing admin accounts are never reset. The command requires PHP's `pdo_mysql` extension and installed backend Composer dependencies.
+
 The admin is at `http://127.0.0.1:9528`; the backend is at `http://127.0.0.1:8000`. API requests are proxied by Vite. Ctrl-C stops both services, and a failed service stops the other. Run `make admin` and `make backend` in separate terminals if desired. Both bind to loopback by default; PHP's built-in server is for local development only.
 
 `make env-init` creates local env files, random application/refresh-token secrets, and an unencrypted development-only RSA JWT key pair under `var/keys/`. Files have private permissions and existing files are never overwritten. An incomplete key pair fails rather than rotating keys silently. Generated files and `var/data/` are ignored by Git. Do not use these keys or configuration in production.

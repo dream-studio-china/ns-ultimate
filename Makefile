@@ -7,13 +7,14 @@ ADMIN_PORT ?= 9528
 BACKEND_PORT ?= 8000
 export HOST ADMIN_PORT BACKEND_PORT
 
-.PHONY: help install env-init env-check dev admin backend backend-debug build preview test test-workflow test-admin test-backend type-check lint console routes container cache-clear logs migrate-status migrate
+.PHONY: help install env-init env-check dev-init dev admin backend backend-debug build preview test test-workflow test-admin test-backend type-check lint console routes container cache-clear logs migrate-status migrate
 
 help:
 	@printf '%s\n' \
 	  'make install        Install dependencies without Composer auto-scripts' \
 	  'make env-init       Create local env files and development JWT keys (no overwrite)' \
 	  'make env-check      Check local configuration without printing values' \
+	  'make dev-init       Configure local MySQL, run migrations, create admin' \
 	  'make dev            Start both apps; Ctrl-C stops both' \
 	  'make admin/backend  Start one app (HOST, ADMIN_PORT, BACKEND_PORT)' \
 	  'make backend-debug  Start backend with Xdebug (extension required)' \
@@ -28,5 +29,5 @@ help:
 install:
 	@cd "$(ROOT)" && npm run deps:install
 
-env-init env-check dev admin backend backend-debug build preview test test-workflow test-admin test-backend type-check lint console routes container cache-clear logs migrate-status migrate:
+env-init env-check dev-init dev admin backend backend-debug build preview test test-workflow test-admin test-backend type-check lint console routes container cache-clear logs migrate-status migrate:
 	@bash "$(ROOT)scripts/project.sh" "$@" $(ARGS)
