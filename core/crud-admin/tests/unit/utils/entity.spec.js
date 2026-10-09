@@ -1,0 +1,123 @@
+const mockGet = jest.fn()
+const mockPost = jest.fn()
+const mockPut = jest.fn()
+const mockDelete = jest.fn()
+
+const mockDispatch = jest.fn()
+
+const mockStore = {
+  getters: {
+    entity: {
+      entities: null,
+      structures: null
+    }
+  },
+  dispatch: mockDispatch
+}
+
+jest.mock('@/utils/request', () => ({
+  __esModule: true,
+  default: {
+    get: mockGet,
+    post: mockPost,
+    put: mockPut,
+    delete: mockDelete
+  }
+}))
+
+jest.mock('@/store', () => ({
+  __esModule: true,
+  default: mockStore
+}))
+
+describe('adapters/crudskeleton/CrudSkeletonAdapter.ts', () => {
+  beforeEach(() => {
+    jest.resetModules()
+    mockGet.mockReset()
+    mockPost.mockReset()
+    mockPut.mockReset()
+    mockDelete.mockReset()
+    mockDispatch.mockReset()
+    mockStore.getters.entity.entities = null
+    mockStore.getters.entity.structures = null
+  })
+
+  it('loads entities and structure from server when cache is empty', async() => {
+    mockGet
+      .mockResolvedValueOnce({ data: ['CommonBundle\\Entity\\User'] })
+      .mockResolvedValueOnce({ data: { id: { metadata: { type: 'integer' }}}})
+
+    const { default: CrudSkeletonAdapter } = await import('@/easyadmin/adapters/crudskeleton/CrudSkeletonAdapter')
+    const em = new CrudSkeletonAdapter('User')
+    const structure = await em.structure()
+
+    expect(mockGet).toHaveBeenNthCalledWith(1, '/system/entities')
+    expect(mockGet).toHaveBeenNthCalledWith(2, '/system/entities/CommonBundle\\Entity\\User')
+    expect(mockDispatch).toHaveBeenCalledWith('entity/set_entities', ['CommonBundle\\Entity\\User'])
+    expect(mockDispatch).toHaveBeenCalledWith('entity/set_structures', expect.objectContaining({ entity: 'CommonBundle\\Entity\\User' }))
+    expect(structure).toHaveProperty('id')
+  })
+
+  it('uses cached structure when available', async() => {
+    mockStore.getters.entity.entities = ['CommonBundle\\Entity\\User']
+    mockStore.getters.entity.structures = {
+      'CommonBundle\\Entity\\User': {
+        id: { metadata: { type: 'integer' }}
+      }
+    }
+
+    const { default: CrudSkeletonAdapter } = await import('@/easyadmin/adapters/crudskeleton/CrudSkeletonAdapter')
+    const em = new CrudSkeletonAdapter('User')
+    const structure = await em.structure()
+
+    expect(mockGet).not.toHaveBeenCalled()
+    expect(structure).toEqual(mockStore.getters.entity.structures['CommonBundle\\Entity\\User'])
+  })
+
+  it('proxies CRUD calls to request utility', async() => {
+    mockGet.mockResolvedValue({ data: [] })
+    mockPost.mockResolvedValue({ data: { id: 1 }})
+    mockPut.mockResolvedValue({ data: { id: 1 }})
+    mockDelete.mockResolvedValue({ data: true })
+
+    const { default: CrudSkeletonAdapter } = await import('@/easyadmin/adapters/crudskeleton/CrudSkeletonAdapter')
+    const em = new CrudSkeletonAdapter('User')
+
+    await em.list({ page: 1 })
+    await em.create({ username: 'u' })
+    await em.update(1, { username: 'u2' })
+    await em.delete(1)
+    await em.deleteMany([2, 3])
+
+    expect(mockGet).toHaveBeenCalledWith('/api/v1/manage/users', { params: { page: 1 }})
+    expect(mockPost).toHaveBeenCalledWith('/api/v1/manage/users', { username: 'u' })
+    expect(mockPut).toHaveBeenCalledWith('/api/v1/manage/users/1', { username: 'u2' })
+    expect(mockDelete).toHaveBeenCalledWith('/api/v1/manage/users/1')
+    expect(mockDelete).toHaveBeenCalledWith('/api/v1/manage/users/2')
+    expect(mockDelete).toHaveBeenCalledWith('/api/v1/manage/users/3')
+  })
+
+  it('keeps successful deletions when some batch deletions fail', async() => {
+    mockDelete
+      .mockResolvedValueOnce({ data: true })
+      .mockRejectedValueOnce(new Error('delete failed'))
+
+    const { default: CrudSkeletonAdapter } = await import('@/easyadmin/adapters/crudskeleton/CrudSkeletonAdapter')
+    const results = await new CrudSkeletonAdapter('User').deleteMany([1, 2])
+
+    expect(results.map(result => result.status)).toEqual(['fulfilled', 'rejected'])
+  })
+
+  it('sends batch update records with only the changed fields', async() => {
+    mockPost.mockResolvedValue({ data: true })
+
+    const { default: CrudSkeletonAdapter } = await import('@/easyadmin/adapters/crudskeleton/CrudSkeletonAdapter')
+    await new CrudSkeletonAdapter('User').batchUpdate([1, 2], { enabled: true })
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/v1/manage/users/batch-update',
+      [{ id: 1, enabled: true }, { id: 2, enabled: true }],
+      { params: { '@basis': 'id', '@mode': 'update' }}
+    )
+  })
+})

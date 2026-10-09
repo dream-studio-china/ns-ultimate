@@ -1,0 +1,452 @@
+<template>
+  <div class="login-container">
+    <div class="session">
+      <div class="left">
+        <svg enable-background="new 0 0 300 302.5" version="1.1" viewBox="0 0 300 302.5" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
+          <path class="st01" d="m126 302.2c-2.3 0.7-5.7 0.2-7.7-1.2l-105-71.6c-2-1.3-3.7-4.4-3.9-6.7l-9.4-126.7c-0.2-2.4 1.1-5.6 2.8-7.2l93.2-86.4c1.7-1.6 5.1-2.6 7.4-2.3l125.6 18.9c2.3 0.4 5.2 2.3 6.4 4.4l63.5 110.1c1.2 2 1.4 5.5 0.6 7.7l-46.4 118.3c-0.9 2.2-3.4 4.6-5.7 5.3l-121.4 37.4zm63.4-102.7c2.3-0.7 4.8-3.1 5.7-5.3l19.9-50.8c0.9-2.2 0.6-5.7-0.6-7.7l-27.3-47.3c-1.2-2-4.1-4-6.4-4.4l-53.9-8c-2.3-0.4-5.7 0.7-7.4 2.3l-40 37.1c-1.7 1.6-3 4.9-2.8 7.2l4.1 54.4c0.2 2.4 1.9 5.4 3.9 6.7l45.1 30.8c2 1.3 5.4 1.9 7.7 1.2l52-16.2z" />
+        </svg>
+      </div>
+      <el-form ref="loginForm" :model="loginForm" :rules="loginRules" class="login-form" auto-complete="on" label-position="left">
+        <h4><span>{{ title }}</span><br>{{ $t('Admin Panel') }}</h4>
+        <p>{{ $t('Welcome, sign in') }}</p>
+        <div class="floating-label">
+          <input
+            id="email"
+            ref="username"
+            v-model="loginForm.username"
+            placeholder="Username"
+            name="username"
+            type="text"
+            tabindex="1"
+            auto-complete="on"
+          >
+          <label for="email">{{ $t('Username') }}:</label>
+          <div class="icon">
+            <svg enable-background="new 0 0 100 100" version="1.1" viewBox="0 0 100 100" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
+              <g transform="translate(0 -952.36)">
+                <path d="m17.5 977c-1.3 0-2.4 1.1-2.4 2.4v45.9c0 1.3 1.1 2.4 2.4 2.4h64.9c1.3 0 2.4-1.1 2.4-2.4v-45.9c0-1.3-1.1-2.4-2.4-2.4h-64.9zm2.4 4.8h60.2v1.2l-30.1 22-30.1-22v-1.2zm0 7l28.7 21c0.8 0.6 2 0.6 2.8 0l28.7-21v34.1h-60.2v-34.1z" />
+              </g>
+              <rect class="st0" width="100" height="100" />
+            </svg>
+
+          </div>
+        </div>
+        <div class="floating-label">
+          <input
+            id="password"
+            :key="passwordType"
+            ref="password"
+            v-model="loginForm.password"
+            :type="passwordType"
+            placeholder="Password"
+            name="password"
+            tabindex="2"
+            auto-complete="on"
+            @keyup.enter="handleLogin"
+          >
+          <label for="password">{{ $t('Password') }}:</label>
+          <div class="icon">
+
+            <svg enable-background="new 0 0 24 24" version="1.1" viewBox="0 0 24 24" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
+              <rect class="st0" width="24" height="24" />
+              <path class="st1" d="M19,21H5V9h14V21z M6,20h12V10H6V20z" />
+              <path class="st1" d="M16.5,10h-1V7c0-1.9-1.6-3.5-3.5-3.5S8.5,5.1,8.5,7v3h-1V7c0-2.5,2-4.5,4.5-4.5s4.5,2,4.5,4.5V10z" />
+              <path class="st1" d="m12 16.5c-0.8 0-1.5-0.7-1.5-1.5s0.7-1.5 1.5-1.5 1.5 0.7 1.5 1.5-0.7 1.5-1.5 1.5zm0-2c-0.3 0-0.5 0.2-0.5 0.5s0.2 0.5 0.5 0.5 0.5-0.2 0.5-0.5-0.2-0.5-0.5-0.5z" />
+            </svg>
+          </div>
+
+        </div>
+        <el-button :loading="loading" type="primary" style="width:100%;margin-bottom:30px;" @click.prevent="handleLogin">{{ $t('Sign In') }}</el-button>
+        <a href="#" class="discrete">Version {{ appVersion }}</a>
+      </el-form>
+    </div>
+  </div>
+</template>
+
+<script>
+import { validUsername } from '@/utils/validate'
+import setting from '@/settings'
+import { version } from '@/../package.json'
+
+export default {
+  name: 'Login',
+  data() {
+    const validateUsername = (rule, value, callback) => {
+      if (!validUsername(value)) {
+        callback(new Error('Please enter the correct username'))
+      } else {
+        callback()
+      }
+    }
+    const validatePassword = (rule, value, callback) => {
+      if (value.length < 6) {
+        callback(new Error('The password cannot be less than 6 digits'))
+      } else {
+        callback()
+      }
+    }
+    return {
+      title: setting.title,
+      appVersion: version,
+      loginForm: {
+        username: 'user@example.com',
+        password: ''
+      },
+      loginRules: {
+        username: [{ required: true, trigger: 'blur', validator: validateUsername }],
+        password: [{ required: true, trigger: 'blur', validator: validatePassword }]
+      },
+      loading: false,
+      passwordType: 'password',
+      redirect: undefined
+    }
+  },
+  watch: {
+    $route: {
+      handler: function(route) {
+        this.redirect = route.query && route.query.redirect
+      },
+      immediate: true
+    }
+  },
+  methods: {
+    showPwd() {
+      if (this.passwordType === 'password') {
+        this.passwordType = ''
+      } else {
+        this.passwordType = 'password'
+      }
+      this.$nextTick(() => {
+        this.$refs.password.focus()
+      })
+    },
+    handleLogin() {
+      this.$refs.loginForm.validate(valid => {
+        if (valid) {
+          this.loading = true
+          this.$store.dispatch('user/login', this.loginForm).then(() => {
+            this.$router.push({ path: this.redirect || '/' })
+            this.loading = false
+          }).catch(() => {
+            this.loading = false
+          })
+        } else {
+          console.log('error submit!!')
+          return false
+        }
+      })
+    }
+  }
+}
+</script>
+
+<style lang="scss" scoped>
+
+.st01{fill:#fff;}
+.st0{fill:none;}
+
+* {
+  font-family: -apple-system, BlinkMacSystemFont, "San Francisco", Helvetica, Arial, sans-serif;
+  font-weight:  300;
+  margin:  0;
+}
+$primary: rgb(182,157,230);
+.login-container {
+  height:  100vh;
+  width:  100vw;
+  margin:  0 0;
+  display:  flex;
+  align-items:  flex-start;
+  justify-content:  flex-start;
+  /* background:  #f3f2f2; */
+  background-image: url('@/assets/login_background.png');
+  background-size: cover;
+}
+h4 {
+  font-size:  24px;
+  font-weight:  600;
+  color:  #000;
+  opacity:  .85;
+}
+label {
+  font-size:  12.5px;
+  color:  #000;
+  opacity:  .8;
+  font-weight:  400;
+}
+form {
+  padding:  40px 30px;
+  background:  #fefefe;
+  display:  flex;
+  flex-direction:  column;
+  align-items:  flex-start;
+  padding-bottom:  20px;
+  width:  400px;
+  h4 {
+    margin-bottom:  20px;
+    color:  rgba(#000, .5);
+    span {
+      color:  rgba(#000, 1);
+      font-weight:  700;
+    }
+  }
+  p {
+    line-height:  155%;
+    margin-bottom:  5px;
+    font-size:  14px;
+    color:  #000;
+    opacity:  .65;
+    font-weight:  400;
+    max-width:  200px;
+    margin-bottom:  40px;
+  }
+}
+a.discrete {
+    color:  rgba(#000, .4);
+    font-size:  14px;
+    border-bottom:  solid 1px rgba(#000, .0);
+    padding-bottom:  4px;
+    margin-left:  auto;
+    font-weight:  300;
+    transition:  all .3s ease;
+    margin-top:  40px;
+    &:hover {
+      border-bottom:  solid 1px rgba(#000, .2);
+    }
+  }
+button {
+  -webkit-appearance:  none;
+  width:  auto;
+  min-width:  100px;
+  border-radius:  24px;
+  text-align:  center;
+  padding:  15px 40px;
+  margin-top:  5px;
+  background-color:  saturate($primary, 30%);
+  color:  #fff;
+  font-size:  14px;
+  margin-left:  auto;
+  font-weight:  500;
+  box-shadow:  0px 2px 6px -1px rgba(0,0,0,.13);
+  border:  none;
+  transition:  all .3s ease;
+  outline: 0;
+  &:hover {
+    transform:  translateY(-3px);
+    box-shadow:  0 2px 6px -1px rgba($primary, .65);
+    &:active {
+      transform:  scale(.99);
+    }
+  }
+}
+input {
+  font-size:  16px;
+  padding:  20px 0px;
+  height:  56px;
+  border:  none;
+  border-bottom:  solid 1px rgba(0,0,0,.1);
+  background:  #fff;
+  width:  280px;
+  box-sizing:  border-box;
+  transition:  all .3s linear;
+  color:  #000;
+  font-weight:  400;
+  -webkit-appearance:  none;
+  &:focus {
+    border-bottom:  solid 1px $primary;
+    outline: 0;
+    box-shadow:  0 2px 6px -8px rgba($primary, .45);
+  }
+}
+.floating-label {
+  position:  relative;
+  margin-bottom:  10px;
+  width:  100%;
+  label {
+    position:  absolute;
+    top: calc(50% - 7px);
+    left:  0;
+    opacity:  0;
+    transition:  all .3s ease;
+    padding-left:  44px;
+  }
+  input {
+    width:  calc(100% - 44px);
+    margin-left:  auto;
+    display:  flex;
+  }
+  .icon {
+    position:  absolute;
+    top:  0;
+    left:  0;
+    height:  56px;
+    width:  44px;
+    display:  flex;
+    svg {
+      height:  30px;
+      width:  30px;
+      margin:  auto;
+      opacity:  .15;
+      transition:  all .3s ease;
+      path {
+        transition:  all .3s ease;
+      }
+    }
+  }
+  input:not(:placeholder-shown) {
+    padding:  28px 0px 12px 0px;
+  }
+  input:not(:placeholder-shown) + label {
+    transform:  translateY(-10px);
+    opacity:  .7;
+  }
+  input:valid:not(:placeholder-shown) + label + .icon {
+    svg {
+      opacity:  1;
+      path {
+        fill:  $primary;
+      }
+    }
+  }
+  input:not(:valid):not(:focus) + label + .icon {
+    animation-name: shake-shake;
+    animation-duration: .3s;
+  }
+}
+$displacement:  3px;
+@keyframes shake-shake {
+  0% { transform: translateX(-$displacement);}
+  20% { transform: translateX($displacement); }
+  40% { transform: translateX(-$displacement);}
+  60% { transform: translateX($displacement);}
+  80% { transform: translateX(-$displacement);}
+  100% { transform: translateX(0px);}
+}
+.session {
+  display:  flex;
+  flex-direction:  row;
+  width:  auto;
+  height:  auto;
+  margin:  auto auto;
+  background:  #ffffff;
+  border-radius:  4px;
+  box-shadow:  0px 2px 6px -1px rgba(0,0,0,.12);
+}
+.left {
+  width:  220px;
+  height:  auto;
+  min-height:  100%;
+  position:  relative;
+  background-image: url("https://images.pexels.com/photos/114979/pexels-photo-114979.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940");
+  background-size:  cover;
+  border-top-left-radius:  4px;
+  border-bottom-left-radius:  4px;
+  svg {
+    height:  40px;
+    width:  auto;
+    margin:  20px;
+  }
+}
+
+/* Keep the login screen aligned with the admin shell's palette and spacing. */
+.login-container {
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background-position: center;
+  isolation: isolate;
+
+  &::before {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    content: '';
+    background: linear-gradient(125deg, rgba(11, 27, 53, .84), rgba(31, 75, 138, .54));
+  }
+}
+
+.session {
+  width: min(100%, 760px);
+  min-height: 460px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(7, 20, 43, .34);
+}
+
+.left {
+  width: 286px;
+  background-position: center;
+
+  &::after {
+    position: absolute;
+    inset: 0;
+    content: '';
+    background: linear-gradient(160deg, rgba(28, 80, 149, .62), rgba(12, 31, 61, .82));
+  }
+
+  svg { position: relative; z-index: 1; }
+}
+
+.login-form {
+  width: 474px !important;
+  min-height: 460px;
+  padding: 54px 48px 30px !important;
+  background: rgba(255, 255, 255, .98) !important;
+
+  h4 {
+    margin-bottom: 12px !important;
+    color: #667085 !important;
+    font-size: 26px !important;
+
+    span { color: #172b4d !important; }
+  }
+
+  p {
+    max-width: none !important;
+    margin-bottom: 32px !important;
+    color: #667085 !important;
+  }
+
+  :deep(.el-button) {
+    height: 44px;
+    margin: 16px 0 0 !important;
+    border-radius: 9px;
+    background: #2563eb;
+    box-shadow: 0 10px 18px rgba(37, 99, 235, .22);
+
+    &:hover { background: #1d4ed8; transform: none; }
+  }
+}
+
+.floating-label {
+  margin-bottom: 16px;
+
+  input {
+    height: 58px;
+    border-bottom-color: #d9e1ec;
+    color: #1d2939;
+
+    &:focus { border-bottom-color: #2563eb; box-shadow: 0 3px 9px -8px rgba(37, 99, 235, .8); }
+  }
+
+  .icon svg {
+    opacity: .28;
+    path { fill: #52709d; }
+  }
+}
+
+a.discrete {
+  margin-top: 22px;
+  color: #98a2b3;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .login-container { padding: 16px; }
+  .session { width: min(100%, 430px); min-height: 0; }
+  .left { display: none; }
+  .login-form { width: 100% !important; min-height: 0; padding: 42px 30px 28px !important; }
+}
+</style>

@@ -1,0 +1,25 @@
+import { t } from '@/i18n'
+import { orderByIdDesc } from '../helpers'
+
+export default {
+  Tag: {
+    form: {
+      fields: [
+        'name',
+        { property: 'slug', required: false, help: t('Tag slug help') },
+        { property: 'color', required: false }
+      ]
+    },
+    list: {
+      query: orderByIdDesc,
+      list_filter: {
+        name: t('Tag Name'),
+        slug: 'Slug'
+      },
+      list_display: ['id', 'name', 'slug', 'color', 'createdAt']
+    },
+    detail: {
+      detail_display: '__all__'
+    }
+  }
+}

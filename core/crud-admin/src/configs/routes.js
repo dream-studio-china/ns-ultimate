@@ -1,0 +1,104 @@
+import { r } from '@/router/generator'
+import { t } from '@/i18n'
+import Layout from '@/layout'
+
+export default [
+  {
+    path: '/store', name: 'StoreManage', component: Layout,
+    meta: { title: t('Store Management'), icon: 'el-icon-shop', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Store', t('Store')),
+      ...r('StoreOrder', t('Store Order'))
+    ]
+  },
+
+  {
+    path: '/product', name: 'ProductManage', component: Layout,
+    meta: { title: t('Product Management'), icon: 'el-icon-goods', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Product', t('Product'))
+    ]
+  },
+
+  {
+    path: '/order', name: 'OrderManage', component: Layout,
+    meta: { title: t('Order Management'), icon: 'el-icon-list', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Order', t('Order')),
+      ...r('Invoice', t('Invoice')),
+      ...r('OrderItem', t('Order Item'))
+    ]
+  },
+
+  {
+    path: '/promotion', name: 'PromotionManage', component: Layout,
+    meta: { title: t('Promotion Management'), icon: 'el-icon-s-promotion', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Promotion', t('Promotion')),
+      ...r('PromotionTemplate', t('Promotion Template'))
+    ]
+  },
+
+  {
+    path: '/inventory', name: 'InventoryManage', component: Layout,
+    meta: { title: t('Inventory Management'), icon: 'el-icon-box', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Material', t('Material')),
+      ...r('SpecificationRecipe', t('Recipe')),
+      ...r('Stock', t('Stock'))
+    ]
+  },
+
+  {
+    path: '/wallet', name: 'WalletManage', component: Layout,
+    meta: { title: t('Wallet Management'), icon: 'el-icon-wallet', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Wallet', t('Wallet')),
+      ...r('Transaction', t('Transaction')),
+      ...r('PaymentDeduction', t('Payment Deduction'))
+    ]
+  },
+
+  {
+    path: '/content', name: 'ContentManage', component: Layout,
+    meta: { title: t('Content Management'), icon: 'el-icon-notebook', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Content', t('Content')),
+      ...r('Page', t('Page')),
+      ...r('Comment', t('Comment')),
+      ...r('Media', t('Media')),
+      ...r('Picture', t('Picture'))
+    ]
+  },
+
+  {
+    path: '/user', name: 'UserManage', component: Layout,
+    meta: { title: t('User Management'), icon: 'el-icon-user', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('User', t('User')),
+      ...r('Profile', t('Profile')),
+      ...r('WechatUser', t('Wechat User'))
+    ]
+  },
+
+  {
+    path: '/authorization', name: 'AuthorizationManage', component: Layout,
+    meta: { title: t('Authorization'), icon: 'el-icon-lock', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Role', t('Role')),
+      ...r('Permission', t('Permission')),
+      ...r('Assignment', t('Assignment')),
+      ...r('AuditLog', t('Audit Log'))
+    ]
+  },
+
+  {
+    path: '/system-option', name: 'SystemOptionManage', component: Layout,
+    meta: { title: t('System Options'), icon: 'el-icon-setting', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+    children: [
+      ...r('Category', t('Category')),
+      ...r('Tag', t('Tag')),
+      ...r('Setting', t('Setting'))
+    ]
+  }
+]
