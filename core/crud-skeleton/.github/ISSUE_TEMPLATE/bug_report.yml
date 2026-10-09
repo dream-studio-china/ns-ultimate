@@ -1,0 +1,86 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Send request `POST /api/v1/manage/orders` with payload ...
+        2. Expected ... but got ...
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected module
+      description: Which module is affected?
+      options:
+        - Core (framework)
+        - Common (CMS)
+        - Trade (e-commerce)
+        - Wallet
+        - Payment
+        - Wechat
+        - Storage
+        - Identity (auth)
+        - i18n / Translation
+        - CI / Docker
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: endpoint
+    attributes:
+      label: API endpoint (if applicable)
+      description: Which API route is affected?
+      placeholder: "e.g., GET /api/v1/manage/orders/42"
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Which version or commit hash are you on?
+      placeholder: "e.g., main, dev, or commit abc1234"
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, PHP version, database, Docker or native, etc.
+      placeholder: |
+        - OS: macOS 15 / Ubuntu 24.04
+        - PHP: 8.4
+        - Database: MySQL 8.4 / SQLite (test)
+        - Docker: yes / no
+        - Symfony: 8.1
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Paste error messages, stack traces, or API response bodies.
+      placeholder: |
+        ```json
+        {"code": 500, "message": "..."}
+        ```
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context about the problem.

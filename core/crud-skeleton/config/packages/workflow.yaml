@@ -1,0 +1,177 @@
+# Workflow definitions for Symfony Workflow component
+# - invoice: Payment invoice lifecycle (App\Payment\Entity\Invoice)
+# - order:   Trade order lifecycle (App\Trade\Entity\Order) - core customer/payment flow
+# - store_order: Store operational fulfillment (App\Store\Entity\StoreOrder)
+# Trade and Store lifecycles are decoupled: Trade owns draft->pending->confirmed->paid->fulfilled->completed,
+# Store acceptance is tracked via Trade OrderStoreLifecycle projection and gates confirm.
+
+framework:
+    workflows:
+        # ---------------------------------------------------------------------
+        # Invoice: Payment module
+        # ---------------------------------------------------------------------
+        invoice:
+            # State machine for Payment invoices. Marking is stored via Invoice::getStatus()/setStatus().
+            # Supports App\Payment\Entity\Invoice only. Initial place is `pending` (invoice created, not yet paid).
+            type: 'state_machine'
+            marking_store:
+                type: 'method'
+                property: 'status'
+            supports:
+                - App\Payment\Entity\Invoice
+            initial_marking: pending
+            places:
+                # pending: invoice created, awaiting pay() call. Can start_pay to paying or be cancelled.
+                - pending
+
+                # paying: gateway invocation in progress (wallet/wechat/mock). Wallet adjustments (wallet_balance) are applied before this place.
+                - paying
+
+                # paid: gateway confirmed via notify or wallet fully adjusted. Trade OrderInvoiceListener will mark order paid.
+                - paid
+
+                # failed: gateway reported failure. Can be retried via start_pay or cancelled.
+                - failed
+
+                # cancelled: invoice cancelled before paid (order cancelled, timeout, or explicit cancel). Terminal before paid.
+                - cancelled
+
+                # partial_refunded: part of the paid amount has been refunded (partial refund flow).
+                - partial_refunded
+
+                # refunded: fully refunded, including wallet adjustments reversed via provider refund().
+                - refunded
+            transitions:
+                # start_pay: pending -> paying. Triggered by InvoiceService::pay() when gateway is invoked.
+                start_pay:
+                    from: pending
+                    to: paying
+
+                # mark_paid: pending/paying -> paid. Triggered by successful notify (WeChat/Mock) or wallet gateway markPaid(). Idempotent via outTradeNo.
+                mark_paid:
+                    from: [pending, paying]
+                    to: paid
+
+                # fail: pending/paying -> failed. Triggered by gateway failure or notify with failure code. Allows retry.
+                fail:
+                    from: [pending, paying]
+                    to: failed
+
+                # cancel: pending/paying/failed -> cancelled. Triggered by InvoiceService::cancel() when order is cancelled before paid.
+                cancel:
+                    from: [pending, paying, failed]
+                    to: cancelled
+
+                # partial_refund: paid -> partial_refunded. For partial amount refunds (not used in first-phase full refunds but reserved).
+                partial_refund:
+                    from: paid
+                    to: partial_refunded
+
+                # refund: paid/partial_refunded -> refunded. Triggered by InvoiceService::refund() — first refunds gateway amount, then wallet adjustments.
+                refund:
+                    from: [paid, partial_refunded]
+                    to: refunded
+
+        # StoreOrder: Store operational fulfillment
+        # ---------------------------------------------------------------------
+        store_order:
+            type: 'state_machine'
+            marking_store:
+                type: 'method'
+                property: 'operationalStatus'
+            supports:
+                - App\Store\Entity\StoreOrder
+            initial_marking: pending_validation
+            places:
+                - pending_validation
+                - awaiting_inventory
+                - accepted
+                - rejected
+                - fulfillment_pending
+                - fulfilling
+                - fulfilled
+                - verified
+                - cancelled
+            transitions:
+                await_inventory:
+                    from: pending_validation
+                    to: awaiting_inventory
+                accept:
+                    from: [pending_validation, awaiting_inventory]
+                    to: accepted
+                reject:
+                    from: [pending_validation, awaiting_inventory]
+                    to: rejected
+                fulfill:
+                    from: [accepted, fulfillment_pending, fulfilling]
+                    to: fulfilled
+                verify:
+                    from: fulfilled
+                    to: verified
+                cancel:
+                    from: [pending_validation, awaiting_inventory, accepted, fulfillment_pending, fulfilling]
+                    to: cancelled
+
+        # ---------------------------------------------------------------------
+        # Order: Trade module - core lifecycle (store fulfillment/verification via events)
+        # ---------------------------------------------------------------------
+        order:
+            type: 'state_machine'
+            marking_store:
+                type: 'method'
+                property: 'status'
+            supports:
+                - App\Trade\Entity\Order
+            initial_marking: draft
+            places:
+                # draft: order created, not yet submitted.
+                - draft
+
+                # pending: submitted, waiting for store acceptance (if store-scoped) then confirm.
+                - pending
+
+                # confirmed: order confirmed, ready for payment.
+                - confirmed
+
+                # paid: payment succeeded. Next is fulfill -> fulfilled.
+                - paid
+
+                # fulfilled: logistics fulfilled, ready for completion. Store verification gates complete via lifecycle.
+                - fulfilled
+
+                # completed: order completed. Terminal success.
+                - completed
+
+                # cancelled: terminal cancelled. Only draft, pending, and confirmed can be cancelled.
+                - cancelled
+
+                # refunded: terminal refunded from paid.
+                - refunded
+            transitions:
+                submit:
+                    from: draft
+                    to: pending
+
+                confirm:
+                    from: pending
+                    to: confirmed
+
+                pay:
+                    from: confirmed
+                    to: paid
+
+                fulfill:
+                    from: paid
+                    to: fulfilled
+
+                complete:
+                    from: fulfilled
+                    to: completed
+
+                cancel:
+                    from: [draft, pending, confirmed]
+                    to: cancelled
+
+                refund:
+                    from: paid
+                    to: refunded

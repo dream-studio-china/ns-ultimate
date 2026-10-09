@@ -1,0 +1,30 @@
+# CRUD Skeleton — Apache Rewrite Rules
+#
+# This .htaccess is required when deploying with Apache (including 宝塔面板).
+# It serves two purposes:
+#   1. Route all non-file requests to Symfony's front controller (public/index.php)
+#   2. Forward the Authorization header to PHP-FPM (JWT authentication)
+
+# Enable the rewrite engine
+RewriteEngine On
+
+# Only rewrite if the requested path does NOT match an existing file on disk.
+# Static assets (CSS, JS, images, /api/doc JSON, etc.) are served directly;
+# everything else is handed to index.php for Symfony to route.
+RewriteCond %{REQUEST_FILENAME} !-f
+
+# Rewrite to the Symfony front controller, appending any query string.
+# QSA = Query String Append — preserves original query parameters such as @filter, page, limit, etc.
+# L   = Last — stop processing further rewrite rules after this one.
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Forward the Authorization header to PHP-FPM
+#
+# Apache with mod_proxy_fcgi / SetHandler "proxy:fcgi://..." does NOT pass the
+# Authorization header to PHP by default. Without this line, $_SERVER['HTTP_AUTHORIZATION']
+# is empty, JwtAuthenticator::supports() returns false, and all authenticated API calls fail
+# with "Full authentication is required to access this resource."
+#
+# This copies the incoming Authorization header (e.g. "Bearer eyJhbG...") into the
+# HTTP_AUTHORIZATION environment variable that PHP uses for JWT token extraction.
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1

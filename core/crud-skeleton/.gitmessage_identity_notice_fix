@@ -1,0 +1,10 @@
+chore(tests): silence PHPUnit mock notices
+
+- Add `#[AllowMockObjectsWithoutExpectations]` to several test classes
+- This avoids PHPUnit 12 notices where mocks are used as stubs without expectations
+- Files updated: RestControllerTest, BaseServiceUnitTest, CreateUserCommandTest,
+  AuthControllerTest, OtpControllerTest, JwtAuthenticatorTest, TokenManagerTest,
+  OtpServiceTest
+
+Verified with: /opt/homebrew/opt/php@8.5/bin/php vendor/bin/phpunit --display-phpunit-notices --display-notices
+All notices cleared.

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://immane.github.io/crud-skeleton
+    about: Check the project documentation and design contracts.
+  - name: Security Vulnerability
+    url: https://github.com/immane/crud-skeleton/security/advisories/new
+    about: Report a security vulnerability privately.

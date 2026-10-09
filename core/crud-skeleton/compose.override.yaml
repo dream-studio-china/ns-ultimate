@@ -1,0 +1,18 @@
+services:
+  app:
+    environment:
+      APP_ENV: dev
+      APP_DEBUG: "1"
+      # Dev fallback: use .env or .env.local's APP_SECRET, or this default
+      APP_SECRET: ${APP_SECRET:-dev-secret-change-me}
+      MAILER_DSN: smtp://mailer:1025
+    volumes:
+      - ./:/var/www/html
+
+  database:
+    ports:
+      - "3306:3306"
+
+  mailer:
+    ports:
+      - "1025:1025"

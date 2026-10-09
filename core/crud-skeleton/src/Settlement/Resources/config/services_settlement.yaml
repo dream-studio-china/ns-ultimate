@@ -1,0 +1,41 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\Settlement\Service\SettlementServiceInterface:
+        alias: App\Settlement\Service\SettlementService
+
+    App\Settlement\Service\SettlementPlanServiceInterface:
+        alias: App\Settlement\Service\SettlementPlanService
+
+    App\Settlement\Service\SettlementRuleServiceInterface:
+        alias: App\Settlement\Service\SettlementRuleService
+
+    App\Settlement\Service\SettlementAllocationServiceInterface:
+        alias: App\Settlement\Service\SettlementAllocationService
+
+    App\Settlement\Service\SettlementConsumedEventServiceInterface:
+        alias: App\Settlement\Service\SettlementConsumedEventService
+
+    App\Settlement\Service\SettlementOutboxMessageServiceInterface:
+        alias: App\Settlement\Service\SettlementOutboxMessageService
+
+    App\Settlement\Service\SettlementRuleVersionServiceInterface:
+        alias: App\Settlement\Service\SettlementRuleVersionService
+
+    App\Settlement\Port\ClockInterface:
+        alias: App\Settlement\Service\SystemClock
+
+    App\Settlement\Port\SettlementVoucherPort:
+        alias: App\Wallet\Integration\Settlement\WalletSettlementVoucherPort
+
+when@test:
+    services:
+        App\Settlement\Integration\Fake\InMemorySettlementVoucherPort:
+            public: true
+        App\Settlement\Port\SettlementVoucherPort:
+            alias: App\Settlement\Integration\Fake\InMemorySettlementVoucherPort
+
+    App\Settlement\Integration\Fixture\FundingSnapshotContextResolver:
+        tags: ['settlement.context_resolver']

@@ -1,0 +1,10 @@
+# Enables the Symfony serializer and points mapping to src/Core/Resources/config/serializer
+framework:
+    serializer:
+        enabled: true
+        mapping:
+            paths: ['%kernel.project_dir%/src/Core/Resources/config/serializer']
+        default_context:
+            # Use a static handler to safely break circular references
+            circular_reference_handler: 'App\Core\Serializer\CircularReferenceHandler::handle'
+

@@ -1,0 +1,3 @@
+parameters:
+    payment.default_currency: 'CNY'
+    payment.system_wallet_id: 0

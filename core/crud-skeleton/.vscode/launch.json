@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Start PHP Built-in Server and Listen for Xdebug",
+      "type": "php",
+      "request": "launch",
+      "port": 9003,
+      "preLaunchTask": "Start PHP Built-in server",
+      "pathMappings": {
+        "${workspaceFolder}": "${workspaceFolder}"
+      },
+      "xdebugSettings": {
+        "max_children": 128,
+        "max_data": 1024,
+        "max_depth": 3
+      }
+    },
+    {
+      "name": "Listen for Xdebug (no server)",
+      "type": "php",
+      "request": "launch",
+      "port": 9003,
+      "pathMappings": {
+        "${workspaceFolder}": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Launch Current PHP File",
+      "type": "php",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${fileDirname}",
+      "runtimeExecutable": "/opt/homebrew/opt/php@8.5/bin/php"
+    }
+    ,
+    {
+      "name": "Debug PHPUnit (All tests)",
+      "type": "php",
+      "request": "launch",
+      "program": "${workspaceFolder}/vendor/bin/phpunit",
+      "args": ["--colors=always"],
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "/opt/homebrew/opt/php@8.5/bin/php",
+      "env": {
+        "APP_ENV": "test",
+        "SYMFONY_DEPRECATIONS_HELPER": "weak_vendors"
+      },
+      "pathMappings": {
+        "${workspaceFolder}": "${workspaceFolder}"
+      },
+      "stopOnEntry": false
+    }
+  ]
+}

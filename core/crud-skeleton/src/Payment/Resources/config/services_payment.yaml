@@ -1,0 +1,8 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\Payment\Service\Gateway\:
+        resource: '../../Service/Gateway/'
+        tags: ['payment.gateway']

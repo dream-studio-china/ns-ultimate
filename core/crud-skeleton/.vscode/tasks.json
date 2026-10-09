@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Symfony server",
+      "type": "shell",
+      "command": "symfony server:start",
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "Start PHP Built-in server",
+      "type": "shell",
+      "command": "php -S 127.0.0.1:8000 -t public",
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "Run PHPUnit",
+      "type": "shell",
+      "command": "vendor/bin/phpunit --colors=always",
+      "presentation": { "reveal": "always" },
+      "problemMatcher": []
+    }
+  ]
+}

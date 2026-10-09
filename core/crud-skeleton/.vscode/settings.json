@@ -1,0 +1,85 @@
+{
+    // vim
+    "vim.handleKeys": {
+        "<C-a>": false,
+        "<C-c>": false,
+        "<C-x>": false,
+        "<C-w>": false,
+        "<C-v>": false
+    },
+
+    "editor.quickSuggestions": { "comments": true },
+    "php.suggest.basic": false,
+
+    "intelephense.files.exclude": [
+        "**/.git/**",
+        "**/.svn/**",
+        "**/.hg/**",
+        "**/CVS/**",
+        "**/.DS_Store/**",
+        "**/node_modules/**",
+        "**/bower_components/**",
+        "**/vendor/**/{Test,test,Tests,tests}/**"
+    ],
+    "files.exclude": {
+        "**/*.*~": true,
+        "**/*.bak": true,
+        "**/*.swp": true,
+        "**/*.tem": true,
+        "**/*.temp": true,
+        "**/~*.*": true
+    },
+
+    "[php]": {
+        "editor.defaultFormatter": "bmewburn.vscode-intelephense-client"
+    },
+
+    // PHP / Symfony
+    "intelephense.environment.includePaths": ["vendor/", "src/"],
+    "intelephense.diagnostics.undefinedFunctions": false,
+    "intelephense.diagnostics.undefinedMethods": false,
+    "intelephense.stubs": [
+        "apache", "bcmath", "bz2", "calendar", "com_dotnet", "Core", "ctype", "curl", "date",
+        "dba", "dom", "enchant", "exif", "FFI", "fileinfo", "filter", "fpm", "ftp", "gd",
+        "gettext", "gmp", "hash", "iconv", "imap", "intl", "json", "ldap", "libxml", "mbstring",
+        "meta", "mysqli", "oci8", "odbc", "openssl", "pcntl", "pcre", "PDO", "pdo_ibm",
+        "pdo_mysql", "pdo_pgsql", "pdo_sqlite", "pgsql", "Phar", "posix", "pspell", "readline",
+        "Reflection", "session", "shmop", "SimpleXML", "snmp", "soap", "sockets", "sodium",
+        "SPL", "sqlite3", "standard", "superglobals", "sysvmsg", "sysvsem", "sysvshm", "tidy",
+        "tokenizer", "xml", "xmlreader", "xmlrpc", "xmlwriter", "xsl", "zip", "zlib"
+    ],
+
+    "php.debug.executablePath": "/opt/homebrew/opt/php@8.5/bin/php",
+    "symfony-vscode.phpExecutablePath": "/opt/homebrew/opt/php@8.5/bin/php",
+    "php.validate.executablePath": "/opt/homebrew/opt/php@8.5/bin/php", 
+    "php.executablePath": "/opt/homebrew/opt/php@8.5/bin/php",
+    "intelephense.environment.phpVersion": "8.5.0",
+
+    "files.associations": {
+        "*.twig": "twig",
+        "*.yml": "yaml",
+        "env": "dotenv"
+    },
+
+    "github.copilot.nextEditSuggestions.enabled": true,
+    "sqltools.connections": [
+        {
+            "mysqlOptions": {
+                "authProtocol": "default",
+                "enableSsl": "Disabled"
+            },
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 3306,
+            "driver": "MySQL",
+            "name": "crud-skeleton",
+            "database": "crud-skeleton",
+            "username": "root",
+            "password": "winface123"
+        }
+    ],
+    "yaml.schemas": {
+        "file:///Volumes/Nayuki/Development/PHP/crud-skeleton/vendor/symfony/dependency-injection/Loader/schema/services.schema.json": "file:///Volumes/Nayuki/Development/PHP/crud-skeleton/config/services.yaml"
+    }
+}

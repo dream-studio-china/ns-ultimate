@@ -1,0 +1,10 @@
+services:
+    _instanceof:
+        App\Promotion\Strategy\PromotionStrategyInterface:
+            tags: ['promotion.strategy']
+
+    App\Promotion\Service\Dsl\:
+        resource: '../../Dsl/'
+
+    App\Promotion\Strategy\:
+        resource: '../../Strategy/'

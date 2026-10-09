@@ -1,0 +1,38 @@
+services:
+    App\Authorization\Service\AuthorizationResourceRegistry:
+        public: true
+
+    App\Authorization\Service\AuthorizationServiceInterface: '@App\Authorization\Service\AuthorizationService'
+    App\Authorization\Service\FieldAuthorizationServiceInterface: '@App\Authorization\Service\FieldAuthorizationService'
+
+    App\Authorization\Service\AuthorizationService:
+        public: true
+        arguments:
+            $assignmentRepository: '@App\Authorization\Repository\AssignmentRepository'
+            $cache: '@cache.app'
+            $logger: '@logger'
+
+    App\Authorization\Service\FieldAuthorizationService:
+        public: true
+        arguments:
+            $assignmentRepository: '@App\Authorization\Repository\AssignmentRepository'
+            $fieldGrantRepository: '@App\Authorization\Repository\RoleFieldGrantRepository'
+            $registry: '@App\Authorization\Service\AuthorizationResourceRegistry'
+            $authorizationService: '@App\Authorization\Service\AuthorizationService'
+
+    App\Authorization\Service\AuthorizationAuditService:
+        arguments:
+            $em: '@doctrine.orm.entity_manager'
+            $requestStack: '@request_stack'
+
+    App\Authorization\Service\AuthorizationCacheInvalidator:
+        arguments:
+            $cache: '@cache.app'
+
+    App\Authorization\Security\AuthorizationVoter:
+        tags:
+            - { name: security.voter }
+
+    App\Authorization\Command\SeedAuthorizationCommand:
+        tags:
+            - { name: console.command }

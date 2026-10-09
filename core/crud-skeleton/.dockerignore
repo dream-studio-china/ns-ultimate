@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Tests
+tests/
+phpunit.dist.xml
+.phpunit.cache/
+
+# Dev
+.env
+.env.local
+.env.*.local
+compose.override.yaml
+docker-compose.override.yml
+
+# Symfony
+var/cache/
+var/log/
+var/test.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Node
+node_modules/
+package-lock.json
+
+# Docs
+docs/
+mkdocs.yml
+
+# Scripts
+scripts/
+
+# CI
+.github/

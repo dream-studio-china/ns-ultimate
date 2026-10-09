@@ -1,0 +1,45 @@
+parameters:
+    level: 8
+    paths:
+        - src/
+    excludePaths:
+        - src/*/Exception/*
+        - src/Identity/Sms/AliyunSmsProvider.php
+    bootstrapFiles:
+        - vendor/autoload.php
+    tmpDir: var/cache/phpstan
+    # Project uses extensive trait mixins with dynamic property/method access.
+    # Controllers use $this->service (defined on subclass) and $this->get() (from
+    # Symfony AbstractController). PHPStan cannot fully resolve these in trait
+    # context. Disabling certain PHPDoc strictness reduces false positives.
+    treatPhpDocTypesAsCertain: false
+
+    # EasyWeChat — contracts use dynamic/array return shapes
+    universalObjectCratesClasses:
+        - EasyWeChat\Kernel\Contracts\AccessToken
+        - EasyWeChat\Kernel\Contracts\Server
+
+    symfony:
+        containerXmlPath: var/cache/dev/App_KernelDevDebugContainer.xml
+
+    doctrine:
+        objectManagerLoader: phpstan-bootstrap.php
+
+    ignoreErrors:
+        # --- Optional third-party SDKs not in composer.json ---
+        -
+            message: '#(Qiniu\\|Class Qiniu)#'
+            path: src/Storage/Service/QiniuStorage.php
+
+        # --- Curl\Curl — optional third-party HTTP client not in composer.json ---
+        -
+            message: '#Curl\\Curl#'
+            path: src/Core/Utils/Location.php
+
+        # --- Lifecycle callbacks support BaseService::new() bypassing constructors ---
+        -
+            message: '#Property .+::\$createdAt in isset\(\) is not nullable nor uninitialized#'
+
+includes:
+    - vendor/phpstan/phpstan-symfony/extension.neon
+    - vendor/phpstan/phpstan-doctrine/extension.neon

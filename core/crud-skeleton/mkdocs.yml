@@ -1,0 +1,142 @@
+site_name: CRUD Skeleton
+site_description: Symfony 8.1 API backend skeleton with modular architecture
+repo_url: https://github.com/immane/crud-skeleton
+edit_uri: edit/dev/docs/
+site_dir: site
+site_url: https://immane.github.io/crud-skeleton/
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+  - pymdownx.inlinehilite
+  - pymdownx.details
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js
+  - javascripts/mermaid-init.js
+
+nav:
+  - Home: index.md
+  - Development Manual:
+      - Manual Index: manual/index.md
+      - Getting Started: manual/getting-started.md
+      - Architecture: manual/architecture.md
+      - Project Structure: manual/project-structure.md
+      - Core Framework: manual/core-framework.md
+      - Core Usage: manual/core-usage.md
+      - Query System: manual/query-system.md
+      - Authorization Setup: manual/authorization.md
+      - Development Workflow: manual/development-workflow.md
+      - Testing: manual/testing.md
+      - API Contracts: manual/api-contracts.md
+      - Development Contracts: manual/development-contracts.md
+      - Integration Events: manual/integration-events.md
+      - Database & Migrations: manual/database-and-migrations.md
+      - Deployment: manual/deployment.md
+      - Extracting a Service: manual/extracting-a-service.md
+      - Internationalization: manual/i18n.md
+  - Design Contracts:
+      - System Architecture: design/system-architecture.md
+      - API Design: design/api-design.md
+      - Data Model: design/data-model.md
+      - Module Design: design/module-design.md
+      - Controller Design: design/controller-design.md
+      - API Documentation: design/api-documentation.md
+      - System Contracts: design/system-contracts.md
+      - Extension Points: design/extension-points.md
+      - Security Hardening: design/security-hardening.md
+      - Naming Convention: design/naming-convention.md
+  - Bundles:
+      - Core Framework: design/bundles/core.md
+      - Common (CMS): design/bundles/common.md
+      - Trade (E-Commerce): design/bundles/trade.md
+      - Store (Multi-Store Operations): design/bundles/store.md
+      - Store Catalog (Target): design/store-catalog.md
+      - Inventory: design/bundles/inventory.md
+      - Payment: design/bundles/payment.md
+      - Wallet: design/bundles/wallet.md
+      - Promotion: design/bundles/promotion.md
+      - Storage: design/bundles/storage.md
+      - Settlement (Allocation + Finality): design/bundles/settlement.md
+      - Exchange (Pool-backed Economy): design/bundles/exchange.md
+      - Identity (Auth): design/bundles/identity.md
+      - Authorization: design/bundles/authorization.md
+      - Wechat (Login + Pay): design/bundles/wechat.md
+  - Runbooks:
+      - Authorization: runbooks/authorization.md
+      - Common: runbooks/common.md
+      - Core: runbooks/core.md
+      - Exchange: runbooks/exchange.md
+      - Identity: runbooks/identity.md
+      - Inventory: runbooks/inventory.md
+      - Payment: runbooks/payment.md
+      - Promotion: runbooks/promotion.md
+      - Settlement: runbooks/settlement.md
+      - Storage: runbooks/storage.md
+      - Store: runbooks/store.md
+      - Trade: runbooks/trade.md
+      - Wallet: runbooks/wallet.md
+      - WeChat: runbooks/wechat.md
+  - Research:
+      - EasyWeChat 6.x Usage: research/easywechat-6.x-usage.md
+      - Huifu Payment API: research/huifu-payment-api.md
+  - Issues:
+      - Architecture Review 2026-06-26: issues/architecture-review-2026-06-26.md
+  - Testing:
+      - Production Validation Overview: testing/crud-skeleton-production/README.md
+      - Test Strategy: testing/crud-skeleton-production/TEST_STRATEGY.md
+      - System Walkthrough And Test Seams: testing/crud-skeleton-production/SYSTEM_WALKTHROUGH.md
+      - Test Matrix: testing/crud-skeleton-production/TEST_MATRIX.md
+      - Business Invariants: testing/crud-skeleton-production/BUSINESS_INVARIANTS.md
+      - Architecture Test Mapping: testing/crud-skeleton-production/ARCHITECTURE_TEST_MAPPING.md
+      - Failure Modes: testing/crud-skeleton-production/FAILURE_MODES.md
+      - Release Validation: testing/crud-skeleton-production/PRODUCTION_VALIDATION.md
+      - AI Development Process: testing/crud-skeleton-production/AI_DEVELOPMENT_PROCESS.md
+  - AI Context: ai/context.md
+  - API Reference:
+      - Swagger UI (live): openapi/endpoints.yaml
+      - Order & Payment Flow (guide): openapi/order-payment-flow.md
+      - OpenAPI Spec (machine-readable YAML): openapi/endpoints.yaml
+
+extra:
+  alternate:
+    - name: English
+      link: /crud-skeleton/
+      lang: en
+    - name: 中文
+      link: /crud-skeleton/zh/
+      lang: zh

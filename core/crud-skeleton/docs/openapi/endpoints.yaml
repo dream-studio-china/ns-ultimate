@@ -1,0 +1,627 @@
+# CRUD Skeleton — Extended Endpoint Documentation
+# Merged into /api/doc by NelmioApiDocBundle
+openapi: 3.1.0
+info:
+  title: CRUD Skeleton API
+  version: 1.0.0
+tags:
+  - { name: Auth, description: 'Login, OTP, token refresh, logout' }
+  - { name: Products, description: 'Product and Specification CRUD + public listing' }
+  - { name: Orders, description: 'Order lifecycle: create → submit → confirm → pay → fulfill → complete → refund' }
+  - { name: Store, description: 'Store scoping, StoreOrder fulfill/verify and completion snapshot' }
+  - { name: Categories, description: 'Hierarchical category management' }
+  - { name: Tags, description: 'Flat tag/label management' }
+  - { name: Contents, description: 'Article-like content' }
+  - { name: Comments, description: 'Polymorphic comment system' }
+  - { name: Pages, description: 'Standalone page management' }
+  - { name: Media, description: 'File metadata management' }
+  - { name: Settings, description: 'Key-value configuration storage' }
+  - { name: Wallet, description: 'Wallet balance, transactions, atomic transfers' }
+
+paths:
+  # ====================================================================
+  # AUTH
+  # ====================================================================
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: 'Login (identifier + password)'
+      description: >
+        Authenticate with email, username, or verified phone.
+        Returns RS256 JWT `access_token` (7200s TTL) + opaque `refresh_token` (1 year TTL).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier: { type: string, description: 'Email, username, or verified phone', example: 'admin@example.com' }
+                password: { type: string, format: password, example: 'P@ssw0rd' }
+      responses:
+        200: { description: 'Login successful — returns access_token + refresh_token' }
+        400: { description: 'Missing fields or wrong credentials' }
+
+  /api/auth/otp/request:
+    post:
+      tags: [Auth]
+      summary: 'Request OTP via SMS'
+      description: >
+        Sends a 6-digit OTP to the specified phone via Alibaba Cloud SMS.
+        Rate limit: 60s cooldown per phone. Dry-run in dev mode.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, purpose]
+              properties:
+                phone: { type: string, example: '13800138000' }
+                purpose: { type: string, enum: [login, verify_phone], example: 'login' }
+
+  /api/auth/otp/verify:
+    post:
+      tags: [Auth]
+      summary: 'Verify OTP code'
+      description: >
+        Verifies 6-digit OTP. purpose=login issues tokens. purpose=verify_phone marks phone verified.
+        Max 5 attempts per phone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, otp, purpose]
+              properties:
+                phone: { type: string, example: '13800138000' }
+                otp: { type: string, example: '123456' }
+                purpose: { type: string, enum: [login, verify_phone], example: 'login' }
+
+  /api/auth/token/refresh:
+    post:
+      tags: [Auth]
+      summary: 'Refresh access token'
+      description: >
+        Rotates refresh token: old one revoked, new one issued.
+        Reuse detection: if revoked token is reused, ALL user tokens are revoked.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string, description: 'From login response' }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: 'Logout / revoke tokens'
+      description: 'Revoke access token (from header) and/or refresh token (from body).'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+
+  # ====================================================================
+  # TRADE — Manage Products
+  # ====================================================================
+  /api/v1/manage/products:
+    get:
+      tags: [Products]
+      summary: 'List all products'
+      description: >
+        Supports dynamic queries: `page`, `limit`, `@filter`, `@dql`, `@order`,
+        `@select`, `@sort`, `@expands`, `@display`.
+      parameters:
+        - { name: page, in: query, schema: { type: integer, example: 1 } }
+        - { name: limit, in: query, schema: { type: integer, example: 20 } }
+        - { name: '@filter', in: query, description: 'Expression filter', schema: { type: string, example: 'filter_entity.status == "active"' } }
+        - { name: '@order', in: query, description: 'Sort: field|ASC or field|DESC', schema: { type: string, example: 'id|DESC' } }
+    post:
+      tags: [Products]
+      summary: 'Create product(s)'
+      description: 'Send single object or array for batch. Requires ROLE_ADMIN.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: 'iPhone 15 Pro' }
+                description: { type: string, example: 'The latest iPhone with A17 Pro chip' }
+                status: { type: string, enum: [active, inactive], default: active }
+
+  /api/v1/manage/products/batch-update:
+    post:
+      tags: [Products]
+      summary: 'Batch update/upsert products'
+      description: >
+        `@mode=mixed` (upsert), `@mode=strict` (update-only), `@mode=create`.
+        `@basis` = match fields (e.g. id,name). `@partial=true` skips failures.
+
+  /api/v1/manage/products/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Products]
+      summary: 'Get product detail'
+    put:
+      tags: [Products]
+      summary: 'Update product'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, example: 'iPhone 15 Pro Max' }
+                description: { type: string }
+                status: { type: string, enum: [active, inactive] }
+                metadata: { type: object }
+    delete:
+      tags: [Products]
+      summary: 'Delete product'
+
+  # ====================================================================
+  # TRADE — Manage Specifications
+  # ====================================================================
+  /api/v1/manage/products/{productId}/specifications:
+    parameters:
+      - { name: productId, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Products]
+      summary: 'List specifications for a product'
+    post:
+      tags: [Products]
+      summary: 'Create specification (SKU)'
+      description: 'Create a price variant. Price in cents (e.g. 699900 = ¥6999.00).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, price]
+              properties:
+                name: { type: string, example: '128GB 银色' }
+                price: { type: integer, description: 'Price in cents', example: 699900 }
+                status: { type: string, enum: [active, inactive], default: active }
+                sort: { type: integer, example: 1 }
+
+  /api/v1/manage/products/{productId}/specifications/{id}:
+    parameters:
+      - { name: productId, in: path, required: true, schema: { type: integer } }
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [Products]
+      summary: 'Update specification'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, example: '256GB 深空黑' }
+                price: { type: integer, description: 'Price in cents', example: 799900 }
+                status: { type: string, enum: [active, inactive] }
+                sort: { type: integer }
+    delete:
+      tags: [Products]
+      summary: 'Delete specification'
+
+  # ====================================================================
+  # TRADE — Manage Orders (CRUD + Workflow)
+  # ====================================================================
+  /api/v1/manage/orders:
+    get:
+      tags: [Orders]
+      summary: 'List all orders'
+    post:
+      tags: [Orders]
+      summary: 'Create order (with price calculation)'
+      description: >
+        Creates order through the price calculation pipeline:
+        resolve specifications → validate → compute line-item prices → aggregate total.
+        Money: all amounts in cents. API returns decimal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [specificationId, quantity]
+                    properties:
+                      specificationId: { type: integer, example: 1 }
+                      quantity: { type: integer, minimum: 1, example: 2 }
+                currency: { type: string, default: CNY, example: CNY }
+                user: { type: integer, description: 'Buyer user ID (admin only)' }
+                notes: { type: string, example: 'Gift wrapping requested' }
+            example:
+              items:
+                - { specificationId: 1, quantity: 2 }
+                - { specificationId: 2, quantity: 1 }
+              currency: CNY
+              notes: 'Customer requested express delivery'
+
+  /api/v1/manage/orders/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Orders]
+      summary: 'Get order detail (with items + timestamps)'
+    put:
+      tags: [Orders]
+      summary: 'Update draft order'
+      description: 'ONLY draft orders. Non-draft returns 400.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes: { type: string, example: 'Updated delivery instructions' }
+                metadata: { type: object }
+    delete:
+      tags: [Orders]
+      summary: 'Delete draft order'
+      description: 'ONLY draft orders can be deleted.'
+
+  # Workflow: todo, transitions, do, items
+  /api/v1/manage/orders/todo:
+    get:
+      tags: [Orders]
+      summary: 'Orders with pending workflow actions'
+
+  /api/v1/manage/orders/{id}/items:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Orders]
+      summary: 'Get order line items'
+
+  /api/v1/manage/orders/{id}/transitions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Orders]
+      summary: 'Get available workflow transitions for this order'
+
+  /api/v1/manage/orders/{id}/do/{transition}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: transition, in: path, required: true, schema: { type: string, example: submit } }
+    post:
+      tags: [Orders]
+      summary: 'Execute workflow transition'
+      description: >
+        **State Machine:**
+        draft → `submit`→ pending → `confirm`→ confirmed → `pay`→ paid → `fulfill`→ fulfilled → `complete`→ completed → `refund`→ refunded.
+        Cancel: `cancel` from draft/pending/confirmed. Optionally pass data to update entity before transition.
+        When `_completionMode` is `store_verification` (Store `fulfillment.requireVerification=true` snapshotted at creation), `complete` is blocked for manual calls and completes only via Store verification (`POST /store/{scopeId}/orders/{uuid}/verify`).
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+            example: { notes: 'Submitted with notes', metadata: { source: 'admin' } }
+
+  /api/v1/manage/orders/{id}/pay:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Orders]
+      summary: 'Pay for order (wallet deduction + transition)'
+      description: >
+        Transfers from user wallet → system wallet. Sets paidAt + paymentMethod.
+        Applies `pay` transition. Order must be in `confirmed` status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [systemWalletId]
+              properties:
+                systemWalletId: { type: integer, description: 'System wallet to receive payment', example: 1 }
+                paymentMethod: { type: string, default: wallet, example: wallet }
+            example:
+              systemWalletId: 1
+              paymentMethod: wallet
+
+  /api/v1/manage/orders/{id}/fulfill:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Orders]
+      summary: 'Fulfill order (ship + transition)'
+      description: 'Sets fulfilledAt, tracking info. Applies `fulfill` transition. Order must be `paid`.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trackingNumber: { type: string, example: 'SF1234567890' }
+                shippingAddress: { type: string, example: '北京市朝阳区望京SOHO T1 1001' }
+            example:
+              trackingNumber: 'SF1234567890'
+              shippingAddress: '北京市朝阳区望京SOHO T1 1001'
+
+  /api/v1/manage/orders/{id}/refund:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Orders]
+      summary: 'Refund order (wallet credit + transition)'
+      description: >
+        Transfers from system wallet → user wallet. Sets refundedAt + refundReason.
+        Applies `refund` transition. Order must be `completed`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [systemWalletId, reason]
+              properties:
+                systemWalletId: { type: integer, description: 'System wallet to refund from', example: 1 }
+                reason: { type: string, example: 'Customer changed mind' }
+            example:
+              systemWalletId: 1
+              reason: 'Customer changed mind'
+
+  # ====================================================================
+  # TRADE — App (Public/User)
+  # ====================================================================
+  /api/v1/app/products:
+    get:
+      tags: [Products]
+      summary: 'List active products (public)'
+      description: 'Only active, non-deleted products. No auth required.'
+
+  /api/v1/app/products/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [Products]
+      summary: 'Get product detail (public)'
+
+  /api/v1/app/orders:
+    get:
+      tags: [Orders]
+      summary: 'List my orders'
+      description: 'Returns authenticated user''s orders.'
+    post:
+      tags: [Orders]
+      summary: 'Create order (self-service)'
+      description: 'Auto-assigns current user as buyer. No user field needed.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items: { type: array, items: { type: object } }
+                notes: { type: string }
+            example:
+              items: [{ specificationId: 1, quantity: 1 }]
+              notes: 'Please deliver after 6pm'
+
+  /api/v1/app/orders/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [Orders]
+      summary: 'Get order detail (own only)'
+      description: 'Returns 404 if order does not belong to authenticated user.'
+    delete: null
+
+  /api/v1/app/orders/{id}/items:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [Orders]
+      summary: 'Get order items (own only)'
+
+  /api/v1/app/orders/{id}/cancel:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    post:
+      tags: [Orders]
+      summary: 'Cancel own order'
+      description: >
+        User cancels own order. Allowed: draft, pending, confirmed.
+        NOT allowed: paid, fulfilled, completed (need admin refund).
+
+  # ====================================================================
+  # COMMON — App (Public) quick overview
+  # ====================================================================
+  /api/v1/app/categories:
+    get:
+      tags: [Categories]
+      summary: 'List enabled categories (public)'
+      description: 'Returns only enabled categories. No auth required.'
+
+  /api/v1/app/categories/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [Categories]
+      summary: 'Get category detail (public)'
+
+  /api/v1/app/tags:
+    get: { tags: [Tags], summary: 'List tags (public)' }
+
+  /api/v1/app/contents:
+    get: { tags: [Contents], summary: 'List contents (public)' }
+
+  /api/v1/app/comments:
+    get:
+      tags: [Comments]
+      summary: 'List approved comments (public)'
+    post:
+      tags: [Comments]
+      summary: 'Create comment (public)'
+      description: 'New comments default to `pending` status. Input author/status fields ignored.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body, entityType, entityId]
+              properties:
+                body: { type: string, example: 'Great article!' }
+                entityType: { type: string, example: 'App\\Common\\Entity\\Content' }
+                entityId: { type: integer, example: 1 }
+                parent: { type: integer, description: 'Parent comment ID for replies' }
+
+  /api/v1/app/pages:
+    get: { tags: [Pages], summary: 'List published pages (public)' }
+
+  /api/v1/app/media:
+    get: { tags: [Media], summary: 'List media (public)' }
+
+  /api/v1/app/settings:
+    get: { tags: [Settings], summary: 'List settings (public)' }
+
+  # ====================================================================
+  # STORE — Staff (fulfill / verify)
+  # ====================================================================
+  /api/v1/store/{scopeId}/orders:
+    parameters:
+      - { name: scopeId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Store]
+      summary: 'List store orders (staff, scoped)'
+      description: 'Scoped by store membership. Returns StoreOrder projection.'
+
+  /api/v1/store/{scopeId}/orders/{orderUuid}:
+    parameters:
+      - { name: scopeId, in: path, required: true, schema: { type: string } }
+      - { name: orderUuid, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Store]
+      summary: 'Get store order detail (staff, scoped)'
+
+  /api/v1/store/{scopeId}/orders/{orderUuid}/fulfill:
+    parameters:
+      - { name: scopeId, in: path, required: true, schema: { type: string } }
+      - { name: orderUuid, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Store]
+      summary: 'Mark StoreOrder fulfilled (staff)'
+      description: >
+        Requires `store:order:fulfill`. StoreOrder must be `accepted`/`fulfilling`.
+        No Store-to-Trade event; local fulfillment only.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fulfillmentData: { type: object }
+
+  /api/v1/store/{scopeId}/orders/{orderUuid}/verify:
+    parameters:
+      - { name: scopeId, in: path, required: true, schema: { type: string } }
+      - { name: orderUuid, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Store]
+      summary: 'Verify StoreOrder (staff) and complete TradeOrder'
+      description: >
+        Requires `store:order:verify`. StoreOrder must be `fulfilled` and snapshotted
+        `verificationRequired=true`. No body required; order UUID is the token.
+        Emits `store.order.verified.v1` → Trade `fulfilled → completed`. Out-of-order verification is handled via `_storeVerificationReceived`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example: {}
+
+  # ====================================================================
+  # WALLET
+  # ====================================================================
+  /api/v1/manage/wallets:
+    get:
+      tags: [Wallet]
+      summary: 'List all wallets'
+    post:
+      tags: [Wallet]
+      summary: 'Create wallet'
+      description: 'One wallet per user per currency. Balance always starts at 0.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, currency]
+              properties:
+                userId: { type: integer, example: 1 }
+                currency: { type: string, example: 'CNY' }
+                label: { type: string, example: "Alice's wallet" }
+
+  /api/v1/manage/wallets/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [Wallet]
+      summary: 'Get wallet detail'
+    put:
+      tags: [Wallet]
+      summary: 'Update wallet (freeze/unfreeze)'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [active, frozen] }
+    delete:
+      tags: [Wallet]
+      summary: 'Delete wallet'
+
+  /api/v1/manage/transactions:
+    get:
+      tags: [Wallet]
+      summary: 'List wallet transactions'
+    post:
+      tags: [Wallet]
+      summary: 'Atomic wallet-to-wallet transfer'
+      description: >
+        **Guarantees:** Atomic (both or neither), Deadlock-safe (consistent lock ordering),
+        Idempotent (via referenceId), Currency match enforced.
+
+        Amounts in **cents** (10000 = ¥100.00).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromWalletId, toWalletId, amount]
+              properties:
+                fromWalletId: { type: integer, example: 1 }
+                toWalletId: { type: integer, example: 2 }
+                amount: { type: integer, minimum: 1, description: 'Amount in cents', example: 10000 }
+                referenceId: { type: string, description: 'Idempotency key', example: 'txn-20250101-001' }
+                description: { type: string, example: 'Payment for order #42' }
+            example:
+              fromWalletId: 1
+              toWalletId: 2
+              amount: 10000
+              referenceId: 'order-42-payment'
+              description: 'Payment for order #42'

@@ -1,0 +1,12 @@
+services:
+  app:
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      APP_DEBUG: "0"
+      APP_SECRET: ${APP_SECRET:?required}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?required}
+
+  database:
+    environment:
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?required}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}

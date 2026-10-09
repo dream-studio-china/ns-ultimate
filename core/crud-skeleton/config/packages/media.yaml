@@ -1,0 +1,13 @@
+parameters:
+    default_media_storage: 'local'
+
+    media.storage.default: '%env(default:default_media_storage:MEDIA_STORAGE_DEFAULT)%'
+    media.local.upload_path: '%kernel.project_dir%/public/uploads'
+    media.local.base_url: '/uploads'
+    media.upload.max_size: 10485760
+    media.upload.allowed_mime_types:
+        - 'image/jpeg'
+        - 'image/png'
+        - 'image/gif'
+        - 'image/webp'
+        - 'application/pdf'

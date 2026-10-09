@@ -1,0 +1,200 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'config/**'
+      - 'migrations/**'
+      - 'bin/**'
+      - 'composer.json'
+      - 'composer.lock'
+      - 'symfony.lock'
+      - 'phpunit.dist.xml'
+      - 'phpstan.neon'
+      - 'phpstan-bootstrap.php'
+      - 'rector*.php'
+      - '.env.test'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main, master, dev]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'config/**'
+      - 'migrations/**'
+      - 'bin/**'
+      - 'composer.json'
+      - 'composer.lock'
+      - 'symfony.lock'
+      - 'phpunit.dist.xml'
+      - 'phpstan.neon'
+      - 'phpstan-bootstrap.php'
+      - 'rector*.php'
+      - '.env.test'
+      - '.github/workflows/ci.yml'
+
+# A newer push supersedes all checks for the same PR or branch.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phpstan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: "sqlite:///%kernel.project_dir%/var/phpstan.db"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: ctype, iconv, pdo
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-8.4-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-8.4-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Run PHPStan
+        run: composer phpstan
+
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: test
+      APP_SECRET: ci_test_secret
+      DATABASE_URL: "postgresql://app:app_secret@127.0.0.1:5432/app_test?serverVersion=16&charset=utf8"
+      DEFAULT_URI: http://localhost
+      MESSENGER_TRANSPORT_DSN: "doctrine://default?auto_setup=0"
+      MAILER_DSN: null://null
+      JWT_PRIVATE_KEY_PATH: tests/Identity/Security/test_private.pem
+      JWT_PUBLIC_KEY_PATH: tests/Identity/Security/test_public.pem
+      JWT_PASSPHRASE: ""
+      ACCESS_TOKEN_TTL: "7200"
+      REFRESH_TOKEN_TTL: "31536000"
+      REFRESH_TOKEN_SECRET: test_refresh_secret_key_32bytes
+      OTP_TTL: "300"
+      OTP_REDIS_DSN: redis://localhost:6379/0
+      PARATEST_DATABASE_URL_TEMPLATE: "postgresql://app:app_secret@127.0.0.1:5432/app_test_{token}?serverVersion=16&charset=utf8"
+      ALIYUN_ACCESS_KEY_ID: test_key
+      ALIYUN_ACCESS_KEY_SECRET: test_secret
+      ALIYUN_SMS_REGION: cn-hangzhou
+      ALIYUN_SMS_SIGN_NAME: TestApp
+      ALIYUN_SMS_TEMPLATE_LOGIN_OTP: SMS_001
+      ALIYUN_SMS_TEMPLATE_VERIFY_PHONE: SMS_002
+      ALIYUN_SMS_DRY_RUN: "true"
+
+    strategy:
+      matrix:
+        php: ['8.4']
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app_secret
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ctype, iconv, pdo, pdo_pgsql
+          ini-values: pcov.directory=src
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Setup test database
+        run: |
+          for token in 1 2 3 4; do
+            PGPASSWORD=app_secret psql --host=127.0.0.1 --username=app --dbname=app_test \
+              --command="CREATE DATABASE app_test_${token};" || true
+          done
+
+      - name: Run tests with coverage
+        run: |
+          set -eo pipefail
+          PCOV_ENABLED=1 PARATEST=1 php vendor/bin/paratest \
+            --processes=4 \
+            --coverage-text=/tmp/coverage.txt \
+            --display-deprecations
+          cat /tmp/coverage.txt \
+            | tee /dev/stderr \
+            | grep -i "Lines:" > /tmp/coverage_line.txt
+          cat /tmp/coverage_line.txt
+
+      - name: Check coverage threshold (90%)
+        run: |
+          COVERAGE=$(grep "^  Lines:" /tmp/coverage_line.txt | sed -E 's/.*Lines: *([0-9.]+)%.*/\1/')
+          THRESHOLD=90.0
+          echo "Line coverage: ${COVERAGE}%"
+          if [ $(echo "${COVERAGE} < ${THRESHOLD}" | bc) -eq 1 ]; then
+            echo "::error::Line coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+            exit 1
+          fi
+          echo "Line coverage ${COVERAGE}% meets 90% threshold"
+
+  rector:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: "sqlite:///%kernel.project_dir%/var/rector.db"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: ctype, iconv, pdo
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-8.4-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-8.4-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Run Rector type rules (dry-run)
+        run: composer rector:types:check

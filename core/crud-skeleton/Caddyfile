@@ -1,0 +1,9 @@
+# Caddyfile
+# The domain name of your server
+localhost
+
+root public/
+php_server {
+	# Optional: Enable worker mode for better performance
+	worker ./public/index.php
+}

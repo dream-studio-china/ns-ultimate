@@ -1,0 +1,45 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\Identity\Controller\AuthController:
+        arguments:
+            $otpLoginTemplate: '%env(ALIYUN_SMS_TEMPLATE_LOGIN_OTP)%'
+            $otpVerifyPhoneTemplate: '%env(ALIYUN_SMS_TEMPLATE_VERIFY_PHONE)%'
+
+    App\Identity\Controller\OtpController:
+        arguments:
+            $otpLoginTemplate: '%env(ALIYUN_SMS_TEMPLATE_LOGIN_OTP)%'
+            $otpVerifyPhoneTemplate: '%env(ALIYUN_SMS_TEMPLATE_VERIFY_PHONE)%'
+
+    App\Identity\Security\TokenManager:
+        arguments:
+            $cache: '@cache.app'
+            $privateKeyPath: '%env(JWT_PRIVATE_KEY_PATH)%'
+            $publicKeyPath: '%env(JWT_PUBLIC_KEY_PATH)%'
+            $passphrase: '%env(JWT_PASSPHRASE)%'
+            $accessTtl: '%env(int:ACCESS_TOKEN_TTL)%'
+            $refreshTtl: '%env(int:REFRESH_TOKEN_TTL)%'
+            $refreshSecret: '%env(REFRESH_TOKEN_SECRET)%'
+
+    App\Identity\Sms\AliyunSmsProvider:
+        arguments:
+            $accessKeyId: '%env(ALIYUN_ACCESS_KEY_ID)%'
+            $accessKeySecret: '%env(ALIYUN_ACCESS_KEY_SECRET)%'
+            $region: '%env(ALIYUN_SMS_REGION)%'
+            $signName: '%env(ALIYUN_SMS_SIGN_NAME)%'
+            $dryRun: '%env(bool:ALIYUN_SMS_DRY_RUN)%'
+
+    App\Identity\Sms\SmsProviderInterface: '@App\Identity\Sms\AliyunSmsProvider'
+
+    App\Identity\Service\OtpStorageInterface: '@App\Identity\Service\RedisOtpStorage'
+
+    App\Identity\Service\RedisOtpStorage:
+        arguments:
+            $redisDsn: '%env(OTP_REDIS_DSN)%'
+
+    App\Identity\Service\OtpService:
+        arguments:
+            $storage: '@App\Identity\Service\RedisOtpStorage'
+            $sms: '@App\Identity\Sms\AliyunSmsProvider'

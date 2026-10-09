@@ -1,0 +1,169 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+parameters: {}
+
+imports:
+    - { resource: '../src/Core/Resources/config/services.yaml', ignore_errors: true }
+    - { resource: '../src/Identity/Resources/config/services_identity.yaml', ignore_errors: true }
+    - { resource: '../src/Payment/Resources/config/services_payment.yaml', ignore_errors: true }
+    - { resource: '../src/Storage/Resources/config/services_storage.yaml', ignore_errors: true }
+    - { resource: '../src/Wechat/Resources/config/services_wechat.yaml', ignore_errors: true }
+    - { resource: '../src/Promotion/Resources/config/services_promotion.yaml', ignore_errors: true }
+    - { resource: '../src/Settlement/Resources/config/services_settlement.yaml', ignore_errors: true }
+    - { resource: '../src/Authorization/Resources/config/services_authorization.yaml', ignore_errors: true }
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    _instanceof:
+        App\Core\Controller\RestController:
+            calls:
+                - [ setRequestStack, [ '@request_stack' ] ]
+                - [ setSerializer, [ '@serializer' ] ]
+                - [ setTranslator, [ '@translator' ] ]
+                - [ setExpansionMetadata, [ '@App\Core\Serializer\ExpansionMetadata' ] ]
+                - [ setServiceContainer, [ '@service_container' ] ]
+        App\Payment\Service\PaymentGatewayInterface:
+            tags: ['payment.gateway']
+        App\Payment\Service\Adjustment\PaymentAdjustmentProviderInterface:
+            tags: ['payment.adjustment_provider']
+        App\Wallet\Service\Deposit\DepositProviderInterface:
+            tags: ['wallet.deposit_provider']
+        App\Wallet\Service\Withdraw\WithdrawProviderInterface:
+            tags: ['wallet.withdraw_provider']
+        App\Storage\Service\MediaStorageInterface:
+            tags: ['media.storage']
+        App\Settlement\Context\SettlementContextResolverInterface:
+            tags: ['settlement.context_resolver']
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/Core/Serializer/Normalizer/FlatNormalizer.php'
+            - '../src/Core/EventListener/*'
+            - '../src/Identity/Controller/AuthController.php'
+            - '../src/Identity/Controller/OtpController.php'
+            - '../src/Identity/Security/TokenManager.php'
+            - '../src/Identity/Sms/AliyunSmsProvider.php'
+            - '../src/Identity/Service/RedisOtpStorage.php'
+            - '../src/Storage/Service/LocalStorage.php'
+            - '../src/Storage/Service/QiniuStorage.php'
+            - '../src/Wechat/Service/WechatService.php'
+            - '../src/Wechat/Service/Payment/WechatPayGateway.php'
+            - '../src/Settlement/Integration/Fixture/*'
+            - '../src/Promotion/Exception/*'
+            - '../src/Trade/Repository/ProductRepository.php'
+            - '../src/Trade/Repository/SpecificationRepository.php'
+
+    App\Core\EventListener\OpenApiEnricherListener:
+        tags:
+            - { name: kernel.event_listener, event: kernel.response, priority: -10 }
+
+    App\Core\EventListener\AccessLogListener:
+        tags:
+            - { name: kernel.event_listener, event: kernel.response, priority: -5 }
+
+    App\Core\EventListener\LocaleListener:
+        tags:
+            - { name: kernel.event_listener, event: kernel.request, priority: 20 }
+
+    App\Core\EventListener\MetricsListener:
+        tags:
+            - { name: kernel.event_listener, event: kernel.request, priority: 10 }
+            - { name: kernel.event_listener, event: kernel.response, priority: -1 }
+
+    App\Core\EventListener\RateLimitListener:
+        arguments:
+            $limiters: !service_locator
+                auth_login: '@limiter.auth_login'
+                auth_register: '@limiter.auth_register'
+                otp_request: '@limiter.otp_request'
+                otp_verify: '@limiter.otp_verify'
+                wechat_login: '@limiter.wechat_login'
+                payment: '@limiter.payment'
+        tags:
+            - { name: kernel.event_listener, event: kernel.controller, priority: 10 }
+
+    App\Core\Controller\HealthController:
+        arguments:
+            $connection: '@doctrine.dbal.default_connection'
+            $otpRedisDsn: '%env(OTP_REDIS_DSN)%'
+            $logger: '@logger'
+        tags:
+            - { name: routing.controller }
+            - { name: controller.service_arguments }
+
+    Nyholm\Psr7\Factory\Psr17Factory: ~
+
+    Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory:
+        arguments:
+            - '@Nyholm\Psr7\Factory\Psr17Factory'
+            - '@Nyholm\Psr7\Factory\Psr17Factory'
+            - '@Nyholm\Psr7\Factory\Psr17Factory'
+            - '@Nyholm\Psr7\Factory\Psr17Factory'
+
+    Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface: '@Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory'
+
+    Symfony\Component\DependencyInjection\ContainerInterface: '@service_container'
+    Psr\Log\LoggerInterface: '@logger'
+    Symfony\Component\Serializer\SerializerInterface: '@serializer'
+    Symfony\Contracts\Translation\TranslatorInterface: '@translator'
+    App\Core\Service\ServiceLocatorInterface: '@App\Core\Service\DefaultServiceLocator'
+
+    App\Identity\Service\OtpStorageInterface: '@App\Identity\Service\LocalCacheOtpStorage'
+    App\Trade\Service\StoreContextResolverInterface: '@App\Store\Service\StoreContextResolver'
+    App\Trade\Service\Catalog\CatalogResolverInterface: '@App\Store\Service\Catalog\StoreCatalogResolver'
+    App\Inventory\Service\MaterialServiceInterface: '@App\Inventory\Service\MaterialService'
+    App\Inventory\Service\StockServiceInterface: '@App\Inventory\Service\StockService'
+    App\Inventory\Service\SpecificationRecipeServiceInterface: '@App\Inventory\Service\SpecificationRecipeService'
+    App\Wechat\Service\WechatServiceInterface: '@App\Wechat\Service\WechatService'
+    App\Wechat\Service\WechatAuthServiceInterface: '@App\Wechat\Service\WechatAuthService'
+
+    App\Core\Validator\JsonSchemaValidator:
+        public: true
+
+    App\Identity\Service\LocalCacheOtpStorage:
+        arguments:
+            $cache: '@cache.app'
+
+    App\Identity\Service\OtpService:
+        arguments:
+            $storage: '@App\Identity\Service\LocalCacheOtpStorage'
+            $sms: '@App\Identity\Sms\AliyunSmsProvider'
+
+    # Guards invoice refunds while an invoice-backed wallet deposit voucher is
+    # applied. Decoration keeps the InvoiceService interface alias transparent:
+    # every consumer (Payment controllers, Trade order refunds) sees the guard.
+    App\Wallet\Service\Payment\InvoiceDepositRefundGuard:
+        decorates: App\Payment\Service\InvoiceService
+        arguments:
+            - '@.inner'
+    # Once the service is decorated there are two candidates for the interface;
+    # point the alias at the guard (the outer, decorated service).
+    App\Payment\Service\InvoiceServiceInterface: '@App\Wallet\Service\Payment\InvoiceDepositRefundGuard'
+
+when@test:
+    services:
+        App\Settlement\Integration\Fake\InMemorySettlementVoucherPort:
+            public: true
+        App\Settlement\Port\SettlementVoucherPort:
+            alias: App\Settlement\Integration\Fake\InMemorySettlementVoucherPort
+        App\Settlement\Integration\Fixture\FundingSnapshotContextResolver:
+            tags: ['settlement.context_resolver']
+        App\Identity\Service\OtpStorageInterface: '@App\Identity\Service\NullOtpStorage'
+        App\Identity\Service\RedisOtpStorage: null
+        App\Identity\Service\OtpService:
+            arguments:
+                $storage: '@App\Identity\Service\NullOtpStorage'
+                $sms: '@App\Identity\Sms\AliyunSmsProvider'
+        # Deterministic readiness in tests: Redis probe disabled.
+        App\Core\Controller\HealthController:
+            arguments:
+                $connection: '@doctrine.dbal.default_connection'
+                $otpRedisDsn: ''
+                $logger: '@logger'
+            tags:
+                - { name: routing.controller }
+                - { name: controller.service_arguments }

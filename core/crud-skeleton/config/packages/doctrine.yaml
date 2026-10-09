@@ -1,0 +1,61 @@
+doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+
+        # IMPORTANT: You MUST configure your server version,
+        # either here or in the DATABASE_URL env var (see .env file)
+        #server_version: '16'
+
+        profiling_collect_backtrace: '%kernel.debug%'
+    orm:
+        validate_xml_mapping: true
+        naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware
+        identity_generation_preferences:
+            Doctrine\DBAL\Platforms\PostgreSQLPlatform: identity
+        auto_mapping: true
+        mappings:
+            # Map the entire src/ folder so Doctrine discovers entities placed
+            # in any subnamespace (for example App\Common\Entity). Using
+            # attribute mapping means Doctrine will look for PHP 8 attributes
+            # on classes under the specified path.
+            App:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src'
+                prefix: 'App'
+                alias: App
+        dql:
+            string_functions:
+                regexp: DoctrineExtensions\Query\Mysql\Regexp
+            numeric_functions:
+                rand: DoctrineExtensions\Query\Mysql\Rand
+            datetime_functions:
+                date_format: DoctrineExtensions\Query\Mysql\DateFormat
+        controller_resolver:
+            auto_mapping: false
+
+when@test:
+    doctrine:
+        dbal:
+            # Test DB is chosen by the DATABASE_URL env var (defaulted in
+            # tests/bootstrap.php). Parallel runners (paratest) set a unique
+            # per-process sqlite file so workers never race on one schema.
+            url: '%env(resolve:DATABASE_URL)%'
+
+when@prod:
+    doctrine:
+        orm:
+            query_cache_driver:
+                type: pool
+                pool: doctrine.system_cache_pool
+            result_cache_driver:
+                type: pool
+                pool: doctrine.result_cache_pool
+
+    framework:
+        cache:
+            pools:
+                doctrine.result_cache_pool:
+                    adapter: cache.app
+                doctrine.system_cache_pool:
+                    adapter: cache.system

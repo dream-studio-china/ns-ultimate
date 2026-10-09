@@ -1,0 +1,13 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\Storage\Service\LocalStorage:
+        arguments:
+            $basePath: '%media.local.upload_path%'
+            $baseUrl: '%media.local.base_url%'
+        tags: ['media.storage']
+
+    App\Storage\Service\QiniuStorage:
+        tags: ['media.storage']

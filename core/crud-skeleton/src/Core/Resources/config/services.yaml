@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=../../../../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+# Optional project-specific services for user code
+# This file is imported (optionally) by config/services.yaml
+
+# Service definitions for src/Core
+services:
+    # Example: register a service in App\Code namespace if you need to
+    # App\Code\SomeService: ~
+
+    # Register the SerializerContextFactory so it can be autowired where needed
+    App\Core\Serializer\SerializerContextFactory: ~
+
+    # datetime normalizer
+    app.serializer.datetime_normalizer:
+        class: Symfony\Component\Serializer\Normalizer\DateTimeNormalizer
+        tags:
+            - { name: serializer.normalizer }
+
+    # object normalizer (flat/fast custom normalizer)
+    app.serializer.method_normalizer:
+        class: App\Core\Serializer\Normalizer\FlatNormalizer
+        decorates: 'serializer.normalizer.object'
+        tags:
+            - { name: serializer.normalizer }
+        autowire: false
+        arguments:
+            - '@app.serializer.method_normalizer.inner'
+            - '@property_accessor'
+            - '@App\Core\Serializer\ExpansionMetadata'
+
+    app.serializer.circular_reference_handler:
+        class: App\Core\Serializer\CircularReferenceHandler
+
+    App\Core\EventListener\ExceptionInterceptor:
+        tags:
+            - { name: kernel.event_listener, event: kernel.exception, method: onKernelException }
+        arguments:
+            $translator: '@translator'
+            $logger: '@logger'
+            $env: '%kernel.environment%'
+
+    App\Core\EventListener\ControllerListener:
+        tags:
+            - { name: kernel.event_listener, event: kernel.controller, method: onKernelController }
+        arguments:
+            $tokenStorage: '@security.token_storage'
+            $logger: '@logger'
+
+    # RestController dependencies are injected in config/services.yaml via _instanceof.

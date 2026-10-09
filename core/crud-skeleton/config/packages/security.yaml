@@ -1,0 +1,71 @@
+security:
+    password_hashers:
+        Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'auto'
+
+    providers:
+        app_user_provider:
+            entity:
+                class: App\Identity\Entity\User
+                property: email
+
+    firewalls:
+        dev:
+            pattern: ^/(_profiler|_wdt|assets|build)/
+            security: false
+
+        api:
+            pattern: ^/api
+            stateless: true
+            lazy: true
+            provider: app_user_provider
+            custom_authenticators:
+                - App\Identity\Security\JwtAuthenticator
+
+        main:
+            lazy: true
+            provider: app_user_provider
+
+    access_control:
+        # Public API docs
+        - { path: ^/api/doc$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/doc\.json$, roles: PUBLIC_ACCESS }
+
+        # Public auth endpoints (no token needed)
+        - { path: ^/api/auth/login$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/otp/request$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/otp/verify$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/token/refresh$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/logout$, roles: PUBLIC_ACCESS }
+
+        # Public payment provider callbacks verify their own gateway signatures
+        - { path: ^/api/payment/notify, roles: PUBLIC_ACCESS }
+        - { path: ^/api/payment/refund-notify, roles: PUBLIC_ACCESS }
+
+        # Public WeChat login
+        - { path: ^/api/wechat/miniapp/login$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/wechat/oauth/url$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/wechat/oauth/callback$, roles: PUBLIC_ACCESS }
+
+        # Public user self-registration
+        - { path: ^/api/auth/register$, roles: PUBLIC_ACCESS }
+
+        # Public read-only APIs
+        - { path: ^/api/v1/public, methods: [GET], roles: PUBLIC_ACCESS }
+
+        # All remaining API endpoints require authentication
+        # Manage endpoints require admin role
+        - { path: ^/api/v1/manage, roles: ROLE_ADMIN }
+
+        - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
+
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_USER]
+
+when@test:
+    security:
+        password_hashers:
+            Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface:
+                algorithm: auto
+                cost: 4
+                time_cost: 3
+                memory_cost: 10

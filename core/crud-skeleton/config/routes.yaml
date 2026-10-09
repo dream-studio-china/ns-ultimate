@@ -1,0 +1,112 @@
+controllers:
+    resource: routing.controllers
+
+api_common:
+    prefix: /api/v1
+    resource:
+        path: ../src/Common/Controller/
+        namespace: App\Common\Controller
+    type: attribute
+
+api_trade:
+    prefix: /api/v1
+    resource:
+        path: ../src/Trade/Controller/
+        namespace: App\Trade\Controller
+    type: attribute
+
+api_wallet:
+    prefix: /api/v1
+    resource:
+        path: ../src/Wallet/Controller/
+        namespace: App\Wallet\Controller
+    type: attribute
+
+api_payment_app:
+    prefix: /api/v1
+    resource:
+        path: ../src/Payment/Controller/App/
+        namespace: App\Payment\Controller\App
+    type: attribute
+
+api_payment_manage:
+    prefix: /api/v1
+    resource:
+        path: ../src/Payment/Controller/Manage/
+        namespace: App\Payment\Controller\Manage
+    type: attribute
+
+payment_webhook:
+    resource:
+        path: ../src/Payment/Controller/Webhook/
+        namespace: App\Payment\Controller\Webhook
+    type: attribute
+
+api_identity_app:
+    prefix: /api/v1
+    resource:
+        path: ../src/Identity/Controller/App/
+        namespace: App\Identity\Controller\App
+    type: attribute
+
+api_identity_manage:
+    prefix: /api/v1
+    resource:
+        path: ../src/Identity/Controller/Manage/
+        namespace: App\Identity\Controller\Manage
+    type: attribute
+
+wechat:
+    resource:
+        path: ../src/Wechat/Controller/
+        namespace: App\Wechat\Controller
+    type: attribute
+
+wechat_app:
+    prefix: /api/v1
+    resource:
+        path: ../src/Wechat/Controller/App/
+        namespace: App\Wechat\Controller\App
+    type: attribute
+
+wechat_manage:
+    prefix: /api/v1
+    resource:
+        path: ../src/Wechat/Controller/Manage/
+        namespace: App\Wechat\Controller\Manage
+    type: attribute
+
+api_promotion:
+    prefix: /api/v1
+    resource:
+        path: ../src/Promotion/Controller/
+        namespace: App\Promotion\Controller
+    type: attribute
+
+api_store:
+    prefix: /api/v1
+    resource:
+        path: ../src/Store/Controller/
+        namespace: App\Store\Controller
+    type: attribute
+
+api_inventory:
+    prefix: /api/v1
+    resource:
+        path: ../src/Inventory/Controller/
+        namespace: App\Inventory\Controller
+    type: attribute
+
+api_settlement:
+    prefix: /api/v1
+    resource:
+        path: ../src/Settlement/Controller/
+        namespace: App\Settlement\Controller
+    type: attribute
+
+api_authorization:
+    prefix: /api/v1
+    resource:
+        path: ../src/Authorization/Controller/
+        namespace: App\Authorization\Controller
+    type: attribute
