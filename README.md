@@ -12,7 +12,7 @@ Integrated application built from two upstream cores and project-owned business 
 
 Keep upstream code intact where possible. Put product behavior in `business/`, and keep `integration/` focused on registration and adaptation. If a reusable extension point is missing, make the smallest generic change in the relevant core and submit it upstream via a branch and PR.
 
-See [docs/architecture.md](docs/architecture.md) and [docs/core-sync.md](docs/core-sync.md) before adding modules or updating a subtree.
+See [docs/README.md](docs/README.md) for documentation, [the architecture guide](docs/design/architecture.md) before adding modules, and [the subtree workflow](docs/operations/core-sync.md) before updating a core.
 
 ## Upstream licenses
 
