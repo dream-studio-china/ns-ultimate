@@ -87,7 +87,7 @@ chown root:www-data /etc/ns-ultimate/keys/*.pem
 chmod 0640 /etc/ns-ultimate/keys/private.pem /etc/ns-ultimate/keys/public.pem
 ```
 
-Restrict private-key access to the application runtime that needs it, back up secrets securely, and plan key rotation (existing signed tokens may become invalid). Never run `make env-init` on production: it generates development credentials and writes a development database configuration. Never commit `.env.prod.local`, key files, database credentials, or provider secrets.
+Restrict private-key access to the application runtime that needs it, back up secrets securely, and plan key rotation (existing signed tokens may become invalid). Never run `make env-init` or `make dev-init` on production: they are development setup commands; `dev-init` creates a local database, runs migrations, and creates a development administrator. Never commit `.env.prod.local`, key files, database credentials, or provider secrets.
 
 The application writes cache/log files under repository-level `var/cache/backend/` and `var/log/backend/`. Provision the required writable directories for the PHP-FPM user, while keeping application source and secrets non-writable by the runtime user. Select a persistent storage strategy for uploads and any data currently under `var/data/`; local ephemeral release storage is not a durable backup strategy. Review the core media configuration before exposing upload paths directly from the web server.
 

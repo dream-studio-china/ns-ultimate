@@ -87,7 +87,7 @@ chown root:www-data /etc/ns-ultimate/keys/*.pem
 chmod 0640 /etc/ns-ultimate/keys/private.pem /etc/ns-ultimate/keys/public.pem
 ```
 
-仅向确实需要读取私钥的应用运行用户开放权限，并安全备份密钥；制定密钥轮换计划（轮换可能使现有签发令牌失效）。不要在生产环境运行 `make env-init`：该命令会生成开发凭据并写入开发数据库配置。切勿将 `.env.prod.local`、密钥文件、数据库凭据或服务商密钥提交到版本控制。
+仅向确实需要读取私钥的应用运行用户开放权限，并安全备份密钥；制定密钥轮换计划（轮换可能使现有签发令牌失效）。不要在生产环境运行 `make env-init` 或 `make dev-init`：它们是开发初始化命令；`dev-init` 会创建本地数据库、执行迁移并创建开发管理员。切勿将 `.env.prod.local`、密钥文件、数据库凭据或服务商密钥提交到版本控制。
 
 应用缓存和日志分别写入仓库级的 `var/cache/backend/` 和 `var/log/backend/`。为 PHP-FPM 用户配置所需目录的写权限，同时确保应用源码和密钥不可被运行用户修改。为上传内容及当前存放于 `var/data/` 的数据选择持久化存储方案；发布目录中的临时文件不构成可靠的数据持久化或备份策略。向 Web 服务器直接开放上传目录前，请先检查 core 的媒体配置。
 

@@ -18,11 +18,11 @@
 
 ```sh
 make install
-make env-init
+make dev-init # 可选：配置本地 MySQL、执行迁移并创建初始管理员
 make dev
 ```
 
-运行 `make help` 查看所有命令；环境管理、调试和检查说明见[开发指南](docs/operations/development.md)。
+`make dev-init` 会询问本地 MySQL 连接并生成随机管理员密码，保存在 `var/keys/` 下。若仅使用 SQLite 基础配置，请改用 `make env-init`。运行 `make help` 查看所有命令；环境管理、调试和检查说明见[开发指南](docs/operations/development.md)。
 
 ## 快速开始与部署
 
@@ -33,6 +33,7 @@ make dev
 - [Docker Compose/Nginx foundation](infra/docker/README.md) — 项目自有容器构建与服务拓扑。
 - [Docker Compose/Nginx 基础设施（简体中文）](infra/docker/README.zh-cn.md)
 - [本地开发与调试](docs/operations/development.md) — 环境文件优先级、调试和验证参考。
+- [CI 工作流](.github/workflows/ci.yaml) — 项目组合检查；有意不运行上游 core 测试套件。
 
 ## 架构
 
@@ -67,6 +68,8 @@ flowchart LR
 
 业务模块拥有领域行为；集成层只负责接线。管理前端和 API 由不同的上游 core 构建，并组合为一个可部署应用。详见[架构指南](docs/design/architecture.md)和[系统契约](docs/contracts/README.md)。
 
-## 上游许可证
+## 项目自有代码与上游许可证
+
+`core/` 之外的项目自有代码和文档采用 [MIT 许可证](LICENSE)，版权归 Lam K. 所有。上游子树及其他第三方组件仍分别遵循其各自的许可证和声明。
 
 管理前端 core 使用 MIT 许可证。后端 core 的 `LICENSE` 和 `composer.json` 当前声明 Apache-2.0。重新分发时请保留各 core 的许可证及归属声明。

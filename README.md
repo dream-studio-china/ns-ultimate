@@ -18,11 +18,11 @@ See [docs/README.md](docs/README.md) for documentation, [the architecture guide]
 
 ```sh
 make install
-make env-init
+make dev-init # optional: configure local MySQL, migrate, create the initial admin
 make dev
 ```
 
-Use `make help` for commands and [the development guide](docs/operations/development.md) for env management, debugging, and checks.
+`make dev-init` prompts for local MySQL access and generates an admin password stored under `var/keys/`. For the SQLite-only basic setup, use `make env-init` instead. Use `make help` for commands and [the development guide](docs/operations/development.md) for env management, debugging, and checks.
 
 ## Quickstart and deployment
 
@@ -34,6 +34,7 @@ Use `make help` for commands and [the development guide](docs/operations/develop
 - [Docker Compose/Nginx foundation](infra/docker/README.md) — project-owned container build and service topology.
 - [Docker Compose/Nginx 基础设施（简体中文）](infra/docker/README.zh-cn.md)
 - [Local development and debugging](docs/operations/development.md) — env precedence, debugging, and validation reference.
+- [CI workflow](.github/workflows/ci.yaml) — project composition checks; upstream core test suites are intentionally excluded.
 
 ## Architecture
 
@@ -68,6 +69,8 @@ flowchart LR
 
 Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
 
-## Upstream licenses
+## Project-owned code and upstream licenses
+
+Project-owned code and documentation outside `core/` are licensed under the [MIT License](LICENSE), copyright Lam K. The upstream subtrees and third-party components remain under their respective licenses and notices.
 
 The admin core is MIT-licensed. The backend core currently identifies itself as Apache-2.0 in its `LICENSE` and `composer.json`. Preserve each core's license and notices when redistributing it.

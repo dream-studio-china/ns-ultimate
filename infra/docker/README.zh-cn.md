@@ -1,6 +1,6 @@
 # Docker 部署基础设施
 
-这是项目自有的部署基础方案。它从仓库根目录构建已组合业务模块的管理前端和 Symfony 集成应用，并运行 PHP-FPM、Nginx、MySQL 和 Redis。`core/crud-skeleton/` 下的上游 Docker 文件仅供参考；本方案不修改，也不依赖其应用入口、环境变量布局或 Nginx 文档根目录。
+这是项目自有的部署基础方案。它从仓库根目录构建已组合业务模块的管理前端和 Symfony 集成应用，并运行 PHP-FPM、Nginx、MySQL 和 Redis。`core/crud-skeleton/` 下的上游 Docker 文件仅供参考；本方案不修改，也不依赖其应用入口、环境变量布局或 Nginx 文档根目录。`make dev-init` 用于宿主机本地开发，不会配置此 Compose 服务栈。
 
 ## 前置条件与首次启动
 

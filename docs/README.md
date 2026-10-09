@@ -1,5 +1,6 @@
 # Documentation
 
+- [`../LICENSE`](../LICENSE) — MIT license for project-owned code outside `core/`.
 - [`../README.zh-cn.md`](../README.zh-cn.md) — project overview in Simplified Chinese.
 - [`../QUICKSTART.md`](../QUICKSTART.md) — local prerequisites, setup, development, and tests.
 - [`../QUICKSTART.zh-cn.md`](../QUICKSTART.zh-cn.md) — Quickstart in Simplified Chinese.
@@ -7,6 +8,7 @@
 - [`../DEPLOY.zh-cn.md`](../DEPLOY.zh-cn.md) — deployment guide in Simplified Chinese.
 - [`../infra/docker/README.md`](../infra/docker/README.md) — project-owned Docker Compose/Nginx foundation.
 - [`../infra/docker/README.zh-cn.md`](../infra/docker/README.zh-cn.md) — Docker infrastructure guide in Simplified Chinese.
+- [`.github/workflows/ci.yaml`](../.github/workflows/ci.yaml) — CI scope and project composition checks.
 - [`design/architecture.md`](design/architecture.md) — project layers and deployment infrastructure ownership.
 - [`design/`](design/) — architecture and design decisions.
 - [`contracts/`](contracts/) — cross-layer interface specifications and their validation status.
