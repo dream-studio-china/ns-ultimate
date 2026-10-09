@@ -52,7 +52,8 @@ final class Kernel extends CoreKernel
         $businessRoot = self::repositoryRoot().'/business/backend';
         $builder->addResource(new GlobResource($businessRoot, '/*/src', true, true));
 
-        // Keep the original migration FQCN discoverable after the example module rename.
+        // Keep the original migration FQCN and version ordering after the example module rename.
+        // Both migrations stay in this path so Doctrine sorts them by timestamp within one namespace.
         $legacyDummyMigrations = $businessRoot.'/Dummy/legacy-migrations';
         if (is_dir($legacyDummyMigrations)) {
             $container->extension('doctrine_migrations', [

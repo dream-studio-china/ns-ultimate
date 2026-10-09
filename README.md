@@ -19,11 +19,10 @@ See [docs/README.md](docs/README.md) for documentation, [the architecture guide]
 
 ```sh
 make install
-make dev-init # optional: configure local MySQL, migrate, create the initial admin
 make dev
 ```
 
-`make dev-init` prompts for local MySQL access and generates an admin password stored under `var/keys/`. For the SQLite-only basic setup, use `make env-init` instead. Use `make help` for commands and [the development guide](docs/operations/development.md) for env management, debugging, and checks.
+On first run, `make dev` configures local MySQL, runs migrations, and creates an initial admin; later runs start the apps directly. Use `make dev-reset` to reset the local development database and start over. For Docker PHP/MySQL, run `make docker-dev`; see [the development guide](docs/operations/development.md) for setup, reset, debugging, and checks.
 
 ## Quickstart and deployment
 

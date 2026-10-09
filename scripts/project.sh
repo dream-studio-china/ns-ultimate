@@ -14,8 +14,8 @@ console() { php "$ROOT/integration/backend/bin/console" "$@"; }
 
 case "$command" in
   env-init|env-check) exec php scripts/env.php "$command" ;;
-  dev-init) exec php scripts/dev-init.php ;;
-  dev) exec node scripts/dev.mjs "$@" ;;
+  dev-reset) exec bash scripts/dev-local.sh reset ;;
+  dev) exec bash scripts/dev-local.sh dev "$@" ;;
   admin) admin dev --host "$HOST" --port "$ADMIN_PORT" --strictPort "$@" ;;
   backend|backend-debug)
     options=()

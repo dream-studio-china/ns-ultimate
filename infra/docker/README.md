@@ -1,6 +1,6 @@
 # Docker deployment foundation
 
-This is a project-owned deployment baseline. It builds the business-composed admin and Symfony integration app from the repository root, then runs PHP-FPM, Nginx, MySQL, and Redis. Upstream Docker files under `core/crud-skeleton/` are reference material only; this stack does not modify or depend on their app entrypoint, environment layout, or Nginx document root. `make dev-init` is for host-based local development and does not configure this Compose stack.
+This is a project-owned deployment baseline. It builds the business-composed admin and Symfony integration app from the repository root, then runs PHP-FPM, Nginx, MySQL, and Redis. Upstream Docker files under `core/crud-skeleton/` are reference material only; this stack does not modify or depend on their app entrypoint, environment layout, or Nginx document root. `make dev` is for host-based local development and does not configure this deployment Compose stack.
 
 ## Prerequisites and first run
 

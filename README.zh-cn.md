@@ -19,11 +19,10 @@
 
 ```sh
 make install
-make dev-init # 可选：配置本地 MySQL、执行迁移并创建初始管理员
 make dev
 ```
 
-`make dev-init` 会询问本地 MySQL 连接并生成随机管理员密码，保存在 `var/keys/` 下。若仅使用 SQLite 基础配置，请改用 `make env-init`。运行 `make help` 查看所有命令；环境管理、调试和检查说明见[开发指南](docs/operations/development.md)。
+首次运行 `make dev` 时会配置本机 MySQL、执行迁移并创建初始管理员；之后直接启动应用。使用 `make dev-reset` 可重置本地开发数据库并重新初始化。若要通过 Docker 运行 PHP/MySQL，请运行 `make docker-dev`。更多 setup、重置、调试和检查说明见[开发指南](docs/operations/development.md)。
 
 ## 快速开始与部署
 

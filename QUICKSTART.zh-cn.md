@@ -4,10 +4,12 @@
 
 ## 1. 安装本地开发环境
 
+如果不想在主机安装 PHP、Composer 和 MySQL，请使用[Docker 开发环境](docs/operations/development.md#docker-php-and-mysql-development)；该方式只需要 Docker Compose 和 Node.js/npm。
+
 建议按本指南使用 PHP 8.5。当前后端 Composer 配置要求 PHP `>=8.4`；CLI、PHP-FPM（如本地使用）及 PHP 扩展应使用相同且受支持的版本。需要安装：
 
 - Git
-- PHP 8.5 CLI，以及 OpenSSL、PDO、PDO SQLite；如使用 MySQL 初始化，还需 PDO MySQL；另需 ctype、iconv、intl、mbstring、XML/DOM、curl、fileinfo、tokenizer、zip 扩展
+- PHP 8.5 CLI，以及 OpenSSL、PDO、PDO MySQL；另需 ctype、iconv、intl、mbstring、XML/DOM、curl、fileinfo、tokenizer、zip 扩展
 - Composer 2
 - Node.js 22 LTS 及其对应的 npm
 - `make`（多数 macOS/Linux 开发环境已预装）
@@ -31,7 +33,7 @@ brew install php@8.5 composer node@22
 
 安装后，确认 `php`、`composer`、`node` 和 `npm` 都指向预期版本。若使用版本管理器，请在仓库终端中选择 PHP 8.5 和 Node.js 22。Linux 和 Windows 用户可使用适合所在系统的软件包或版本管理器，并参考 PHP、Composer 和 Node.js 的[官方安装指南](https://www.php.net/manual/en/install.php)、[Composer 安装指南](https://getcomposer.org/download/)和 [Node.js 下载页面](https://nodejs.org/en/download)。Windows 环境建议使用 WSL2；以下命令应在 WSL 中运行，而不是 PowerShell。
 
-是否需要 Redis，取决于启用的功能和配置。基础本地配置使用 SQLite，无需单独安装数据库服务，但不会初始化数据库 schema，且不能保证所有上游模块或迁移都兼容 SQLite。若需完整初始化的 MySQL 本地环境，请安装/启用 `pdo_mysql`，并使用下文的 `make dev-init`。
+是否需要 Redis，取决于启用的功能和配置。本机 `make dev` 使用 MySQL，因为完整项目迁移集不兼容 SQLite；请先启动本机 MySQL。如果不想安装 MySQL，请使用上文链接的 Docker 开发流程。
 
 ## 2. 克隆仓库并安装依赖
 
@@ -45,25 +47,23 @@ make install
 
 如果 Composer 提示缺少扩展，请为 `php -v` 显示的同一个 PHP 安装对应扩展；不要通过 `--ignore-platform-reqs` 绕过检查。如果机器上安装了多个 PHP 版本，请检查 `which php`、`which composer` 和 `composer diagnose`。
 
-## 3. 初始化本地配置并启动
+## 3. 启动本机开发环境
 
 ```sh
-make env-init
-make env-check
 make dev
 ```
 
-管理前端地址为 `http://127.0.0.1:9528`；API 默认监听 `http://127.0.0.1:8000`，Vite 会将 API 请求代理到后端。`env-init` 会创建被 Git 忽略的本地覆盖配置、随机开发密钥和仅供开发使用的 JWT 密钥对。它不会覆盖已存在的本地文件。请勿将这些配置或密钥用于部署。
+首次运行 `make dev` 时，会初始化开发专用密钥、询问 MySQL 连接和管理员身份、执行迁移，并在管理员不存在时创建账号。修改数据库前必须输入完整的 `主机:端口/数据库名` 目标。初始化成功后只执行一次；后续 `make dev` 直接启动两个应用，不会重复初始化或自动执行迁移。管理前端地址为 `http://127.0.0.1:9528`；API 默认监听 `http://127.0.0.1:8000`，Vite 会将 API 请求代理到后端。
 
-若要连接本地 MySQL 并创建可用的管理员账号，可使用 `make dev-init`，无需手动编辑 `DATABASE_URL`：
+MySQL 默认主机/端口为 `127.0.0.1:3306`，用户为 `root`，数据库为 `ns_ultimate`；输入密码时不会显示。管理员默认身份为 `admin@example.com` / `admin`。已有管理员不会被重置。每次运行 `make dev`，都会在 Vite 启动前显示保存的管理员邮箱和初始随机密码。密码保存在权限为 `0600` 的 `var/local-dev/keys/admin-initial-password.txt`；如果之后修改过密码，显示的只是初始密码。开发专用配置和数据库连接保存在 Git 忽略的 `integration/backend/.env.dev.local`，与生产配置分离。
 
 ```sh
-make dev-init
-make env-check
+make dev-reset
 make dev
 ```
 
-脚本会询问 MySQL 主机/端口/用户名（默认 `127.0.0.1:3306`、`root`），密码输入时不会显示；随后询问数据库名（默认 `ns_ultimate`）和管理员身份（默认 `admin@example.com` / `admin`）。显示目标并确认后，脚本会在数据库不存在时创建数据库、执行待处理的项目迁移，并仅在该管理员身份尚未被占用时创建账号。不会重置已有管理员。初始密码随机生成，保存在权限为 `0600` 的 `var/keys/admin-initial-password.txt`；请在本机读取并于首次登录后修改。数据库连接写入 Git 忽略的 `integration/backend/.env.local`。
+
+重置前会验证数据库的开发归属令牌，拒绝生产 `APP_ENV`，且只连接 loopback 主机上名称完全匹配的开发数据库。操作会显示配置的连接目标和 MySQL 服务端身份，必须输入完整目标后才继续。本机 Docker 容器发布端口时，服务端身份可能与宿主机不同；数据库归属由 checkout 专属令牌验证。重置仅触及隔离的开发环境文件和 `var/local-dev/` 文件。
 
 如需更换端口：
 

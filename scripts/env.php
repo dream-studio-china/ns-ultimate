@@ -8,6 +8,9 @@ umask(0077);
 
 function writeOnce(string $path, string $contents): void
 {
+    if (is_link($path)) {
+        throw new RuntimeException('Refusing to write through symlink '.$path);
+    }
     if (file_exists($path)) {
         echo 'Preserved: '.basename(dirname($path)).'/'.basename($path).PHP_EOL;
         return;
@@ -27,19 +30,49 @@ function writeOnce(string $path, string $contents): void
 }
 
 if ($command === 'env-init') {
-    foreach (['var/data', 'var/keys'] as $directory) {
-        if (!is_dir($root.'/'.$directory) && !mkdir($root.'/'.$directory, 0700, true)) {
+    $resolvePath = static function (string $path) use ($root): string {
+        return str_starts_with($path, '/') ? $path : $root.'/'.$path;
+    };
+    $dataDirectory = $resolvePath(getenv('NS_DEV_DATA_DIR') ?: 'var/data');
+    $keysDirectory = $resolvePath(getenv('NS_DEV_KEYS_DIR') ?: 'var/keys');
+    if (str_starts_with($dataDirectory, $root.'/var/') && is_link($root.'/var')) {
+        throw new RuntimeException('Refusing to use a symlinked project var directory.');
+    }
+    if (str_starts_with($keysDirectory, $root.'/var/') && is_link($root.'/var')) {
+        throw new RuntimeException('Refusing to use a symlinked project var directory.');
+    }
+    foreach ([$dataDirectory, $keysDirectory] as $directory) {
+        if (is_link($directory)) {
+            throw new RuntimeException('Refusing to use symlinked development directory '.$directory);
+        }
+        if (!is_dir($directory) && !mkdir($directory, 0700, true)) {
             throw new RuntimeException('Cannot create '.$directory);
         }
     }
     writeOnce($root.'/integration/admin/.env.local', file_get_contents($root.'/integration/admin/.env.local.example'));
-    writeOnce($root.'/integration/backend/.env.local', sprintf(
-        "# Generated local secrets. Do not commit this file.\nAPP_SECRET=%s\nREFRESH_TOKEN_SECRET=%s\n",
-        bin2hex(random_bytes(32)),
-        bin2hex(random_bytes(32)),
-    ));
-    $private = $root.'/var/keys/private.pem';
-    $public = $root.'/var/keys/public.pem';
+    if (getenv('NS_SKIP_BACKEND_SECRET_FILE') !== '1') {
+        $backendEnvFile = $resolvePath(getenv('NS_DEV_BACKEND_ENV_FILE') ?: 'integration/backend/.env.local');
+        $backendSecrets = sprintf(
+            "# Generated development secrets. Do not commit this file.\nAPP_SECRET=%s\nREFRESH_TOKEN_SECRET=%s\n",
+            bin2hex(random_bytes(32)),
+            bin2hex(random_bytes(32)),
+        );
+        if ($shareDirectory = getenv('NS_DEV_APP_SHARE_DOTENV')) {
+            $backendSecrets .= 'APP_SHARE_DIR="'.$shareDirectory."\"\n";
+        }
+        if ($privateKeyPath = getenv('NS_DEV_PRIVATE_KEY_DOTENV')) {
+            $backendSecrets .= 'JWT_PRIVATE_KEY_PATH="'.$privateKeyPath."\"\n";
+        }
+        if ($publicKeyPath = getenv('NS_DEV_PUBLIC_KEY_DOTENV')) {
+            $backendSecrets .= 'JWT_PUBLIC_KEY_PATH="'.$publicKeyPath."\"\n";
+        }
+        writeOnce($backendEnvFile, $backendSecrets);
+    }
+    $private = rtrim($keysDirectory, '/').'/private.pem';
+    $public = rtrim($keysDirectory, '/').'/public.pem';
+    if (is_link($private) || is_link($public)) {
+        throw new RuntimeException('Refusing to use symlinked development JWT keys.');
+    }
     if (!file_exists($private) && !file_exists($public)) {
         $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
         if ($key === false || !openssl_pkey_export($key, $pem)) {
@@ -55,7 +88,10 @@ if ($command === 'env-init') {
 
 if ($command === 'env-check') {
     $failed = false;
-    foreach (['integration/admin/.env.local', 'integration/backend/.env.local', 'var/keys/private.pem', 'var/keys/public.pem'] as $file) {
+    $isLocalDevReady = is_file($root.'/integration/backend/.env.dev.local');
+    $backendEnvFile = $isLocalDevReady ? 'integration/backend/.env.dev.local' : 'integration/backend/.env.local';
+    $keysDirectory = $isLocalDevReady ? 'var/local-dev/keys' : 'var/keys';
+    foreach (['integration/admin/.env.local', $backendEnvFile, $keysDirectory.'/private.pem', $keysDirectory.'/public.pem'] as $file) {
         $exists = is_file($root.'/'.$file);
         echo ($exists ? 'OK: ' : 'Missing: ').$file.PHP_EOL;
         $failed = $failed || !$exists;

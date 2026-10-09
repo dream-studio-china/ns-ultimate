@@ -1,27 +1,42 @@
 # Local development and debugging
 
-Run commands from the repository root. Use Node.js 22+, npm, PHP 8.4+, Composer, PHP OpenSSL, and PDO SQLite for the default development database and integration tests. Dependency versions remain owned by each core lockfile.
+Run commands from the repository root. Local development requires Node.js 22+, npm, PHP 8.4+, Composer, PHP OpenSSL, and PDO MySQL; MySQL must be running for first-time setup. The Docker workflow needs Docker Compose and Node.js/npm, but not host PHP, Composer, or MySQL. Dependency versions remain owned by each core lockfile.
+
+## Docker PHP and MySQL development
+
+Colleagues do not need PHP, Composer, or MySQL installed on the host. Docker Desktop/Engine with the Compose plugin and Node.js 22+ with npm are required; the admin Vite server remains a host process for fast hot reload. The development Compose file is separate from the production stack and uses development-only credentials and an isolated persistent MySQL volume.
 
 ```sh
-make install
-make env-init
-make env-check
-make dev
+npm ci --prefix core/crud-admin
+make docker-dev
 ```
 
-For a fully initialized local MySQL-backed setup, run `make dev-init` instead of manually configuring `DATABASE_URL`:
+On first run, `docker-dev` builds the PHP image, starts MySQL, creates Docker-specific JWT keys, prompts for the admin identity, applies migrations, and creates the admin if absent. Before database changes, it requires typing the exact displayed `database:3306/ns_ultimate` target. Before Vite starts on every `docker-dev` launch, the saved admin email and initial password are printed. The password is also written to `var/docker-dev/keys/admin-initial-password.txt`; if changed later, this remains the initial password, not the current one.
+
+On later runs, `docker-dev` simply starts the backend and local Vite at `http://127.0.0.1:8000` and `http://127.0.0.1:9528`; it does not repeat setup or apply new migrations. Use `make docker-migrate` when needed. Ctrl-C stops the Compose services. Source changes are bind-mounted. Composer dependencies live in a Docker volume and are installed when the PHP service starts. The development database is also persisted in a named volume; `make docker-dev-down` preserves it. To start over, run `make docker-dev-reset` and then `make docker-dev`. Reset only operates against a local Docker socket, pins the Compose project to `ns-ultimate-dev`, verifies the containers and MySQL volume labels, then requires typing `reset` before deleting the development DB volume and Docker-only JWT/password files.
+
+Useful container-backed commands:
 
 ```sh
-make dev-init
-make env-check
-make dev
+make docker-dev-up                 # auto-setup if needed; start DB/backend without Vite
+make docker-dev-status
+make docker-dev-logs ARGS="php"
+make docker-console ARGS="about"
+make docker-migrate-status
+make docker-migrate
+make docker-test-backend
+make docker-dev-down
 ```
 
-It prompts for the MySQL connection (defaults to `127.0.0.1:3306`, user `root`, database `ns_ultimate`) and admin identity (defaults to `admin@example.com` / `admin`); the password is hidden while typing. After displaying the target and receiving confirmation, it creates the database if needed, writes the connection URL to the ignored `integration/backend/.env.local`, applies pending project migrations, and creates the admin only if the requested email/username is not already in use. Existing admin accounts are not reset. The generated initial password is stored in `var/keys/admin-initial-password.txt` with mode `0600`; change it after first login. The command requires PHP's `pdo_mysql` extension and installed backend Composer dependencies.
+The MySQL container is published only on `127.0.0.1:3307` by default; change this with `DEV_MYSQL_PORT`. Backend and admin ports remain configurable with `BACKEND_PORT` and `ADMIN_PORT`. The Compose credentials and application secrets are for local development only—never reuse them outside this isolated stack. Do not run `docker compose down -v` unless you intentionally want to delete the development database and Composer cache volumes.
+
+Install dependencies and run `make dev`. On the first run, the command initializes isolated local secrets, prompts for a running loopback MySQL connection and admin identity, applies migrations, and creates an admin account if absent. Local setup is restricted to `localhost`, `127.0.0.1`, or `::1` and the `ns_ultimate` database. Default MySQL settings are `127.0.0.1:3306` and user `root`; the password is hidden while typing. Before database changes, it requires typing the exact displayed `host:port/ns_ultimate` target. Existing admin accounts are not reset. Before Vite starts on every `make dev` launch, the saved admin email and initial password are printed. The password is stored in `var/local-dev/keys/admin-initial-password.txt` with mode `0600`; if changed later, this remains the initial password, not the current one. Dev-specific settings are stored in ignored `integration/backend/.env.dev.local`, separate from production env files.
+
+The setup runs only once, after it succeeds. Stop the running apps before resetting. To fully reset the local development database and keys, run `make dev-reset`, confirm by typing the exact displayed endpoint and MySQL server identity, then run `make dev` again. Reset refuses production `APP_ENV`, requires the isolated `.env.dev.local`, restricts the connection to loopback and the exact development database name, and verifies the local development ownership token stored both in the checkout and target database. MySQL may report a different server hostname/port when running in a local container behind a published port; the checkout-specific token verifies ownership. Reset only touches dev-specific config/key files. The command requires PHP's `pdo_mysql` extension and installed backend Composer dependencies.
 
 The admin is at `http://127.0.0.1:9528`; the backend is at `http://127.0.0.1:8000`. API requests are proxied by Vite. Ctrl-C stops both services, and a failed service stops the other. Run `make admin` and `make backend` in separate terminals if desired. Both bind to loopback by default; PHP's built-in server is for local development only.
 
-`make env-init` creates local env files, random application/refresh-token secrets, and an unencrypted development-only RSA JWT key pair under `var/keys/`. Files have private permissions and existing files are never overwritten. An incomplete key pair fails rather than rotating keys silently. Generated files and `var/data/` are ignored by Git. Do not use these keys or configuration in production.
+`make env-init` can still be used separately to create generic local env files, random application/refresh-token secrets, and an unencrypted development-only RSA JWT key pair under `var/keys/`. The automatic `make dev` flow uses isolated files under `var/local-dev/` and `.env.dev.local`; Docker uses `var/docker-dev/`. Files have private permissions and existing files are never overwritten. An incomplete key pair fails rather than rotating keys silently. These paths are ignored by Git. Do not use development keys or configuration in production.
 
 ## Environment ownership and precedence
 
@@ -33,14 +48,14 @@ The composed apps load only project-owned env files, **not** those under `core/`
 
 To change ports, use `make dev ADMIN_PORT=9529 BACKEND_PORT=8001` and set `VITE_PROXY_TARGET=http://127.0.0.1:8001` in the admin `.env.local` (or as a process variable). Update backend `DEFAULT_URI` when needed. `HOST` controls the listen address, not dotenv values.
 
-Without a local `DATABASE_URL` override, the default database is `var/data/dev.sqlite`. `make env-init` alone does not create a schema, provision Redis, or configure real SMS, mail, WeChat, or payment services. SQLite is a lightweight local default, not a guarantee that every upstream module or migration is SQLite-compatible. `make dev-init` is the explicit MySQL development setup and runs pending migrations only after confirmation. For other manual migration operations, inspect the target first:
+Without development setup, the backend's base configuration points to `var/data/dev.sqlite`, but the full project migration set is not SQLite-compatible. `make env-init` alone does not create a schema, provision Redis, or configure real SMS, mail, WeChat, or payment services. `make dev` therefore initializes against MySQL and asks for confirmation before migrations. For other manual migration operations, inspect the target first:
 
 ```sh
 make migrate-status
 make migrate
 ```
 
-Manual migrations retain Symfony's interactive confirmation. Migrations do not run during installation, ordinary startup, `make env-init`, or tests; `make dev-init` is the explicit exception and prompts before modifying its displayed database. Do not point routine development setup or validation at production databases.
+Manual migrations retain Symfony's interactive confirmation. Migrations do not run during installation, restarts after successful setup, `make env-init`, or tests; first-time `make dev`/`make docker-dev` and each reset followed by startup are explicit setup flows. Do not point routine development setup or validation at production databases.
 
 ## Debugging and validation
 

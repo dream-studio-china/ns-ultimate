@@ -14,6 +14,8 @@ var/cache/
 var/log/
 var/data/
 var/keys/
+var/local-dev/
+var/docker-dev/
 
 # Editors / OS
 .DS_Store

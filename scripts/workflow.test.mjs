@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,8 +20,8 @@ function fixture(t) {
   return directory
 }
 
-function run(directory, command) {
-  return spawnSync('php', [path.join(directory, 'scripts/env.php'), command], { encoding: 'utf8' })
+function run(directory, command, env = process.env) {
+  return spawnSync('php', [path.join(directory, 'scripts/env.php'), command], { encoding: 'utf8', env })
 }
 
 test('env initialization generates private local files and preserves them on repeat', t => {
@@ -49,6 +49,27 @@ test('incomplete key pairs fail without replacing the existing key', t => {
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /Incomplete JWT key pair/)
   assert.equal(readFileSync(privatePath, 'utf8'), original)
+})
+
+test('env initialization supports isolated development data and key directories', t => {
+  const directory = fixture(t)
+  const env = {
+    ...process.env,
+    NS_DEV_DATA_DIR: path.join(directory, 'var/docker-dev/data'),
+    NS_DEV_KEYS_DIR: path.join(directory, 'var/docker-dev/keys'),
+    NS_DEV_BACKEND_ENV_FILE: 'integration/backend/.env.dev.local',
+    NS_DEV_APP_SHARE_DOTENV: '${NS_PROJECT_ROOT}/var/docker-dev/data',
+    NS_DEV_PRIVATE_KEY_DOTENV: '${NS_PROJECT_ROOT}/var/docker-dev/keys/private.pem',
+    NS_DEV_PUBLIC_KEY_DOTENV: '${NS_PROJECT_ROOT}/var/docker-dev/keys/public.pem'
+  }
+  const result = run(directory, 'env-init', env)
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(readFileSync(path.join(env.NS_DEV_KEYS_DIR, 'private.pem'), 'utf8').includes('BEGIN PRIVATE KEY'))
+  assert.ok(readFileSync(path.join(env.NS_DEV_KEYS_DIR, 'public.pem'), 'utf8').includes('BEGIN PUBLIC KEY'))
+  const backendEnv = readFileSync(path.join(directory, env.NS_DEV_BACKEND_ENV_FILE), 'utf8')
+  assert.match(backendEnv, /APP_SHARE_DIR="\$\{NS_PROJECT_ROOT\}\/var\/docker-dev\/data"/)
+  assert.equal(existsSync(path.join(directory, 'integration/backend/.env.local')), false)
+  assert.equal(existsSync(path.join(directory, 'var/keys')), false)
 })
 
 test('env check reports missing local files without requiring dependencies', t => {

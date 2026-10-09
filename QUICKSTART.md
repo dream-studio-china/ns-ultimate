@@ -4,10 +4,12 @@ This guide gets the composed admin and API running on a local workstation. For a
 
 ## 1. Install local prerequisites
 
+To avoid installing PHP, Composer, and MySQL on the host, use the [Docker development setup](docs/operations/development.md#docker-php-and-mysql-development); only Docker Compose and Node.js/npm are needed for that workflow.
+
 Use PHP 8.5 for the documented development setup. The backend Composer manifest currently requires PHP `>=8.4`; keep CLI PHP, PHP-FPM, and the PHP extensions on the same supported version. Install:
 
 - Git
-- PHP 8.5 CLI with OpenSSL, PDO, PDO SQLite, and (for MySQL setup) PDO MySQL, plus ctype, iconv, intl, mbstring, XML/DOM, curl, fileinfo, tokenizer, and zip extensions
+- PHP 8.5 CLI with OpenSSL, PDO, and PDO MySQL, plus ctype, iconv, intl, mbstring, XML/DOM, curl, fileinfo, tokenizer, and zip extensions
 - Composer 2
 - Node.js 22 LTS and its matching npm
 - `make` (preinstalled on most macOS/Linux development machines)
@@ -31,7 +33,7 @@ brew install php@8.5 composer node@22
 
 After installation, ensure `php`, `composer`, `node`, and `npm` resolve to the intended versions. If using a version manager, select PHP 8.5 and Node.js 22 in the repository shell. On Linux and Windows, use packages or version managers appropriate to the OS and follow the official [PHP installation](https://www.php.net/manual/en/install.php), [Composer installation](https://getcomposer.org/download/), and [Node.js download](https://nodejs.org/en/download) guides. On Windows, WSL2 is the supported shell workflow; run the commands below inside WSL, not PowerShell.
 
-Redis is only needed when selected application features/configuration require it. The basic local configuration uses SQLite and does not need a database server, but it does not initialize a schema and not all upstream modules or migrations are guaranteed to support SQLite. For a fully initialized MySQL-backed local environment, install/enable `pdo_mysql` and use `make dev-init` below.
+Redis is only needed when selected application features/configuration require it. Local `make dev` uses MySQL because the complete project migration set is not SQLite-compatible; make sure a local MySQL server is running. If you do not want to install MySQL, use the Docker workflow linked above.
 
 ## 2. Clone and install dependencies
 
@@ -45,25 +47,23 @@ make install
 
 If Composer reports missing extensions, install them for the same PHP binary shown by `php -v`; do not bypass checks with `--ignore-platform-reqs`. If multiple PHP versions are installed, verify `which php`, `which composer`, and `composer diagnose`.
 
-## 3. Initialize local configuration and start
+## 3. Start local development
 
 ```sh
-make env-init
-make env-check
 make dev
 ```
 
-The admin opens at `http://127.0.0.1:9528`; the API listens at `http://127.0.0.1:8000` and Vite proxies API requests to it. `env-init` creates ignored local override files, random development secrets, and a development-only JWT key pair. It does not overwrite existing local files. These values and keys are not suitable for deployment.
+On first start, `make dev` initializes development-only secrets, prompts for the MySQL connection and admin identity, applies migrations, and creates the admin if absent. Before changing the database, it requires typing the exact displayed `host:port/database` target. Setup runs once; later `make dev` runs start both apps without repeating setup or applying migrations. The admin opens at `http://127.0.0.1:9528`; the API listens at `http://127.0.0.1:8000` and Vite proxies API requests to it.
 
-For a local MySQL database and a ready-to-use admin account, run `make dev-init` instead of manually editing `DATABASE_URL`:
+Defaults are MySQL host/port `127.0.0.1:3306`, user `root`, and database `ns_ultimate`; password input is hidden. Admin defaults are `admin@example.com` / `admin`. Existing admin accounts are not reset. Each `make dev` launch prints the saved admin email and initial generated password before Vite starts. The password is stored in `var/local-dev/keys/admin-initial-password.txt` with mode `0600`; it is only the current password if it has not since been changed. Dev-only settings and the database URL are saved in ignored `integration/backend/.env.dev.local`, separate from production env files.
 
 ```sh
-make dev-init
-make env-check
+make dev-reset
 make dev
 ```
 
-It prompts for MySQL host/port/user (defaults: `127.0.0.1:3306`, `root`) and a hidden password, then asks for the database name (default `ns_ultimate`) and admin identity (defaults: `admin@example.com` / `admin`). After showing the target and receiving confirmation, it creates the database if missing, applies pending project migrations, and creates the admin only if that identity is not already in use. It never resets an existing admin. The generated password is stored in `var/keys/admin-initial-password.txt` with mode `0600`; retrieve it locally and change it after first login. The database URL is saved in the ignored `integration/backend/.env.local`.
+
+Reset first verifies the database's development ownership token, refuses production `APP_ENV`, and only connects to loopback with the exact development database name. It displays the configured endpoint and MySQL server identity and requires typing the exact target before deletion. MySQL server identity can differ from the host (for example, when a local Docker container publishes its port); the checkout-specific token is the ownership check. Reset only changes the isolated dev env file and `var/local-dev/` files.
 
 To choose different ports:
 
