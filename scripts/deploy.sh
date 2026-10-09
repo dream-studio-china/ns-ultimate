@@ -7,7 +7,8 @@ PHP_BIN="${PHP_BIN:-php}"
 COMPOSER_BIN="${COMPOSER_BIN:-composer}"
 NODE_BIN="${NODE_BIN:-node}"
 NPM_BIN="${NPM_BIN:-npm}"
-PHP_FPM_USER="${PHP_FPM_USER:-}"
+PHP_FPM_USER="${PHP_FPM_USER:-www}"
+PHP_FPM_GROUP="${PHP_FPM_GROUP:-$PHP_FPM_USER}"
 RUN_MIGRATIONS=0
 
 die() {
@@ -24,14 +25,18 @@ builds the admin with Node.js, links public/admin to dist/admin, and clears the
 production cache. Database migrations are skipped unless --migrate is supplied;
 that option requires an interactive backup confirmation.
 
+Run this script as root. Git, Composer, npm, and Symfony asset installation run
+as root; migrations and cache commands run as PHP_FPM_USER (default: www).
+
 Configuration via environment:
   DEPLOY_BRANCH   Git branch to deploy (default: main)
   PHP_BIN         PHP 8.5 CLI binary (default: php)
   COMPOSER_BIN    Composer executable (default: composer)
   NODE_BIN        Node.js binary (default: node; version 22+ required)
   NPM_BIN         npm executable (default: npm)
-  PHP_FPM_USER    Optional account to run production console commands as;
-                  requires passwordless sudo when different from current user
+  PHP_FPM_USER    Account that owns runtime cache and runs console commands
+                  (default: www)
+  PHP_FPM_GROUP   Runtime cache group (default: PHP_FPM_USER)
 USAGE
 }
 
@@ -61,6 +66,8 @@ NODE_BIN="$(resolve_command "$NODE_BIN")"
 NPM_BIN="$(resolve_command "$NPM_BIN")"
 command -v git >/dev/null || die 'git is required'
 command -v flock >/dev/null || die 'flock is required to prevent concurrent deployments'
+((EUID == 0)) || die 'run this deployment script as root'
+[[ "$PHP_FPM_USER" == root ]] || command -v runuser >/dev/null || die 'runuser is required to run Symfony console commands as PHP_FPM_USER'
 
 cd "$ROOT"
 [[ -f .git ]] || [[ -d .git ]] || die "not a Git checkout: $ROOT"
@@ -123,14 +130,18 @@ printf 'Updated commit: %s\n' "$new_commit"
 [[ -f "$staging_build/index.html" ]] || die 'admin build did not produce its staging index.html'
 
 run_console() {
-  if [[ -n "$PHP_FPM_USER" && "$(id -un)" != "$PHP_FPM_USER" ]]; then
-    command -v sudo >/dev/null || die 'sudo is required to run console commands as PHP_FPM_USER'
-    sudo -n -u "$PHP_FPM_USER" -- env APP_ENV=prod APP_DEBUG=0 \
+  if [[ "$PHP_FPM_USER" != root ]]; then
+    runuser -u "$PHP_FPM_USER" -- env APP_ENV=prod APP_DEBUG=0 \
       "$PHP_BIN" "$ROOT/integration/backend/bin/console" "$@"
   else
     APP_ENV=prod APP_DEBUG=0 "$PHP_BIN" "$ROOT/integration/backend/bin/console" "$@"
   fi
 }
+
+cache_dir="$ROOT/var/cache/backend"
+install -d -o "$PHP_FPM_USER" -g "$PHP_FPM_GROUP" -m 0750 "$cache_dir"
+chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$cache_dir"
+chmod -R u+rwX "$cache_dir"
 
 if ((RUN_MIGRATIONS)); then
   [[ -t 0 ]] || die '--migrate requires an interactive terminal and a verified database backup'
@@ -144,7 +155,8 @@ else
   printf '\nSkipping database migrations. Review status and back up the database before applying pending migrations.\n'
 fi
 
-run_console assets:install "$ROOT/integration/backend/public"
+APP_ENV=prod APP_DEBUG=0 "$PHP_BIN" "$ROOT/integration/backend/bin/console" \
+  assets:install "$ROOT/integration/backend/public"
 
 if [[ -e "$admin_build" || -L "$admin_build" ]]; then
   mv "$admin_build" "$backup_build"

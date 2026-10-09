@@ -26,7 +26,7 @@ Check the selected command-line PHP as well as FPM. On Baota, `php` on SSH `PATH
 
 ## 2. Place a release and install dependencies
 
-Deploy the complete repository, including its Git subtrees and lockfiles, into a release/project directory. Use a non-root deployment account. Keep production secrets, JWT keys, uploads, and durable application data outside the public document root; for release-based deployments, prefer shared paths outside individual releases.
+Deploy the complete repository, including its Git subtrees and lockfiles, into a release/project directory. For manual or release-based deployments, use a non-root deployment account. The simple in-place script below is designed for a root-only Baota setup: Git, Composer, npm, and asset installation run as root; migrations and cache commands run as the PHP-FPM user. Keep production secrets, JWT keys, uploads, and durable application data outside the public document root; for release-based deployments, prefer shared paths outside individual releases.
 
 From the project root, install production Composer dependencies:
 
@@ -164,21 +164,20 @@ The deployment script creates `integration/backend/public/admin` as a relative s
 
 ### Repeat updates with the deployment script
 
-From the server checkout, as the non-root deploy user:
+From the server checkout, as root:
 
 ```sh
-PHP_BIN=/www/server/php/85/bin/php \
-PHP_FPM_USER=www \
-bash scripts/deploy.sh
+cd /www/wwwroot/<project-root>
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh
 ```
 
-Adjust `PHP_BIN` and `PHP_FPM_USER` to the server. The checkout must have no local changes to tracked files and be on `main`; set `DEPLOY_BRANCH` to update another branch. Untracked Baota-generated files are left in place; Git will refuse the fast-forward if an untracked file would be overwritten. The script fast-forwards from `origin`, runs production Composer install, runs `npm ci` and builds the admin with Node.js 22 into a staging directory, installs Symfony bundle assets, publishes the successful build at `dist/admin`, and clears the production cache as the PHP-FPM user (passwordless `sudo` is needed if it differs from the deploy user). A failed frontend build leaves the current `dist/admin` untouched. The frontend directory replacement has a brief gap and is not fully atomic. The script does not run migrations by default.
+The script must run as root: Git, Composer, npm, and Symfony asset installation run as root; migrations and cache commands run as `PHP_FPM_USER` (default `www`) via `runuser`. Set `PHP_BIN` and, if needed, `PHP_FPM_USER`/`PHP_FPM_GROUP` for this server. The checkout must have no local changes to tracked files and be on `main`; set `DEPLOY_BRANCH` to update another branch. Untracked Baota-generated files are left in place; Git will refuse the fast-forward if an untracked file would be overwritten. The script fast-forwards from `origin`, installs production Composer dependencies, builds the admin with Node.js 22 into a staging directory, installs Symfony bundle assets, publishes the successful build at `dist/admin`, repairs ownership and permissions only under `var/cache/backend`, and clears the production cache. A failed frontend build leaves the current `dist/admin` untouched. The frontend directory replacement has a brief gap and is not fully atomic. The script does not run migrations by default.
 
 Only after taking and verifying a database backup, migrations can be explicitly requested; the script prints migration status and requires typing `APPLY-MIGRATIONS`:
 
 ```sh
-PHP_BIN=/www/server/php/85/bin/php PHP_FPM_USER=www \
-  bash scripts/deploy.sh --migrate
+cd /www/wwwroot/<project-root>
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --migrate
 ```
 
 This updates a live checkout in place: backend PHP files become current during the update, so use a low-traffic window. The build is staged before replacing the frontend, but the backend release is not atomic and has no automatic rollback. For stronger release isolation, use [release and rollback](release-and-rollback.md).

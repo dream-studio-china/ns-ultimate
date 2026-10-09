@@ -26,7 +26,7 @@
 
 ## 2. 部署版本并安装依赖
 
-将完整仓库部署到 release/项目目录，包括 Git 子树和锁文件。使用非 root 发布账号。生产密钥、JWT 密钥、上传文件和持久化数据放在公开文档根目录之外；release 模式应优先放到各 release 目录之外的共享路径。
+将完整仓库（包括 Git 子树和锁文件）部署到 release/项目目录。手动或基于 release 的部署应使用非 root 发布账号；下方的简单原地更新脚本则适用于只有 root 权限的宝塔环境：Git、Composer、npm 和静态资源安装由 root 执行，数据库迁移及缓存命令切换为 PHP-FPM 用户。生产密钥、JWT 密钥、上传文件和持久化数据放在公开文档根目录之外；release 模式应优先放到各 release 目录之外的共享路径。
 
 在项目根目录安装生产 Composer 依赖：
 
@@ -164,21 +164,20 @@ sudo lsattr "$FILE"
 
 ### 使用部署脚本重复更新
 
-在服务器项目 checkout 中，以非 root 发布用户执行：
+在服务器项目 checkout 中，以 root 执行：
 
 ```sh
-PHP_BIN=/www/server/php/85/bin/php \
-PHP_FPM_USER=www \
-bash scripts/deploy.sh
+cd /www/wwwroot/<项目根目录>
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh
 ```
 
-按服务器实际情况修改 `PHP_BIN` 和 `PHP_FPM_USER`。checkout 必须没有已跟踪文件的本地修改，并位于 `main` 分支；其他分支通过 `DEPLOY_BRANCH` 指定。宝塔生成的未跟踪文件会保留；若更新会覆盖这类文件，Git 会拒绝快进。脚本会从 `origin` 快进更新、安装生产 Composer 依赖、执行 `npm ci` 并用 Node.js 22 将管理前端构建到暂存目录、安装 Symfony bundle 静态资源，再将成功构建发布到 `dist/admin`，最后以 PHP-FPM 用户清理生产缓存（若该用户与发布用户不同，需要免密 `sudo`）。前端构建失败时，现有 `dist/admin` 保持不变；目录替换期间会有很短的间隙，并非完全原子操作。默认不会执行数据库迁移。
+脚本必须以 root 执行：Git、Composer、npm 和 Symfony bundle 静态资源安装由 root 运行；数据库迁移及缓存命令通过 `runuser` 切换为 `PHP_FPM_USER`（默认 `www`）。按服务器实际情况修改 `PHP_BIN`，必要时设置 `PHP_FPM_USER`/`PHP_FPM_GROUP`。checkout 必须没有已跟踪文件的本地修改，并位于 `main` 分支；其他分支通过 `DEPLOY_BRANCH` 指定。宝塔生成的未跟踪文件会保留；若更新会覆盖这类文件，Git 会拒绝快进。脚本会从 `origin` 快进更新、安装生产 Composer 依赖、用 Node.js 22 将管理前端构建到暂存目录、安装 Symfony bundle 静态资源，再发布至 `dist/admin`；同时只修复 `var/cache/backend` 的属主和权限，并清理生产缓存。前端构建失败时，现有 `dist/admin` 保持不变；目录替换期间会有很短的间隙，并非完全原子操作。默认不会执行数据库迁移。
 
 只有完成并验证数据库备份后，才显式请求迁移；脚本会显示迁移状态，并要求输入 `APPLY-MIGRATIONS` 确认：
 
 ```sh
-PHP_BIN=/www/server/php/85/bin/php PHP_FPM_USER=www \
-  bash scripts/deploy.sh --migrate
+cd /www/wwwroot/<项目根目录>
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --migrate
 ```
 
 此脚本会原地更新正在运行的 checkout：更新期间后端 PHP 文件会逐步生效，应选择低流量时段。前端会先构建再替换，但后端不是原子发布，也没有自动回滚。如需更强的版本隔离，请使用[发布与回滚 runbook](release-and-rollback.zh-cn.md)。
