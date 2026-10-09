@@ -73,6 +73,8 @@ INVENTORY_ENABLED=0
 ALIYUN_SMS_DRY_RUN=1
 ```
 
+The bootstrap determines `APP_ENV` from the process environment before loading environment-specific dotenv files. The tracked `integration/backend/.env` defaults to `dev`, so putting `APP_ENV=prod` only in `.env.prod.local` is not sufficient to select production mode. Set `APP_ENV=prod` and `APP_DEBUG=0` in the web-server/PHP-FPM request environment for this site (and explicitly for CLI commands). Do not set them in a shared PHP-FPM pool used by unrelated sites.
+
 The database version string and credential URL encoding must match the actual database. Confirm whether Redis, mail, SMS, WeChat, payment, and inventory integrations are enabled before configuring their related variables. Keep `INVENTORY_ENABLED=0` unless the upstream production validation and business requirements explicitly approve enabling this preview-only feature. Set `ALIYUN_SMS_DRY_RUN=0` only after credentials, templates, quotas, and delivery behavior are validated. Optional WeChat/payment credentials belong only in the secret store/environment when those services are intentionally enabled. Consult [`core/crud-skeleton/.env.prod.example`](core/crud-skeleton/.env.prod.example) for the complete upstream integration variable list; do not copy its Docker-specific values blindly.
 
 Generate a deployment-specific JWT key pair using an approved secret-generation procedure. For a basic unencrypted RSA pair:
@@ -107,6 +109,15 @@ Review the database host/schema, pending migrations, backups, and rollback plan 
 ```sh
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console doctrine:migrations:migrate --no-interaction
 ```
+
+Create the production administrator explicitly after migrations; never use the development initializer:
+
+```sh
+APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console \
+  app:identity:user:create <email> <username> '<strong-one-time-password>' --admin
+```
+
+The password is a command-line argument and may briefly be visible to local process inspection or shell history. Run this from a controlled operator session, use a strong temporary password, and change it after first login.
 
 Do not run migrations automatically on each PHP-FPM worker start. Ensure the deployment's database role has only the permissions needed for the application and approved migrations. Validate the route table and check the application-specific endpoints before switching traffic.
 
@@ -143,6 +154,8 @@ server {
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME /srv/ns-ultimate/current/integration/backend/public/index.php;
         fastcgi_param DOCUMENT_ROOT /srv/ns-ultimate/current/integration/backend/public;
+        fastcgi_param APP_ENV prod;
+        fastcgi_param APP_DEBUG 0;
         fastcgi_pass unix:/run/php/php-fpm.sock;
     }
 
@@ -152,9 +165,49 @@ server {
 }
 ```
 
-This example requires confirmation against the installed Nginx/PHP-FPM versions and the application's actual asset/upload routes. If TLS terminates at a trusted upstream proxy, configure Symfony trusted proxies explicitly; do not trust arbitrary forwarded headers. Configure a process manager for any required Messenger workers or scheduled outbox publishing according to enabled features. Keep worker processes on the same release and environment as PHP-FPM.
+For Apache 2, keep the site's document root pointed at `integration/backend/public`, retain the PHP 8.5 handler generated for that site, and add equivalent rules to that site's virtual host. This example uses Apache's standard `mod_alias` and `mod_dir` modules:
 
-## 6. Switch traffic, verify, and roll back
+```apache
+<VirtualHost *:443>
+    ServerName example.com
+    DocumentRoot "/srv/ns-ultimate/current/integration/backend/public"
+
+    # Scope production mode to this virtual host, not a shared FPM pool.
+    SetEnv APP_ENV prod
+    SetEnv APP_DEBUG 0
+
+    RedirectMatch 301 ^/admin$ /admin/
+    Alias /admin/ "/srv/ns-ultimate/current/dist/admin/"
+
+    <Directory "/srv/ns-ultimate/current/dist/admin">
+        Options FollowSymLinks
+        AllowOverride None
+        Require all granted
+        FallbackResource /admin/index.html
+    </Directory>
+
+    <Directory "/srv/ns-ultimate/current/integration/backend/public">
+        Options FollowSymLinks
+        AllowOverride None
+        Require all granted
+        DirectoryIndex index.php
+        FallbackResource /index.php
+    </Directory>
+
+    # Keep the panel's site-specific PHP 8.5/FPM handler. Ensure only
+    # integration/backend/public/index.php is used as the application entry point.
+</VirtualHost>
+```
+
+Baota's generated virtual-host and PHP-handler directives vary by installation. Merge these directives into the correct site's HTTP/HTTPS virtual host instead of replacing the whole file. Confirm Apache passes the per-site `SetEnv` values to PHP-FPM; if it does not, use a dedicated FPM pool for this site rather than changing a pool shared by other applications. Set the site's `open_basedir` to include the repository root because the bootstrap loads `core/`, `business/`, and `integration/`, plus any external secret/shared-data directories. Do not disable the restriction globally. Baota may mark the site's `.user.ini` immutable; back it up, inspect with `lsattr`, temporarily remove the immutable bit with `chattr -i`, edit only the required paths, then restore it with `chattr +i`. Never use `chmod 777`.
+
+Confirm the selected Nginx or Apache example against installed server/PHP-FPM versions and the application's actual asset/upload routes. If TLS terminates at a trusted upstream proxy, configure Symfony trusted proxies explicitly; do not trust arbitrary forwarded headers. Configure a process manager for any required Messenger workers or scheduled outbox publishing according to enabled features. Keep worker processes on the same release and environment as PHP-FPM.
+
+## 6. CI/CD release flow
+
+Use CI to check out the complete repository (including its Git subtrees), install the lockfile-pinned dependencies, run tests, and build `dist/admin/` with Node.js 22. Deploy that exact tested artifact/commit to a new, immutable release directory over a restricted SSH/deploy account; do not put production credentials in the CI build job or commit them. Keep `.env.prod.local`, JWT keys, uploads, and writable runtime data outside the release where practical. On the server, install Composer production dependencies with the PHP 8.5 CLI, verify the production environment, take a database backup, review/apply migrations as an explicit deployment step, then atomically switch `current`. Do not run migrations automatically on every web-worker start. Retain the previous release and a database backup for rollback; a code rollback alone may not reverse schema changes.
+
+## 7. Switch traffic, verify, and roll back
 
 Before activation, verify that the frontend build, Composer install, env validation, database connectivity, cache warmup, and approved migrations succeeded. Switch the `current` symlink atomically, reload PHP-FPM/web server as appropriate, then check:
 
@@ -170,8 +223,18 @@ Keep the previous release and database backup until verification passes. Roll ba
 - [ ] PHP CLI and FPM versions/extensions satisfy Composer and runtime requirements.
 - [ ] TLS, private database/Redis connectivity, backups, and service access controls are in place.
 - [ ] Production env values and JWT keys are stored outside version control with least-privilege permissions.
+- [ ] The site-specific web/FPM environment selects `APP_ENV=prod` and `APP_DEBUG=0` without changing shared pools.
 - [ ] Admin build is served at `/admin/`; backend web root is only `integration/backend/public/`.
 - [ ] Runtime writable paths and durable upload storage are provisioned.
 - [ ] Production cache was cleared/warmed using the integration console.
 - [ ] Migrations were reviewed, backed up, and applied as an explicit release step.
 - [ ] External providers, workers, health checks, authorization, logs, and rollback were verified.
+
+## Baota/PHP troubleshooting notes
+
+- **Node.js:** use Node.js 22, matching this repository's CI and Docker build. Node is needed to build the admin, not to serve the built static files; CI can build and upload `dist/admin/`.
+- **Composer PSR-4 warning:** some upstream versions report that `App\Promotion\PromotionException` in `src/Promotion/Exception/PromotionException.php` does not match the `App\` PSR-4 path and skip that class in the optimized autoloader. This warning is distinct from install failure: check the Composer exit status and verify `core/crud-skeleton/vendor/autoload.php` exists. The mismatched class should be corrected upstream; do not hide the warning by adding production dev dependencies.
+- **`open_basedir` fatal saying `vendor/autoload.php` is missing:** the file may exist while PHP-FPM is prevented from reading it. For example, a Baota allowlist can include `/www/wwwroot/<project>/`, `/www/secure/<project>/`, and `/tmp/`, adjusted to actual paths. Allow this site's PHP process to read the project root (the bootstrap needs `core/`, `business/`, and `integration/`) and external secrets/data paths. Keep the website document root at `integration/backend/public`; do not disable `open_basedir` globally or use `777` permissions. Baota may mark the site's `.user.ini` immutable; back it up, inspect with `lsattr`, use `chattr -i` only while editing the allowlist, then restore the immutable bit with `chattr +i` if it was set.
+- **`DebugBundle` class missing after `composer install --no-dev`:** production must actually run with `APP_ENV=prod` and `APP_DEBUG=0`. This project defaults to `dev` in `integration/backend/.env`; the environment must be selected in the per-site request/FPM environment before dotenv bootstrapping. With Apache, use the site's virtual host `SetEnv`; with Nginx, pass per-site FastCGI parameters. Do not change environment variables in a PHP-FPM pool shared by other sites. If the web server does not pass per-site variables to FPM, create a dedicated pool.
+- **Cache/log `Permission denied`:** the integration Kernel intentionally writes under `<repository-root>/var/cache/backend/<env>` and `<repository-root>/var/log/backend`. These are outside the public document root. Grant write access only to these runtime directories (and the configured `APP_SHARE_DIR`) for the actual PHP-FPM user, commonly `www` on Baota. For a project at `/www/wwwroot/ns-ultimate`, for example, create/chown only `var/cache/backend` and `var/log/backend` to that actual runtime user. Do not make the whole repository owned or writable by `www`; Symfony creates subdirectories such as `prod/translations` itself.
+- **JWT key access:** create a production-only RSA key pair outside the public document root, readable by the PHP-FPM user but not writable by it. Keep the private key and its backup secure; changing keys invalidates existing tokens.
