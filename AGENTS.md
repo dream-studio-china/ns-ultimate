@@ -28,12 +28,12 @@ The architecture documentation describes boundaries and current integration beha
 - Avoid coupling business modules to core internals when a stable adapter or contract can isolate that dependency.
 - Do not silently change API routes, authorization, persistence formats, or observable behavior. Document compatibility impacts and update affected contract/design docs.
 - Follow conventions and toolchain versions inside the affected subtree. Do not assume a root-level package manager, common build, or test command exists.
-- Repository code, documentation, and Git messages are English-only, subject to the translation-resource exception below. Conversation language follows the user.
+- Repository code, documentation, and Git messages are English-only, subject to the translation-resource exception below. Locale-suffixed Markdown files (for example, `QUICKSTART.zh-cn.md`) are translation resources and may be written in their target language. Conversation language follows the user.
 
 ### Language policy
 
-- All source code, identifiers, comments, docstrings, configuration comments, and documentation must be written in English.
-- Translation/localization resource files are the exception: their translated values may use the target language. Keep translation keys and surrounding code/comments in English.
+- All source code, identifiers, comments, docstrings, configuration comments, and canonical documentation must be written in English.
+- Translation/localization resource files are the exception. This includes locale-suffixed Markdown translations (for example, `DEPLOY.zh-cn.md`); translated content may use the target language. Keep code identifiers and embedded commands unchanged, and keep documentation links valid.
 - User-facing text should use the project's localization mechanism rather than embedding non-English strings in source code.
 - Communicate with the user in the language they use; this does not change the language required for repository content.
 
