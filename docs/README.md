@@ -15,6 +15,7 @@
 - [`contracts/`](contracts/) — cross-layer interface specifications and their validation status.
 - [`operations/`](operations/) — repository workflows, including subtree synchronization.
 - [`operations/development.md`](operations/development.md) — startup, env management, debugging, and checks.
+- [`runbooks/`](runbooks/) — step-by-step production deployment, release/rollback, and incident procedures.
 - [`sessions/`](sessions/) — concise records of implementation sessions and their outcomes.
 - [`tasks/core-business-integration.md`](tasks/core-business-integration.md) — integration implementation scope and completion checklist.
 - [`reviews/`](reviews/) — code review findings and follow-up status.

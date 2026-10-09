@@ -91,7 +91,7 @@ chmod 0640 /etc/ns-ultimate/keys/private.pem /etc/ns-ultimate/keys/public.pem
 
 仅向确实需要读取私钥的应用运行用户开放权限，并安全备份密钥；制定密钥轮换计划（轮换可能使现有签发令牌失效）。不要在生产环境运行 `make env-init`、`make dev` 或 `make dev-reset`：开发启动会初始化本地数据库、执行迁移并创建开发管理员；重置会删除已登记的开发数据库。切勿将 `.env.prod.local`、密钥文件、数据库凭据或服务商密钥提交到版本控制。
 
-应用缓存和日志分别写入仓库级的 `var/cache/backend/` 和 `var/log/backend/`。为 PHP-FPM 用户配置所需目录的写权限，同时确保应用源码和密钥不可被运行用户修改。为上传内容及当前存放于 `var/data/` 的数据选择持久化存储方案；发布目录中的临时文件不构成可靠的数据持久化或备份策略。向 Web 服务器直接开放上传目录前，请先检查 core 的媒体配置。
+集成 Kernel 将缓存放在仓库级的 `var/cache/backend/`。生产 Monolog 会把 JSON 日志写入 `php://stderr`，而不是 `var/log/backend/prod.log`；生产主 handler 使用 `fingers_crossed`，发生错误时才输出缓冲记录（404/405 除外）。要查看应用日志，请检查本站 Apache/PHP-FPM 错误日志，并确认 FPM 会捕获 worker stderr。开发环境才使用 `var/log/backend/` 下的文件日志。只需为 PHP-FPM 配置缓存目录的写权限，同时确保应用源码和密钥不可被运行用户修改。为上传内容及当前存放于 `var/data/` 的数据选择持久化存储方案；发布目录中的临时文件不构成可靠的数据持久化或备份策略。向 Web 服务器直接开放上传目录前，请先检查 core 的媒体配置。
 
 ## 4. 验证配置、预热缓存并执行迁移
 
@@ -236,5 +236,5 @@ CI 应检出完整仓库（包括 Git 子树），按锁文件安装依赖、运
 - **Composer PSR-4 警告：**部分上游版本会提示 `src/Promotion/Exception/PromotionException.php` 中的 `App\Promotion\PromotionException` 与 `App\` PSR-4 路径不匹配，并从优化自动加载映射中跳过该类。这与安装失败不是一回事：检查 Composer 退出码以及 `core/crud-skeleton/vendor/autoload.php` 是否生成。该类路径/命名空间应在上游修正；不要通过在生产环境安装开发依赖来掩盖警告。
 - **`open_basedir` 报 `vendor/autoload.php` 不存在：**文件可能实际存在，但 PHP-FPM 无权读取。宝塔白名单可按实际路径加入 `/www/wwwroot/<项目目录>/`、`/www/secure/<项目目录>/` 和 `/tmp/`。允许本站 PHP 进程读取项目根目录（bootstrap 需要 `core/`、`business/` 和 `integration/`）及项目外的密钥/数据目录。网站文档根目录仍应是 `integration/backend/public`；不要全局关闭 `open_basedir`，也不要使用 `777` 权限。宝塔可能给站点 `.user.ini` 设置不可变属性；先备份并用 `lsattr` 检查，仅在编辑白名单时执行 `chattr -i`，完成后若原先设置了不可变属性，再执行 `chattr +i` 恢复。
 - **`composer install --no-dev` 后报缺少 `DebugBundle`：**生产进程必须实际使用 `APP_ENV=prod`、`APP_DEBUG=0`。项目 `integration/backend/.env` 默认环境是 `dev`，必须在 dotenv bootstrap 之前通过本站请求/FPM 环境指定环境。Apache 可在本站虚拟主机用 `SetEnv`，Nginx 可传本站专属 FastCGI 参数。不要修改多个站点共用的 FPM pool；若 Web 服务器无法传递本站变量，请创建独立 pool。
-- **缓存/日志 `Permission denied`：**集成 Kernel 有意将文件写入 `<项目根目录>/var/cache/backend/<环境>` 和 `<项目根目录>/var/log/backend`，它们位于公开文档根目录之外。仅向实际 PHP-FPM 用户（宝塔常见为 `www`）授予这些运行目录及配置的 `APP_SHARE_DIR` 写权限。例如项目在 `/www/wwwroot/ns-ultimate` 时，只创建并调整 `var/cache/backend` 和 `var/log/backend` 的属主。不要把整个仓库改为 `www` 所有或可写；Symfony 会自动创建 `prod/translations` 等子目录。
+- **缓存 `Permission denied` 或找不到 `prod.log`：**Kernel 将缓存写入 `<项目根目录>/var/cache/backend/<环境>`，Symfony 会自动创建 `prod/translations` 等子目录。生产 Monolog 将 JSON 写入 `php://stderr`，不会写入 `var/log/backend/prod.log`；主 handler 在错误发生时才输出记录（404/405 除外）。请检查宝塔本站 Apache/PHP-FPM 错误日志；若 FPM 未捕获 worker stderr，检查本站 pool 的 `catch_workers_output`，修改共享 pool 前要考虑其他应用。只给实际 PHP-FPM 用户授予缓存目录和配置的 `APP_SHARE_DIR` 写权限，不要把整个仓库改为 `www` 所有或可写。
 - **JWT 密钥权限：**生产 RSA 密钥应单独生成并存放在公开文档根目录之外；PHP-FPM 用户只需读取，不应有写权限。安全备份私钥；更换密钥会使现有令牌失效。
