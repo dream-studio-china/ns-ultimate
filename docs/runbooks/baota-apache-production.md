@@ -138,7 +138,6 @@ In the Baota site's Apache virtual host, preserve the PHP 8.5 handler generated 
     SetEnv APP_DEBUG 0
 
     RedirectMatch 301 ^/admin$ /admin/
-    Alias /admin/ "/www/wwwroot/<project-root>/dist/admin/"
 
     <Directory "/www/wwwroot/<project-root>/dist/admin">
         Options FollowSymLinks
@@ -160,6 +159,29 @@ In the Baota site's Apache virtual host, preserve the PHP 8.5 handler generated 
 ```
 
 The two fallback rules serve the admin SPA and route backend paths to Symfony. Do not expose the repository root, `.env*`, `vendor/`, `core/`, `business/`, or `var/` as the document root. Validate Apache configuration using the panel's test/reload controls or the host's Apache config-test command before reloading.
+
+The deployment script creates `integration/backend/public/admin` as a relative symlink to `dist/admin`. Do not also add `Alias /admin/`; Apache should serve the symlink from the public document root. Keep `FollowSymLinks` enabled. For repeat updates, see [the in-place deployment script](#repeat-updates-with-the-deployment-script) below.
+
+### Repeat updates with the deployment script
+
+From the server checkout, as the non-root deploy user:
+
+```sh
+PHP_BIN=/www/server/php/85/bin/php \
+PHP_FPM_USER=www \
+bash scripts/deploy.sh
+```
+
+Adjust `PHP_BIN` and `PHP_FPM_USER` to the server. The checkout must be clean and on `main`; set `DEPLOY_BRANCH` to update another branch. The script fast-forwards from `origin`, runs production Composer install, runs `npm ci` and builds the admin with Node.js 22 into a staging directory, installs Symfony bundle assets, publishes the successful build at `dist/admin`, and clears the production cache as the PHP-FPM user (passwordless `sudo` is needed if it differs from the deploy user). A failed frontend build leaves the current `dist/admin` untouched. The frontend directory replacement has a brief gap and is not fully atomic. The script does not run migrations by default.
+
+Only after taking and verifying a database backup, migrations can be explicitly requested; the script prints migration status and requires typing `APPLY-MIGRATIONS`:
+
+```sh
+PHP_BIN=/www/server/php/85/bin/php PHP_FPM_USER=www \
+  bash scripts/deploy.sh --migrate
+```
+
+This updates a live checkout in place: backend PHP files become current during the update, so use a low-traffic window. The build is staged before replacing the frontend, but the backend release is not atomic and has no automatic rollback. For stronger release isolation, use [release and rollback](release-and-rollback.md).
 
 ## 7. Grant only runtime-directory write access
 

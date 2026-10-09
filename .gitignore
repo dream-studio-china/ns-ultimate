@@ -16,6 +16,7 @@ var/data/
 var/keys/
 var/local-dev/
 var/docker-dev/
+/integration/backend/public/admin
 
 # Editors / OS
 .DS_Store

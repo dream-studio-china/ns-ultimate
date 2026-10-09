@@ -177,7 +177,6 @@ For Apache 2, keep the site's document root pointed at `integration/backend/publ
     SetEnv APP_DEBUG 0
 
     RedirectMatch 301 ^/admin$ /admin/
-    Alias /admin/ "/srv/ns-ultimate/current/dist/admin/"
 
     <Directory "/srv/ns-ultimate/current/dist/admin">
         Options FollowSymLinks
@@ -201,11 +200,13 @@ For Apache 2, keep the site's document root pointed at `integration/backend/publ
 
 Baota's generated virtual-host and PHP-handler directives vary by installation. Merge these directives into the correct site's HTTP/HTTPS virtual host instead of replacing the whole file. Confirm Apache passes the per-site `SetEnv` values to PHP-FPM; if it does not, use a dedicated FPM pool for this site rather than changing a pool shared by other applications. Set the site's `open_basedir` to include the repository root because the bootstrap loads `core/`, `business/`, and `integration/`, plus any external secret/shared-data directories. Do not disable the restriction globally. Baota may mark the site's `.user.ini` immutable; back it up, inspect with `lsattr`, temporarily remove the immutable bit with `chattr -i`, edit only the required paths, then restore it with `chattr +i`. Never use `chmod 777`.
 
+The Apache example assumes the deployment creates `integration/backend/public/admin` as a symlink to `dist/admin`; do not also configure an `Alias /admin/`, which would override the document-root symlink. Enable `FollowSymLinks` for the public directory.
+
 Confirm the selected Nginx or Apache example against installed server/PHP-FPM versions and the application's actual asset/upload routes. If TLS terminates at a trusted upstream proxy, configure Symfony trusted proxies explicitly; do not trust arbitrary forwarded headers. Configure a process manager for any required Messenger workers or scheduled outbox publishing according to enabled features. Keep worker processes on the same release and environment as PHP-FPM.
 
 ## 6. CI/CD release flow
 
-Use CI to check out the complete repository (including its Git subtrees), install the lockfile-pinned dependencies, run tests, and build `dist/admin/` with Node.js 22. Deploy that exact tested artifact/commit to a new, immutable release directory over a restricted SSH/deploy account; do not put production credentials in the CI build job or commit them. Keep `.env.prod.local`, JWT keys, uploads, and writable runtime data outside the release where practical. On the server, install Composer production dependencies with the PHP 8.5 CLI, verify the production environment, take a database backup, review/apply migrations as an explicit deployment step, then atomically switch `current`. Do not run migrations automatically on every web-worker start. Retain the previous release and a database backup for rollback; a code rollback alone may not reverse schema changes.
+Use CI to check out the complete repository (including its Git subtrees), install the lockfile-pinned dependencies, run tests, and build `dist/admin/` with Node.js 22. Deploy that exact tested artifact/commit to a new, immutable release directory over a restricted SSH/deploy account; do not put production credentials in the CI build job or commit them. Keep `.env.prod.local`, JWT keys, uploads, and writable runtime data outside the release where practical. On the server, install Composer production dependencies with the PHP 8.5 CLI, verify the production environment, take a database backup, review/apply migrations as an explicit deployment step, then atomically switch `current`. Do not run migrations automatically on every web-worker start. Retain the previous release and a database backup for rollback; a code rollback alone may not reverse schema changes. For a simpler in-place update of a single checkout, see [`scripts/deploy.sh`](scripts/deploy.sh); it fast-forwards the configured branch and builds both layers but is not an atomic backend release.
 
 ## 7. Switch traffic, verify, and roll back
 

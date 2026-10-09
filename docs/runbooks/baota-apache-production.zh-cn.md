@@ -138,7 +138,6 @@ sudo lsattr "$FILE"
     SetEnv APP_DEBUG 0
 
     RedirectMatch 301 ^/admin$ /admin/
-    Alias /admin/ "/www/wwwroot/<项目根目录>/dist/admin/"
 
     <Directory "/www/wwwroot/<项目根目录>/dist/admin">
         Options FollowSymLinks
@@ -160,6 +159,29 @@ sudo lsattr "$FILE"
 ```
 
 两条 fallback 分别服务管理前端 SPA 和 Symfony 后端路由。不要将项目根目录、`.env*`、`vendor/`、`core/`、`business/` 或 `var/` 设为 Web 根目录。重载前使用宝塔配置检查/重载功能或服务器 Apache 配置检查命令验证。
+
+部署脚本会创建 `integration/backend/public/admin` 相对符号链接，指向 `dist/admin`。不要再配置 `Alias /admin/`；Apache 应从 public 目录提供该链接的内容。请保留 `FollowSymLinks`。重复更新见下方[服务器更新脚本](#使用部署脚本重复更新)。
+
+### 使用部署脚本重复更新
+
+在服务器项目 checkout 中，以非 root 发布用户执行：
+
+```sh
+PHP_BIN=/www/server/php/85/bin/php \
+PHP_FPM_USER=www \
+bash scripts/deploy.sh
+```
+
+按服务器实际情况修改 `PHP_BIN` 和 `PHP_FPM_USER`。checkout 必须在 `main` 分支且工作区干净；其他分支通过 `DEPLOY_BRANCH` 指定。脚本会从 `origin` 快进更新、安装生产 Composer 依赖、执行 `npm ci` 并用 Node.js 22 将管理前端构建到暂存目录、安装 Symfony bundle 静态资源，再将成功构建发布到 `dist/admin`，最后以 PHP-FPM 用户清理生产缓存（若该用户与发布用户不同，需要免密 `sudo`）。前端构建失败时，现有 `dist/admin` 保持不变；目录替换期间会有很短的间隙，并非完全原子操作。默认不会执行数据库迁移。
+
+只有完成并验证数据库备份后，才显式请求迁移；脚本会显示迁移状态，并要求输入 `APPLY-MIGRATIONS` 确认：
+
+```sh
+PHP_BIN=/www/server/php/85/bin/php PHP_FPM_USER=www \
+  bash scripts/deploy.sh --migrate
+```
+
+此脚本会原地更新正在运行的 checkout：更新期间后端 PHP 文件会逐步生效，应选择低流量时段。前端会先构建再替换，但后端不是原子发布，也没有自动回滚。如需更强的版本隔离，请使用[发布与回滚 runbook](release-and-rollback.zh-cn.md)。
 
 ## 7. 仅授权运行时目录
 

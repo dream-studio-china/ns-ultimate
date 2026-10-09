@@ -177,7 +177,6 @@ server {
     SetEnv APP_DEBUG 0
 
     RedirectMatch 301 ^/admin$ /admin/
-    Alias /admin/ "/srv/ns-ultimate/current/dist/admin/"
 
     <Directory "/srv/ns-ultimate/current/dist/admin">
         Options FollowSymLinks
@@ -201,11 +200,13 @@ server {
 
 宝塔生成的虚拟主机和 PHP 处理器指令会因安装方式而异。请把规则合并到正确站点的 HTTP/HTTPS 虚拟主机，不要整体覆盖配置。确认 Apache 会把站点级 `SetEnv` 传给 PHP-FPM；若不能传递，应为本站创建独立 FPM pool，而不是修改其他应用共用的 pool。此站点的 `open_basedir` 必须允许读取整个项目根目录（bootstrap 需要访问 `core/`、`business/` 和 `integration/`），以及项目外的密钥/共享数据目录。不要全局关闭限制。宝塔可能会给 `.user.ini` 设置不可变属性；先备份并用 `lsattr` 检查，临时执行 `chattr -i` 后只修改所需路径，完成后用 `chattr +i` 恢复。切勿使用 `chmod 777`。
 
+此 Apache 示例假设部署时会创建 `integration/backend/public/admin` 符号链接，指向 `dist/admin`；不要同时配置 `Alias /admin/`，否则 Alias 会覆盖文档根目录下的符号链接。请为 public 目录启用 `FollowSymLinks`。
+
 请根据安装的 Nginx 或 Apache/PHP-FPM 版本以及应用实际静态资源、上传路由确认所选配置。若 TLS 在可信上游代理处终止，请明确配置 Symfony 的可信代理；不要信任任意转发头。根据启用功能使用进程管理器运行所需的 Messenger worker 或 outbox 定时任务，并确保这些进程与 PHP-FPM 使用相同发布版本和环境配置。
 
 ## 6. CI/CD 发布流程
 
-CI 应检出完整仓库（包括 Git 子树），按锁文件安装依赖、运行测试，并使用 Node.js 22 构建 `dist/admin/`。通过受限的 SSH/发布账号，将经过测试的同一提交/构建产物部署到新的不可变 release 目录；不要把生产凭据放入 CI 构建任务或提交到 Git。尽可能将 `.env.prod.local`、JWT 密钥、上传文件和可写运行数据放在 release 目录之外。在服务器使用 PHP 8.5 CLI 安装 Composer 生产依赖，验证生产环境，备份数据库，作为明确发布步骤审核/执行迁移，然后原子切换 `current`。不要在每个 Web worker 启动时自动迁移。保留上一 release 和数据库备份以便回滚；仅回滚代码未必能撤销 schema 变更。
+CI 应检出完整仓库（包括 Git 子树），按锁文件安装依赖、运行测试，并使用 Node.js 22 构建 `dist/admin/`。通过受限的 SSH/发布账号，将经过测试的同一提交/构建产物部署到新的不可变 release 目录；不要把生产凭据放入 CI 构建任务或提交到 Git。尽可能将 `.env.prod.local`、JWT 密钥、上传文件和可写运行数据放在 release 目录之外。在服务器使用 PHP 8.5 CLI 安装 Composer 生产依赖，验证生产环境，备份数据库，作为明确发布步骤审核/执行迁移，然后原子切换 `current`。不要在每个 Web worker 启动时自动迁移。保留上一 release 和数据库备份以便回滚；仅回滚代码未必能撤销 schema 变更。单目录原地更新可使用 [`scripts/deploy.sh`](scripts/deploy.sh)，它会快进拉取指定分支并构建前后端，但后端不是原子切换。
 
 ## 7. 切换流量、验证和回滚
 
