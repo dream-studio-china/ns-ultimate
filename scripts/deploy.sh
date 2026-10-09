@@ -9,7 +9,7 @@ NODE_BIN="${NODE_BIN:-node}"
 NPM_BIN="${NPM_BIN:-npm}"
 PHP_FPM_USER="${PHP_FPM_USER:-www}"
 PHP_FPM_GROUP="${PHP_FPM_GROUP:-$PHP_FPM_USER}"
-RUN_MIGRATIONS=0
+MODE=""
 
 die() {
   printf 'Deploy failed: %s\n' "$*" >&2
@@ -18,15 +18,18 @@ die() {
 
 usage() {
   cat <<'USAGE'
-Usage: bash scripts/deploy.sh [--migrate] [--help]
+Usage: bash scripts/deploy.sh (--frontend | --backend | --all) [--help]
 
-Fast-forwards the configured branch, installs production Composer dependencies,
-builds the admin with Node.js, links public/admin to dist/admin, and clears the
-production cache. Database migrations are skipped unless --migrate is supplied;
-that option requires an interactive backup confirmation.
+Select exactly one deployment mode:
+  --frontend  Fast-forward, build the admin, and publish dist/admin only.
+  --backend   Fast-forward, install production PHP dependencies, run migrations,
+              install Symfony assets, and clear the production cache.
+  --all       Fast-forward, update both frontend and backend, and run migrations.
 
 Run this script as root. Git, Composer, npm, and Symfony asset installation run
 as root; migrations and cache commands run as PHP_FPM_USER (default: www).
+Backend and all modes run migrations without an interactive confirmation;
+back up the production database before using either mode.
 
 Configuration via environment:
   DEPLOY_BRANCH   Git branch to deploy (default: main)
@@ -53,26 +56,39 @@ resolve_command() {
 
 while (($#)); do
   case "$1" in
-    --migrate) RUN_MIGRATIONS=1 ;;
-    --help|-h) usage; exit 0 ;;
-    *) die "unknown option: $1 (use --help)" ;;
+  --frontend|--backend|--all)
+    [[ -z "$MODE" ]] || die 'choose exactly one of --frontend, --backend, or --all'
+    MODE="${1#--}"
+    ;;
+  --help|-h) usage; exit 0 ;;
+  *) die "unknown option: $1 (choose --frontend, --backend, or --all)" ;;
   esac
   shift
 done
 
-PHP_BIN="$(resolve_command "$PHP_BIN")"
-COMPOSER_BIN="$(resolve_command "$COMPOSER_BIN")"
-NODE_BIN="$(resolve_command "$NODE_BIN")"
-NPM_BIN="$(resolve_command "$NPM_BIN")"
+[[ -n "$MODE" ]] || { usage >&2; die 'a deployment mode is required'; }
+
+if [[ "$MODE" != frontend ]]; then
+  PHP_BIN="$(resolve_command "$PHP_BIN")"
+  COMPOSER_BIN="$(resolve_command "$COMPOSER_BIN")"
+fi
+if [[ "$MODE" != backend ]]; then
+  NODE_BIN="$(resolve_command "$NODE_BIN")"
+  NPM_BIN="$(resolve_command "$NPM_BIN")"
+fi
 command -v git >/dev/null || die 'git is required'
 command -v flock >/dev/null || die 'flock is required to prevent concurrent deployments'
 ((EUID == 0)) || die 'run this deployment script as root'
-[[ "$PHP_FPM_USER" == root ]] || command -v runuser >/dev/null || die 'runuser is required to run Symfony console commands as PHP_FPM_USER'
+if [[ "$MODE" != frontend ]]; then
+  [[ "$PHP_FPM_USER" == root ]] || command -v runuser >/dev/null || die 'runuser is required to run Symfony console commands as PHP_FPM_USER'
+fi
 
 cd "$ROOT"
 [[ -f .git ]] || [[ -d .git ]] || die "not a Git checkout: $ROOT"
-[[ -e integration/backend/.env.prod.local ]] || die 'missing integration/backend/.env.prod.local'
 [[ -f core/crud-skeleton/composer.json ]] || die 'run this script from a complete project checkout'
+if [[ "$MODE" != frontend ]]; then
+  [[ -e integration/backend/.env.prod.local ]] || die 'missing integration/backend/.env.prod.local'
+fi
 
 current_branch="$(git branch --show-current)"
 [[ "$current_branch" == "$DEPLOY_BRANCH" ]] || die "checked-out branch is '$current_branch', expected '$DEPLOY_BRANCH'"
@@ -99,13 +115,17 @@ lock_file="${DEPLOY_LOCK_FILE:-$(git rev-parse --git-path ns-ultimate-deploy.loc
 exec 9>"$lock_file"
 flock -n 9 || die 'another deployment is already running'
 
-php_version_id="$("$PHP_BIN" -r 'echo PHP_VERSION_ID;')"
-((php_version_id >= 80400)) || die 'PHP 8.4 or later is required; PHP 8.5 is recommended'
-node_version="$("$NODE_BIN" --version)"
-if [[ "$node_version" =~ ^v?([0-9]+)\. ]]; then
-  ((BASH_REMATCH[1] >= 22)) || die "Node.js 22 or later is required (found $node_version)"
-else
-  die "could not parse Node.js version: $node_version"
+if [[ "$MODE" != frontend ]]; then
+  php_version_id="$("$PHP_BIN" -r 'echo PHP_VERSION_ID;')"
+  ((php_version_id >= 80400)) || die 'PHP 8.4 or later is required; PHP 8.5 is recommended'
+fi
+if [[ "$MODE" != backend ]]; then
+  node_version="$("$NODE_BIN" --version)"
+  if [[ "$node_version" =~ ^v?([0-9]+)\. ]]; then
+    ((BASH_REMATCH[1] >= 22)) || die "Node.js 22 or later is required (found $node_version)"
+  else
+    die "could not parse Node.js version: $node_version"
+  fi
 fi
 
 previous_commit="$(git rev-parse HEAD)"
@@ -119,15 +139,19 @@ git merge --ff-only "$remote_ref"
 new_commit="$(git rev-parse HEAD)"
 printf 'Updated commit: %s\n' "$new_commit"
 
-"$COMPOSER_BIN" install \
-  --working-dir="$ROOT/core/crud-skeleton" \
-  --no-dev --prefer-dist --no-interaction --no-progress \
-  --optimize-autoloader --no-scripts
+if [[ "$MODE" != frontend ]]; then
+  "$COMPOSER_BIN" install \
+    --working-dir="$ROOT/core/crud-skeleton" \
+    --no-dev --prefer-dist --no-interaction --no-progress \
+    --optimize-autoloader --no-scripts
+fi
 
-"$NPM_BIN" ci --prefix "$ROOT/core/crud-admin"
-"$NPM_BIN" run build --prefix "$ROOT/core/crud-admin" \
-  -- --config "$ROOT/integration/admin/vite.config.ts" --outDir "$staging_build"
-[[ -f "$staging_build/index.html" ]] || die 'admin build did not produce its staging index.html'
+if [[ "$MODE" != backend ]]; then
+  "$NPM_BIN" ci --prefix "$ROOT/core/crud-admin"
+  "$NPM_BIN" run build --prefix "$ROOT/core/crud-admin" \
+    -- --config "$ROOT/integration/admin/vite.config.ts" --outDir "$staging_build"
+  [[ -f "$staging_build/index.html" ]] || die 'admin build did not produce its staging index.html'
+fi
 
 run_console() {
   if [[ "$PHP_FPM_USER" != root ]]; then
@@ -138,48 +162,44 @@ run_console() {
   fi
 }
 
-cache_dir="$ROOT/var/cache/backend"
-install -d -o "$PHP_FPM_USER" -g "$PHP_FPM_GROUP" -m 0750 "$cache_dir"
-chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$cache_dir"
-chmod -R u+rwX "$cache_dir"
+if [[ "$MODE" != frontend ]]; then
+  cache_dir="$ROOT/var/cache/backend"
+  install -d -o "$PHP_FPM_USER" -g "$PHP_FPM_GROUP" -m 0750 "$cache_dir"
+  chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$cache_dir"
+  chmod -R u+rwX "$cache_dir"
 
-if ((RUN_MIGRATIONS)); then
-  [[ -t 0 ]] || die '--migrate requires an interactive terminal and a verified database backup'
   printf '\nMigration status for the configured production database:\n'
   run_console doctrine:migrations:status
-  printf '\nVerify a current, restorable database backup exists. Type APPLY-MIGRATIONS to continue: '
-  IFS= read -r confirmation
-  [[ "$confirmation" == 'APPLY-MIGRATIONS' ]] || die 'migration confirmation did not match'
   run_console doctrine:migrations:migrate --no-interaction
-else
-  printf '\nSkipping database migrations. Review status and back up the database before applying pending migrations.\n'
+  APP_ENV=prod APP_DEBUG=0 "$PHP_BIN" "$ROOT/integration/backend/bin/console" \
+    assets:install "$ROOT/integration/backend/public"
+  run_console cache:clear
 fi
 
-APP_ENV=prod APP_DEBUG=0 "$PHP_BIN" "$ROOT/integration/backend/bin/console" \
-  assets:install "$ROOT/integration/backend/public"
-
-if [[ -e "$admin_build" || -L "$admin_build" ]]; then
-  mv "$admin_build" "$backup_build"
-fi
-if ! mv "$staging_build" "$admin_build"; then
-  if [[ -e "$backup_build" || -L "$backup_build" ]]; then
-    mv "$backup_build" "$admin_build"
+if [[ "$MODE" != backend ]]; then
+  if [[ -e "$admin_build" || -L "$admin_build" ]]; then
+    mv "$admin_build" "$backup_build"
   fi
-  die 'could not publish the staged admin build; restored the previous build when available'
+  if ! mv "$staging_build" "$admin_build"; then
+    if [[ -e "$backup_build" || -L "$backup_build" ]]; then
+      mv "$backup_build" "$admin_build"
+    fi
+    die 'could not publish the staged admin build; restored the previous build when available'
+  fi
+  if [[ -e "$backup_build" || -L "$backup_build" ]]; then
+    rm -rf -- "$backup_build"
+  fi
+
+  temporary_link="$ROOT/integration/backend/public/.admin-link.$$"
+  [[ ! -e "$temporary_link" && ! -L "$temporary_link" ]] || die "temporary link already exists: $temporary_link"
+  ln -s '../../../dist/admin' "$temporary_link"
+  mv -Tf "$temporary_link" "$admin_link"
+  [[ -f "$admin_link/index.html" ]] || die 'public/admin does not resolve to the generated admin build'
 fi
-if [[ -e "$backup_build" || -L "$backup_build" ]]; then
-  rm -rf -- "$backup_build"
+
+printf '\nDeployment finished (%s mode).\n' "$MODE"
+if [[ "$MODE" != backend ]]; then
+  printf 'Frontend link: integration/backend/public/admin -> ../../../dist/admin\n'
 fi
-
-temporary_link="$ROOT/integration/backend/public/.admin-link.$$"
-[[ ! -e "$temporary_link" && ! -L "$temporary_link" ]] || die "temporary link already exists: $temporary_link"
-ln -s '../../../dist/admin' "$temporary_link"
-mv -Tf "$temporary_link" "$admin_link"
-[[ -f "$admin_link/index.html" ]] || die 'public/admin does not resolve to the generated admin build'
-
-run_console cache:clear
-
-printf '\nDeployment finished.\n'
-printf 'Frontend link: integration/backend/public/admin -> ../../../dist/admin\n'
 printf 'Release commit: %s\n' "$new_commit"
-printf 'Remember to smoke-test /admin/ and the API. This in-place deployment does not provide an automatic backend rollback.\n'
+printf 'Smoke-test the deployed part(s). This in-place deployment does not provide an automatic backend rollback.\n'

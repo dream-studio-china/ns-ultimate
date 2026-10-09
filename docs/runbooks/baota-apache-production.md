@@ -168,17 +168,26 @@ From the server checkout, as root:
 
 ```sh
 cd /www/wwwroot/<project-root>
-PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 ```
 
-The script must run as root: Git, Composer, npm, and Symfony asset installation run as root; migrations and cache commands run as `PHP_FPM_USER` (default `www`) via `runuser`. Set `PHP_BIN` and, if needed, `PHP_FPM_USER`/`PHP_FPM_GROUP` for this server. The checkout must have no local changes to tracked files and be on `main`; set `DEPLOY_BRANCH` to update another branch. Untracked Baota-generated files are left in place; Git will refuse the fast-forward if an untracked file would be overwritten. The script fast-forwards from `origin`, installs production Composer dependencies, builds the admin with Node.js 22 into a staging directory, installs Symfony bundle assets, publishes the successful build at `dist/admin`, repairs ownership and permissions only under `var/cache/backend`, and clears the production cache. A failed frontend build leaves the current `dist/admin` untouched. The frontend directory replacement has a brief gap and is not fully atomic. The script does not run migrations by default.
-
-Only after taking and verifying a database backup, migrations can be explicitly requested; the script prints migration status and requires typing `APPLY-MIGRATIONS`:
+The script must run as root: Git, Composer, npm, and Symfony asset installation run as root; migrations and cache commands run as `PHP_FPM_USER` (default `www`) via `runuser`. Set `PHP_BIN` and, if needed, `PHP_FPM_USER`/`PHP_FPM_GROUP` for this server. The checkout must have no local changes to tracked files and be on `main`; set `DEPLOY_BRANCH` to update another branch. Untracked Baota-generated files are left in place; Git will refuse the fast-forward if an untracked file would be overwritten. Choose a mode:
 
 ```sh
-cd /www/wwwroot/<project-root>
-PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --migrate
+# Frontend only: no Composer install, database migration, or backend cache clear
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --frontend
+
+# Backend only: Composer install, migrations, Symfony assets, and cache clear
+# Back up the database first; migrations run without an interactive prompt.
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --backend
+
+# Both frontend and backend, including migrations (back up the database first)
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 ```
+
+Each mode fast-forwards the same Git checkout, so Git updates all tracked code regardless of mode; the option controls which install/build/migration steps run. The frontend is built in a staging directory before publishing to `dist/admin`; a failed build leaves the previous frontend untouched. Directory replacement has a brief gap and is not fully atomic.
+
+Backend and all modes run pending migrations automatically without an interactive prompt. Take and verify a restorable database backup before running either mode.
 
 This updates a live checkout in place: backend PHP files become current during the update, so use a low-traffic window. The build is staged before replacing the frontend, but the backend release is not atomic and has no automatic rollback. For stronger release isolation, use [release and rollback](release-and-rollback.md).
 

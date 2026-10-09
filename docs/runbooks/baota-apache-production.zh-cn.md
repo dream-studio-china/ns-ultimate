@@ -168,17 +168,26 @@ sudo lsattr "$FILE"
 
 ```sh
 cd /www/wwwroot/<项目根目录>
-PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 ```
 
-脚本必须以 root 执行：Git、Composer、npm 和 Symfony bundle 静态资源安装由 root 运行；数据库迁移及缓存命令通过 `runuser` 切换为 `PHP_FPM_USER`（默认 `www`）。按服务器实际情况修改 `PHP_BIN`，必要时设置 `PHP_FPM_USER`/`PHP_FPM_GROUP`。checkout 必须没有已跟踪文件的本地修改，并位于 `main` 分支；其他分支通过 `DEPLOY_BRANCH` 指定。宝塔生成的未跟踪文件会保留；若更新会覆盖这类文件，Git 会拒绝快进。脚本会从 `origin` 快进更新、安装生产 Composer 依赖、用 Node.js 22 将管理前端构建到暂存目录、安装 Symfony bundle 静态资源，再发布至 `dist/admin`；同时只修复 `var/cache/backend` 的属主和权限，并清理生产缓存。前端构建失败时，现有 `dist/admin` 保持不变；目录替换期间会有很短的间隙，并非完全原子操作。默认不会执行数据库迁移。
-
-只有完成并验证数据库备份后，才显式请求迁移；脚本会显示迁移状态，并要求输入 `APPLY-MIGRATIONS` 确认：
+脚本必须以 root 执行：Git、Composer、npm 和 Symfony bundle 静态资源安装由 root 运行；数据库迁移及缓存命令通过 `runuser` 切换为 `PHP_FPM_USER`（默认 `www`）。按服务器实际情况修改 `PHP_BIN`，必要时设置 `PHP_FPM_USER`/`PHP_FPM_GROUP`。checkout 必须没有已跟踪文件的本地修改，并位于 `main` 分支；其他分支通过 `DEPLOY_BRANCH` 指定。宝塔生成的未跟踪文件会保留；若更新会覆盖这类文件，Git 会拒绝快进。按需选择模式：
 
 ```sh
-cd /www/wwwroot/<项目根目录>
-PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --migrate
+# 仅前端：不安装 Composer 依赖、不迁移数据库、不清理后端缓存
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --frontend
+
+# 仅后端：安装 Composer 依赖、执行迁移、安装 Symfony 资源并清理缓存
+# 先备份数据库；迁移不会再要求交互确认。
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --backend
+
+# 前后端全部更新，并执行迁移（先备份数据库）
+PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 ```
+
+所有模式都会快进更新同一个 Git checkout，因此无论选择哪个模式，Git 都会更新所有已跟踪代码；参数只控制依赖安装、构建和迁移步骤。前端会先构建到暂存目录，成功后才发布到 `dist/admin`；构建失败时旧前端保持不变。目录替换时会有短暂间隙，并非完全原子操作。
+
+后端和全部更新模式都会自动执行待处理迁移，不再要求交互确认。运行任一模式前，必须先完成并验证数据库备份可恢复。
 
 此脚本会原地更新正在运行的 checkout：更新期间后端 PHP 文件会逐步生效，应选择低流量时段。前端会先构建再替换，但后端不是原子发布，也没有自动回滚。如需更强的版本隔离，请使用[发布与回滚 runbook](release-and-rollback.zh-cn.md)。
 
