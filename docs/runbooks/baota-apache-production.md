@@ -172,7 +172,7 @@ PHP_FPM_USER=www \
 bash scripts/deploy.sh
 ```
 
-Adjust `PHP_BIN` and `PHP_FPM_USER` to the server. The checkout must be clean and on `main`; set `DEPLOY_BRANCH` to update another branch. The script fast-forwards from `origin`, runs production Composer install, runs `npm ci` and builds the admin with Node.js 22 into a staging directory, installs Symfony bundle assets, publishes the successful build at `dist/admin`, and clears the production cache as the PHP-FPM user (passwordless `sudo` is needed if it differs from the deploy user). A failed frontend build leaves the current `dist/admin` untouched. The frontend directory replacement has a brief gap and is not fully atomic. The script does not run migrations by default.
+Adjust `PHP_BIN` and `PHP_FPM_USER` to the server. The checkout must have no local changes to tracked files and be on `main`; set `DEPLOY_BRANCH` to update another branch. Untracked Baota-generated files are left in place; Git will refuse the fast-forward if an untracked file would be overwritten. The script fast-forwards from `origin`, runs production Composer install, runs `npm ci` and builds the admin with Node.js 22 into a staging directory, installs Symfony bundle assets, publishes the successful build at `dist/admin`, and clears the production cache as the PHP-FPM user (passwordless `sudo` is needed if it differs from the deploy user). A failed frontend build leaves the current `dist/admin` untouched. The frontend directory replacement has a brief gap and is not fully atomic. The script does not run migrations by default.
 
 Only after taking and verifying a database backup, migrations can be explicitly requested; the script prints migration status and requires typing `APPLY-MIGRATIONS`:
 

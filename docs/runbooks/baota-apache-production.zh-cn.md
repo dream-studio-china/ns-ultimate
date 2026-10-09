@@ -172,7 +172,7 @@ PHP_FPM_USER=www \
 bash scripts/deploy.sh
 ```
 
-按服务器实际情况修改 `PHP_BIN` 和 `PHP_FPM_USER`。checkout 必须在 `main` 分支且工作区干净；其他分支通过 `DEPLOY_BRANCH` 指定。脚本会从 `origin` 快进更新、安装生产 Composer 依赖、执行 `npm ci` 并用 Node.js 22 将管理前端构建到暂存目录、安装 Symfony bundle 静态资源，再将成功构建发布到 `dist/admin`，最后以 PHP-FPM 用户清理生产缓存（若该用户与发布用户不同，需要免密 `sudo`）。前端构建失败时，现有 `dist/admin` 保持不变；目录替换期间会有很短的间隙，并非完全原子操作。默认不会执行数据库迁移。
+按服务器实际情况修改 `PHP_BIN` 和 `PHP_FPM_USER`。checkout 必须没有已跟踪文件的本地修改，并位于 `main` 分支；其他分支通过 `DEPLOY_BRANCH` 指定。宝塔生成的未跟踪文件会保留；若更新会覆盖这类文件，Git 会拒绝快进。脚本会从 `origin` 快进更新、安装生产 Composer 依赖、执行 `npm ci` 并用 Node.js 22 将管理前端构建到暂存目录、安装 Symfony bundle 静态资源，再将成功构建发布到 `dist/admin`，最后以 PHP-FPM 用户清理生产缓存（若该用户与发布用户不同，需要免密 `sudo`）。前端构建失败时，现有 `dist/admin` 保持不变；目录替换期间会有很短的间隙，并非完全原子操作。默认不会执行数据库迁移。
 
 只有完成并验证数据库备份后，才显式请求迁移；脚本会显示迁移状态，并要求输入 `APPLY-MIGRATIONS` 确认：
 

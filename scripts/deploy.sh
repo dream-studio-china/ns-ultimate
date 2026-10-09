@@ -69,8 +69,8 @@ cd "$ROOT"
 
 current_branch="$(git branch --show-current)"
 [[ "$current_branch" == "$DEPLOY_BRANCH" ]] || die "checked-out branch is '$current_branch', expected '$DEPLOY_BRANCH'"
-if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
-  die 'working tree is not clean; commit or safely move local changes before deployment'
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  die 'tracked files have local changes; commit or safely move those changes before deployment'
 fi
 
 admin_link="$ROOT/integration/backend/public/admin"
