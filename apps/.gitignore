@@ -1,0 +1,85 @@
+# Dependencies
+node_modules/
+bower_components/
+.pnp.*
+.pnpm-store/
+
+# Build output and framework caches
+dist/
+dist-ssr/
+build/
+out/
+.output/
+.next/
+.nuxt/
+.nitro/
+.svelte-kit/
+.angular/
+.astro/
+.vite/
+.turbo/
+.parcel-cache/
+.cache/
+coverage/
+storybook-static/
+
+# Vue documentation site output and generated tooling files
+**/.vuepress/.cache/
+**/.vuepress/dist/
+**/.vitepress/cache/
+**/.vitepress/dist/
+auto-imports.d.ts
+components.d.ts
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+
+# Test output
+playwright-report/
+test-results/
+**/cypress/videos/
+**/cypress/screenshots/
+
+# Local environment and secrets (keep sanitized examples trackable)
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+
+# WeChat Mini Program / DevTools generated and private configuration
+project.private.config.json
+project.private.config.*.json
+miniprogram_npm/
+
+# uni-app / HBuilderX generated output and local workspace settings
+unpackage/
+.hbuilderx/
+
+# Local deployment tooling/state
+.vercel/
+.netlify/
+.serverless/
+.wrangler/
+.terraform/
+.pulumi/
+.firebase/
+terraform.tfstate*
+*.tfstate*
+docker-compose.override.yml
+compose.override.yaml
+
+# Logs and temporary files
+logs/
+*.log
+tmp/
+temp/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
