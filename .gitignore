@@ -11,6 +11,8 @@ dist/
 coverage/
 var/cache/
 var/log/
+var/data/
+var/keys/
 
 # Editors / OS
 .DS_Store

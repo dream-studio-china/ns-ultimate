@@ -14,6 +14,16 @@ Keep upstream code intact where possible. Put product behavior in `business/`, a
 
 See [docs/README.md](docs/README.md) for documentation, [the architecture guide](docs/design/architecture.md) before adding modules, and [the subtree workflow](docs/operations/core-sync.md) before updating a core.
 
+## Local development
+
+```sh
+make install
+make env-init
+make dev
+```
+
+Use `make help` for commands and [the development guide](docs/operations/development.md) for env management, debugging, and checks.
+
 ## Upstream licenses
 
 The admin core is MIT-licensed. The backend core currently identifies itself as Apache-2.0 in its `LICENSE` and `composer.json`. Preserve each core's license and notices when redistributing it.
