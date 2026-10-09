@@ -8,6 +8,7 @@ Integrated application built from two upstream cores and project-owned business 
 - `core/crud-skeleton/` — Symfony backend, tracked as a Git subtree of `immane/crud-skeleton`.
 - `integration/` — project-owned application wiring and adapters between core and business modules.
 - `business/` — all project-specific frontend and backend business functionality.
+- `apps/` — placeholder for independent applications with separate runtime/deployment boundaries; not currently wired into project workflows.
 - `docs/` — architecture, development boundaries, and upstream synchronization guidance.
 
 Keep upstream code intact where possible. Put product behavior in `business/`, and keep `integration/` focused on registration and adaptation. If a reusable extension point is missing, make the smallest generic change in the relevant core and submit it upstream via a branch and PR.
@@ -59,6 +60,8 @@ flowchart LR
         ID["Docker Compose, PHP-FPM and Nginx"]
     end
 
+    Apps["apps/ — independent applications (reserved)"]
+
     BA --> IA --> CA
     BB --> IB --> CB
     CA -->|"HTTP /api requests"| ID
@@ -67,7 +70,7 @@ flowchart LR
     CB --> DB[("Database")]
 ```
 
-Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
+Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. `apps/` is reserved for independent projects, excluded from the main Docker build context, and not currently discovered or run by existing workflows. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
 
 ## Project-owned code and upstream licenses
 

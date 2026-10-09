@@ -19,6 +19,10 @@ Contains the two upstream repositories as Git subtrees. Treat these directories 
 
 Owns all application-specific behavior, including frontend pages/components, menu and CRUD configuration, API clients, backend domain models, services, controllers, migrations, and business tests. Organize by business capability rather than by technical layer where practical. Backend modules should use a project namespace distinct from core's `App\\` namespace to avoid class collisions.
 
+### `apps/`
+
+Reserved for self-contained applications with a distinct runtime or deployment boundary. It currently contains only a placeholder and is not discovered, built, tested, or run by the main application's integration, CI, or deployment workflows; it is also excluded from the main Docker build context. Keep product capabilities of the composed admin/API application in `business/`; add an app-specific build/operations workflow or explicit integration before using an independent app.
+
 ### `integration/`
 
 Owns composition only. The admin side injects the business router and entity configuration at the core's `@/config` seam. The backend Kernel discovers modules by the `business/backend/<PascalCaseSingular>/src/` convention and automatically wires their namespaces, services, routes, Doctrine mappings, and migrations when present. It must not become a home for domain rules.

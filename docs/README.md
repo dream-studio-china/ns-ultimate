@@ -1,6 +1,7 @@
 # Documentation
 
 - [`../LICENSE`](../LICENSE) — MIT license for project-owned code outside `core/`.
+- [`../apps/README.md`](../apps/README.md) — reserved location and boundary for future independent applications.
 - [`../README.zh-cn.md`](../README.zh-cn.md) — project overview in Simplified Chinese.
 - [`../QUICKSTART.md`](../QUICKSTART.md) — local prerequisites, setup, development, and tests.
 - [`../QUICKSTART.zh-cn.md`](../QUICKSTART.zh-cn.md) — Quickstart in Simplified Chinese.
