@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  project-checks:
+    name: Project composition checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: core/crud-admin/package-lock.json
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: ctype, iconv, intl, pdo_sqlite, sqlite3
+          coverage: none
+          tools: composer:v2
+
+      - name: Install admin dependencies
+        run: npm ci --prefix core/crud-admin
+
+      - name: Install backend dependencies
+        run: composer install --working-dir=core/crud-skeleton --no-interaction --prefer-dist --no-progress --no-scripts
+
+      - name: Run project workflow and admin composition tests
+        run: node --test scripts/*.test.mjs integration/admin/*.test.mjs
+
+      - name: Run backend composition and business integration tests
+        run: php core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml
+
+      - name: Build composed admin without upstream test scripts
+        working-directory: core/crud-admin
+        run: ./node_modules/.bin/vite build --config ../../integration/admin/vite.config.ts
