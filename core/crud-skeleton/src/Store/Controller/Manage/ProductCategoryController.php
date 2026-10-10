@@ -37,7 +37,10 @@ final class ProductCategoryController extends RestController
         private readonly StoreRepository $storeRepository,
     ) {}
 
-    /** @param array<string, mixed> $content @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     protected function processCreateContent(array $content, object $entity): array
     {
         if ($entity instanceof ProductCategory) {
@@ -50,7 +53,10 @@ final class ProductCategoryController extends RestController
         return $content;
     }
 
-    /** @param array<string, mixed> $content @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         if ($entity instanceof ProductCategory) {
