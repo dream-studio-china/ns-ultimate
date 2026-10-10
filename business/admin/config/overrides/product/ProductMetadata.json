@@ -22,11 +22,10 @@
       "maximum": 10
     },
     "weight": {
-      "type": "number",
-      "title": "Weight (kg)",
-      "description": "Enter the product weight in kilograms. Leave blank if unknown.",
-      "minimum": 0,
-      "multipleOf": 0.01
+      "type": "integer",
+      "title": "Weight (g)",
+      "description": "Enter the product weight in grams. Leave blank if unknown.",
+      "minimum": 0
     }
   },
   "required": []
