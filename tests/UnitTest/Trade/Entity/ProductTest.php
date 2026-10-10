@@ -8,6 +8,8 @@ use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderItem;
 use App\Store\Entity\Product;
 use App\Store\Entity\Specification;
+use App\Store\Entity\ProductCategory;
+use App\Store\Entity\Store;
 use App\Identity\Entity\User;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -77,6 +79,39 @@ final class ProductTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $product->setStatus('invalid_status');
+    }
+
+    public function testProductCanUseGlobalOrSameStoreCategory(): void
+    {
+        $store = new Store('north', 'North Store');
+        $global = new ProductCategory('Global', 'global');
+        $local = (new ProductCategory('Local', 'local'))->setStore($store);
+        $product = (new Product())->setStore($store);
+
+        $product->setCategory($global);
+        self::assertSame($global, $product->getCategory());
+        $product->setCategory($local);
+        self::assertSame($local, $product->getCategory());
+        $product->setCategory(null);
+        self::assertNull($product->getCategory());
+    }
+
+    public function testGlobalProductCannotUseStoreCategory(): void
+    {
+        $product = new Product();
+        $category = (new ProductCategory('Local', 'local'))->setStore(new Store('north', 'North Store'));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $product->setCategory($category);
+    }
+
+    public function testProductCannotUseAnotherStoresCategory(): void
+    {
+        $product = (new Product())->setStore(new Store('north', 'North Store'));
+        $category = (new ProductCategory('South', 'south'))->setStore(new Store('south', 'South Store'));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $product->setCategory($category);
     }
 
     #[Group('low-value')]
