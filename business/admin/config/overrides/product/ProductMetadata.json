@@ -20,6 +20,13 @@
       "title": "Recommendation level",
       "minimum": 1,
       "maximum": 10
+    },
+    "weight": {
+      "type": "number",
+      "title": "Weight (kg)",
+      "description": "Enter the product weight in kilograms. Leave blank if unknown.",
+      "minimum": 0,
+      "multipleOf": 0.01
     }
   },
   "required": []

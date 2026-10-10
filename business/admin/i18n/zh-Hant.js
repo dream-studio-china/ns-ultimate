@@ -21,6 +21,8 @@ export default {
   Cover: '封面圖',
   'Sold out': '已售罄',
   'Recommendation level': '推薦等級',
+  'Weight (kg)': '重量（kg）',
+  'Enter the product weight in kilograms. Leave blank if unknown.': '請輸入商品重量，單位為公斤（kg）；未知可留空。',
   'Product store help': '所屬門店，可空',
   'Qiniu Config': '七牛雲配置',
   'Qiniu Storage Config': '七牛雲存儲配置',
