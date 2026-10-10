@@ -4,6 +4,8 @@
 // List and specifications behavior mirror the core configuration.
 import { defineAsyncComponent } from 'vue'
 import { t } from '@/i18n'
+import axios from '@/utils/request'
+import { API_PREFIX, apiPath } from '@/api/prefix'
 import { orderByIdDesc, statusFilterLabel } from '../../../../core/crud-admin/src/configs/collections/helpers'
 // Lazily resolve the admin UI here: this config module is eagerly pulled into
 // every FormAdmin through `@/configs/entities`, so static SFC imports would
@@ -189,6 +191,9 @@ export default {
       query: orderByIdDesc,
       list_filter: {
         name: t('Product Name'),
+        'category.id': () => axios
+          .get(apiPath(API_PREFIX, 'manage/product-categories'))
+          .then(res => Object.assign({ __label: t('Category') }, ...res.data.map(v => ({ [v.id]: v.name })))),
         status: statusFilterLabel(),
         isDeleted: {
           label: t('Deleted'),
