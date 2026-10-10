@@ -1,6 +1,6 @@
 import { t } from '@/i18n'
 import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collections/helpers'
-import PaymentChannelsSchema from '../../overrides/PaymentChannels.json'
+import PaymentChannelsSchema from '../../overrides/payment/PaymentChannels.json'
 
 // Business-owned payment setting profiles. A Store binds one profile.
 // Channel secrets are encrypted by the backend before storage (see backend issues).

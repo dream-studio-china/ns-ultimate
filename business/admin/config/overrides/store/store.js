@@ -1,6 +1,6 @@
 import { t } from '@/i18n'
-import { orderByIdDesc } from '../../../../core/crud-admin/src/configs/collections/helpers'
-import StoreContactSchema from '../../../../core/crud-admin/src/configs/collections/store/StoreContact.json'
+import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collections/helpers'
+import StoreContactSchema from '../../../../../core/crud-admin/src/configs/collections/store/StoreContact.json'
 import StoreAddressSchema from './StoreAddress.json'
 import StoreSettingsSchema from './StoreSettings.json'
 

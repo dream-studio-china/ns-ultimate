@@ -1,10 +1,12 @@
 // Business override of the core Product entity (declared explicitly in
-// business/admin/config/index.js `replace`). Adds category binding, extraData
-// flags (sold out / recommendation 1-10) and a Qiniu-backed cover image.
+// business/admin/config/index.js `replace`). Adds category binding and
+// metadata-backed display fields (sold out / recommendation 1-10 / cover).
 // List and specifications behavior mirror the core configuration.
 import { defineAsyncComponent } from 'vue'
 import { t } from '@/i18n'
-import { orderByIdDesc, statusFilterLabel } from '../../../../core/crud-admin/src/configs/collections/helpers'
+import axios from '@/utils/request'
+import { API_PREFIX, apiPath } from '@/api/prefix'
+import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin/src/configs/collections/helpers'
 // Lazily resolve the admin UI here: this config module is eagerly pulled into
 // every FormAdmin through `@/configs/entities`, so static SFC imports would
 // close an eager cycle (FormAdmin -> entities -> Product.jsx -> ListAdmin ->
@@ -12,8 +14,8 @@ import { orderByIdDesc, statusFilterLabel } from '../../../../core/crud-admin/sr
 // initialization" depending on module evaluation order.
 const ListAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/ListAdmin'))
 const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmin'))
-import specificationConfig from '../../../../core/crud-admin/src/configs/collections/trade/Specification'
-import ProductExtraDataSchema from './ProductExtraData.json'
+import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
+import ProductMetadataSchema from './ProductMetadata.json'
 
 const SpecificationManager = {
   components: { ListAdmin, FormAdmin },
@@ -173,9 +175,18 @@ export default {
             { value: 'inactive', label: t('Inactive') }
           ]
         }},
-        { property: 'extraData', type: 'json_schema', required: false, type_options: { schema: ProductExtraDataSchema }, help: t('Product extra data help') },
-        { property: 'cover', type: 'image', required: false, type_options: { storage: 'qiniu' }, help: t('Product cover help') },
-        { property: 'metadata', type: 'json', required: false, help: t('Product metadata help') },
+        {
+          property: 'metadata',
+          type: 'json_schema',
+          required: false,
+          type_options: {
+            schema: ProductMetadataSchema,
+            fields: [
+              { property: 'cover', type: 'image', type_options: { storage: 'qiniu' }, help: t('Product cover help') }
+            ]
+          },
+          help: t('Product metadata help')
+        },
         {
           property: 'specifications',
           tab: t('Specifications'),
@@ -189,6 +200,9 @@ export default {
       query: orderByIdDesc,
       list_filter: {
         name: t('Product Name'),
+        'category.id': () => axios
+          .get(apiPath(API_PREFIX, 'manage/product-categories'))
+          .then(res => Object.assign({ __label: t('Category') }, ...res.data.map(category => ({ [category.id]: category.name })))),
         status: statusFilterLabel(),
         isDeleted: {
           label: t('Deleted'),
@@ -196,7 +210,7 @@ export default {
           expression: 'entity.getIsDeleted() == :value'
         }
       },
-      list_display: ['id', 'name', 'category', 'status', { property: 'cover', type: 'image' }, 'isDeleted', 'createdAt', 'updatedAt']
+      list_display: ['id', 'name', 'category', 'status', 'isDeleted', 'createdAt', 'updatedAt']
     },
     detail: {
       detail_display: '__all__'
