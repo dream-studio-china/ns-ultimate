@@ -7,6 +7,7 @@ namespace App\Tests\UnitTest\Store\Controller\Staff;
 use App\Store\Controller\Staff\ProductController;
 use App\Store\Entity\Product;
 use App\Store\Entity\Store;
+use App\Store\Repository\ProductCategoryRepository;
 use App\Store\Service\ProductServiceInterface;
 use App\Store\Service\StoreServiceInterface;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -24,6 +25,7 @@ final class ProductControllerTest extends TestCase
     private Store $store;
     private ProductServiceInterface $productService;
     private StoreServiceInterface $storeService;
+    private ProductCategoryRepository $categoryRepository;
     private AuthorizationCheckerInterface $authorizationChecker;
     private ProductController $controller;
 
@@ -32,9 +34,10 @@ final class ProductControllerTest extends TestCase
         $this->store = new Store('demo', 'Demo', 'Asia/Shanghai');
         $this->productService = $this->createMock(ProductServiceInterface::class);
         $this->storeService = $this->createMock(StoreServiceInterface::class);
+        $this->categoryRepository = $this->createMock(ProductCategoryRepository::class);
         $this->authorizationChecker = $this->createMock(AuthorizationCheckerInterface::class);
         $this->authorizationChecker->method('isGranted')->willReturn(true);
-        $this->controller = new ProductController($this->productService, $this->storeService);
+        $this->controller = new ProductController($this->productService, $this->storeService, $this->categoryRepository);
     }
 
     public function testCommonFilterDelegatesToStoreScopedFilter(): void
@@ -144,7 +147,7 @@ final class ProductControllerTest extends TestCase
     {
         $this->authorizationChecker = $this->createMock(AuthorizationCheckerInterface::class);
         $this->authorizationChecker->method('isGranted')->with('store:product:create', $this->store)->willReturn(false);
-        $this->controller = new ProductController($this->productService, $this->storeService);
+        $this->controller = new ProductController($this->productService, $this->storeService, $this->categoryRepository);
 
         $request = Request::create(
             '/products',
@@ -247,7 +250,7 @@ final class ProductControllerTest extends TestCase
     {
         $this->authorizationChecker = $this->createMock(AuthorizationCheckerInterface::class);
         $this->authorizationChecker->method('isGranted')->willReturn(false);
-        $this->controller = new ProductController($this->productService, $this->storeService);
+        $this->controller = new ProductController($this->productService, $this->storeService, $this->categoryRepository);
 
         $request = Request::create('/products/x', 'GET');
         $this->injectDependencies($request);
@@ -356,7 +359,7 @@ final class ProductControllerTest extends TestCase
     {
         $this->authorizationChecker = $this->createMock(AuthorizationCheckerInterface::class);
         $this->authorizationChecker->method('isGranted')->willReturn(false);
-        $this->controller = new ProductController($this->productService, $this->storeService);
+        $this->controller = new ProductController($this->productService, $this->storeService, $this->categoryRepository);
 
         $request = Request::create('/products/x', 'DELETE');
         $this->injectDependencies($request);
@@ -380,7 +383,7 @@ final class ProductControllerTest extends TestCase
         // False denies
         $checker = $this->createMock(AuthorizationCheckerInterface::class);
         $checker->method('isGranted')->willReturn(false);
-        $controller = new ProductController($this->productService, $this->storeService);
+        $controller = new ProductController($this->productService, $this->storeService, $this->categoryRepository);
         $this->authorizationChecker = $checker;
         $this->controller = $controller;
         $request2 = Request::create('/products', 'GET');
@@ -429,7 +432,7 @@ final class ProductControllerTest extends TestCase
         $checker = $this->createMock(AuthorizationCheckerInterface::class);
         $checker->expects(self::once())->method('isGranted')->with('store:product:read', $this->store)->willReturn(true);
         $this->authorizationChecker = $checker;
-        $this->controller = new ProductController($this->productService, $this->storeService);
+        $this->controller = new ProductController($this->productService, $this->storeService, $this->categoryRepository);
 
         $request = Request::create('/products', 'GET');
         $this->injectDependencies($request);
@@ -445,7 +448,7 @@ final class ProductControllerTest extends TestCase
         $checker = $this->createMock(AuthorizationCheckerInterface::class);
         $checker->expects(self::once())->method('isGranted')->with('store:product:read', $this->store)->willReturn(true);
         $this->authorizationChecker = $checker;
-        $this->controller = new ProductController($this->productService, $this->storeService);
+        $this->controller = new ProductController($this->productService, $this->storeService, $this->categoryRepository);
 
         $product = new Product($this->store);
         $product->setName('Tea');

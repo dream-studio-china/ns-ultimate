@@ -15,6 +15,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\HasLifecycleCallbacks]
 #[ORM\UniqueConstraint(name: 'uniq_trade_product_uuid', columns: ['uuid'])]
 #[ORM\Index(name: 'idx_trade_product_store', columns: ['store_id'])]
+#[ORM\Index(name: 'idx_trade_product_category', columns: ['category_id'])]
 class Product
 {
     public const STATUS_ACTIVE = 'active';
@@ -31,6 +32,10 @@ class Product
     #[ORM\ManyToOne(targetEntity: Store::class)]
     #[ORM\JoinColumn(name: 'store_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?Store $store = null;
+
+    #[ORM\ManyToOne(targetEntity: ProductCategory::class)]
+    #[ORM\JoinColumn(name: 'category_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?ProductCategory $category = null;
 
     #[ORM\Column(type: 'string', length: 255)]
     private string $name = '';
@@ -90,7 +95,26 @@ class Product
 
     public function setStore(?Store $store): self
     {
+        if ($this->category !== null && $this->category->getStore() !== null
+            && $this->category->getStore()->getUuid() !== $store?->getUuid()) {
+            throw new \InvalidArgumentException('Product store must match its store-scoped category.');
+        }
         $this->store = $store;
+        $this->touch();
+        return $this;
+    }
+
+    public function getCategory(): ?ProductCategory
+    {
+        return $this->category;
+    }
+
+    public function setCategory(?ProductCategory $category): self
+    {
+        if ($category !== null && $category->getStore() !== null && $category->getStore()->getUuid() !== $this->store?->getUuid()) {
+            throw new \InvalidArgumentException('Product category must be global or belong to the product store.');
+        }
+        $this->category = $category;
         $this->touch();
         return $this;
     }
