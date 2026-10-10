@@ -43,7 +43,10 @@ final class ProductCategoryController extends RestController
     protected function storeService(): StoreServiceInterface { return $this->storeService; }
     protected function storeAuthorizationResource(): string { return 'product_category'; }
 
-    /** @param array<string, mixed> $content @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     protected function processCreateContent(array $content, object $entity): array
     {
         if ($entity instanceof ProductCategory) {
@@ -54,7 +57,10 @@ final class ProductCategoryController extends RestController
         return $content;
     }
 
-    /** @param array<string, mixed> $content @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         if ($entity instanceof ProductCategory && array_key_exists('parent', $content)) {
