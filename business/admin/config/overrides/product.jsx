@@ -169,6 +169,7 @@ export default {
         'name',
         { property: 'description', type: 'text', required: false },
         { property: 'category', required: false, help: t('Product category help') },
+        { property: 'store', required: false, help: t('Product store help') },
         { property: 'status', type: 'select', default_value: 'active', help: t('Product status help'), type_options: {
           options: [
             { value: 'active', label: t('Active') },
@@ -201,7 +202,7 @@ export default {
           expression: 'entity.getIsDeleted() == :value'
         }
       },
-      list_display: ['id', 'name', 'category', 'status', { property: 'cover', type: 'image' }, 'isDeleted', 'createdAt', 'updatedAt']
+      list_display: ['id', 'name', 'category', 'store', 'status', { property: 'cover', type: 'image' }, 'isDeleted', 'createdAt', 'updatedAt']
     },
     detail: {
       detail_display: '__all__'

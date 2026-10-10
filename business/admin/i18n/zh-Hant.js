@@ -9,5 +9,6 @@ export default {
   'Payment setting help': '該門店綁定的支付設置方案',
   'Product category help': '產品所屬分類',
   'Product extra data help': '售罄與推薦度等展示標記',
-  'Product cover help': '產品封面圖，走七牛上傳'
+  'Product cover help': '產品封面圖，走七牛上傳',
+  'Product store help': '所屬門店，可空'
 }
