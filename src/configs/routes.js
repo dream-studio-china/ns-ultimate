@@ -16,7 +16,8 @@ export default [
     path: '/product', name: 'ProductManage', component: Layout,
     meta: { title: t('Product Management'), icon: 'el-icon-goods', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
     children: [
-      ...r('Product', t('Product'))
+      ...r('Product', t('Product')),
+      ...r('ProductCategory', t('Product Category'))
     ]
   },
 
