@@ -183,6 +183,10 @@ final class SeedAuthorizationCommand extends Command
             ['code' => 'store:product:create', 'module' => 'store', 'resource' => 'product', 'action' => 'create', 'name' => 'Create store products'],
             ['code' => 'store:product:update', 'module' => 'store', 'resource' => 'product', 'action' => 'update', 'name' => 'Update store products'],
             ['code' => 'store:product:delete', 'module' => 'store', 'resource' => 'product', 'action' => 'delete', 'name' => 'Delete store products'],
+            ['code' => 'store:product_category:read', 'module' => 'store', 'resource' => 'product_category', 'action' => 'read', 'name' => 'Read store product categories'],
+            ['code' => 'store:product_category:create', 'module' => 'store', 'resource' => 'product_category', 'action' => 'create', 'name' => 'Create store product categories'],
+            ['code' => 'store:product_category:update', 'module' => 'store', 'resource' => 'product_category', 'action' => 'update', 'name' => 'Update store product categories'],
+            ['code' => 'store:product_category:delete', 'module' => 'store', 'resource' => 'product_category', 'action' => 'delete', 'name' => 'Delete store product categories'],
             ['code' => 'store:specification:read', 'module' => 'store', 'resource' => 'specification', 'action' => 'read', 'name' => 'Read store specifications'],
             ['code' => 'store:specification:create', 'module' => 'store', 'resource' => 'specification', 'action' => 'create', 'name' => 'Create store specifications'],
             ['code' => 'store:specification:update', 'module' => 'store', 'resource' => 'specification', 'action' => 'update', 'name' => 'Update store specifications'],
@@ -218,6 +222,7 @@ final class SeedAuthorizationCommand extends Command
                 'isSystem' => true,
                 'permissions' => [
                     'store:product:read', 'store:product:create', 'store:product:update', 'store:product:delete',
+                    'store:product_category:read', 'store:product_category:create', 'store:product_category:update', 'store:product_category:delete',
                     'store:specification:read', 'store:specification:create', 'store:specification:update', 'store:specification:delete',
                 ],
             ],

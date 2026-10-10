@@ -13,6 +13,8 @@ use App\Core\View\ListApiViewMixin;
 use App\Core\View\UpdateApiViewMixin;
 use App\Store\Entity\Product;
 use App\Store\Entity\Store;
+use App\Store\Entity\ProductCategory;
+use App\Store\Repository\ProductCategoryRepository;
 use App\Store\Service\ProductServiceInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
@@ -27,13 +29,14 @@ class ProductController extends RestController
     /** @var list<string> */
     protected array $requiredCreateProperties = ['name'];
     /** @var list<string> */
-    protected array $acceptedCreateProperties = ['name', 'description', 'status', 'metadata', 'store'];
+    protected array $acceptedCreateProperties = ['name', 'description', 'status', 'metadata', 'store', 'category'];
     /** @var list<string> */
-    protected array $acceptedUpdateProperties = ['name', 'description', 'status', 'metadata', 'store'];
+    protected array $acceptedUpdateProperties = ['name', 'description', 'status', 'metadata', 'store', 'category'];
 
     public function __construct(
         protected readonly ProductServiceInterface $service,
         private readonly ?\App\Store\Repository\StoreRepository $storeRepository = null,
+        private readonly ?ProductCategoryRepository $productCategoryRepository = null,
     ) {
     }
 
@@ -50,6 +53,16 @@ class ProductController extends RestController
             }
             unset($content['store']);
         }
+        if (array_key_exists('category', $content)) {
+            $category = $this->resolveCategory($content['category']);
+            if ($entity instanceof Product) {
+                $entity->setCategory($category);
+            }
+            unset($content['category']);
+        }
+        if ($entity instanceof Product && $entity->getCategory() !== null) {
+            $entity->setCategory($entity->getCategory());
+        }
         return $content;
     }
 
@@ -65,6 +78,16 @@ class ProductController extends RestController
                 $entity->setStore($store);
             }
             unset($content['store']);
+        }
+        if (array_key_exists('category', $content)) {
+            $category = $this->resolveCategory($content['category']);
+            if ($entity instanceof Product) {
+                $entity->setCategory($category);
+            }
+            unset($content['category']);
+        }
+        if ($entity instanceof Product && $entity->getCategory() !== null) {
+            $entity->setCategory($entity->getCategory());
         }
         return $content;
     }
@@ -85,5 +108,25 @@ class ProductController extends RestController
             throw new \InvalidArgumentException(sprintf('Store %s not found.', $value));
         }
         return $store;
+    }
+
+    private function resolveCategory(mixed $value): ?ProductCategory
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (!is_string($value) && !is_int($value)) {
+            throw new \InvalidArgumentException('category must be a category UUID, numeric id, or null.');
+        }
+        if ($this->productCategoryRepository === null) {
+            throw new \RuntimeException('Product category repository not configured.');
+        }
+        $category = is_int($value)
+            ? $this->productCategoryRepository->find($value)
+            : ($this->productCategoryRepository->findOneByUuid($value) ?? (ctype_digit($value) ? $this->productCategoryRepository->find((int) $value) : null));
+        if ($category === null || !$category->isEnabled()) {
+            throw new \InvalidArgumentException('Product category not found or disabled.');
+        }
+        return $category;
     }
 }
