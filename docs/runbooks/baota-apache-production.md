@@ -26,7 +26,7 @@ Check the selected command-line PHP as well as FPM. On Baota, `php` on SSH `PATH
 
 ## 2. Place a release and install dependencies
 
-Deploy the complete repository, including its Git subtrees and lockfiles, into a release/project directory. For manual or release-based deployments, use a non-root deployment account. The simple in-place script below is designed for a root-only Baota setup: Git, Composer, npm, and asset installation run as root; migrations and cache commands run as the PHP-FPM user. Keep production secrets, JWT keys, uploads, and durable application data outside the public document root; for release-based deployments, prefer shared paths outside individual releases.
+Deploy the complete repository, including its Git subtrees and lockfiles, into a release/project directory. For manual or release-based deployments, use a non-root deployment account. The simple in-place script below is designed for a root-only Baota setup: Composer, npm, and asset installation run as root; migrations and cache commands run as the PHP-FPM user. Update the checkout manually before running the script. Keep production secrets, JWT keys, uploads, and durable application data outside the public document root; for release-based deployments, prefer shared paths outside individual releases.
 
 From the project root, install production Composer dependencies:
 
@@ -171,7 +171,7 @@ cd /www/wwwroot/<project-root>
 PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 ```
 
-The script must run as root: Git, Composer, npm, and Symfony asset installation run as root; migrations and cache commands run as `PHP_FPM_USER` (default `www`) via `runuser`. Set `PHP_BIN` and, if needed, `PHP_FPM_USER`/`PHP_FPM_GROUP` for this server. The checkout must have no local changes to tracked files and be on `main`; set `DEPLOY_BRANCH` to update another branch. Untracked Baota-generated files are left in place; Git will refuse the fast-forward if an untracked file would be overwritten. Choose a mode:
+The script must run as root: Composer, npm, and Symfony asset installation run as root; migrations and cache commands run as `PHP_FPM_USER` (default `www`) via `runuser`. Set `PHP_BIN` and, if needed, `PHP_FPM_USER`/`PHP_FPM_GROUP` for this server. The script does not fetch, pull, or inspect Git state; update and verify the checkout yourself before running it. Choose a mode:
 
 ```sh
 # Frontend only: no Composer install, database migration, or backend cache clear
@@ -185,7 +185,7 @@ PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --backend
 PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 ```
 
-Each mode fast-forwards the same Git checkout, so Git updates all tracked code regardless of mode; the option controls which install/build/migration steps run. The frontend is built in a staging directory before publishing to `dist/admin`; a failed build leaves the previous frontend untouched. Directory replacement has a brief gap and is not fully atomic.
+Each mode operates on the current checkout; the option controls which install/build/migration steps run. The frontend is built in a staging directory before publishing to `dist/admin`; a failed build leaves the previous frontend untouched. Directory replacement has a brief gap and is not fully atomic.
 
 Backend and all modes run pending migrations automatically without an interactive prompt. Take and verify a restorable database backup before running either mode.
 

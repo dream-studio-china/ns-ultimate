@@ -26,7 +26,7 @@
 
 ## 2. 部署版本并安装依赖
 
-将完整仓库（包括 Git 子树和锁文件）部署到 release/项目目录。手动或基于 release 的部署应使用非 root 发布账号；下方的简单原地更新脚本则适用于只有 root 权限的宝塔环境：Git、Composer、npm 和静态资源安装由 root 执行，数据库迁移及缓存命令切换为 PHP-FPM 用户。生产密钥、JWT 密钥、上传文件和持久化数据放在公开文档根目录之外；release 模式应优先放到各 release 目录之外的共享路径。
+将完整仓库（包括 Git 子树和锁文件）部署到 release/项目目录。手动或基于 release 的部署应使用非 root 发布账号；下方的简单原地部署脚本则适用于只有 root 权限的宝塔环境：Composer、npm 和静态资源安装由 root 执行，数据库迁移及缓存命令切换为 PHP-FPM 用户。运行脚本前请自行更新 checkout。生产密钥、JWT 密钥、上传文件和持久化数据放在公开文档根目录之外；release 模式应优先放到各 release 目录之外的共享路径。
 
 在项目根目录安装生产 Composer 依赖：
 
@@ -171,7 +171,7 @@ cd /www/wwwroot/<项目根目录>
 PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 ```
 
-脚本必须以 root 执行：Git、Composer、npm 和 Symfony bundle 静态资源安装由 root 运行；数据库迁移及缓存命令通过 `runuser` 切换为 `PHP_FPM_USER`（默认 `www`）。按服务器实际情况修改 `PHP_BIN`，必要时设置 `PHP_FPM_USER`/`PHP_FPM_GROUP`。checkout 必须没有已跟踪文件的本地修改，并位于 `main` 分支；其他分支通过 `DEPLOY_BRANCH` 指定。宝塔生成的未跟踪文件会保留；若更新会覆盖这类文件，Git 会拒绝快进。按需选择模式：
+脚本必须以 root 执行：Composer、npm 和 Symfony bundle 静态资源安装由 root 运行；数据库迁移及缓存命令通过 `runuser` 切换为 `PHP_FPM_USER`（默认 `www`）。按服务器实际情况修改 `PHP_BIN`，必要时设置 `PHP_FPM_USER`/`PHP_FPM_GROUP`。脚本不会 fetch、pull 或检查 Git 状态；运行前请自行更新并确认 checkout。按需选择模式：
 
 ```sh
 # 仅前端：不安装 Composer 依赖、不迁移数据库、不清理后端缓存
@@ -185,7 +185,7 @@ PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --backend
 PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 ```
 
-所有模式都会快进更新同一个 Git checkout，因此无论选择哪个模式，Git 都会更新所有已跟踪代码；参数只控制依赖安装、构建和迁移步骤。前端会先构建到暂存目录，成功后才发布到 `dist/admin`；构建失败时旧前端保持不变。目录替换时会有短暂间隙，并非完全原子操作。
+所有模式都操作当前 checkout；参数只控制依赖安装、构建和迁移步骤。前端会先构建到暂存目录，成功后才发布到 `dist/admin`；构建失败时旧前端保持不变。目录替换时会有短暂间隙，并非完全原子操作。
 
 后端和全部更新模式都会自动执行待处理迁移，不再要求交互确认。运行任一模式前，必须先完成并验证数据库备份可恢复。
 

@@ -2,7 +2,6 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 PHP_BIN="${PHP_BIN:-php}"
 COMPOSER_BIN="${COMPOSER_BIN:-composer}"
 NODE_BIN="${NODE_BIN:-node}"
@@ -21,18 +20,17 @@ usage() {
 Usage: bash scripts/deploy.sh (--frontend | --backend | --all) [--help]
 
 Select exactly one deployment mode:
-  --frontend  Fast-forward, build the admin, and publish dist/admin only.
-  --backend   Fast-forward, install production PHP dependencies, run migrations,
+  --frontend  Build the admin, and publish dist/admin only.
+  --backend   Install production PHP dependencies, run migrations,
               install Symfony assets, and clear the production cache.
-  --all       Fast-forward, update both frontend and backend, and run migrations.
+  --all       Build and deploy both frontend and backend, and run migrations.
 
-Run this script as root. Git, Composer, npm, and Symfony asset installation run
-as root; migrations and cache commands run as PHP_FPM_USER (default: www).
+Run this script as root. Composer, npm, and Symfony asset installation run as
+root; migrations and cache commands run as PHP_FPM_USER (default: www).
 Backend and all modes run migrations without an interactive confirmation;
 back up the production database before using either mode.
 
 Configuration via environment:
-  DEPLOY_BRANCH   Git branch to deploy (default: main)
   PHP_BIN         PHP 8.5 CLI binary (default: php)
   COMPOSER_BIN    Composer executable (default: composer)
   NODE_BIN        Node.js binary (default: node; version 22+ required)
@@ -76,7 +74,6 @@ if [[ "$MODE" != backend ]]; then
   NODE_BIN="$(resolve_command "$NODE_BIN")"
   NPM_BIN="$(resolve_command "$NPM_BIN")"
 fi
-command -v git >/dev/null || die 'git is required'
 command -v flock >/dev/null || die 'flock is required to prevent concurrent deployments'
 ((EUID == 0)) || die 'run this deployment script as root'
 if [[ "$MODE" != frontend ]]; then
@@ -84,16 +81,9 @@ if [[ "$MODE" != frontend ]]; then
 fi
 
 cd "$ROOT"
-[[ -f .git ]] || [[ -d .git ]] || die "not a Git checkout: $ROOT"
 [[ -f core/crud-skeleton/composer.json ]] || die 'run this script from a complete project checkout'
 if [[ "$MODE" != frontend ]]; then
   [[ -e integration/backend/.env.prod.local ]] || die 'missing integration/backend/.env.prod.local'
-fi
-
-current_branch="$(git branch --show-current)"
-[[ "$current_branch" == "$DEPLOY_BRANCH" ]] || die "checked-out branch is '$current_branch', expected '$DEPLOY_BRANCH'"
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  die 'tracked files have local changes; commit or safely move those changes before deployment'
 fi
 
 admin_link="$ROOT/integration/backend/public/admin"
@@ -111,7 +101,7 @@ cleanup_staging() {
 }
 trap cleanup_staging EXIT
 
-lock_file="${DEPLOY_LOCK_FILE:-$(git rev-parse --git-path ns-ultimate-deploy.lock)}"
+lock_file="${DEPLOY_LOCK_FILE:-/run/lock/ns-ultimate-deploy.lock}"
 exec 9>"$lock_file"
 flock -n 9 || die 'another deployment is already running'
 
@@ -128,16 +118,7 @@ if [[ "$MODE" != backend ]]; then
   fi
 fi
 
-previous_commit="$(git rev-parse HEAD)"
-printf 'Deploying %s from origin/%s\n' "$ROOT" "$DEPLOY_BRANCH"
-printf 'Current commit: %s\n' "$previous_commit"
-
-git fetch origin "+refs/heads/$DEPLOY_BRANCH:refs/remotes/origin/$DEPLOY_BRANCH"
-remote_ref="refs/remotes/origin/$DEPLOY_BRANCH"
-git merge-base --is-ancestor HEAD "$remote_ref" || die 'local branch diverged from origin; refusing to reset or overwrite it'
-git merge --ff-only "$remote_ref"
-new_commit="$(git rev-parse HEAD)"
-printf 'Updated commit: %s\n' "$new_commit"
+printf 'Deploying current checkout: %s\n' "$ROOT"
 
 if [[ "$MODE" != frontend ]]; then
   "$COMPOSER_BIN" install \
@@ -201,5 +182,4 @@ printf '\nDeployment finished (%s mode).\n' "$MODE"
 if [[ "$MODE" != backend ]]; then
   printf 'Frontend link: integration/backend/public/admin -> ../../../dist/admin\n'
 fi
-printf 'Release commit: %s\n' "$new_commit"
 printf 'Smoke-test the deployed part(s). This in-place deployment does not provide an automatic backend rollback.\n'
