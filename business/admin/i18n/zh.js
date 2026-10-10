@@ -11,5 +11,6 @@ export default {
   'Product cover help': '商品封面图上传至七牛，并存储在 metadata.cover 中。',
   Cover: '封面图',
   'Sold out': '已售罄',
-  'Recommendation level': '推荐等级'
+  'Recommendation level': '推荐等级',
+  'Product store help': '所属门店，可空'
 }
