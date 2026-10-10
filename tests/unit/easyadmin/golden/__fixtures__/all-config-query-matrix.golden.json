@@ -1254,7 +1254,13 @@
   },
   {
     "entity": "ProductCategory",
-    "listFilterData": {},
+    "listFilterData": {
+      "name": null,
+      "slug": null,
+      "enabled": null,
+      "store.id": null,
+      "parent.id": null
+    },
     "pager": {
       "page": 1,
       "limit": 20
