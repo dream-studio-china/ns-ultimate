@@ -1253,6 +1253,35 @@
     }
   },
   {
+    "entity": "ProductCategory",
+    "listFilterData": {},
+    "pager": {
+      "page": 1,
+      "limit": 20
+    },
+    "adminQuery": {
+      "entity": "ProductCategory",
+      "filter": {
+        "kind": "empty"
+      },
+      "sort": [],
+      "page": {
+        "page": 1,
+        "limit": 20
+      },
+      "rawSortParam": ""
+    },
+    "csqeParams": {
+      "page": 1,
+      "limit": 20
+    },
+    "urlQueryString": "",
+    "identity": {
+      "prefix": "/api/v1/manage",
+      "plural": "product-categories"
+    }
+  },
+  {
     "entity": "Specification",
     "listFilterData": {
       "name": "specification-name",

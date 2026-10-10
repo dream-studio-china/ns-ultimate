@@ -48,6 +48,7 @@
         "nprogress": "0.2.0",
         "numbro": "^2.3.2",
         "path-to-regexp": "2.4.0",
+        "pinyin-pro": "^3.29.5",
         "prismjs": "^1.25.0",
         "qrcode": "^1.4.4",
         "vue": "^3.5.13",
