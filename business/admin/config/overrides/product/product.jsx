@@ -6,7 +6,7 @@ import { defineAsyncComponent } from 'vue'
 import { t } from '@/i18n'
 import axios from '@/utils/request'
 import { API_PREFIX, apiPath } from '@/api/prefix'
-import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin/src/configs/collections/helpers'
+import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collections/helpers'
 // Lazily resolve the admin UI here: this config module is eagerly pulled into
 // every FormAdmin through `@/configs/entities`, so static SFC imports would
 // close an eager cycle (FormAdmin -> entities -> Product.jsx -> ListAdmin ->
@@ -16,6 +16,9 @@ const ListAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/ListAdmi
 const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmin'))
 import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
 import ProductMetadataSchema from './ProductMetadata.json'
+import ProductImportAction from './ProductImportAction.jsx'
+import ProductPricesCell from './ProductPricesCell.vue'
+import ProductStatusCell from './ProductStatusCell.vue'
 
 const SpecificationManager = {
   components: { ListAdmin, FormAdmin },
@@ -172,8 +175,8 @@ export default {
         { property: 'store', required: false, help: t('Product store help') },
         { property: 'status', type: 'select', default_value: 'active', help: t('Product status help'), type_options: {
           options: [
-            { value: 'active', label: t('Active') },
-            { value: 'inactive', label: t('Inactive') }
+            { value: 'active', label: t('Product on shelf') },
+            { value: 'inactive', label: t('Product off shelf') }
           ]
         }},
         {
@@ -195,23 +198,61 @@ export default {
           field_options: { label: '', 'label-width': '60px' },
           component: SpecificationManager
         }
-      ]
+      ],
+      batch_edit: {
+        fields: [
+          {
+            property: 'store',
+            label: t('Store'),
+            required: false,
+            type_options: { valueOnClear: null },
+            help: t('Product batch store help')
+          }
+        ]
+      }
     },
     list: {
-      query: orderByIdDesc,
+      query: { ...orderByIdDesc, '@expands': 'specifications' },
+      actions: [
+        { name: 'product-import', position: 'top', component: ProductImportAction }
+      ],
       list_filter: {
         name: t('Product Name'),
         'category.id': () => axios
           .get(apiPath(API_PREFIX, 'manage/product-categories'))
           .then(res => Object.assign({ __label: t('Category') }, ...res.data.map(category => ({ [category.id]: category.name })))),
-        status: statusFilterLabel(),
+        status: {
+          __label: t('Status'),
+          active: t('Product on shelf'),
+          inactive: t('Product off shelf')
+        },
         isDeleted: {
-          label: t('Deleted'),
+          label: t('Product off shelf'),
           type: 'boolean',
           expression: 'entity.getIsDeleted() == :value'
         }
       },
-      list_display: ['id', 'name', 'category', 'store', 'status', 'isDeleted', 'createdAt', 'updatedAt']
+      list_display: [
+        'id',
+        { property: 'metadata.cover', label: t('Cover'), type: 'image', field_options: { width: 88, sortable: false } },
+        'name',
+        'category',
+        'store',
+        {
+          property: 'specifications',
+          label: t('Product prices'),
+          component: ProductPricesCell,
+          field_options: { minWidth: 190, sortable: false }
+        },
+        {
+          property: 'status',
+          label: t('Status'),
+          component: ProductStatusCell,
+          field_options: { width: 130, sortable: false }
+        },
+        'createdAt',
+        'updatedAt'
+      ]
     },
     detail: {
       detail_display: '__all__'
