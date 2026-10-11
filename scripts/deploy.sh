@@ -125,6 +125,10 @@ if [[ "$MODE" != frontend ]]; then
     --working-dir="$ROOT/core/crud-skeleton" \
     --no-dev --prefer-dist --no-interaction --no-progress \
     --optimize-autoloader --no-scripts
+  "$COMPOSER_BIN" install \
+    --working-dir="$ROOT/integration/backend" \
+    --no-dev --prefer-dist --no-interaction --no-progress \
+    --optimize-autoloader --no-scripts
 fi
 
 if [[ "$MODE" != backend ]]; then

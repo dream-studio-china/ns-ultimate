@@ -35,6 +35,11 @@ composer install \
   --working-dir=core/crud-skeleton \
   --no-dev --prefer-dist --no-interaction --no-progress \
   --optimize-autoloader --no-scripts
+
+composer install \
+  --working-dir=integration/backend \
+  --no-dev --prefer-dist --no-interaction --no-progress \
+  --optimize-autoloader --no-scripts
 ```
 
 Build the frontend with Node.js 22 if CI did not supply the build artifact:

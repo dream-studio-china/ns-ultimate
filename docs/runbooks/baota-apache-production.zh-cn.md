@@ -35,6 +35,11 @@ composer install \
   --working-dir=core/crud-skeleton \
   --no-dev --prefer-dist --no-interaction --no-progress \
   --optimize-autoloader --no-scripts
+
+composer install \
+  --working-dir=integration/backend \
+  --no-dev --prefer-dist --no-interaction --no-progress \
+  --optimize-autoloader --no-scripts
 ```
 
 若 CI 没有提供前端构建产物，使用 Node.js 22 构建：
