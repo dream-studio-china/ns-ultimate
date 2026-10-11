@@ -12,5 +12,13 @@ export default {
   Cover: '封面图',
   'Sold out': '已售罄',
   'Recommendation level': '推荐等级',
+  Counters: '台位',
+  'Counter management': '台位管理',
+  'Order counter bindings': '订单台位绑定',
+  'Counter code': '台位编号',
+  'Counter code help': '店铺内唯一的台位编号，例如 A01。',
+  'Counter capacity help': '台位可容纳人数，可选。',
+  'Trade order UUID': '交易订单 UUID',
+  Enabled: '启用',
   'Product store help': '所属门店，可空'
 }

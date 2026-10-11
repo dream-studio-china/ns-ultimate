@@ -5,5 +5,13 @@ export default {
   'Product store help': 'Owning store; leave empty for a global product.',
   Cover: 'Cover',
   'Sold out': 'Sold out',
-  'Recommendation level': 'Recommendation level'
+  'Recommendation level': 'Recommendation level',
+  Counters: 'Counters',
+  'Counter management': 'Counter management',
+  'Order counter bindings': 'Order counter bindings',
+  'Counter code': 'Counter code',
+  'Counter code help': 'Unique counter code within the store, for example A01.',
+  'Counter capacity help': 'Optional seating capacity.',
+  'Trade order UUID': 'Trade order UUID',
+  Enabled: 'Enabled'
 }

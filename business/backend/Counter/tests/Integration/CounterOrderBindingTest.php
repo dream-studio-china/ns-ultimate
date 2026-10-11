@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Counter\Tests\Integration;
 
 use App\Core\Utils\UUID;
+use App\Identity\Entity\User;
+use App\Identity\Security\TokenManager;
+use App\Store\Entity\Store;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderStoreLifecycle;
 use App\Authorization\Entity\Permission;
@@ -17,6 +20,7 @@ use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpFoundation\Request;
 
 final class CounterOrderBindingTest extends KernelTestCase
 {
@@ -51,6 +55,32 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertInstanceOf(Route::class, $routes->get('app-order-counters-list'));
         self::assertContains(Counter::class, $entityNames);
         self::assertContains(OrderCounter::class, $entityNames);
+        foreach ([
+            'business-counters-list' => '/manage/counters',
+            'manage-order-counters-list' => '/manage/order-counters',
+            'store-counters-list' => '/store/{scopeId}/counters',
+            'store-order-counters-list' => '/store/{scopeId}/order-counters',
+            'app-store-counters-list' => '/app/stores/{storeUuid}/counters',
+            'app-order-counters-list' => '/app/orders/{orderUuid}/counters',
+        ] as $name => $path) {
+            self::assertSame($path, $routes->get($name)?->getPath());
+            self::assertSame('/api/v1'.$path, $routes->get('api-v1-'.$name)?->getPath());
+        }
+    }
+
+    public function testCounterMetadataLabelsAreTranslatedForSupportedLocales(): void
+    {
+        $translator = self::getContainer()->get('translator');
+        foreach ([
+            'zh' => ['台位', '订单台位绑定', '台位编号快照'],
+            'zh_Hant' => ['桌台', '訂單桌台綁定', '桌台編號快照'],
+            'ja' => ['テーブル', '注文テーブル紐付け', 'テーブル番号スナップショット'],
+            'en' => ['Counter', 'Order Counter', 'Counter code snapshot'],
+        ] as $locale => [$counter, $binding, $counterCodeSnapshot]) {
+            self::assertSame($counter, $translator->trans('Counter', [], 'messages', $locale));
+            self::assertSame($binding, $translator->trans('OrderCounter', [], 'messages', $locale));
+            self::assertSame($counterCodeSnapshot, $translator->trans('Counter code snapshot', [], 'messages', $locale));
+        }
     }
 
     public function testOrderMetadataCreatesBindingsForMultipleSameStoreCountersInOrderTransaction(): void
@@ -74,6 +104,60 @@ final class CounterOrderBindingTest extends KernelTestCase
         $bindings = $entityManager->getRepository(OrderCounter::class)->findBy(['tradeOrderUuid' => $order->getUuid()]);
         self::assertCount(2, $bindings);
         self::assertSame(['A01', 'A02'], array_map(static fn (OrderCounter $binding): string => $binding->getCounterCodeSnapshot(), $bindings));
+    }
+
+    public function testAdminApiCanCreateListAndDeleteCounterBindings(): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $admin = (new User())->setEmail('counter-admin@example.test')->setUsername('counter-admin')->setRoles(['ROLE_ADMIN']);
+        $store = new Store('counter-test', 'Counter test store');
+        $order = new Order();
+        foreach ([$admin, $store, $order, new OrderStoreLifecycle($order->getUuid(), $store->getUuid())] as $entity) {
+            $entityManager->persist($entity);
+        }
+        $entityManager->flush();
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
+        $request = static function (string $method, string $path, ?array $content = null) use ($token): array {
+            $request = Request::create($path, $method, [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+                'CONTENT_TYPE' => 'application/json',
+            ], $content === null ? null : json_encode($content, JSON_THROW_ON_ERROR));
+            $response = self::$kernel->handle($request);
+            self::assertLessThan(300, $response->getStatusCode(), $response->getContent());
+            if ($response->getStatusCode() === 204) {
+                return [];
+            }
+            $body = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame(0, $body['code'], $response->getContent());
+            return $body;
+        };
+        $counter = $request('POST', '/api/v1/manage/counters', [
+            'storeUuid' => $store->getUuid(), 'code' => 'A01', 'name' => 'Table A01', 'enabled' => true,
+        ])['data'];
+        self::assertSame('A01', $counter['code']);
+        $request('PUT', '/api/v1/manage/counters/'.$counter['id'], ['name' => 'Renamed table']);
+        self::assertCount(1, $request('GET', '/api/v1/manage/counters')['data']);
+        $counterFilterPath = '/api/v1/manage/counters?'.http_build_query([
+            '@filter' => "entity.getStoreUuid() == '".$store->getUuid()."'",
+        ]);
+        self::assertCount(1, $request('GET', $counterFilterPath)['data']);
+        self::assertCount(0, $request('GET', '/api/v1/manage/counters?'.http_build_query([
+            '@filter' => "entity.getStoreUuid() == '".UUID::v4()."'",
+        ]))['data']);
+        $binding = $request('POST', '/api/v1/manage/order-counters', [
+            'tradeOrderUuid' => $order->getUuid(), 'counterUuid' => $counter['uuid'],
+        ])['data'];
+        self::assertSame('Renamed table', $binding['counterNameSnapshot']);
+        self::assertCount(1, $request('GET', '/api/v1/manage/order-counters')['data']);
+        self::assertCount(1, $request('GET', '/api/v1/manage/order-counters?'.http_build_query([
+            '@filter' => "entity.getStoreUuid() == '".$store->getUuid()."' && entity.getTradeOrderUuid() == '".$order->getUuid()."'",
+        ]))['data']);
+        self::assertCount(0, $request('GET', '/api/v1/manage/order-counters?'.http_build_query([
+            '@filter' => "entity.getTradeOrderUuid() == '".UUID::v4()."'",
+        ]))['data']);
+        $request('GET', '/api/v1/manage/order-counters/'.$binding['id']);
+        $request('DELETE', '/api/v1/manage/order-counters/'.$binding['id']);
+        $request('DELETE', '/api/v1/manage/counters/'.$counter['id']);
     }
 
     public function testOrderWithoutCounterMetadataIsUnaffected(): void

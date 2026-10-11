@@ -10,6 +10,10 @@ Authenticated customers can list enabled counters for an active store at `/api/v
 
 Run `php bin/console app:counter:seed-authorization` after migrations to register the store-scoped permissions and the `store_counter_manager` system role. Assign that role to store memberships through the existing Authorization workflow.
 
+The `/api/v1` routes are the canonical API used by Admin. The earlier unprefixed Counter routes remain available for compatibility, with the same authorization requirements.
+
+The business Admin menu includes Counter management and immutable OrderCounter bindings. Collection files at `business/admin/config/collections/counter/*.js` export named entity maps. The composed Vite server watches the business Admin directory, including newly added glob matches outside the core root.
+
 ## Bind counters when creating an order
 
 Use the existing app order endpoint and include the counter UUID in order metadata:

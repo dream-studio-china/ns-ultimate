@@ -77,6 +77,15 @@ final class Kernel extends CoreKernel
             ->call('setServiceContainer', [service('service_container')]);
 
         foreach ($this->modules() as $module) {
+            $translationDirectory = $module['path'].'/translations';
+            if (is_dir($translationDirectory)) {
+                $container->extension('framework', [
+                    'translator' => [
+                        'paths' => [$translationDirectory],
+                    ],
+                ]);
+            }
+
             $services->load($module['namespace'], $module['path'].'/src/')
                 ->exclude([
                     $module['path'].'/src/Entity/',

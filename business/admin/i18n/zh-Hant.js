@@ -12,5 +12,13 @@ export default {
   Cover: '封面圖',
   'Sold out': '已售罄',
   'Recommendation level': '推薦等級',
-  'Product store help': '所屬門店，可空'
+  'Product store help': '所屬門店，可空',
+  Counters: '桌台',
+  'Counter management': '桌台管理',
+  'Order counter bindings': '訂單桌台綁定',
+  'Counter code': '桌台編號',
+  'Counter code help': '店鋪內唯一的桌台編號，例如 A01。',
+  'Counter capacity help': '桌台可容納人數，可選。',
+  'Trade order UUID': '交易訂單 UUID',
+  Enabled: '啟用'
 }

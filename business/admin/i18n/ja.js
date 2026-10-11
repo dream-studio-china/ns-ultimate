@@ -5,5 +5,13 @@ export default {
   'Product store help': '所属店舗。全体商品にする場合は空欄にしてください。',
   Cover: 'カバー',
   'Sold out': '売り切れ',
-  'Recommendation level': 'おすすめレベル'
+  'Recommendation level': 'おすすめレベル',
+  Counters: 'テーブル',
+  'Counter management': 'テーブル管理',
+  'Order counter bindings': '注文テーブル紐付け',
+  'Counter code': 'テーブル番号',
+  'Counter code help': '店舗内で一意のテーブル番号。例: A01。',
+  'Counter capacity help': '任意の収容人数。',
+  'Trade order UUID': '注文 UUID',
+  Enabled: '有効'
 }
