@@ -82,14 +82,40 @@ hidden on update and the backend never returns them. Publishing a revision is do
 by setting its `state` to `published` in the update form. Store-scoped
 self-management is available through the API but has no dedicated Admin page yet.
 
+## Login and identity
+
+- `WechatIdentity` (`wechat_identity`) keys identity by the verified
+  `(app_id, openid)` pair and may attach many identities to one system User.
+  Session keys are encrypted; equal OpenID strings under different AppIDs never
+  collide and accounts are never merged implicitly.
+- `StoreWechatLoginService` orchestrates Mini Program login, phone binding,
+  explicit identity linking, and Official Account OAuth, always resolving the
+  published Store configuration first.
+- `WechatLoginGatewayInterface` is the provider boundary; `EasyWeChatLoginGateway`
+  implements it over the client factory, and tests substitute a deterministic
+  fake.
+- Official Account OAuth uses an opaque single-use state row
+  (`wechat_oauth_state`) that binds Store, application revision, approved redirect
+  host, and expiry; callbacks reject substitution, replay, and expiry.
+- Customer routes (also served under `/api/v1`):
+  - `/app/stores/{storeUuid}/wechat/miniapp/login` (anonymous)
+  - `/app/stores/{storeUuid}/wechat/miniapp/phone` (authenticated)
+  - `/app/stores/{storeUuid}/wechat/miniapp/link` (authenticated)
+  - `/app/stores/{storeUuid}/wechat/oauth/url` (anonymous)
+  - `/app/stores/{storeUuid}/wechat/oauth/callback` (anonymous)
+- `StoreWechatAccessMap` decorates `security.access_map` to expose only the
+  login/OAuth endpoints anonymously, without modifying the core security subtree.
+- `app:wechat:import-legacy-identities --app-id=... --type=miniapp|official
+  [--dry-run]` maps legacy core `WechatUser` rows onto app-scoped identities
+  without guessing an AppID or merging users.
+
 ## Not implemented yet
 
-- Mini Program login, phone binding, and Official Account OAuth endpoints.
 - Store-aware payment initiation, callbacks, refunds, and reconciliation.
-- Legacy identity import and the frozen legacy gateway dispatcher.
+- A frozen legacy gateway dispatcher for pre-existing global transactions.
 - A dedicated Store-scoped Admin page and a purpose-built credential/revision UI.
 - Per-profile Store grants, append-only audit records, redacted credential
-  probes, and optimistic-concurrency protection on publication.
+  probes, optimistic-concurrency protection on publication, and key rotation.
 
 Real payment and refund enablement stays blocked until the asynchronous refund
 accounting boundary in the task plan is resolved and tested.

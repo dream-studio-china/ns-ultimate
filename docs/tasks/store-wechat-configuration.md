@@ -3,7 +3,7 @@
 ## 1. Status and purpose
 
 - Created: 2026-10-11.
-- Status: partially implemented. The Phase 1 backend configuration foundation (entities, encrypted credential storage, publication services, resolver, client factory, migration), Administrator and Store management APIs, authorization seeding, and integration tests are implemented and tested. The Admin UI, login, payment, refunds, and legacy import remain pending. No financial capability is enabled.
+- Status: partially implemented. Phases 1 and 2 (configuration foundation, management APIs, Admin UI, authorization seeding, app-scoped identities, Mini Program login/phone, Official Account OAuth, and legacy identity import) are implemented and tested. Payments/refunds, the legacy gateway dispatcher, Store grants/audit records, and all live-provider validation remain pending. No financial capability is enabled.
 - Goal: independently configure WeChat capabilities for each Store, dynamically select the correct application and merchant, and preserve login, payment, callback, and refund isolation across stores.
 - Ownership: project-specific behavior belongs in `business/`; `integration/` owns composition only. Core changes require a demonstrated generic limitation and a separately reviewed fix.
 
@@ -301,11 +301,11 @@ Exit: acceptance cases CFG, SEC, and DYN pass without real payment enablement. N
 
 ### Phase 2: identities and login
 
-- [ ] Implement application-scoped identity mapping, Mini Program login/phone, and state-protected Official Account OAuth.
-- [ ] Implement explicit account-linking conflict handling without automatic merging.
-- [ ] Add legacy identity import dry-run, conflict reporting, and compatibility regression tests.
+- [x] Implement application-scoped identity mapping, Mini Program login/phone, and state-protected Official Account OAuth.
+- [x] Implement explicit account-linking conflict handling without automatic merging.
+- [x] Add legacy identity import dry-run, conflict reporting, and compatibility regression tests.
 
-Exit: acceptance cases AUTH and relevant MIG cases pass; approved real-app login smoke tests recorded.
+Exit: acceptance cases AUTH and relevant MIG cases pass; approved real-app login smoke tests recorded. Automated AUTH/MIG-02 coverage is in `WechatLoginTest`; approved live-app smoke tests remain outstanding.
 
 ### Phase 3: direct payments and refunds
 

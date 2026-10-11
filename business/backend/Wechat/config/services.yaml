@@ -29,3 +29,25 @@ services:
 
     NsUltimate\Business\Wechat\Service\StoreWechatSettingService:
         public: true
+
+    NsUltimate\Business\Wechat\Service\WechatIdentityService:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\StoreWechatLoginService:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\WechatOAuthStateService:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\WechatLoginGatewayInterface:
+        alias: NsUltimate\Business\Wechat\Service\EasyWeChatLoginGateway
+
+    NsUltimate\Business\Wechat\Service\EasyWeChatLoginGateway:
+        public: true
+
+    # Expose the Store-scoped customer login/OAuth endpoints anonymously without
+    # modifying the core security subtree.
+    NsUltimate\Business\Wechat\Security\StoreWechatAccessMap:
+        decorates: security.access_map
+        arguments:
+            $inner: '@.inner'

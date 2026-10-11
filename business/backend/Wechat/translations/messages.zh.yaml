@@ -6,3 +6,5 @@
 "Redirect hosts": "回调域名"
 "Merchant ID": "商户号"
 "Enabled": "启用"
+"WechatIdentity": "微信身份"
+"WechatOAuthState": "微信 OAuth 状态"
