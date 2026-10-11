@@ -1,6 +1,7 @@
 import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import { uuidFilter } from '../../uuid-filter.mjs'
+import CounterImportAction from './CounterImportAction.jsx'
 import CounterSortAction from './CounterSortAction.jsx'
 
 export default {
@@ -20,6 +21,11 @@ export default {
     list: {
       query: { '@order': 'entity.sort|ASC, entity.id|ASC' },
       actions: [
+        {
+          name: 'counter-import',
+          position: 'top',
+          get component() { return CounterImportAction }
+        },
         {
           name: 'counter-sort',
           position: 'top',
