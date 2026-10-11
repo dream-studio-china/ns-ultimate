@@ -21,6 +21,8 @@ export default {
   'Counter code': '桌台編號',
   'Counter code help': '店鋪內唯一的桌台編號，例如 A01。',
   'Counter capacity help': '桌台可容納人數，可選。',
+  'Counter sort help': '顯示排序，數值越小越靠前。',
+  'Counter metadata help': '桌台專屬展示資訊以頂層欄位形式儲存在 metadata 中。',
   'Trade order UUID': '交易訂單 UUID',
   Enabled: '啟用'
 }

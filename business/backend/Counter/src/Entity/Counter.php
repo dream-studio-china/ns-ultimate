@@ -34,6 +34,13 @@ class Counter
     #[ORM\Column(type: 'integer', nullable: true)]
     private ?int $capacity = null;
 
+    #[ORM\Column(type: 'integer', options: ['default' => 0])]
+    private int $sort = 0;
+
+    /** @var array<string, mixed>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    private ?array $metadata = null;
+
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     private bool $enabled = true;
 
@@ -61,6 +68,12 @@ class Counter
     public function setName(string $name): self { $this->name = $name; return $this->touch(); }
     public function getCapacity(): ?int { return $this->capacity; }
     public function setCapacity(?int $capacity): self { $this->capacity = $capacity; return $this->touch(); }
+    public function getSort(): int { return $this->sort; }
+    public function setSort(int $sort): self { $this->sort = $sort; return $this->touch(); }
+    /** @return array<string, mixed>|null */
+    public function getMetadata(): ?array { return $this->metadata; }
+    /** @param array<string, mixed>|null $metadata */
+    public function setMetadata(?array $metadata): self { $this->metadata = $metadata; return $this->touch(); }
     public function getEnabled(): bool { return $this->enabled; }
     public function isEnabled(): bool { return $this->enabled; }
     public function setEnabled(bool $enabled): self { $this->enabled = $enabled; return $this->touch(); }

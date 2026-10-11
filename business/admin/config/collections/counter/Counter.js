@@ -12,6 +12,8 @@ export default {
         { property: 'code', required: true, help: t('Counter code help') },
         { property: 'name', required: true },
         { property: 'capacity', type: 'integer', required: false, help: t('Counter capacity help') },
+        { property: 'sort', type: 'integer', required: false, default_value: 0, help: t('Counter sort help') },
+        { property: 'metadata', type: 'json', required: false, help: t('Counter metadata help') },
         { property: 'enabled', type: 'boolean', default_value: true }
       ]
     },
@@ -29,6 +31,7 @@ export default {
         'code',
         'name',
         'capacity',
+        { property: 'sort', editable: true },
         'enabled',
         'createdAt',
         'updatedAt'

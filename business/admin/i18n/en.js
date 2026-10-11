@@ -14,6 +14,8 @@ export default {
   'Counter code': 'Counter code',
   'Counter code help': 'Unique counter code within the store, for example A01.',
   'Counter capacity help': 'Optional seating capacity.',
+  'Counter sort help': 'Display order; lower values appear first.',
+  'Counter metadata help': 'Counter-specific display values are stored as top-level metadata fields.',
   'Trade order UUID': 'Trade order UUID',
   Enabled: 'Enabled'
 }

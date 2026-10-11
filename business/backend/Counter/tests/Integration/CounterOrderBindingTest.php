@@ -140,6 +140,58 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertContains('uniq_counter_order_pair', $orderCounterIndexes);
     }
 
+    public function testAdminApiStoresCounterSortAndMetadata(): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $admin = (new User())->setEmail('counter-sort@example.test')->setUsername('counter-sort')->setRoles(['ROLE_ADMIN']);
+        $store = new Store('counter-sort', 'Counter sort store');
+        foreach ([$admin, $store] as $entity) {
+            $entityManager->persist($entity);
+        }
+        $entityManager->flush();
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
+        $request = static function (string $method, string $path, ?array $content = null) use ($token): array {
+            $request = Request::create($path, $method, [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+                'CONTENT_TYPE' => 'application/json',
+            ], $content === null ? null : json_encode($content, JSON_THROW_ON_ERROR));
+            $response = self::$kernel->handle($request);
+            $body = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+            self::assertLessThan(300, $response->getStatusCode(), $response->getContent());
+
+            return $body;
+        };
+
+        $counter = $request('POST', '/api/v1/manage/counters', [
+            'storeUuid' => $store->getUuid(),
+            'code' => 'A01',
+            'name' => 'Table A01',
+            'sort' => 5,
+            'metadata' => ['color' => 'red'],
+            'enabled' => true,
+        ])['data'];
+        self::assertSame(5, $counter['sort']);
+        self::assertSame(['color' => 'red'], $counter['metadata']);
+
+        $ordered = $request('GET', '/api/v1/manage/counters?'.http_build_query([
+            '@order' => 'entity.sort|ASC',
+        ]))['data'];
+        self::assertSame(['A01'], array_map(static fn (array $row): string => $row['code'], $ordered));
+
+        $request('PUT', '/api/v1/manage/counters/'.$counter['id'], ['sort' => 2, 'metadata' => null]);
+        $updated = $request('GET', '/api/v1/manage/counters/'.$counter['id'])['data'];
+        self::assertSame(2, $updated['sort']);
+        self::assertNull($updated['metadata']);
+
+        foreach ([-1, 'high'] as $invalidSort) {
+            $request = Request::create('/api/v1/manage/counters/'.$counter['id'], 'PUT', [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+                'CONTENT_TYPE' => 'application/json',
+            ], json_encode(['sort' => $invalidSort], JSON_THROW_ON_ERROR));
+            self::assertSame(400, self::$kernel->handle($request)->getStatusCode());
+        }
+    }
+
     public function testOrderMetadataCreatesBindingsForMultipleSameStoreCountersInOrderTransaction(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);

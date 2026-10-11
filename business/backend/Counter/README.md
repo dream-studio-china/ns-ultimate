@@ -4,7 +4,7 @@ Counter owns store-scoped counter records and the many-to-many binding between c
 
 ## Manage counters
 
-Administrators manage counters under `/api/v1/manage/counters`. Store staff manage their own counters under `/api/v1/store/{scopeId}/counters`; the store scope is authorized by the Authorization and Store membership voters, and the API assigns the store UUID from that scope rather than trusting request data. A counter requires `storeUuid`, `code`, and `name` for administrator creation; `capacity` and `enabled` are optional. Counter codes are unique within a store. Store ownership cannot be changed through the store update endpoint.
+Administrators manage counters under `/api/v1/manage/counters`. Store staff manage their own counters under `/api/v1/store/{scopeId}/counters`; the store scope is authorized by the Authorization and Store membership voters, and the API assigns the store UUID from that scope rather than trusting request data. A counter requires `storeUuid`, `code`, and `name` for administrator creation; `capacity`, `sort`, `metadata`, and `enabled` are optional. `sort` is a non-negative integer used for display ordering, and `metadata` is an optional JSON object for counter-specific data. Counter codes are unique within a store. Store ownership cannot be changed through the store update endpoint.
 
 Authenticated customers can list enabled counters for an active store at `/api/v1/app/stores/{storeUuid}/counters`. Store staff can list, bind, and unbind order counters under `/api/v1/store/{scopeId}/order-counters`; the app order-counter endpoint only returns bindings for the authenticated customer's own order. Administrators can inspect bindings at `/api/v1/manage/order-counters`.
 
