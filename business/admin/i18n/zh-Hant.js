@@ -37,6 +37,15 @@ export default {
   'Counter capacity help': '桌台可容納人數，可選。',
   'Counter sort help': '顯示排序，數值越小越靠前。',
   'Counter metadata help': '桌台專屬展示資訊以頂層欄位形式儲存在 metadata 中。',
+  'Sort counters': '台位排序',
+  'Select a store to sort counters': '請選擇要排序的門店',
+  'Drag rows to set counter order': '拖動列表項目以調整顯示順序。',
+  'Drag to reorder': '拖動排序',
+  'Save order': '保存排序',
+  'Counter order saved': '台位排序已保存。',
+  'Counter sort load failed': '讀取台位排序列表失敗。',
+  'Counter sort list limit reached': '此門店台位數量過多，無法一次排序。',
+  'No counters in this store': '此門店暫無台位。',
   'Trade order UUID': '交易訂單 UUID',
   Enabled: '啟用'
 }

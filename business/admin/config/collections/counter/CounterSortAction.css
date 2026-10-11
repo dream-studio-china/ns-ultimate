@@ -1,0 +1,51 @@
+.counter-sort-hint {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.counter-sort-list {
+  max-height: 52vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.counter-sort-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+  cursor: grab;
+}
+
+.counter-sort-row:active {
+  cursor: grabbing;
+}
+
+.counter-sort-row--dragging {
+  opacity: 0.45;
+}
+
+.counter-sort-handle {
+  color: var(--el-text-color-secondary);
+  font-size: 20px;
+}
+
+.counter-sort-rank {
+  width: 28px;
+  color: var(--el-text-color-secondary);
+  text-align: right;
+}
+
+.counter-sort-code {
+  min-width: 68px;
+  font-weight: 600;
+}
+
+.counter-sort-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

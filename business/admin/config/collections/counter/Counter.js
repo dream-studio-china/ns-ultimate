@@ -1,7 +1,7 @@
 import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import { uuidFilter } from '../../uuid-filter.mjs'
-import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collections/helpers'
+import CounterSortAction from './CounterSortAction.jsx'
 
 export default {
   Counter: {
@@ -18,7 +18,14 @@ export default {
       ]
     },
     list: {
-      query: orderByIdDesc,
+      query: { '@order': 'entity.sort|ASC, entity.id|ASC' },
+      actions: [
+        {
+          name: 'counter-sort',
+          position: 'top',
+          get component() { return CounterSortAction }
+        }
+      ],
       list_filter: {
         storeUuid: uuidFilter('storeUuid', t('Store'), () => loadRelationRecords({ name: 'Store', valueKey: 'uuid' })),
         code: t('Counter code'),

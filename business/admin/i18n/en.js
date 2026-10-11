@@ -30,6 +30,15 @@ export default {
   'Counter capacity help': 'Optional seating capacity.',
   'Counter sort help': 'Display order; lower values appear first.',
   'Counter metadata help': 'Counter-specific display values are stored as top-level metadata fields.',
+  'Sort counters': 'Sort counters',
+  'Select a store to sort counters': 'Select a store to sort its counters',
+  'Drag rows to set counter order': 'Drag rows to set the display order.',
+  'Drag to reorder': 'Drag to reorder',
+  'Save order': 'Save order',
+  'Counter order saved': 'Counter order saved.',
+  'Counter sort load failed': 'Failed to load counters for sorting.',
+  'Counter sort list limit reached': 'This store has too many counters to sort at once.',
+  'No counters in this store': 'This store has no counters.',
   'Trade order UUID': 'Trade order UUID',
   Enabled: 'Enabled'
 }

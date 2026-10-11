@@ -30,6 +30,15 @@ export default {
   'Counter capacity help': '任意の収容人数。',
   'Counter sort help': '表示順。値が小さいほど先に表示されます。',
   'Counter metadata help': 'テーブル固有の表示情報は metadata のトップレベル項目として保存されます。',
+  'Sort counters': 'テーブルの並べ替え',
+  'Select a store to sort counters': '店舗を選択してください',
+  'Drag rows to set counter order': '行をドラッグして表示順を変更します。',
+  'Drag to reorder': 'ドラッグして並べ替え',
+  'Save order': '順序を保存',
+  'Counter order saved': '表示順を保存しました。',
+  'Counter sort load failed': '並べ替えるテーブルの読み込みに失敗しました。',
+  'Counter sort list limit reached': '一度に並べ替えられるテーブル数の上限を超えています。',
+  'No counters in this store': 'この店舗にテーブルはありません。',
   'Trade order UUID': '注文 UUID',
   Enabled: '有効'
 }
