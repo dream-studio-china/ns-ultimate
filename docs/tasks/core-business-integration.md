@@ -83,6 +83,8 @@ Frontend route visibility is not backend authorization. New business APIs must e
 
 Each `business/backend/<module>/` owns its domain code, controllers, services, configuration, migrations, and tests. Use a project-owned namespace such as `NsUltimate\Business\<Module>\`, distinct from the core's `App\` namespace. Integration code uses `NsUltimate\Integration\`. When renaming a deployed module, preserve historical migration class namespaces through an explicit legacy migration mapping and add a forward migration; do not rewrite a migration already recorded in a database.
 
+PHP namespace separation does not require database-layer prefixes. Do not default new business tables to `business_`; use domain-specific table, index, and constraint names, such as `wechat_` for WeChat or `counter` / `counter_order` for Counter. Check for collisions with existing core and business mappings. The existing `business_dummy` example table is a legacy compatibility name, not a convention to copy. Renaming it or any other deployed table is a separate forward-migration task, not part of changing the naming policy.
+
 Discover backend modules by the `business/backend/<PascalCaseSingular>/src/` convention (for example, `business/backend/Dummy/`). Keep service and optional route configuration inside each module; register Doctrine mappings and migrations when their conventional directories exist. Avoid scanning arbitrary repository paths. Do not require every module to be a Symfony bundle or invent a plugin registry.
 
 ### Kernel and entrypoints

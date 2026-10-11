@@ -19,6 +19,8 @@ Contains the two upstream repositories as Git subtrees. Treat these directories 
 
 Owns all application-specific behavior, including frontend pages/components, menu and CRUD configuration, API clients, backend domain models, services, controllers, migrations, and business tests. Organize by business capability rather than by technical layer where practical. Backend modules should use a project namespace distinct from core's `App\\` namespace to avoid class collisions.
 
+Database naming is independent of repository-layer ownership. Business modules must not require or default to a `business_` table prefix. Use domain-specific names: WeChat tables use `wechat_`, while Counter uses `counter` and `counter_order`. Explicit index and constraint names should follow the corresponding table/domain names. Check names against all existing core and business mappings; a shared domain prefix does not permit duplicate table mappings or modification of core-owned tables. Legacy example names such as `business_dummy` are retained for compatibility, not recommended as a naming template. Any deployed-table rename requires a separately scoped, data-preserving forward migration; do not rewrite historical migrations.
+
 ### `apps/`
 
 Reserved for self-contained applications with a distinct runtime or deployment boundary. It currently contains only a placeholder and is not discovered, built, tested, or run by the main application's integration, CI, or deployment workflows; it is also excluded from the main Docker build context. Keep product capabilities of the composed admin/API application in `business/`; add an app-specific build/operations workflow or explicit integration before using an independent app.
