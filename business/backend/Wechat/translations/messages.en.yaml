@@ -1,0 +1,8 @@
+# WeChat entity names and field labels used by the system metadata API.
+"WechatApplication": "WeChat application"
+"WechatMerchant": "WeChat merchant"
+"StoreWechatSetting": "Store WeChat setting"
+"App ID": "App ID"
+"Redirect hosts": "Redirect hosts"
+"Merchant ID": "Merchant ID"
+"Enabled": "Enabled"
