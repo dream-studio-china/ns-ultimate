@@ -16,7 +16,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
+use NsUltimate\Business\Counter\Migrations\Version20261011020000;
 use NsUltimate\Integration\Backend\Kernel;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -94,6 +96,48 @@ final class CounterOrderBindingTest extends KernelTestCase
         $unnamedCounter = (new Counter())->setCode('A02');
         self::assertSame('', (string) $unnamedCounter);
         self::assertSame('A02', (string) (new OrderCounter())->setCounter($unnamedCounter));
+    }
+
+    public function testCounterEntitiesUseUnprefixedTableNames(): void
+    {
+        $schemaManager = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->createSchemaManager();
+
+        self::assertTrue($schemaManager->tablesExist(['counter', 'counter_order']));
+        self::assertFalse($schemaManager->tablesExist(['business_counter', 'business_order_counter']));
+    }
+
+    public function testTableRenameMigrationPreservesLegacyCounterTables(): void
+    {
+        require_once dirname(__DIR__, 2).'/migrations/Version20261011020000.php';
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $connection->executeStatement('DROP TABLE counter_order');
+        $connection->executeStatement('DROP TABLE counter');
+        $connection->executeStatement('CREATE TABLE business_counter (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid VARCHAR(36) NOT NULL, store_uuid VARCHAR(36) NOT NULL, code VARCHAR(50) NOT NULL, enabled BOOLEAN NOT NULL)');
+        $connection->executeStatement('CREATE TABLE business_order_counter (id INTEGER PRIMARY KEY AUTOINCREMENT, trade_order_uuid VARCHAR(36) NOT NULL, counter_id INTEGER NOT NULL, store_uuid VARCHAR(36) NOT NULL)');
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_business_counter_uuid ON business_counter (uuid)');
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_business_counter_store_code ON business_counter (store_uuid, code)');
+        $connection->executeStatement('CREATE INDEX idx_business_counter_store_enabled ON business_counter (store_uuid, enabled)');
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_business_order_counter_pair ON business_order_counter (trade_order_uuid, counter_id)');
+        $connection->executeStatement('CREATE INDEX idx_business_order_counter_store ON business_order_counter (store_uuid)');
+        $connection->executeStatement("INSERT INTO business_counter (uuid, store_uuid, code, enabled) VALUES ('counter-uuid', 'store-uuid', 'A01', 1)");
+
+        $migration = new Version20261011020000($connection, new NullLogger());
+        $migration->up($connection->createSchemaManager()->introspectSchema());
+        foreach ($migration->getSql() as $query) {
+            $connection->executeStatement($query->getStatement(), $query->getParameters(), $query->getTypes());
+        }
+
+        $schemaManager = $connection->createSchemaManager();
+        self::assertTrue($schemaManager->tablesExist(['counter', 'counter_order']));
+        self::assertFalse($schemaManager->tablesExist(['business_counter', 'business_order_counter']));
+        self::assertSame('A01', $connection->fetchOne('SELECT code FROM counter WHERE id = 1'));
+        $counterIndexes = array_keys($schemaManager->listTableIndexes('counter'));
+        self::assertContains('idx_counter_store_enabled', $counterIndexes);
+        self::assertContains('uniq_counter_store_code', $counterIndexes);
+        self::assertContains('uniq_counter_uuid', $counterIndexes);
+        $orderCounterIndexes = array_keys($schemaManager->listTableIndexes('counter_order'));
+        self::assertContains('idx_counter_order_store', $orderCounterIndexes);
+        self::assertContains('uniq_counter_order_pair', $orderCounterIndexes);
     }
 
     public function testOrderMetadataCreatesBindingsForMultipleSameStoreCountersInOrderTransaction(): void

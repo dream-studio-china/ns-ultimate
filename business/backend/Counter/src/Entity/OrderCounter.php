@@ -8,9 +8,9 @@ use App\Core\Utils\UUID;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
-#[ORM\Table(name: 'business_order_counter')]
-#[ORM\UniqueConstraint(name: 'uniq_business_order_counter_pair', columns: ['trade_order_uuid', 'counter_id'])]
-#[ORM\Index(name: 'idx_business_order_counter_store', columns: ['store_uuid'])]
+#[ORM\Table(name: 'counter_order')]
+#[ORM\UniqueConstraint(name: 'uniq_counter_order_pair', columns: ['trade_order_uuid', 'counter_id'])]
+#[ORM\Index(name: 'idx_counter_order_store', columns: ['store_uuid'])]
 class OrderCounter
 {
     #[ORM\Id]
