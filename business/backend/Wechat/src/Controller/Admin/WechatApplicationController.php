@@ -17,7 +17,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/manage/wechat-applications', name: 'business-wechat-applications-')]
+#[Route('/manage/wechat-applications', name: 'manage-wechat-applications-')]
 #[IsGranted('ROLE_ADMIN')]
 final class WechatApplicationController extends RestController
 {

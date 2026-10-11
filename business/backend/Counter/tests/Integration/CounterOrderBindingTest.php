@@ -49,7 +49,7 @@ final class CounterOrderBindingTest extends KernelTestCase
         $metadata = self::getContainer()->get(EntityManagerInterface::class)->getMetadataFactory()->getAllMetadata();
         $entityNames = array_map(static fn ($item): string => $item->getName(), $metadata);
 
-        self::assertInstanceOf(Route::class, $routes->get('business-counters-list'));
+        self::assertInstanceOf(Route::class, $routes->get('manage-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('store-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('store-order-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('app-store-counters-list'));
@@ -58,7 +58,7 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertContains(Counter::class, $entityNames);
         self::assertContains(OrderCounter::class, $entityNames);
         foreach ([
-            'business-counters-list' => '/manage/counters',
+            'manage-counters-list' => '/manage/counters',
             'manage-order-counters-list' => '/manage/order-counters',
             'store-counters-list' => '/store/{scopeId}/counters',
             'store-order-counters-list' => '/store/{scopeId}/order-counters',

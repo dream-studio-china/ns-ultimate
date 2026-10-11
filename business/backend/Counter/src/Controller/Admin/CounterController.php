@@ -17,7 +17,7 @@ use NsUltimate\Business\Counter\Service\CounterService;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/manage/counters', name: 'business-counters-')]
+#[Route('/manage/counters', name: 'manage-counters-')]
 #[IsGranted('ROLE_ADMIN')]
 final class CounterController extends RestController
 {

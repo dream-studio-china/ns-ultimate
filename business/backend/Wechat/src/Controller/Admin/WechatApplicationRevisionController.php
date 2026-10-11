@@ -19,7 +19,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/manage/wechat-application-revisions', name: 'business-wechat-application-revisions-')]
+#[Route('/manage/wechat-application-revisions', name: 'manage-wechat-application-revisions-')]
 #[IsGranted('ROLE_ADMIN')]
 final class WechatApplicationRevisionController extends RestController
 {

@@ -18,7 +18,7 @@ use NsUltimate\Business\Wechat\Service\StoreWechatSettingService;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/manage/store-wechat-settings', name: 'business-store-wechat-settings-')]
+#[Route('/manage/store-wechat-settings', name: 'manage-store-wechat-settings-')]
 #[IsGranted('ROLE_ADMIN')]
 final class StoreWechatSettingController extends RestController
 {

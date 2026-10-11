@@ -19,11 +19,11 @@ final class WechatManagementApiTest extends WechatApiTestCase
     {
         $routes = self::getContainer()->get('router')->getRouteCollection();
         foreach ([
-            'business-wechat-applications-list' => '/manage/wechat-applications',
-            'business-wechat-application-revisions-list' => '/manage/wechat-application-revisions',
-            'business-wechat-merchants-list' => '/manage/wechat-merchants',
-            'business-wechat-merchant-revisions-list' => '/manage/wechat-merchant-revisions',
-            'business-store-wechat-settings-list' => '/manage/store-wechat-settings',
+            'manage-wechat-applications-list' => '/manage/wechat-applications',
+            'manage-wechat-application-revisions-list' => '/manage/wechat-application-revisions',
+            'manage-wechat-merchants-list' => '/manage/wechat-merchants',
+            'manage-wechat-merchant-revisions-list' => '/manage/wechat-merchant-revisions',
+            'manage-store-wechat-settings-list' => '/manage/store-wechat-settings',
             'store-wechat-setting-list' => '/store/{scopeId}/wechat-setting',
         ] as $name => $path) {
             self::assertInstanceOf(Route::class, $routes->get($name), $name);
