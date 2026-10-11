@@ -1,0 +1,9 @@
+business_wechat:
+    resource: '../src/Controller/'
+    type: attribute
+
+business_wechat_api:
+    resource: '../src/Controller/'
+    type: attribute
+    prefix: /api/v1
+    name_prefix: api-v1-

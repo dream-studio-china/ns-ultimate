@@ -35,16 +35,29 @@ implemented.
   cannot leak one Store into another.
 - Migration `Version20261011040000` creates the tables and explicit
   indices/constraints.
+- Purpose-built management APIs (hand-built responses, no entity serialization of
+  secrets):
+  - Administrator: `/api/v1/manage/wechat-applications`,
+    `/api/v1/manage/wechat-merchants`, and
+    `/api/v1/manage/store-wechat-settings` (profile CRUD, revision create/publish,
+    binding create/publish, enable/disable).
+  - Store-scoped: `/api/v1/store/{scopeId}/wechat-setting` guarded by
+    `store:wechat:read` and `store:wechat:update` permissions and the resolved
+    Store scope.
+- `app:wechat:seed-authorization` seeds the `store:wechat:read` and
+  `store:wechat:update` permissions plus the `store_wechat_manager` Store role.
 
 Capabilities: `miniapp_login`, `official_oauth`, `payment_jsapi`, and
 `payment_native`. Only ordinary merchant direct mode (`direct`) is supported.
 
 ## Not implemented yet
 
-- Management HTTP APIs, authorization seeding, and the Admin configuration UI.
+- The Admin configuration UI (collections, router entry, locale resources).
 - Mini Program login, phone binding, and Official Account OAuth endpoints.
 - Store-aware payment initiation, callbacks, refunds, and reconciliation.
 - Legacy identity import and the frozen legacy gateway dispatcher.
+- Per-profile Store grants, append-only audit records, redacted credential
+  probes, and optimistic-concurrency protection on publication.
 
 Real payment and refund enablement stays blocked until the asynchronous refund
 accounting boundary in the task plan is resolved and tested.

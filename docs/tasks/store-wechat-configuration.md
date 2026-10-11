@@ -3,7 +3,7 @@
 ## 1. Status and purpose
 
 - Created: 2026-10-11.
-- Status: partially implemented. The Phase 1 backend configuration foundation (entities, encrypted credential storage, publication services, resolver, client factory, migration, and integration tests) is implemented and tested. Management APIs, Admin UI, login, payment, refunds, and legacy import remain pending. No financial capability is enabled.
+- Status: partially implemented. The Phase 1 backend configuration foundation (entities, encrypted credential storage, publication services, resolver, client factory, migration), Administrator and Store management APIs, authorization seeding, and integration tests are implemented and tested. The Admin UI, login, payment, refunds, and legacy import remain pending. No financial capability is enabled.
 - Goal: independently configure WeChat capabilities for each Store, dynamically select the correct application and merchant, and preserve login, payment, callback, and refund isolation across stores.
 - Ownership: project-specific behavior belongs in `business/`; `integration/` owns composition only. Core changes require a demonstrated generic limitation and a separately reviewed fix.
 
@@ -288,11 +288,13 @@ Exit: no unresolved architectural blocker for supported login/payment/refund flo
 - [x] Implement entities, constraints, forward migrations, DTOs, and encrypted credential storage for applications, merchants, and store bindings.
 - [~] Implement draft validation, publication, disable semantics, resolver, and client factory. Publication is app-level (publishing supersedes the previous published revision); optimistic-concurrency protection, explicit revoke, redacted probes, and cache-invalidation tuning remain.
 - [ ] Implement per-profile Store grants and append-only audit records.
-- [ ] Add management APIs, authorization resources/seeding, and localized Admin views.
+- [x] Add Administrator management APIs (applications, merchants, store bindings) and a Store-scoped binding endpoint backed by `store:wechat:*` permissions.
+- [x] Add `app:wechat:seed-authorization` seeding the `store:wechat:read`/`store:wechat:update` permissions and the `store_wechat_manager` role.
+- [ ] Add localized Admin views (collections, router entry, locale resources).
 - [x] Register the Integration suite in project PHPUnit configuration and prove the module is discovered.
 - [ ] Verify frontend checks discover new business tests (no frontend code exists yet).
 
-Implemented evidence: `business/backend/Wechat/` (entities, `SecretCipher` AES-256-GCM, `WechatApplicationService`, `WechatMerchantService`, `StoreWechatBindingService`, `StoreWechatResolver`, `WechatClientFactory`), migration `Version20261011040000`, and `business/backend/Wechat/tests/Integration/WechatConfigurationTest.php`. The full backend suite passes (27 tests / 146 assertions), including encrypted-at-rest assertions, per-Store isolation, fail-closed behavior, and migration SQL on SQLite.
+Implemented evidence: `business/backend/Wechat/` (entities, `SecretCipher` AES-256-GCM, `WechatApplicationService`, `WechatMerchantService`, `StoreWechatBindingService`, `StoreWechatResolver`, `WechatClientFactory`, Admin and Store management controllers, `SeedWechatAuthorizationCommand`), migration `Version20261011040000`, and the `WechatConfigurationTest` / `WechatManagementApiTest` integration suites. The full backend suite passes (35 tests / 200 assertions), including encrypted-at-rest assertions, per-Store isolation, fail-closed behavior, secret non-disclosure in API responses, administrator authorization, and migration SQL on SQLite.
 
 Exit: acceptance cases CFG, SEC, and DYN pass without real payment enablement. Not yet reached: only a subset of CFG/SEC/DYN is covered by automated tests so far.
 
