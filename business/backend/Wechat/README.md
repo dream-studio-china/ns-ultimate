@@ -109,6 +109,21 @@ self-management is available through the API but has no dedicated Admin page yet
   [--dry-run]` maps legacy core `WechatUser` rows onto app-scoped identities
   without guessing an AppID or merging users.
 
+## Security controls
+
+- `WechatProfileGrant` (`wechat_profile_grant`) grants a Store the right to bind a
+  shared application/merchant profile. Store-scoped binding enforces the grant;
+  platform administrators bypass it. Grants are immutable and managed through
+  `/api/v1/manage/wechat-profile-grants`.
+- `WechatAuditEvent` (`wechat_audit_event`) is an append-only, redacted audit log.
+  `WechatAuditLogger` records publication, grant changes, and probes with the
+  actor, Store, object, and result; sensitive context keys are redacted.
+- Revision and Store-binding entities use Doctrine `#[ORM\Version]` optimistic
+  locking; a concurrent publication surfaces as HTTP 409.
+- `app:wechat:probe-credentials {application|merchant} {uuid}` performs an offline
+  readiness probe (decryption and PEM parsing only, never contacting WeChat) and
+  audits the result.
+
 ## Not implemented yet
 
 - Store-aware payment initiation, callbacks, refunds, and reconciliation.

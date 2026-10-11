@@ -285,15 +285,18 @@ Exit: no unresolved architectural blocker for supported login/payment/refund flo
 ### Phase 1: configuration foundation
 
 - [x] Implement entities, constraints, forward migrations, DTOs, and encrypted credential storage for applications, merchants, and store bindings.
-- [~] Implement draft validation, publication, disable semantics, resolver, and client factory. Publication is app-level (publishing supersedes the previous published revision); optimistic-concurrency protection, explicit revoke, redacted probes, and cache-invalidation tuning remain.
-- [ ] Implement per-profile Store grants and append-only audit records.
-- [x] Add management CRUD controllers following the Core view-mixin lifecycle (`WechatApplication`, `WechatApplicationRevision`, `WechatMerchant`, `WechatMerchantRevision`, `StoreWechatSetting`, store-scoped `WechatSetting`) backed by `BaseService` subclasses.
+- [x] Implement draft validation, publication, disable semantics, resolver, and client factory. Publication supersedes the previous published revision and is protected by Doctrine optimistic locking (conflicts surface as HTTP 409).
+- [x] Implement per-profile Store grants and append-only audit records.
+- [x] Add management CRUD controllers following the Core view-mixin lifecycle (`WechatApplication`, `WechatApplicationRevision`, `WechatMerchant`, `WechatMerchantRevision`, `StoreWechatSetting`, `WechatProfileGrant`, store-scoped `WechatSetting`) backed by `BaseService` subclasses.
 - [x] Add `app:wechat:seed-authorization` seeding the `store:wechat:read`/`create`/`update` permissions and the `store_wechat_manager` role.
 - [x] Add localized Admin views (collections for the five resources, a "Wechat management" router group, and en/zh/ja/zh-Hant locale resources).
+- [x] Add an offline, audited credential probe (`app:wechat:probe-credentials`).
 - [x] Register the Integration suite in project PHPUnit configuration and prove the module is discovered.
 - [x] Verify frontend checks discover new business tests (`integration/admin/wechat-admin-config.test.mjs`) and the composed admin build passes.
 
-Implemented evidence: `business/backend/Wechat/` (entities, `SecretCipher` AES-256-GCM, `BaseService`-backed services for profiles/revisions/bindings, `StoreWechatResolver`, `WechatClientFactory`, view-mixin Admin and Store controllers), migration `Version20261011040000`, and the `WechatConfigurationTest` / `WechatManagementApiTest` integration suites. The full backend suite passes (36 tests / 258 assertions), including encrypted-at-rest assertions, per-Store isolation, fail-closed behavior, secret non-disclosure in API responses, administrator authorization, deletion protection, and migration SQL on SQLite.
+Implemented evidence: `business/backend/Wechat/` (entities, `SecretCipher` AES-256-GCM, `BaseService`-backed services for profiles/revisions/bindings/grants, `StoreWechatResolver`, `WechatClientFactory`, `WechatAuditLogger`, `WechatCredentialProbe`, view-mixin Admin and Store controllers), migrations `Version20261011040000`–`Version20261011060000`, and the `WechatConfigurationTest` / `WechatManagementApiTest` / `WechatSecurityControlsTest` integration suites. The full backend suite passes (52 tests / 371 assertions), including encrypted-at-rest assertions, per-Store isolation, fail-closed behavior, secret non-disclosure in API responses, administrator authorization, deletion protection, grant enforcement, audit redaction, optimistic-lock conflicts, and migration SQL on SQLite.
+
+Explicit revoke command, cache-invalidation tuning, and live-provider key rotation remain.
 
 Note: the Store binding is a single live record that pins published application/merchant revisions; binding-level draft/publication history is deferred.
 

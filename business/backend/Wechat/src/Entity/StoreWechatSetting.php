@@ -67,6 +67,10 @@ class StoreWechatSetting
     #[ORM\Column(type: 'json')]
     private array $capabilities = [];
 
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer')]
+    private int $lockVersion = 1;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
 

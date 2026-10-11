@@ -14,7 +14,9 @@ use App\Store\Service\StoreServiceInterface;
 use App\Store\View\StoreScopedAuthorizationApiMixin;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
 use NsUltimate\Business\Wechat\Entity\WechatApplication;
+use NsUltimate\Business\Wechat\Entity\WechatProfileGrant;
 use NsUltimate\Business\Wechat\Service\StoreWechatSettingService;
+use NsUltimate\Business\Wechat\Service\WechatProfileGrantService;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -33,6 +35,7 @@ final class WechatSettingController extends RestController
     public function __construct(
         protected readonly StoreWechatSettingService $service,
         private readonly StoreServiceInterface $storeService,
+        private readonly WechatProfileGrantService $grants,
     ) {
     }
 
@@ -84,15 +87,28 @@ final class WechatSettingController extends RestController
      * @return array<string, mixed> */
     private function processBinding(StoreWechatSetting $setting, array $content): array
     {
+        $storeUuid = $setting->getStoreUuid();
+
         $miniapp = array_key_exists('miniappRevision', $content)
             ? $this->service->resolveApplicationRevision($content['miniappRevision'], WechatApplication::TYPE_MINIAPP)
             : $setting->getMiniappRevision();
+        if (array_key_exists('miniappRevision', $content) && $miniapp !== null) {
+            $this->grants->assertGranted($storeUuid, WechatProfileGrant::TYPE_APPLICATION, (string) $miniapp->getApplication()?->getUuid());
+        }
+
         $official = array_key_exists('officialRevision', $content)
             ? $this->service->resolveApplicationRevision($content['officialRevision'], WechatApplication::TYPE_OFFICIAL)
             : $setting->getOfficialRevision();
+        if (array_key_exists('officialRevision', $content) && $official !== null) {
+            $this->grants->assertGranted($storeUuid, WechatProfileGrant::TYPE_APPLICATION, (string) $official->getApplication()?->getUuid());
+        }
+
         $merchant = array_key_exists('merchantRevision', $content)
             ? $this->service->resolveMerchantRevision($content['merchantRevision'])
             : $setting->getMerchantRevision();
+        if (array_key_exists('merchantRevision', $content) && $merchant !== null) {
+            $this->grants->assertGranted($storeUuid, WechatProfileGrant::TYPE_MERCHANT, (string) $merchant->getMerchant()?->getUuid());
+        }
 
         $requested = array_key_exists('capabilities', $content)
             ? (array) $content['capabilities']

@@ -56,6 +56,10 @@ class WechatApplicationRevision
     #[ORM\Column(name: 'redirect_hosts', type: 'json', nullable: true)]
     private ?array $redirectHosts = null;
 
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer')]
+    private int $lockVersion = 1;
+
     #[ORM\Column(type: 'string', length: 20, options: ['default' => self::STATE_DRAFT])]
     private string $state = self::STATE_DRAFT;
 

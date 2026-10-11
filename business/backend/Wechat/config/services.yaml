@@ -39,6 +39,15 @@ services:
     NsUltimate\Business\Wechat\Service\WechatOAuthStateService:
         public: true
 
+    NsUltimate\Business\Wechat\Service\WechatProfileGrantService:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\WechatCredentialProbe:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\WechatAuditLogger:
+        public: true
+
     NsUltimate\Business\Wechat\Service\WechatLoginGatewayInterface:
         alias: NsUltimate\Business\Wechat\Service\EasyWeChatLoginGateway
 

@@ -66,6 +66,10 @@ class WechatMerchantRevision
     #[ORM\Column(type: 'string', length: 20, options: ['default' => self::STATE_DRAFT])]
     private string $state = self::STATE_DRAFT;
 
+    #[ORM\Version]
+    #[ORM\Column(name: 'lock_version', type: 'integer')]
+    private int $lockVersion = 1;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
 

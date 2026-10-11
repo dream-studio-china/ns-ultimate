@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Wechat\Service;
 
 use App\Core\Service\BaseService;
+use Doctrine\ORM\OptimisticLockException;
 use NsUltimate\Business\Wechat\Entity\WechatMerchant;
 use NsUltimate\Business\Wechat\Entity\WechatMerchantRevision;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 /**
  * @extends BaseService<WechatMerchantRevision>
@@ -17,6 +19,7 @@ final class WechatMerchantRevisionService extends BaseService
     public function __construct(
         ContainerInterface $container,
         private readonly SecretCipher $cipher,
+        private readonly WechatAuditLogger $audit,
     ) {
         parent::__construct($container, WechatMerchantRevision::class);
     }
@@ -97,12 +100,21 @@ final class WechatMerchantRevisionService extends BaseService
             'merchant' => $revision->getMerchant(),
             'state' => WechatMerchantRevision::STATE_PUBLISHED,
         ]);
-        if ($current instanceof WechatMerchantRevision && $current !== $revision) {
-            $current->supersede();
+        try {
+            if ($current instanceof WechatMerchantRevision && $current !== $revision) {
+                $current->supersede();
+            }
+
+            $revision->publish();
+            $this->em->flush();
+        } catch (OptimisticLockException $e) {
+            throw new ConflictHttpException('The revision changed concurrently; reload and retry.', $e);
         }
 
-        $revision->publish();
-        $this->em->flush();
+        $this->audit->record('publish', 'WechatMerchantRevision', $revision->getUuid(), 'success', null, [
+            'merchant' => $revision->getMerchant()?->getUuid(),
+            'revision' => $revision->getRevision(),
+        ]);
     }
 
     public function isBound(WechatMerchantRevision $revision): bool

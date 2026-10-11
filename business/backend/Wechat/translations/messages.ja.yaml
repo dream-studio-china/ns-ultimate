@@ -8,3 +8,5 @@
 "Enabled": "有効"
 "WechatIdentity": "WeChat アイデンティティ"
 "WechatOAuthState": "WeChat OAuth ステート"
+"WechatProfileGrant": "WeChat プロファイル付与"
+"WechatAuditEvent": "WeChat 監査イベント"

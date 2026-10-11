@@ -8,3 +8,5 @@
 "Enabled": "启用"
 "WechatIdentity": "微信身份"
 "WechatOAuthState": "微信 OAuth 状态"
+"WechatProfileGrant": "微信配置授权"
+"WechatAuditEvent": "微信审计事件"

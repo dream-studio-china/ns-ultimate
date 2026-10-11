@@ -8,3 +8,5 @@
 "Enabled": "Enabled"
 "WechatIdentity": "WeChat identity"
 "WechatOAuthState": "WeChat OAuth state"
+"WechatProfileGrant": "WeChat profile grant"
+"WechatAuditEvent": "WeChat audit event"
