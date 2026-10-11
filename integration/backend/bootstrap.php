@@ -7,6 +7,7 @@ use Symfony\Component\Dotenv\Dotenv;
 $repositoryRoot = dirname(__DIR__, 2);
 $coreDirectory = $repositoryRoot.'/core/crud-skeleton';
 $autoloadFile = $coreDirectory.'/vendor/autoload.php';
+$integrationAutoloadFile = __DIR__.'/vendor/autoload.php';
 
 if (!is_file($autoloadFile)) {
     throw new RuntimeException(sprintf(
@@ -17,6 +18,13 @@ if (!is_file($autoloadFile)) {
 
 /** @var Composer\Autoload\ClassLoader $classLoader */
 $classLoader = require $autoloadFile;
+if (!is_file($integrationAutoloadFile)) {
+    throw new RuntimeException(sprintf(
+        'Integration backend dependencies are missing. Run Composer install in "%s".',
+        __DIR__,
+    ));
+}
+require $integrationAutoloadFile;
 $classLoader->addPsr4('NsUltimate\\Integration\\Backend\\', __DIR__.'/src/');
 $modules = NsUltimate\Integration\Backend\ModuleRegistry::discover($repositoryRoot.'/business/backend');
 foreach ($modules as $module) {

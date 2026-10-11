@@ -8,33 +8,11 @@ export default {
     entity: { name: 'Counter', plural: 'counters' },
     form: {
       fields: [
-        {
-          property: 'storeUuid',
-          required: true,
-          relation: { entity: 'Store', valueKey: 'uuid' },
-          field_options: { label: t('Store') },
-          hidden: ['update']
-        },
-        {
-          property: 'code',
-          required: true,
-          help: t('Counter code help'),
-          field_options: { label: t('Counter code') }
-        },
-        { property: 'name', required: true, field_options: { label: t('Name') } },
-        {
-          property: 'capacity',
-          type: 'integer',
-          required: false,
-          help: t('Counter capacity help'),
-          field_options: { label: t('Capacity') }
-        },
-        {
-          property: 'enabled',
-          type: 'boolean',
-          default_value: true,
-          field_options: { label: t('Enabled') }
-        }
+        { property: 'storeUuid', required: true, relation: { entity: 'Store', valueKey: 'uuid' } },
+        { property: 'code', required: true, help: t('Counter code help') },
+        { property: 'name', required: true },
+        { property: 'capacity', type: 'integer', required: false, help: t('Counter capacity help') },
+        { property: 'enabled', type: 'boolean', default_value: true }
       ]
     },
     list: {
@@ -46,32 +24,18 @@ export default {
         enabled: t('Enabled')
       },
       list_display: [
-        { property: 'id', label: t('ID') },
-        {
-          property: 'storeUuid',
-          label: t('Store'),
-          relation: { entity: 'Store', valueKey: 'uuid' }
-        },
-        { property: 'code', label: t('Counter code') },
-        { property: 'name', label: t('Name') },
-        { property: 'capacity', label: t('Capacity') },
-        { property: 'enabled', label: t('Enabled') },
-        { property: 'createdAt', label: t('Created At') },
-        { property: 'updatedAt', label: t('Updated At') }
+        'id',
+        { property: 'storeUuid', relation: { entity: 'Store', valueKey: 'uuid' } },
+        'code',
+        'name',
+        'capacity',
+        'enabled',
+        'createdAt',
+        'updatedAt'
       ]
     },
     detail: {
-      detail_display: [
-        { property: 'id', label: t('ID') },
-        { property: 'uuid', label: t('UUID') },
-        { property: 'storeUuid', label: t('Store') },
-        { property: 'code', label: t('Counter code') },
-        { property: 'name', label: t('Name') },
-        { property: 'capacity', label: t('Capacity') },
-        { property: 'enabled', label: t('Enabled') },
-        { property: 'createdAt', label: t('Created At') },
-        { property: 'updatedAt', label: t('Updated At') }
-      ]
+      detail_display: '__all__'
     }
   }
 }

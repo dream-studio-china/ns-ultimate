@@ -1,6 +1,6 @@
 # Counter entity names and field labels used by the system metadata API.
-"Counter": "カウンター"
-"OrderCounter": "注文カウンター紐付け"
-"Counter code snapshot": "カウンター番号スナップショット"
-"Counter name snapshot": "カウンター名スナップショット"
+"Counter": "テーブル"
+"OrderCounter": "注文テーブル紐付け"
+"Counter code snapshot": "テーブル番号スナップショット"
+"Counter name snapshot": "テーブル名スナップショット"
 "Capacity": "収容人数"

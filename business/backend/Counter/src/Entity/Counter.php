@@ -8,10 +8,10 @@ use App\Core\Utils\UUID;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
-#[ORM\Table(name: 'business_counter')]
-#[ORM\UniqueConstraint(name: 'uniq_business_counter_uuid', columns: ['uuid'])]
-#[ORM\UniqueConstraint(name: 'uniq_business_counter_store_code', columns: ['store_uuid', 'code'])]
-#[ORM\Index(name: 'idx_business_counter_store_enabled', columns: ['store_uuid', 'enabled'])]
+#[ORM\Table(name: 'counter')]
+#[ORM\UniqueConstraint(name: 'uniq_counter_uuid', columns: ['uuid'])]
+#[ORM\UniqueConstraint(name: 'uniq_counter_store_code', columns: ['store_uuid', 'code'])]
+#[ORM\Index(name: 'idx_counter_store_enabled', columns: ['store_uuid', 'enabled'])]
 class Counter
 {
     #[ORM\Id]

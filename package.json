@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "deps:admin": "npm --prefix core/crud-admin ci",
-    "deps:backend": "composer install --working-dir=core/crud-skeleton --no-scripts",
+    "deps:backend": "composer install --working-dir=core/crud-skeleton --no-scripts && composer install --working-dir=integration/backend --no-scripts",
     "deps:install": "npm run deps:admin && npm run deps:backend",
     "postinstall": "npm run deps:install"
   }

@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import coreViteConfig from '../../core/crud-admin/vite.config'
+import { watchBusinessAdmin } from './watch-business.mjs'
 
 const integrationDir = path.dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = path.resolve(integrationDir, '../..')
@@ -33,6 +34,7 @@ export default (configEnv: { mode: string; command: string }) => {
     ...coreConfig,
     root: coreRoot,
     envDir: integrationDir,
+    plugins: [...(coreConfig.plugins ?? []), watchBusinessAdmin(businessAdmin)],
     resolve: {
       ...coreConfig.resolve,
       alias: [

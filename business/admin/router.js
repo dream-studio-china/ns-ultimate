@@ -28,6 +28,7 @@ export default {
     {
       path: '/business',
       name: 'BusinessManage',
+      hidden: true,
       component: Layout,
       meta: {
         title: t('Business'),
@@ -39,24 +40,17 @@ export default {
       ]
     },
     {
-      path: '/qiniu',
-      name: 'QiniuManage',
+      path: '/counter-management',
+      name: 'CounterManagement',
       component: Layout,
       meta: {
-        title: t('Qiniu Config'),
-        icon: 'el-icon-cloudy',
+        title: t('Counter management'),
+        icon: 'el-icon-fork-spoon',
         roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
       },
       children: [
-        {
-          path: '/qiniu/config',
-          name: 'QiniuConfig',
-          component: QiniuSetting,
-          meta: {
-            title: t('Qiniu Config'),
-            icon: 'el-icon-cloudy'
-          }
-        }
+        ...r('Counter', t('Counters')),
+        ...r('OrderCounter', t('Order counter bindings'))
       ]
     }
   ],

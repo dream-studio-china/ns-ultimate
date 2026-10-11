@@ -12,7 +12,7 @@ Run `php bin/console app:counter:seed-authorization` after migrations to registe
 
 The `/api/v1` routes are the canonical API used by Admin. The earlier unprefixed Counter routes remain available for compatibility, with the same authorization requirements.
 
-The business Admin exposes store-scoped Counter CRUD under the Store Management menu. OrderCounter bindings remain available through the backend API but are not exposed as a separate Admin menu. The Counter collection is registered through the business collection glob.
+The business Admin menu includes Counter management and immutable OrderCounter bindings. Collection files at `business/admin/config/collections/counter/*.js` export named entity maps. The composed Vite server watches the business Admin directory, including newly added glob matches outside the core root.
 
 ## Bind counters when creating an order
 
