@@ -1,0 +1,8 @@
+{
+    "name": "ns-ultimate/backend-integration",
+    "description": "Project-owned backend integration dependencies for ns-ultimate.",
+    "license": "MIT",
+    "require": {
+        "qiniu/php-sdk": "^7.14"
+    }
+}

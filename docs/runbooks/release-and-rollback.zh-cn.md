@@ -33,6 +33,11 @@ composer install \
   --no-dev --prefer-dist --no-interaction --no-progress \
   --optimize-autoloader --no-scripts
 
+composer install \
+  --working-dir="$RELEASE/integration/backend" \
+  --no-dev --prefer-dist --no-interaction --no-progress \
+  --optimize-autoloader --no-scripts
+
 npm ci --prefix "$RELEASE/core/crud-admin"
 npm run build --prefix "$RELEASE/core/crud-admin" \
   -- --config "$RELEASE/integration/admin/vite.config.ts"

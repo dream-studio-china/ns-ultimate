@@ -6,7 +6,7 @@ Use the root Makefile for startup, debugging, and checks; see [local development
 
 ## Dependencies
 
-From the repository root, run `npm install` to install both dependency sets using the core lockfiles: frontend packages go to `core/crud-admin/node_modules/`, and Composer packages go to `core/crud-skeleton/vendor/`. This requires Node.js/npm, PHP, and Composer. The root `package.json` only orchestrates installs; it does not duplicate either core's dependency declarations. Composer scripts are disabled during installation so the core app is not initialized accidentally.
+From the repository root, run `npm install` to install frontend packages to `core/crud-admin/node_modules/`, core Composer packages to `core/crud-skeleton/vendor/`, and project-owned backend SDKs to `integration/backend/vendor/`. The Qiniu PHP SDK is declared in `integration/backend/composer.json`, outside the upstream core. This requires Node.js/npm, PHP, and Composer. Composer scripts are disabled during installation so the core app is not initialized accidentally.
 
 ## Admin
 
@@ -28,10 +28,11 @@ Build with `npm run build -- --config ../../integration/admin/vite.config.ts`. O
 
 The `Dummy` module under `business/backend/Dummy/` is a starter vertical slice, not a required integration module. It demonstrates a module-owned entity, service, admin-protected CRUD controller using core mixins, attribute routes, and migrations. Its legacy Note migration identity remains registered so existing databases can rename the example table without losing data. New modules do not require editing `integration/`; add them under `business/backend/<PascalCaseSingular>/src/`. Optional `config/services.yaml` and `config/routes.yaml` files remain module-owned overrides. Integration registers module controller attributes independently of core's `routing.controllers` resource so duplicate route names are rejected; route prefixes remain module-owned.
 
-Install Composer dependencies from `core/crud-skeleton/`, then use:
+Install Composer dependencies for both the core and project integration, then use:
 
 ```sh
 composer install --working-dir=core/crud-skeleton
+composer install --working-dir=integration/backend
 php integration/backend/bin/console about
 php core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml
 ```
