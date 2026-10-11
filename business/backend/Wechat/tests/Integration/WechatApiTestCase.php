@@ -120,7 +120,7 @@ abstract class WechatApiTestCase extends KernelTestCase
             'redirectHosts' => $redirectHosts,
         ]);
         self::assertSame(201, $status, json_encode($body));
-        self::assertTrue($body['data']['secret']);
+        self::assertTrue($body['data']['secretConfigured']);
 
         $revisionUuid = $body['data']['uuid'];
         [$status, $body] = $this->request('PUT', '/api/v1/manage/wechat-application-revisions/'.$revisionUuid, [

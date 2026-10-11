@@ -88,9 +88,9 @@ class WechatApplicationRevision
     public function getPublishedAt(): ?\DateTimeImmutable { return $this->publishedAt; }
     public function getKeyId(): ?string { return $this->keyId; }
 
-    public function hasSecret(): bool { return $this->secretEncrypted !== null; }
-    public function hasOfficialToken(): bool { return $this->officialTokenEncrypted !== null; }
-    public function hasOfficialAesKey(): bool { return $this->officialAesKeyEncrypted !== null; }
+    public function isSecretConfigured(): bool { return $this->secretEncrypted !== null; }
+    public function isOfficialTokenConfigured(): bool { return $this->officialTokenEncrypted !== null; }
+    public function isOfficialAesKeyConfigured(): bool { return $this->officialAesKeyEncrypted !== null; }
 
     /** @return list<string> */
     public function getRedirectHosts(): array { return $this->redirectHosts ?? []; }

@@ -123,7 +123,7 @@ final class WechatMerchantRevisionService extends BaseService
         if (!$revision->getMerchant() instanceof WechatMerchant) {
             throw new \InvalidArgumentException('A merchant revision requires a merchant.');
         }
-        if (!$revision->hasApiV3Key() || !$revision->hasPrivateKey() || !$revision->hasCertificate()) {
+        if (!$revision->isApiV3KeyConfigured() || !$revision->isPrivateKeyConfigured() || !$revision->isCertificateConfigured()) {
             throw new \InvalidArgumentException('A merchant revision requires the API v3 key, private key, and certificate before publication.');
         }
     }

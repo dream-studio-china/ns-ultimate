@@ -100,10 +100,10 @@ class WechatMerchantRevision
     public function getPlatformPublicKeyId(): ?string { return $this->platformPublicKeyId; }
     public function getKeyId(): ?string { return $this->keyId; }
 
-    public function hasApiV3Key(): bool { return $this->apiV3KeyEncrypted !== null; }
-    public function hasPrivateKey(): bool { return $this->privateKeyEncrypted !== null; }
-    public function hasCertificate(): bool { return $this->certificateEncrypted !== null; }
-    public function hasPlatformPublicKey(): bool { return $this->platformPublicKeyEncrypted !== null; }
+    public function isApiV3KeyConfigured(): bool { return $this->apiV3KeyEncrypted !== null; }
+    public function isPrivateKeyConfigured(): bool { return $this->privateKeyEncrypted !== null; }
+    public function isCertificateConfigured(): bool { return $this->certificateEncrypted !== null; }
+    public function isPlatformPublicKeyConfigured(): bool { return $this->platformPublicKeyEncrypted !== null; }
 
     /** Raw encrypted material. Only SecretCipher-aware services may consume this. */
     public function encryptedApiV3Key(): ?string { return $this->apiV3KeyEncrypted; }

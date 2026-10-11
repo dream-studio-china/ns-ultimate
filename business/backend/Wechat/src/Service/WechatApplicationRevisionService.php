@@ -118,11 +118,11 @@ final class WechatApplicationRevisionService extends BaseService
         if (!$application instanceof WechatApplication) {
             throw new \InvalidArgumentException('An application revision requires an application.');
         }
-        if (!$revision->hasSecret()) {
+        if (!$revision->isSecretConfigured()) {
             throw new \InvalidArgumentException('An application revision requires a secret before publication.');
         }
         if ($application->getType() === WechatApplication::TYPE_OFFICIAL
-            && (!$revision->hasOfficialToken() || !$revision->hasOfficialAesKey())) {
+            && (!$revision->isOfficialTokenConfigured() || !$revision->isOfficialAesKeyConfigured())) {
             throw new \InvalidArgumentException('An Official Account revision requires a token and AES key before publication.');
         }
     }

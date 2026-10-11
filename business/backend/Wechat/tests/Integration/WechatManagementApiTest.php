@@ -50,7 +50,7 @@ final class WechatManagementApiTest extends WechatApiTestCase
         [$status, $body] = $this->request('GET', '/api/v1/manage/wechat-application-revisions/'.$revisionUuid);
         self::assertSame(200, $status);
         self::assertSame('published', $body['data']['state']);
-        self::assertTrue($body['data']['secret']);
+        self::assertTrue($body['data']['secretConfigured']);
         self::assertSame(['shop.example.com'], $body['data']['redirectHosts']);
         self::assertStringNotContainsString('super-secret-value', json_encode($body, JSON_THROW_ON_ERROR));
 
@@ -88,7 +88,7 @@ final class WechatManagementApiTest extends WechatApiTestCase
         [$status, $body] = $this->request('GET', '/api/v1/manage/wechat-merchant-revisions/'.$revisionUuid);
         self::assertSame(200, $status);
         self::assertSame('published', $body['data']['state']);
-        self::assertTrue($body['data']['privateKey']);
+        self::assertTrue($body['data']['privateKeyConfigured']);
         self::assertStringNotContainsString('BEGIN PRIVATE KEY', json_encode($body, JSON_THROW_ON_ERROR));
     }
 
