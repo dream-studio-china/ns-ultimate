@@ -124,6 +124,29 @@ self-management is available through the API but has no dedicated Admin page yet
   readiness probe (decryption and PEM parsing only, never contacting WeChat) and
   audits the result.
 
+## Payments and refunds (foundation)
+
+Merchant mode supports `direct` (ordinary merchant) and `partner` (service
+provider + sub-merchant); a partner binding requires `subMerchantId` (and optional
+`subAppId`).
+
+- `WechatPaymentAttempt` (`wechat_payment_attempt`) persists one unresolved
+  collection attempt per Invoice, pinning the trusted Store, application/merchant
+  revisions, payer identity, provider order number, and expected external amount.
+  A repeated idempotency key with identical inputs reuses the attempt; conflicting
+  inputs and restarting a completed attempt are rejected.
+- `WechatRefundAttempt` (`wechat_refund_attempt`) persists refund requests with a
+  stable provider refund number and an idempotent `accounting_applied_at` marker.
+- `InvoiceStoreContextAdapter` derives the trusted Store from persisted source
+  data (`trade_order` → `OrderStoreLifecycle`) and fails closed for unsupported
+  invoice sources.
+
+Still to come: the WeChat `PaymentGatewayInterface` gateway, JSAPI/Native
+provider calls, the versioned callback locator with verification and an inbox,
+provider queries and reconciliation, and the project-owned refund orchestrator
+with its safe accounting adapter (confirmed option A). No real payment or refund
+path can reach WeChat yet.
+
 ## Not implemented yet
 
 - Store-aware payment initiation, callbacks, refunds, and reconciliation.

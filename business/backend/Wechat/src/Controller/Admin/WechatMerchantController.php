@@ -27,7 +27,7 @@ final class WechatMerchantController extends RestController
     protected array $requiredCreateProperties = ['name', 'merchantId'];
 
     /** @var list<string> */
-    protected array $acceptedCreateProperties = ['name', 'merchantId'];
+    protected array $acceptedCreateProperties = ['name', 'merchantId', 'mode'];
 
     /** @var list<string> */
     protected array $acceptedUpdateProperties = ['name', 'enabled'];

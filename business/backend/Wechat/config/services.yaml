@@ -48,6 +48,12 @@ services:
     NsUltimate\Business\Wechat\Service\WechatAuditLogger:
         public: true
 
+    NsUltimate\Business\Wechat\Service\InvoiceStoreContextAdapter:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\WechatPaymentAttemptService:
+        public: true
+
     NsUltimate\Business\Wechat\Service\WechatLoginGatewayInterface:
         alias: NsUltimate\Business\Wechat\Service\EasyWeChatLoginGateway
 

@@ -21,6 +21,10 @@ use Doctrine\ORM\Mapping as ORM;
 class WechatMerchant
 {
     public const MODE_DIRECT = 'direct';
+    public const MODE_PARTNER = 'partner';
+
+    /** @var list<string> */
+    public const MODES = [self::MODE_DIRECT, self::MODE_PARTNER];
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -71,6 +75,14 @@ class WechatMerchant
         return $this->touch();
     }
     public function getMode(): string { return $this->mode; }
+    public function setMode(string $mode): self
+    {
+        if (!in_array($mode, self::MODES, true)) {
+            throw new \InvalidArgumentException(sprintf('Unsupported WeChat merchant mode "%s".', $mode));
+        }
+        $this->mode = $mode;
+        return $this->touch();
+    }
     public function isEnabled(): bool { return $this->enabled; }
     public function setEnabled(bool $enabled): self { $this->enabled = $enabled; return $this->touch(); }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }

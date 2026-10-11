@@ -61,7 +61,7 @@ Official Account JSAPI, inbound account messages, template/subscription messages
 
 | Decision | Proposed default | Gate |
 | --- | --- | --- |
-| Merchant integration | Ordinary merchant direct mode only in the first release | Confirm before payment implementation; service-provider mode needs different request and verification rules |
+| Merchant integration | Confirmed: support both ordinary merchant direct mode and service-provider + sub-merchant mode in the first release | Decided 2026-10-12 |
 | Shared application credentials | Platform admins own shared profiles; store operators can bind only profiles explicitly granted to their store | Confirm the operational permission model before management APIs |
 | System user sharing | Users remain platform-wide; WeChat identities are application-scoped; login never grants Store staff roles | Confirm account-linking policy before login implementation |
 | UnionID linking | No automatic account merge; explicit verified linking only | Confirm separately if automatic linking is desired |
@@ -69,8 +69,10 @@ Official Account JSAPI, inbound account messages, template/subscription messages
 | Credential storage | Encrypted secret storage with an external master key and controlled private credential files | Confirm production key custody, backup, and rotation before release |
 | Unresolved transaction retention | Keep historical profiles and usable credential references while payments/refunds need reconciliation | Approve a retention policy before deletion is enabled |
 | Release packaging | Configuration/login may ship before payments; payments are gated independently | Confirm whether all capabilities must ship together |
+| Refund completion boundary | Confirmed: option A — project-owned refund orchestrator with a safe accounting adapter, no Core change (see Section 9.3) | Decided 2026-10-12 |
 
-Do not silently implement service-provider payment, user merging, shared secret access, or a new production key-management dependency as an assumed requirement.
+Merchant integration is confirmed for both ordinary merchant direct mode and
+service-provider + sub-merchant mode. Refunds use option A below.
 
 ## 4. Architecture and ownership
 
@@ -226,10 +228,12 @@ Create a persisted refund request with a stable `out_refund_no`, then handle `re
 
 Only verified `succeeded` results update refunded accounting or dispatch completed-refund events. Repeated callbacks/queries must not apply the refund twice. Pending/unknown refunds must not mark the Invoice refunded or restore adjustments as if external funds had already returned.
 
-The current Core `InvoiceService::refund()` does not satisfy this invariant. Phase 0 must choose and validate one of:
+The current Core `InvoiceService::refund()` does not satisfy this invariant. Confirmed approach (2026-10-12): **option 2 — a project-owned refund orchestrator plus a safe accounting adapter that updates the Invoice only after a verified refund success, without calling Core's eager-completion path for pending refunds.** No Core change is required for this choice.
 
 1. A minimal generic Core extension separating external refund initiation from successful accounting completion, with isolated tests and subtree-policy review.
 2. A project-owned refund orchestrator plus an explicit safe accounting adapter that preserves existing wallet/adjustment and Invoice state behavior without calling Core's eager-completion path for pending refunds.
+
+Option 2 is the confirmed choice (2026-10-12).
 
 Do not implement by returning `processing` from the gateway and allowing the current Core refund method to run unchanged. Real refund enablement remains blocked until this boundary is tested, including adjusted invoices. If adjusted refunds are deferred, reject them before any provider call and document the restriction explicitly.
 
@@ -312,12 +316,13 @@ Exit: acceptance cases AUTH and relevant MIG cases pass; approved real-app login
 
 ### Phase 3: direct payments and refunds
 
-- [ ] Implement persisted attempts, idempotent initiation, trusted Invoice adapter, and selected gateway composition.
+- [~] Merchant modes: `direct` and `partner` (sub-merchant) supported; partner binding requires `subMerchantId`.
+- [~] Persisted payment/refund attempts with idempotency and a trusted Invoice→Store adapter are implemented. The gateway, JSAPI/Native calls, versioned callbacks with verification/inbox, provider queries, reconciliation, and the option-A refund orchestrator remain.
 - [ ] Implement JSAPI/Native, versioned callbacks, inbox/idempotency, provider queries, and payment reconciliation.
 - [ ] Implement refund requests/reservations, notifications/queries, confirmed-success accounting, and failure recovery.
 - [ ] Exercise revision changes, credential rotation, duplicate/concurrent events, and crashes around external calls.
 
-Exit: all PAY/REF cases pass; Core accounting compatibility proven; no unsupported refund path can reach the provider.
+Exit: all PAY/REF cases pass; Core accounting compatibility proven; no unsupported refund path can reach the provider. Not yet reached; no financial path is enabled.
 
 ### Phase 4: release validation and operations
 

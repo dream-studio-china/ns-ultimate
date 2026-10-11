@@ -44,9 +44,9 @@ final class WechatMerchantRevisionService extends BaseService
             throw new \InvalidArgumentException('A merchant revision requires a merchant.');
         }
 
-        $mode = $input['mode'] ?? WechatMerchant::MODE_DIRECT;
-        if (!is_string($mode) || $mode !== WechatMerchant::MODE_DIRECT) {
-            throw new \InvalidArgumentException('Only ordinary merchant direct mode is supported.');
+        $mode = $input['mode'] ?? $revision->getMerchant()?->getMode() ?? WechatMerchant::MODE_DIRECT;
+        if (!is_string($mode) || !in_array($mode, WechatMerchant::MODES, true)) {
+            throw new \InvalidArgumentException('Unsupported WeChat merchant mode.');
         }
 
         $apiV3Key = $input['apiV3Key'] ?? null;
@@ -79,7 +79,7 @@ final class WechatMerchantRevisionService extends BaseService
             $platformPublicKeyId = trim($platformPublicKeyId);
         }
 
-        $revision->setMode(WechatMerchant::MODE_DIRECT);
+        $revision->setMode($mode);
         $revision->setCertificateSerial(null);
         $revision->setKeyId($this->cipher->keyId());
         $revision->setApiV3KeyEncrypted($this->cipher->encrypt(trim($apiV3Key)));

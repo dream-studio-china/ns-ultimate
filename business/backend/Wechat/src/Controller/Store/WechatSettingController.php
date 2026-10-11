@@ -27,10 +27,10 @@ final class WechatSettingController extends RestController
     use StoreScopedAuthorizationApiMixin, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
 
     /** @var list<string> */
-    protected array $acceptedCreateProperties = ['enabled', 'miniappRevision', 'officialRevision', 'merchantRevision', 'capabilities'];
+    protected array $acceptedCreateProperties = ['enabled', 'miniappRevision', 'officialRevision', 'merchantRevision', 'capabilities', 'subMerchantId', 'subAppId'];
 
     /** @var list<string> */
-    protected array $acceptedUpdateProperties = ['enabled', 'miniappRevision', 'officialRevision', 'merchantRevision', 'capabilities'];
+    protected array $acceptedUpdateProperties = ['enabled', 'miniappRevision', 'officialRevision', 'merchantRevision', 'capabilities', 'subMerchantId', 'subAppId'];
 
     public function __construct(
         protected readonly StoreWechatSettingService $service,
@@ -115,12 +115,22 @@ final class WechatSettingController extends RestController
             : $setting->getCapabilities();
         $capabilities = $this->service->normalizeCapabilities($requested, $miniapp, $official, $merchant);
 
+        $subMerchantId = array_key_exists('subMerchantId', $content) ? $content['subMerchantId'] : $setting->getSubMerchantId();
+        $subAppId = array_key_exists('subAppId', $content) ? $content['subAppId'] : $setting->getSubAppId();
+        $this->service->assertSubMerchant(
+            $merchant?->getMode(),
+            is_string($subMerchantId) ? trim($subMerchantId) : null,
+            is_string($subAppId) ? trim($subAppId) : null,
+        );
+        $setting->setSubMerchantId(is_string($subMerchantId) && $subMerchantId !== '' ? trim($subMerchantId) : null);
+        $setting->setSubAppId(is_string($subAppId) && $subAppId !== '' ? trim($subAppId) : null);
+
         $setting->setMiniappRevision($miniapp)
             ->setOfficialRevision($official)
             ->setMerchantRevision($merchant)
             ->setCapabilities($capabilities);
 
-        unset($content['miniappRevision'], $content['officialRevision'], $content['merchantRevision'], $content['capabilities']);
+        unset($content['miniappRevision'], $content['officialRevision'], $content['merchantRevision'], $content['capabilities'], $content['subMerchantId'], $content['subAppId']);
 
         return $content;
     }

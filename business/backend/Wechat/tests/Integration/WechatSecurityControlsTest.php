@@ -125,8 +125,7 @@ final class WechatSecurityControlsTest extends WechatApiTestCase
         }
     }
 
-    public function testCredentialProbeReportsReadinessOffline(): void
-    {
+    public function testCredentialProbeReportsReadinessOffline(): void    {
         $probe = self::getContainer()->get(WechatCredentialProbe::class);
         $revisionUuid = $this->publishApplicationRevision($this->createApplication('wx-mini-a'), 'secret-a');
 
@@ -137,5 +136,40 @@ final class WechatSecurityControlsTest extends WechatApiTestCase
         self::assertSame(1, (int) $this->entityManager()->getConnection()->fetchOne(
             "SELECT COUNT(*) FROM wechat_audit_event WHERE action = 'probe'",
         ));
+    }
+
+    public function testPartnerBindingRequiresSubMerchant(): void
+    {
+        $store = $this->createStore('PAY');
+        $applicationRevision = $this->publishApplicationRevision($this->createApplication('wx-mini-pay'), 'secret-pay');
+        [, $merchant] = $this->request('POST', '/api/v1/manage/wechat-merchants', [
+            'name' => 'Partner merchant',
+            'merchantId' => '1900000002',
+            'mode' => 'partner',
+        ]);
+        [, $revision] = $this->request('POST', '/api/v1/manage/wechat-merchant-revisions', [
+            'merchant' => $merchant['data']['id'],
+            'apiV3Key' => str_repeat('k', 32),
+            'privateKey' => "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
+            'certificate' => "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+        ]);
+        $this->request('PUT', '/api/v1/manage/wechat-merchant-revisions/'.$revision['data']['uuid'], ['state' => 'published']);
+
+        [$status] = $this->request('POST', '/api/v1/manage/store-wechat-settings', [
+            'storeUuid' => $store->getUuid(),
+            'miniappRevision' => $applicationRevision,
+            'merchantRevision' => $revision['data']['uuid'],
+            'capabilities' => [\NsUltimate\Business\Wechat\Entity\StoreWechatSetting::CAP_PAYMENT_NATIVE => true],
+        ]);
+        self::assertSame(400, $status);
+
+        [$status] = $this->request('POST', '/api/v1/manage/store-wechat-settings', [
+            'storeUuid' => $store->getUuid(),
+            'miniappRevision' => $applicationRevision,
+            'merchantRevision' => $revision['data']['uuid'],
+            'subMerchantId' => '1900000003',
+            'capabilities' => [\NsUltimate\Business\Wechat\Entity\StoreWechatSetting::CAP_PAYMENT_NATIVE => true],
+        ]);
+        self::assertSame(201, $status);
     }
 }

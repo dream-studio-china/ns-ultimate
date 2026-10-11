@@ -1,0 +1,86 @@
+<?php
+
+declare(strict_types=1);
+
+namespace NsUltimate\Business\Wechat\Service;
+
+use App\Payment\Entity\Invoice;
+use Doctrine\ORM\EntityManagerInterface;
+use NsUltimate\Business\Wechat\Entity\WechatIdentity;
+use NsUltimate\Business\Wechat\Entity\WechatPaymentAttempt;
+
+/**
+ * Creates and de-duplicates persisted WeChat payment attempts.
+ *
+ * One unresolved external collection attempt is allowed per Invoice; a repeated
+ * idempotency key with identical inputs reuses the attempt, and conflicting
+ * inputs are rejected.
+ */
+final class WechatPaymentAttemptService
+{
+    public function __construct(private readonly EntityManagerInterface $entityManager)
+    {
+    }
+
+    public function start(
+        Invoice $invoice,
+        string $storeUuid,
+        string $tradeType,
+        int $amount,
+        string $currency,
+        ?WechatIdentity $payerIdentity,
+        string $idempotencyKey,
+    ): WechatPaymentAttempt {
+        if (!in_array($tradeType, [WechatPaymentAttempt::TRADE_JSAPI, WechatPaymentAttempt::TRADE_NATIVE], true)) {
+            throw new \InvalidArgumentException('Unsupported WeChat trade type.');
+        }
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('The external payment amount must be positive.');
+        }
+        if (trim($idempotencyKey) === '') {
+            throw new \InvalidArgumentException('An idempotency key is required.');
+        }
+
+        $repository = $this->entityManager->getRepository(WechatPaymentAttempt::class);
+
+        $existing = $repository->findOneBy(['idempotencyKey' => trim($idempotencyKey)]);
+        if ($existing instanceof WechatPaymentAttempt) {
+            if ($existing->getInvoiceUuid() !== $invoice->getUuid()
+                || $existing->getExpectedAmount() !== $amount
+                || $existing->getTradeType() !== $tradeType
+                || $existing->getStoreUuid() !== $storeUuid) {
+                throw new \InvalidArgumentException('The idempotency key was reused with different payment inputs.');
+            }
+
+            return $existing;
+        }
+
+        $byInvoice = $repository->findOneBy(['invoiceUuid' => $invoice->getUuid()]);
+        if ($byInvoice instanceof WechatPaymentAttempt) {
+            if (!$byInvoice->isUnresolved()) {
+                throw new \InvalidArgumentException('The invoice already has a completed payment attempt.');
+            }
+            if ($byInvoice->getExpectedAmount() !== $amount || $byInvoice->getTradeType() !== $tradeType) {
+                throw new \InvalidArgumentException('The invoice already has an unresolved attempt with different inputs.');
+            }
+
+            return $byInvoice;
+        }
+
+        $attempt = (new WechatPaymentAttempt())
+            ->setInvoiceUuid($invoice->getUuid())
+            ->setStoreUuid($storeUuid)
+            ->setProviderOrderNo($invoice->getOutTradeNo())
+            ->setTradeType($tradeType)
+            ->setExpectedAmount($amount)
+            ->setCurrency(strtoupper($currency))
+            ->setPayerIdentity($payerIdentity)
+            ->setIdempotencyKey(trim($idempotencyKey))
+            ->setStatus(WechatPaymentAttempt::STATUS_CREATED);
+
+        $this->entityManager->persist($attempt);
+        $this->entityManager->flush();
+
+        return $attempt;
+    }
+}

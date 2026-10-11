@@ -9,6 +9,7 @@ use App\Core\Utils\UUID;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
 use NsUltimate\Business\Wechat\Entity\WechatApplication;
 use NsUltimate\Business\Wechat\Entity\WechatApplicationRevision;
+use NsUltimate\Business\Wechat\Entity\WechatMerchant;
 use NsUltimate\Business\Wechat\Entity\WechatMerchantRevision;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -63,12 +64,25 @@ final class StoreWechatSettingService extends BaseService
         return $revision;
     }
 
+    public function assertSubMerchant(?string $mode, ?string $subMerchantId, ?string $subAppId): void
+    {
+        if ($mode === WechatMerchant::MODE_PARTNER) {
+            if ($subMerchantId === null || trim($subMerchantId) === '') {
+                throw new \InvalidArgumentException('A partner merchant binding requires a sub-merchant ID.');
+            }
+            return;
+        }
+
+        if ($subMerchantId !== null || $subAppId !== null) {
+            throw new \InvalidArgumentException('Sub-merchant fields are only allowed for partner merchant bindings.');
+        }
+    }
+
     /**
      * @param array<string, mixed> $requested
      * @return array<string, bool>
      */
-    public function normalizeCapabilities(
-        array $requested,
+    public function normalizeCapabilities(        array $requested,
         ?WechatApplicationRevision $miniapp,
         ?WechatApplicationRevision $official,
         ?WechatMerchantRevision $merchant,
