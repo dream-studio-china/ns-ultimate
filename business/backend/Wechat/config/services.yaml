@@ -54,6 +54,18 @@ services:
     NsUltimate\Business\Wechat\Service\WechatPaymentAttemptService:
         public: true
 
+    NsUltimate\Business\Wechat\Service\EasyWeChatPayProvider:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\WechatPayProviderInterface:
+        alias: NsUltimate\Business\Wechat\Service\EasyWeChatPayProvider
+
+    NsUltimate\Business\Wechat\Service\WechatPaymentGateway:
+        public: true
+        arguments:
+            $notifyUrl: '%env(WECHAT_STORE_PAY_NOTIFY_URL)%'
+        tags: ['payment.gateway']
+
     NsUltimate\Business\Wechat\Service\WechatLoginGatewayInterface:
         alias: NsUltimate\Business\Wechat\Service\EasyWeChatLoginGateway
 

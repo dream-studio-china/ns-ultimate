@@ -36,6 +36,8 @@ final readonly class ResolvedWechatConfig
         public ?string $certificateSerial = null,
         public ?string $platformPublicKeyId = null,
         public ?string $platformPublicKey = null,
+        public ?string $subMerchantId = null,
+        public ?string $subAppId = null,
     ) {
     }
 

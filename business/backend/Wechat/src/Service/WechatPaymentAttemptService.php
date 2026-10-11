@@ -6,7 +6,9 @@ namespace NsUltimate\Business\Wechat\Service;
 
 use App\Payment\Entity\Invoice;
 use Doctrine\ORM\EntityManagerInterface;
+use NsUltimate\Business\Wechat\Entity\WechatApplicationRevision;
 use NsUltimate\Business\Wechat\Entity\WechatIdentity;
+use NsUltimate\Business\Wechat\Entity\WechatMerchantRevision;
 use NsUltimate\Business\Wechat\Entity\WechatPaymentAttempt;
 
 /**
@@ -30,6 +32,8 @@ final class WechatPaymentAttemptService
         string $currency,
         ?WechatIdentity $payerIdentity,
         string $idempotencyKey,
+        ?WechatApplicationRevision $applicationRevision = null,
+        ?WechatMerchantRevision $merchantRevision = null,
     ): WechatPaymentAttempt {
         if (!in_array($tradeType, [WechatPaymentAttempt::TRADE_JSAPI, WechatPaymentAttempt::TRADE_NATIVE], true)) {
             throw new \InvalidArgumentException('Unsupported WeChat trade type.');
@@ -51,6 +55,7 @@ final class WechatPaymentAttemptService
                 || $existing->getStoreUuid() !== $storeUuid) {
                 throw new \InvalidArgumentException('The idempotency key was reused with different payment inputs.');
             }
+            $this->pinRevisions($existing, $applicationRevision, $merchantRevision);
 
             return $existing;
         }
@@ -63,6 +68,7 @@ final class WechatPaymentAttemptService
             if ($byInvoice->getExpectedAmount() !== $amount || $byInvoice->getTradeType() !== $tradeType) {
                 throw new \InvalidArgumentException('The invoice already has an unresolved attempt with different inputs.');
             }
+            $this->pinRevisions($byInvoice, $applicationRevision, $merchantRevision);
 
             return $byInvoice;
         }
@@ -77,10 +83,24 @@ final class WechatPaymentAttemptService
             ->setPayerIdentity($payerIdentity)
             ->setIdempotencyKey(trim($idempotencyKey))
             ->setStatus(WechatPaymentAttempt::STATUS_CREATED);
+        $this->pinRevisions($attempt, $applicationRevision, $merchantRevision);
 
         $this->entityManager->persist($attempt);
         $this->entityManager->flush();
 
         return $attempt;
+    }
+
+    private function pinRevisions(
+        WechatPaymentAttempt $attempt,
+        ?WechatApplicationRevision $applicationRevision,
+        ?WechatMerchantRevision $merchantRevision,
+    ): void {
+        if ($applicationRevision !== null && $attempt->getApplicationRevision() === null) {
+            $attempt->setApplicationRevision($applicationRevision);
+        }
+        if ($merchantRevision !== null && $attempt->getMerchantRevision() === null) {
+            $attempt->setMerchantRevision($merchantRevision);
+        }
     }
 }

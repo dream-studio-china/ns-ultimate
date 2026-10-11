@@ -140,12 +140,18 @@ provider + sub-merchant); a partner binding requires `subMerchantId` (and option
 - `InvoiceStoreContextAdapter` derives the trusted Store from persisted source
   data (`trade_order` → `OrderStoreLifecycle`) and fails closed for unsupported
   invoice sources.
+- `WechatPaymentGateway` implements the Core `PaymentGatewayInterface` for payment
+  name `wechat` with JSAPI and Native prepay, a signed JSAPI payload, and notify
+  verification against the pinned attempt (order number, amount, currency,
+  merchant, application). A compiler pass removes the core registration so exactly
+  one deterministic `wechat` gateway exists. Core-initiated refunds are refused so
+  refunds cannot bypass the orchestrator.
+- Notify callbacks arrive at `/api/payment/notify/wechat?locator=<attempt uuid>`;
+  the locator selects the pinned attempt configuration.
 
-Still to come: the WeChat `PaymentGatewayInterface` gateway, JSAPI/Native
-provider calls, the versioned callback locator with verification and an inbox,
-provider queries and reconciliation, and the project-owned refund orchestrator
-with its safe accounting adapter (confirmed option A). No real payment or refund
-path can reach WeChat yet.
+Still to come: the provider query/reconciliation command, the versioned
+provider-query inbox, and the project-owned refund orchestrator with its safe
+accounting adapter (confirmed option A). No refund path can reach WeChat yet.
 
 ## Not implemented yet
 

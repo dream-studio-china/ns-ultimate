@@ -9,6 +9,7 @@ use NsUltimate\Business\Wechat\Dto\ResolvedWechatConfig;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
 use NsUltimate\Business\Wechat\Entity\WechatApplicationRevision;
 use NsUltimate\Business\Wechat\Entity\WechatMerchantRevision;
+use NsUltimate\Business\Wechat\Entity\WechatPaymentAttempt;
 use NsUltimate\Business\Wechat\Exception\WechatConfigurationException;
 
 /**
@@ -89,6 +90,57 @@ final class StoreWechatResolver
             platformPublicKey: $merchantRevision === null
                 ? null
                 : $this->decryptOptional($merchantRevision->encryptedPlatformPublicKey()),
+            subMerchantId: $setting->getSubMerchantId(),
+            subAppId: $setting->getSubAppId(),
+        );
+    }
+
+    /**
+     * Rebuild the configuration pinned by an existing payment attempt.
+     *
+     * Historical callbacks and refunds must use the attempt's original
+     * application/merchant revisions, not the Store's current binding.
+     */
+    public function resolveForAttempt(WechatPaymentAttempt $attempt): ResolvedWechatConfig
+    {
+        $applicationRevision = $attempt->getApplicationRevision();
+        $merchantRevision = $attempt->getMerchantRevision();
+        if (!$applicationRevision instanceof WechatApplicationRevision || !$merchantRevision instanceof WechatMerchantRevision) {
+            throw WechatConfigurationException::corruptCredentials();
+        }
+
+        $application = $applicationRevision->getApplication();
+        $merchant = $merchantRevision->getMerchant();
+        if ($application === null || $merchant === null) {
+            throw WechatConfigurationException::corruptCredentials();
+        }
+
+        $setting = $this->entityManager
+            ->getRepository(StoreWechatSetting::class)
+            ->findOneBy(['storeUuid' => $attempt->getStoreUuid()]);
+
+        return new ResolvedWechatConfig(
+            storeUuid: $attempt->getStoreUuid(),
+            capability: $attempt->getTradeType(),
+            bindingUuid: $attempt->getUuid(),
+            applicationRevisionUuid: $applicationRevision->getUuid(),
+            applicationType: $application->getType(),
+            appId: $application->getAppId(),
+            appSecret: $this->decryptRequired($applicationRevision->encryptedSecret()),
+            officialToken: $this->decryptOptional($applicationRevision->encryptedOfficialToken()),
+            officialAesKey: $this->decryptOptional($applicationRevision->encryptedOfficialAesKey()),
+            redirectHosts: $applicationRevision->getRedirectHosts(),
+            merchantRevisionUuid: $merchantRevision->getUuid(),
+            merchantId: $merchant->getMerchantId(),
+            merchantMode: $merchantRevision->getMode(),
+            apiV3Key: $this->decryptRequired($merchantRevision->encryptedApiV3Key()),
+            merchantPrivateKey: $this->decryptRequired($merchantRevision->encryptedPrivateKey()),
+            merchantCertificate: $this->decryptRequired($merchantRevision->encryptedCertificate()),
+            certificateSerial: $merchantRevision->getCertificateSerial(),
+            platformPublicKeyId: $merchantRevision->getPlatformPublicKeyId(),
+            platformPublicKey: $this->decryptOptional($merchantRevision->encryptedPlatformPublicKey()),
+            subMerchantId: $setting?->getSubMerchantId(),
+            subAppId: $setting?->getSubAppId(),
         );
     }
 

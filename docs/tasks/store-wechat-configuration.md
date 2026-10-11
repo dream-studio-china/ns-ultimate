@@ -317,8 +317,8 @@ Exit: acceptance cases AUTH and relevant MIG cases pass; approved real-app login
 ### Phase 3: direct payments and refunds
 
 - [~] Merchant modes: `direct` and `partner` (sub-merchant) supported; partner binding requires `subMerchantId`.
-- [~] Persisted payment/refund attempts with idempotency and a trusted Invoice→Store adapter are implemented. The gateway, JSAPI/Native calls, versioned callbacks with verification/inbox, provider queries, reconciliation, and the option-A refund orchestrator remain.
-- [ ] Implement JSAPI/Native, versioned callbacks, inbox/idempotency, provider queries, and payment reconciliation.
+- [~] Persisted payment/refund attempts with idempotency, a trusted Invoice→Store adapter, the Store-aware `wechat` payment gateway (JSAPI/Native, signed payload), and notify verification against the pinned attempt are implemented. Provider query/reconciliation and the option-A refund orchestrator remain.
+- [~] JSAPI/Native and versioned callback verification with a pinned-attempt locator are implemented; the provider-query inbox and reconciliation command remain.
 - [ ] Implement refund requests/reservations, notifications/queries, confirmed-success accounting, and failure recovery.
 - [ ] Exercise revision changes, credential rotation, duplicate/concurrent events, and crashes around external calls.
 

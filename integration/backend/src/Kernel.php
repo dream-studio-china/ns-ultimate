@@ -6,6 +6,7 @@ namespace NsUltimate\Integration\Backend;
 
 use App\Kernel as CoreKernel;
 use App\Core\Controller\RestController;
+use NsUltimate\Business\Wechat\Compiler\RemoveCoreWechatGatewayPass;
 use Symfony\Component\Config\Resource\GlobResource;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
@@ -24,6 +25,13 @@ final class Kernel extends CoreKernel
             PassConfig::TYPE_BEFORE_OPTIMIZATION,
             99,
         );
+        if (class_exists(RemoveCoreWechatGatewayPass::class)) {
+            $container->addCompilerPass(
+                new RemoveCoreWechatGatewayPass(),
+                PassConfig::TYPE_BEFORE_OPTIMIZATION,
+                98,
+            );
+        }
     }
 
     public function getProjectDir(): string

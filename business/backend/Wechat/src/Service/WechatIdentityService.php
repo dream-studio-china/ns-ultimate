@@ -120,6 +120,17 @@ final class WechatIdentityService
         return $identity instanceof WechatIdentity ? $identity : null;
     }
 
+    public function findForUser(User $user, string $appId, string $applicationType): ?WechatIdentity
+    {
+        $identity = $this->entityManager->getRepository(WechatIdentity::class)->findOneBy([
+            'user' => $user,
+            'appId' => $appId,
+            'applicationType' => $applicationType,
+        ]);
+
+        return $identity instanceof WechatIdentity ? $identity : null;
+    }
+
     private function touch(WechatIdentity $identity, ?string $unionid, string $sessionKey, ?array $rawData): void
     {
         if ($unionid !== null && $unionid !== '') {
