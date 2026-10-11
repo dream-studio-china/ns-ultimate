@@ -26,7 +26,7 @@ export default {
       component: Layout,
       meta: {
         title: t('Business'),
-        icon: 'el-icon-menu',
+        icon: 'el-icon-money',
         roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
       },
       children: [
