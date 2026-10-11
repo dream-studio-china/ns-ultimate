@@ -18,6 +18,11 @@ const storeManageWithCounter = {
   ]
 }
 
+const orderedCoreRoutes = [
+  storeManageWithCounter,
+  ...coreRoutes.filter(route => route.name !== 'StoreManage')
+]
+
 export default {
   add: [
     {
@@ -55,6 +60,6 @@ export default {
       ]
     }
   ],
-  replace: [storeManageWithCounter],
+  replace: orderedCoreRoutes,
   remove: []
 }
