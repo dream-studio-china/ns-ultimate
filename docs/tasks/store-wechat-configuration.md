@@ -289,9 +289,9 @@ Exit: no unresolved architectural blocker for supported login/payment/refund flo
 - [ ] Implement per-profile Store grants and append-only audit records.
 - [x] Add management CRUD controllers following the Core view-mixin lifecycle (`WechatApplication`, `WechatApplicationRevision`, `WechatMerchant`, `WechatMerchantRevision`, `StoreWechatSetting`, store-scoped `WechatSetting`) backed by `BaseService` subclasses.
 - [x] Add `app:wechat:seed-authorization` seeding the `store:wechat:read`/`create`/`update` permissions and the `store_wechat_manager` role.
-- [ ] Add localized Admin views (collections, router entry, locale resources).
+- [x] Add localized Admin views (collections for the five resources, a "Wechat management" router group, and en/zh/ja/zh-Hant locale resources).
 - [x] Register the Integration suite in project PHPUnit configuration and prove the module is discovered.
-- [ ] Verify frontend checks discover new business tests (no frontend code exists yet).
+- [x] Verify frontend checks discover new business tests (`integration/admin/wechat-admin-config.test.mjs`) and the composed admin build passes.
 
 Implemented evidence: `business/backend/Wechat/` (entities, `SecretCipher` AES-256-GCM, `BaseService`-backed services for profiles/revisions/bindings, `StoreWechatResolver`, `WechatClientFactory`, view-mixin Admin and Store controllers), migration `Version20261011040000`, and the `WechatConfigurationTest` / `WechatManagementApiTest` integration suites. The full backend suite passes (36 tests / 258 assertions), including encrypted-at-rest assertions, per-Store isolation, fail-closed behavior, secret non-disclosure in API responses, administrator authorization, deletion protection, and migration SQL on SQLite.
 

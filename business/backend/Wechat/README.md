@@ -23,7 +23,7 @@ implemented.
   is never stored with the ciphertext. Payloads record a key id for rotation.
 - Encrypted columns are exposed only through non-getter methods (`encryptedX()`),
   so the core serializer never emits ciphertext. Mutating commands expose
-  `hasX()` booleans instead.
+  `isXConfigured()` booleans instead.
 - `WechatApplicationRevisionService` and `WechatMerchantRevisionService` validate
   and encrypt credentials during creation, and publish revisions by superseding
   the previous published revision of the same profile.
@@ -61,14 +61,33 @@ produced by the core `success()`/`warning()` pipeline.
 - `app:wechat:seed-authorization` seeds those permissions and the
   `store_wechat_manager` Store role.
 
+## Admin UI
+
+The Admin frontend provides configuration-driven collections under
+`business/admin/config/collections/wechat/` and a "Wechat management" menu group in
+`business/admin/router.js`. Endpoints follow the default
+`/api/v1/manage/<plural>` convention:
+
+| Collection | Endpoint |
+| --- | --- |
+| `WechatApplication` | `/api/v1/manage/wechat-applications` |
+| `WechatApplicationRevision` | `/api/v1/manage/wechat-application-revisions` |
+| `WechatMerchant` | `/api/v1/manage/wechat-merchants` |
+| `WechatMerchantRevision` | `/api/v1/manage/wechat-merchant-revisions` |
+| `StoreWechatSetting` | `/api/v1/manage/store-wechat-settings` |
+
+Credential inputs (`secret`, `officialToken`, `officialAesKey`, `apiV3Key`,
+`privateKey`, `certificate`, `platformPublicKey`) are create-only fields; they are
+hidden on update and the backend never returns them. Publishing a revision is done
+by setting its `state` to `published` in the update form. Store-scoped
+self-management is available through the API but has no dedicated Admin page yet.
+
 ## Not implemented yet
 
-- The Admin configuration UI (collections, router entry, locale resources).
-- Binding (draft/publication) history: the Store binding is applied immediately
-  and pins published profile revisions instead.
 - Mini Program login, phone binding, and Official Account OAuth endpoints.
 - Store-aware payment initiation, callbacks, refunds, and reconciliation.
 - Legacy identity import and the frozen legacy gateway dispatcher.
+- A dedicated Store-scoped Admin page and a purpose-built credential/revision UI.
 - Per-profile Store grants, append-only audit records, redacted credential
   probes, and optimistic-concurrency protection on publication.
 

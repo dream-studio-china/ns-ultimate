@@ -31,6 +31,23 @@ export default {
         ...r('Counter', t('Counters')),
         ...r('OrderCounter', t('Order counter bindings'))
       ]
+    },
+    {
+      path: '/wechat-management',
+      name: 'WechatManagement',
+      component: Layout,
+      meta: {
+        title: t('Wechat management'),
+        icon: 'el-icon-chat-dot-round',
+        roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
+      },
+      children: [
+        ...r('WechatApplication', t('WeChat applications')),
+        ...r('WechatApplicationRevision', t('WeChat application revisions')),
+        ...r('WechatMerchant', t('WeChat merchants')),
+        ...r('WechatMerchantRevision', t('WeChat merchant revisions')),
+        ...r('StoreWechatSetting', t('Store WeChat settings'))
+      ]
     }
   ],
   replace: [],
