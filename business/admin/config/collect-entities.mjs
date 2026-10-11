@@ -6,6 +6,16 @@ export function collectEntities(collections) {
     const pathArray = entityPath.split('/')
     const collection = module.default
 
+    // The collection glob also sees colocated Vue action components. They
+    // expose component options such as `name` and `render`, not entity maps.
+    if (
+      typeof collection === 'function'
+      || (collection && typeof collection === 'object'
+        && (typeof collection.setup === 'function' || typeof collection.render === 'function'))
+    ) {
+      continue
+    }
+
     if (pathArray.length === 2) {
       for (const [name, config] of Object.entries(collection)) {
         if (Object.hasOwn(entities, name)) {
