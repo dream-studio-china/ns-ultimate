@@ -8,6 +8,8 @@ export default {
   'Recommendation level': 'おすすめレベル',
   Counters: 'テーブル',
   'Counter management': 'テーブル管理',
+  'Counter number': 'テーブル番号',
+  'Counter numbers failed to load': 'テーブル番号の読み込みに失敗しました',
   'Order counter bindings': '注文テーブル紐付け',
   'Counter code': 'テーブル番号',
   'Counter code help': '店舗内で一意のテーブル番号。例: A01。',

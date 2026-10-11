@@ -83,6 +83,19 @@ final class CounterOrderBindingTest extends KernelTestCase
         }
     }
 
+    public function testCounterEntitiesUseNamesForStringDisplay(): void
+    {
+        $counter = (new Counter())->setCode('A01')->setName('Window seat');
+        self::assertSame('Window seat', (string) $counter);
+
+        $binding = (new OrderCounter())->setCounter($counter);
+        self::assertSame('Window seat', (string) $binding);
+
+        $unnamedCounter = (new Counter())->setCode('A02');
+        self::assertSame('', (string) $unnamedCounter);
+        self::assertSame('A02', (string) (new OrderCounter())->setCounter($unnamedCounter));
+    }
+
     public function testOrderMetadataCreatesBindingsForMultipleSameStoreCountersInOrderTransaction(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);

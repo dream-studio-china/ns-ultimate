@@ -15,6 +15,8 @@ export default {
   'Product store help': '所屬門店，可空',
   Counters: '桌台',
   'Counter management': '桌台管理',
+  'Counter number': '桌號',
+  'Counter numbers failed to load': '桌號載入失敗',
   'Order counter bindings': '訂單桌台綁定',
   'Counter code': '桌台編號',
   'Counter code help': '店鋪內唯一的桌台編號，例如 A01。',

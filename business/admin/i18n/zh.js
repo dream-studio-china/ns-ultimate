@@ -14,6 +14,8 @@ export default {
   'Recommendation level': '推荐等级',
   Counters: '台位',
   'Counter management': '台位管理',
+  'Counter number': '台号',
+  'Counter numbers failed to load': '台号加载失败',
   'Order counter bindings': '订单台位绑定',
   'Counter code': '台位编号',
   'Counter code help': '店铺内唯一的台位编号，例如 A01。',

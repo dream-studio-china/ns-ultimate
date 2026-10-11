@@ -8,6 +8,8 @@ export default {
   'Recommendation level': 'Recommendation level',
   Counters: 'Counters',
   'Counter management': 'Counter management',
+  'Counter number': 'Counter number',
+  'Counter numbers failed to load': 'Failed to load counter numbers',
   'Order counter bindings': 'Order counter bindings',
   'Counter code': 'Counter code',
   'Counter code help': 'Unique counter code within the store, for example A01.',

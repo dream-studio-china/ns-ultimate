@@ -41,7 +41,7 @@ test('registers the actual Counter configurations with their API identities', ()
     assert.ok(Array.isArray(entities[name].list.list_display))
   }
   assert.ok(entities.OrderCounter.list.disabled_actions.includes('edit'))
-  assert.equal(entities.OrderCounter.form.fields[1].property, 'counterUuid')
+  assert.equal(entities.OrderCounter.form.fields[1].property, 'counter')
   assert.equal(entities.OrderCounter.form.fields[1].relation.valueKey, 'uuid')
 })
 
@@ -90,7 +90,34 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   const counters = routes.find(route => route.name === 'CounterManagement')
   assert.equal(business.hidden, true)
   assert.equal(counters.meta.title, 'Counter management')
-  assert.deepEqual(counters.children.map(route => route.name), ['Counter', 'OrderCounter'])
+  assert.deepEqual(Array.from(counters.children, route => route.name), ['Counter', 'OrderCounter'])
+})
+
+test('adds a read-only counter number column to the StoreOrder list', () => {
+  const source = readFileSync(new URL('../../business/admin/config/overrides/store/store-order.js', import.meta.url), 'utf8')
+    .replace(/^import .*$/gm, '')
+    .replace('export default', 'globalThis.config =')
+  const base = {
+    entity: { name: 'StoreOrder', plural: 'store-orders' },
+    list: { list_display: ['id', 'storeCodeSnapshot', 'storeNameSnapshot', 'totalAmount'] }
+  }
+  const context = { StoreOrder: { StoreOrder: base }, t: key => key, StoreOrderCounterNumbers: {} }
+  runInNewContext(source, context)
+  const config = context.config
+  assert.equal(config.entity, base.entity)
+  assert.deepEqual(Array.from(config.list.list_display, field => typeof field === 'string' ? field : field.property), [
+    'id', 'storeCodeSnapshot', 'storeNameSnapshot', 'tradeOrderUuid', 'totalAmount'
+  ])
+  const counterColumn = config.list.list_display[3]
+  assert.equal(counterColumn.label, 'Counter number')
+  assert.equal(counterColumn.property, 'tradeOrderUuid')
+  assert.equal(counterColumn.field_options.sortable, false)
+  assert.equal(counterColumn.field_options.fixed, undefined)
+  assert.equal(counterColumn.component, context.StoreOrderCounterNumbers)
+  assert.equal(config.detail.detail_display[0].property, 'tradeOrderUuid')
+  assert.equal(config.detail.detail_display[0].label, 'Counter number')
+  assert.equal(config.detail.detail_display[0].component, context.StoreOrderCounterNumbers)
+  assert.equal(config.detail.detail_display[1], '__all__')
 })
 
 test('collects unique entities from collection files and nested entity files', () => {
