@@ -5,6 +5,7 @@
 import { defineAsyncComponent } from 'vue'
 import { t } from '@/i18n'
 import axios from '@/utils/request'
+import SIP from '@/utils/simple-image-process'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin/src/configs/collections/helpers'
 // Lazily resolve the admin UI here: this config module is eagerly pulled into
@@ -16,6 +17,19 @@ const ListAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/ListAdmi
 const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmin'))
 import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
 import ProductMetadataSchema from './ProductMetadata.json'
+
+const ProductNameWithCover = {
+  props: ['data', 'record'],
+  render() {
+    const cover = this.record?.metadata?.cover
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+        {cover ? <el-image src={SIP.getPicture(cover)} fit={'cover'} style={{ width: '40px', height: '40px', borderRadius: '4px', flexShrink: 0 }} /> : null}
+        <span>{this.data}</span>
+      </span>
+    )
+  }
+}
 
 const SpecificationManager = {
   components: { ListAdmin, FormAdmin },
@@ -211,9 +225,35 @@ export default {
           expression: 'entity.getIsDeleted() == :value'
         }
       },
-      list_display: ['id', 'name', 'category', 'store', 'status', 'isDeleted', 'createdAt', 'updatedAt']
+      list_display: [
+        'id',
+        { property: 'name', component: ProductNameWithCover },
+        'category', 'store', 'status', 'isDeleted', 'createdAt', 'updatedAt'
+      ]
     },
     detail: {
-      detail_display: '__all__'
+      detail_display: [
+        'id',
+        'name',
+        'store',
+        'category',
+        { property: 'description', type: 'text', span: 2, full_width: true },
+        'status',
+        'createdAt',
+        'updatedAt',
+        {
+          property: 'metadata',
+          type: 'json_schema',
+          span: 2,
+          full_width: true,
+          type_options: {
+            schema: ProductMetadataSchema,
+            fields: [
+              { property: 'cover', type: 'image', type_options: { storage: 'qiniu' } }
+            ]
+          }
+        },
+        { property: 'metadata.cover', label: t('Product cover'), type: 'image', span: 2, full_width: true }
+      ]
     }
 }
