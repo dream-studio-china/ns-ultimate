@@ -1,0 +1,6 @@
+# Counter entity names and field labels used by the system metadata API.
+"Counter": "Counter"
+"OrderCounter": "Order Counter"
+"Counter code snapshot": "Counter code snapshot"
+"Counter name snapshot": "Counter name snapshot"
+"Capacity": "Capacity"

@@ -11,7 +11,7 @@ import {
   Sort,
   Tickets, Notebook, Wallet,
   Lock, Key,
-  List, Shop, Box, ShoppingCart, DocumentCopy
+  List, Shop, Box, ShoppingCart, DocumentCopy, ForkSpoon
 } from '@element-plus/icons-vue'
 
 const iconMap = {
@@ -62,7 +62,8 @@ const iconMap = {
   'el-icon-shop': Shop,
   'el-icon-box': Box,
   'el-icon-shopping-cart': ShoppingCart,
-  'el-icon-document-copy': DocumentCopy
+  'el-icon-document-copy': DocumentCopy,
+  'el-icon-fork-spoon': ForkSpoon
 }
 
 export default function installLegacyIcons(app) {
