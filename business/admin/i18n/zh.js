@@ -1,5 +1,10 @@
 export default {
   Business: '业务管理',
+  Counter: '台号',
+  'Counter code': '台号编号',
+  'Counter code help': '门店内唯一的台号编号，例如 A01。',
+  'Counter capacity help': '可选；填写该台号可容纳的人数。',
+  Capacity: '容纳人数',
   'Payment rate': '支付费率',
   'Payment settings': '支付设置',
   'Settlement cycle help': '结算周期：T+1 自然日、D+1 工作日、D+0 当日',

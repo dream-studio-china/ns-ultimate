@@ -1,5 +1,10 @@
 export default {
   Business: '業務管理',
+  Counter: '台號',
+  'Counter code': '台號編號',
+  'Counter code help': '門市內唯一的台號編號，例如 A01。',
+  'Counter capacity help': '選填；填寫此台號可容納的人數。',
+  Capacity: '容納人數',
   'Payment rate': '支付費率',
   'Payment settings': '支付設定',
   'Settlement cycle help': '結算週期：T+1 自然日、D+1 工作日、D+0 當日',

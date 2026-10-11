@@ -1,5 +1,10 @@
 export default {
   Business: '業務管理',
+  Counter: 'カウンター',
+  'Counter code': 'カウンター番号',
+  'Counter code help': '店舗内で一意のカウンター番号。例: A01。',
+  'Counter capacity help': '任意の収容人数です。',
+  Capacity: '収容人数',
   'Product metadata help': '商品固有の表示情報は metadata のトップレベル項目として保存されます。',
   'Product batch store help': '店舗を選ぶと選択したすべての商品に適用されます。選択を解除すると全体商品になります。',
   'Product on shelf': '販売中',

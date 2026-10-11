@@ -1,5 +1,10 @@
 export default {
   Business: 'Business',
+  Counter: 'Counter',
+  'Counter code': 'Counter code',
+  'Counter code help': 'A unique counter code within the store, for example A01.',
+  'Counter capacity help': 'Optional number of people this counter can accommodate.',
+  Capacity: 'Capacity',
   'Product metadata help': 'Product-specific display values are stored as top-level metadata fields.',
   'Product batch store help': 'Choose a store to assign it to all selected products. Clear the selection to make them global products.',
   'Product on shelf': 'On shelf',

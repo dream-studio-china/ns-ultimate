@@ -1,0 +1,6 @@
+# Counter entity names and field labels used by the system metadata API.
+"Counter": "台号"
+"OrderCounter": "订单台号绑定"
+"Counter code snapshot": "台号编号快照"
+"Counter name snapshot": "台号名称快照"
+"Capacity": "容纳人数"
