@@ -28,6 +28,8 @@ export default {
   'Counter code': 'テーブル番号',
   'Counter code help': '店舗内で一意のテーブル番号。例: A01。',
   'Counter capacity help': '任意の収容人数。',
+  'Counter sort help': '表示順。値が小さいほど先に表示されます。',
+  'Counter metadata help': 'テーブル固有の表示情報は metadata のトップレベル項目として保存されます。',
   'Trade order UUID': '注文 UUID',
   Enabled: '有効'
 }

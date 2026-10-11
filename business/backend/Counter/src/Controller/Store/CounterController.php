@@ -27,10 +27,10 @@ final class CounterController extends RestController
     protected array $requiredCreateProperties = ['code', 'name'];
 
     /** @var list<string> */
-    protected array $acceptedCreateProperties = ['code', 'name', 'capacity', 'enabled'];
+    protected array $acceptedCreateProperties = ['code', 'name', 'capacity', 'sort', 'metadata', 'enabled'];
 
     /** @var list<string> */
-    protected array $acceptedUpdateProperties = ['code', 'name', 'capacity', 'enabled'];
+    protected array $acceptedUpdateProperties = ['code', 'name', 'capacity', 'sort', 'metadata', 'enabled'];
 
     public function __construct(
         protected readonly CounterService $service,
@@ -86,6 +86,12 @@ final class CounterController extends RestController
         }
         if (isset($content['capacity']) && (!is_int($content['capacity']) || $content['capacity'] < 1)) {
             throw new \InvalidArgumentException('capacity must be a positive integer.');
+        }
+        if (isset($content['sort']) && (!is_int($content['sort']) || $content['sort'] < 0)) {
+            throw new \InvalidArgumentException('sort must be a non-negative integer.');
+        }
+        if (array_key_exists('metadata', $content) && $content['metadata'] !== null && !is_array($content['metadata'])) {
+            throw new \InvalidArgumentException('metadata must be an object or null.');
         }
         return $content;
     }

@@ -34,6 +34,8 @@ export default {
   'Counter code': '台位编号',
   'Counter code help': '店铺内唯一的台位编号，例如 A01。',
   'Counter capacity help': '台位可容纳人数，可选。',
+  'Counter sort help': '展示排序，数值越小越靠前。',
+  'Counter metadata help': '台位专属展示信息以顶层字段形式存储在 metadata 中。',
   'Trade order UUID': '交易订单 UUID',
   Enabled: '启用',
   'Product store help': '所属门店，可空'
