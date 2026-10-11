@@ -22,7 +22,7 @@ interface WechatPayProviderInterface
     public function prepay(ResolvedWechatConfig $config, string $tradeType, array $body): array;
 
     /** @return array<string, mixed> */
-    public function buildJsapiConfig(ResolvedWechatConfig $config, string $prepayId, string $appId): array;
+    public function buildJsapiConfig(ResolvedWechatConfig $config, string $tradeType, string $prepayId, string $appId): array;
 
     /** @return array<string, mixed> */
     public function queryByOutTradeNo(ResolvedWechatConfig $config, string $outTradeNo): array;

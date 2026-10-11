@@ -124,6 +124,124 @@ final class WechatPaymentGatewayTest extends WechatApiTestCase
         $gateway->refund($invoice, 100, 100, 'test');
     }
 
+    public function testOfficialAccountJsapiUsesOfficialIdentityAndAppId(): void
+    {
+        $store = $this->createStore('OA');
+        $officialRevision = $this->publishOfficialApplication('wx-official-pay');
+        [$status, $body] = $this->request('POST', '/api/v1/manage/store-wechat-settings', [
+            'storeUuid' => $store->getUuid(),
+            'officialRevision' => $officialRevision,
+            'merchantRevision' => $this->publishMerchantRevision($this->createMerchant('1900000021')),
+            'capabilities' => [StoreWechatSetting::CAP_PAYMENT_OFFICIAL => true],
+        ]);
+        self::assertSame(201, $status, json_encode($body));
+
+        $payer = $this->createPayer('wx-official-pay', 'official', 'official-openid');
+        $invoice = $this->createInvoiceForStore($store, $payer);
+
+        $gateway = self::getContainer()->get(WechatPaymentGateway::class);
+        $result = $gateway->pay($invoice, 1000, ['tradeType' => WechatPaymentAttempt::TRADE_OFFICIAL_JSAPI]);
+
+        self::assertSame(Invoice::STATUS_PAYING, $result->status);
+        self::assertSame('wx-official-pay', $result->payload['appId'] ?? null);
+        self::assertSame('official_jsapi', $result->payload['tradeType'] ?? null);
+        self::assertSame('appid=wx-official-pay', $this->provider->lastBody['appid'] === 'wx-official-pay' ? 'appid=wx-official-pay' : '');
+        self::assertSame(['openid' => 'official-openid'], $this->provider->lastBody['payer'] ?? null);
+    }
+
+    public function testPartnerModeBuildsServiceProviderFields(): void
+    {
+        $store = $this->createStore('SP');
+        [, $merchant] = $this->request('POST', '/api/v1/manage/wechat-merchants', [
+            'name' => 'Service provider',
+            'merchantId' => '1900000031',
+            'mode' => 'partner',
+        ]);
+        [, $merchantRevision] = $this->request('POST', '/api/v1/manage/wechat-merchant-revisions', [
+            'merchant' => $merchant['data']['id'],
+            'apiV3Key' => str_repeat('k', 32),
+            'privateKey' => "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
+            'certificate' => "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+        ]);
+        $this->request('PUT', '/api/v1/manage/wechat-merchant-revisions/'.$merchantRevision['data']['uuid'], ['state' => 'published']);
+
+        $this->request('POST', '/api/v1/manage/store-wechat-settings', [
+            'storeUuid' => $store->getUuid(),
+            'miniappRevision' => $this->publishApplicationRevision($this->createApplication('wx-mini-sp'), 'secret-sp'),
+            'merchantRevision' => $merchantRevision['data']['uuid'],
+            'subMerchantId' => '1900000032',
+            'subAppId' => 'wx-sub-app',
+            'capabilities' => [StoreWechatSetting::CAP_PAYMENT_NATIVE => true],
+        ]);
+
+        $invoice = $this->createInvoiceForStore($store, null);
+        self::getContainer()->get(WechatPaymentGateway::class)->pay($invoice, 1000, ['tradeType' => WechatPaymentAttempt::TRADE_NATIVE]);
+
+        self::assertSame('wx-mini-sp', $this->provider->lastBody['sp_appid'] ?? null);
+        self::assertSame('1900000031', $this->provider->lastBody['sp_mchid'] ?? null);
+        self::assertSame('1900000032', $this->provider->lastBody['sub_mchid'] ?? null);
+        self::assertSame('wx-sub-app', $this->provider->lastBody['sub_appid'] ?? null);
+        self::assertArrayNotHasKey('appid', $this->provider->lastBody);
+        self::assertArrayNotHasKey('mchid', $this->provider->lastBody);
+    }
+
+    private function publishOfficialApplication(string $appId): string
+    {
+        [, $application] = $this->request('POST', '/api/v1/manage/wechat-applications', [
+            'name' => 'Official '.$appId,
+            'type' => 'official',
+            'appId' => $appId,
+        ]);
+        [, $revision] = $this->request('POST', '/api/v1/manage/wechat-application-revisions', [
+            'application' => $application['data']['id'],
+            'secret' => 'official-secret',
+            'officialToken' => 'official-token',
+            'officialAesKey' => str_repeat('a', 43),
+            'redirectHosts' => ['shop.example.com'],
+        ]);
+        $this->request('PUT', '/api/v1/manage/wechat-application-revisions/'.$revision['data']['uuid'], ['state' => 'published']);
+
+        return $revision['data']['uuid'];
+    }
+
+    private function createPayer(string $appId, string $applicationType, string $openid): \App\Identity\Entity\User
+    {
+        $entityManager = $this->entityManager();
+        $payer = (new \App\Identity\Entity\User())
+            ->setEmail('payer-'.bin2hex(random_bytes(4)).'@example.test')
+            ->setUsername('payer-'.bin2hex(random_bytes(4)))
+            ->setRoles(['ROLE_USER']);
+        $entityManager->persist($payer);
+        $entityManager->persist(
+            (new WechatIdentity())
+                ->setUser($payer)
+                ->setAppId($appId)
+                ->setApplicationType($applicationType)
+                ->setOpenid($openid),
+        );
+        $entityManager->flush();
+
+        return $payer;
+    }
+
+    private function createInvoiceForStore(\App\Store\Entity\Store $store, ?\App\Identity\Entity\User $payer): Invoice
+    {
+        $entityManager = $this->entityManager();
+        $order = new Order();
+        $entityManager->persist($order);
+        $entityManager->persist(new OrderStoreLifecycle($order->getUuid(), $store->getUuid()));
+
+        $invoice = new Invoice();
+        $invoice->setSourceType('trade_order');
+        $invoice->setSourceId($order->getUuid());
+        $invoice->setAmount(1000);
+        $invoice->setPayer($payer);
+        $entityManager->persist($invoice);
+        $entityManager->flush();
+
+        return $invoice;
+    }
+
     /** @return array{0: Invoice, 1: \App\Identity\Entity\User} */
     private function invoiceForOrder(): array
     {

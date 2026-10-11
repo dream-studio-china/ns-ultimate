@@ -34,6 +34,7 @@ class WechatPaymentAttempt
 
     public const TRADE_JSAPI = 'jsapi';
     public const TRADE_NATIVE = 'native';
+    public const TRADE_OFFICIAL_JSAPI = 'official_jsapi';
 
     #[ORM\Id]
     #[ORM\GeneratedValue]

@@ -25,6 +25,7 @@ class StoreWechatSetting
     public const CAP_OFFICIAL_OAUTH = 'official_oauth';
     public const CAP_PAYMENT_JSAPI = 'payment_jsapi';
     public const CAP_PAYMENT_NATIVE = 'payment_native';
+    public const CAP_PAYMENT_OFFICIAL = 'payment_official';
 
     /** @var array<string, string> capability => required application type */
     public const CAPABILITY_APPLICATION_TYPE = [
@@ -32,10 +33,11 @@ class StoreWechatSetting
         self::CAP_OFFICIAL_OAUTH => WechatApplication::TYPE_OFFICIAL,
         self::CAP_PAYMENT_JSAPI => WechatApplication::TYPE_MINIAPP,
         self::CAP_PAYMENT_NATIVE => WechatApplication::TYPE_MINIAPP,
+        self::CAP_PAYMENT_OFFICIAL => WechatApplication::TYPE_OFFICIAL,
     ];
 
     /** @var list<string> */
-    public const PAYMENT_CAPABILITIES = [self::CAP_PAYMENT_JSAPI, self::CAP_PAYMENT_NATIVE];
+    public const PAYMENT_CAPABILITIES = [self::CAP_PAYMENT_JSAPI, self::CAP_PAYMENT_NATIVE, self::CAP_PAYMENT_OFFICIAL];
 
     #[ORM\Id]
     #[ORM\GeneratedValue]

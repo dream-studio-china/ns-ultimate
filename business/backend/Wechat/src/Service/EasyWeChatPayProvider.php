@@ -36,9 +36,13 @@ final class EasyWeChatPayProvider implements WechatPayProviderInterface
         ];
     }
 
-    public function buildJsapiConfig(ResolvedWechatConfig $config, string $prepayId, string $appId): array
+    public function buildJsapiConfig(ResolvedWechatConfig $config, string $tradeType, string $prepayId, string $appId): array
     {
-        return $this->factory->pay($config)->getUtils()->buildMiniAppConfig($prepayId, $appId, 'RSA');
+        $utils = $this->factory->pay($config)->getUtils();
+
+        return $tradeType === WechatPaymentAttempt::TRADE_OFFICIAL_JSAPI
+            ? $utils->buildSdkConfig($prepayId, $appId, 'RSA')
+            : $utils->buildMiniAppConfig($prepayId, $appId, 'RSA');
     }
 
     public function queryByOutTradeNo(ResolvedWechatConfig $config, string $outTradeNo): array

@@ -29,7 +29,7 @@ final class FakeWechatPayProvider implements WechatPayProviderInterface
             : ['prepay_id' => 'prepay-1', 'raw' => []];
     }
 
-    public function buildJsapiConfig(ResolvedWechatConfig $config, string $prepayId, string $appId): array
+    public function buildJsapiConfig(ResolvedWechatConfig $config, string $tradeType, string $prepayId, string $appId): array
     {
         return [
             'appId' => $appId,
@@ -39,6 +39,7 @@ final class FakeWechatPayProvider implements WechatPayProviderInterface
             'signType' => 'RSA',
             'paySign' => 'signature',
             'prepay_id' => $prepayId,
+            'tradeType' => $tradeType,
         ];
     }
 

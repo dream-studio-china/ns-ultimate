@@ -35,7 +35,7 @@ final class WechatPaymentAttemptService
         ?WechatApplicationRevision $applicationRevision = null,
         ?WechatMerchantRevision $merchantRevision = null,
     ): WechatPaymentAttempt {
-        if (!in_array($tradeType, [WechatPaymentAttempt::TRADE_JSAPI, WechatPaymentAttempt::TRADE_NATIVE], true)) {
+        if (!in_array($tradeType, [WechatPaymentAttempt::TRADE_JSAPI, WechatPaymentAttempt::TRADE_NATIVE, WechatPaymentAttempt::TRADE_OFFICIAL_JSAPI], true)) {
             throw new \InvalidArgumentException('Unsupported WeChat trade type.');
         }
         if ($amount <= 0) {

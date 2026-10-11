@@ -141,11 +141,19 @@ provider + sub-merchant); a partner binding requires `subMerchantId` (and option
   data (`trade_order` → `OrderStoreLifecycle`) and fails closed for unsupported
   invoice sources.
 - `WechatPaymentGateway` implements the Core `PaymentGatewayInterface` for payment
-  name `wechat` with JSAPI and Native prepay, a signed JSAPI payload, and notify
-  verification against the pinned attempt (order number, amount, currency,
-  merchant, application). A compiler pass removes the core registration so exactly
-  one deterministic `wechat` gateway exists. Core-initiated refunds are refused so
-  refunds cannot bypass the orchestrator.
+  name `wechat` with Mini Program JSAPI, Official Account JSAPI, and Native
+  prepay, a signed JSAPI payload, and notify verification against the pinned
+  attempt (order number, amount, currency, merchant, application). A compiler pass
+  removes the core registration so exactly one deterministic `wechat` gateway
+  exists. Core-initiated refunds are refused so refunds cannot bypass the
+  orchestrator.
+- Trade types map to capabilities and application types: `jsapi`
+  (`payment_jsapi`, Mini Program), `official_jsapi` (`payment_official`, Official
+  Account; payer resolved as an Official Account identity and the payload built
+  with `buildSdkConfig`), and `native` (`payment_native`, Mini Program).
+- Partner mode sends service-provider fields (`sp_appid`, `sp_mchid`, `sub_mchid`,
+  optional `sub_appid`, `payer.sub_openid`); direct mode sends `appid`, `mchid`,
+  and `payer.openid`.
 - Notify callbacks arrive at `/api/payment/notify/wechat?locator=<attempt uuid>`;
   the locator selects the pinned attempt configuration.
 

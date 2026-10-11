@@ -54,21 +54,23 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
     {
         $storeUuid = $this->storeContext->resolveStoreUuid($invoice);
         $tradeType = (string) ($options['tradeType'] ?? WechatPaymentAttempt::TRADE_JSAPI);
-        $capability = match ($tradeType) {
-            WechatPaymentAttempt::TRADE_JSAPI => StoreWechatSetting::CAP_PAYMENT_JSAPI,
-            WechatPaymentAttempt::TRADE_NATIVE => StoreWechatSetting::CAP_PAYMENT_NATIVE,
+
+        [$capability, $applicationType] = match ($tradeType) {
+            WechatPaymentAttempt::TRADE_JSAPI => [StoreWechatSetting::CAP_PAYMENT_JSAPI, WechatApplication::TYPE_MINIAPP],
+            WechatPaymentAttempt::TRADE_OFFICIAL_JSAPI => [StoreWechatSetting::CAP_PAYMENT_OFFICIAL, WechatApplication::TYPE_OFFICIAL],
+            WechatPaymentAttempt::TRADE_NATIVE => [StoreWechatSetting::CAP_PAYMENT_NATIVE, WechatApplication::TYPE_MINIAPP],
             default => throw new \InvalidArgumentException('Unsupported WeChat trade type.'),
         };
 
         $config = $this->resolver->resolve($storeUuid, $capability);
 
         $payerIdentity = null;
-        if ($tradeType === WechatPaymentAttempt::TRADE_JSAPI) {
+        if ($tradeType !== WechatPaymentAttempt::TRADE_NATIVE) {
             $payer = $invoice->getPayer();
             if ($payer === null) {
-                throw new \RuntimeException('A JSAPI WeChat payment requires an authenticated payer.');
+                throw new \RuntimeException('A WeChat JSAPI payment requires an authenticated payer.');
             }
-            $payerIdentity = $this->identities->findForUser($payer, (string) $config->appId, WechatApplication::TYPE_MINIAPP);
+            $payerIdentity = $this->identities->findForUser($payer, (string) $config->appId, $applicationType);
             if ($payerIdentity === null) {
                 throw new \RuntimeException('The payer has no WeChat identity for this application.');
             }
@@ -86,9 +88,8 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
             $this->entityManager->getRepository(WechatMerchantRevision::class)->findOneBy(['uuid' => $config->merchantRevisionUuid]),
         );
 
+        $partner = $config->merchantMode === WechatMerchant::MODE_PARTNER;
         $body = [
-            'appid' => (string) $config->appId,
-            'mchid' => (string) $config->merchantId,
             'description' => (string) ($invoice->getSubject() ?? $invoice->getDescription() ?? 'Payment'),
             'out_trade_no' => $attempt->getProviderOrderNo(),
             'notify_url' => $this->notifyUrl.'?locator='.$attempt->getUuid(),
@@ -97,17 +98,26 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
                 'currency' => $invoice->getCurrency(),
             ],
         ];
-        if ($payerIdentity !== null) {
-            $body['payer'] = ['openid' => $payerIdentity->getOpenid()];
-        }
-        if ($config->merchantMode === WechatMerchant::MODE_PARTNER) {
+
+        if ($partner) {
             if ($config->subMerchantId === null || $config->subMerchantId === '') {
                 throw new \RuntimeException('A partner WeChat merchant requires a sub-merchant ID for this store.');
             }
+            $body['sp_appid'] = (string) $config->appId;
+            $body['sp_mchid'] = (string) $config->merchantId;
             $body['sub_mchid'] = $config->subMerchantId;
             if ($config->subAppId !== null && $config->subAppId !== '') {
                 $body['sub_appid'] = $config->subAppId;
             }
+        } else {
+            $body['appid'] = (string) $config->appId;
+            $body['mchid'] = (string) $config->merchantId;
+        }
+
+        if ($payerIdentity !== null) {
+            $body['payer'] = $partner
+                ? ['sub_openid' => $payerIdentity->getOpenid()]
+                : ['openid' => $payerIdentity->getOpenid()];
         }
 
         $prepay = $this->provider->prepay($config, $tradeType, $body);
@@ -128,13 +138,16 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
             );
         }
 
-        $payload = $this->provider->buildJsapiConfig($config, (string) ($prepay['prepay_id'] ?? ''), (string) $config->appId);
+        $jsapiAppId = $partner ? (string) ($config->subAppId ?? $config->appId) : (string) $config->appId;
+        $payload = $this->provider->buildJsapiConfig($config, $tradeType, (string) ($prepay['prepay_id'] ?? ''), $jsapiAppId);
 
         return new PaymentResult(
             invoice: $invoice,
             status: Invoice::STATUS_PAYING,
             payload: $payload,
-            message: 'WeChat JSAPI order created',
+            message: $tradeType === WechatPaymentAttempt::TRADE_OFFICIAL_JSAPI
+                ? 'WeChat Official Account JSAPI order created'
+                : 'WeChat JSAPI order created',
         );
     }
 
