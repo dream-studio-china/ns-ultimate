@@ -123,8 +123,7 @@ All new WeChat module tables use the `wechat_` domain prefix, including any cred
 | `WechatApplicationRevision` / `wechat_application_revision` | Profile UUID, revision number, AppID/type snapshot, Secret reference, optional Official Account token/AES key references, redirect policy, publication state and timestamps |
 | `WechatMerchant` / `wechat_merchant` | UUID, name, merchant ID, mode, ownership/grants, enabled status, active revision; merchant identity is stable |
 | `WechatMerchantRevision` / `wechat_merchant_revision` | Merchant snapshot, API v3 key reference, merchant private key and certificate/serial references, platform certificate/public-key verification configuration, publication state |
-| `StoreWechatSetting` / `store_wechat_setting` | UUID, unique Store UUID, active binding revision, enabled state; references rather than copied plaintext credentials |
-| `StoreWechatSettingRevision` / `store_wechat_setting_revision` | Mini Program and Official Account references, merchant reference, capability flags, compatible app/merchant pair, pinned published revisions, revision number |
+| `StoreWechatSetting` / `store_wechat_setting` | UUID, unique Store UUID, Mini Program/Official Account/merchant revision references, capability flags, enabled state; references rather than copied plaintext credentials. Binding-level draft/publication history is deferred: the setting is live and pins published profile revisions |
 | `WechatIdentity` / `wechat_identity` | UUID, User reference, application type, AppID, OpenID, optional UnionID and verified Open Platform scope; unique `(app_id, openid)` and many identities per User |
 | `WechatPaymentAttempt` / `wechat_payment_attempt` | UUID, Invoice UUID, trusted Store UUID, application and merchant revision references, provider order number, trade type, expected external amount/currency, payer identity, idempotency key, status, transaction ID, timestamps |
 | `WechatRefundAttempt` / `wechat_refund_attempt` | UUID, payment attempt reference, stable provider refund number, request idempotency key, amount, status, provider refund ID, accounting-applied timestamp |
@@ -133,7 +132,7 @@ All new WeChat module tables use the `wechat_` domain prefix, including any cred
 Revision rules:
 
 - Published revisions are immutable; edits create a new draft. Publication uses optimistic concurrency to reject lost updates.
-- Store binding revisions pin compatible application and merchant revisions. Profile edits do not silently change every bound store. An explicit audited rebind or batch publication updates affected stores.
+- Store bindings pin compatible application and merchant revisions. Profile edits do not silently change every bound store. An explicit rebind updates affected stores. Binding-level revision history is deferred and noted in the implementation progress.
 - Changes to AppID or merchant ID create a new logical profile and require explicit rebinding.
 - Flexible metadata contains non-sensitive extension options only. Unknown capability keys are rejected, not silently enabled.
 - Capability disablement immediately blocks new operations. Historical payment callbacks and refunds remain independently controlled; disabling new collection must not strand existing transactions.
@@ -288,13 +287,15 @@ Exit: no unresolved architectural blocker for supported login/payment/refund flo
 - [x] Implement entities, constraints, forward migrations, DTOs, and encrypted credential storage for applications, merchants, and store bindings.
 - [~] Implement draft validation, publication, disable semantics, resolver, and client factory. Publication is app-level (publishing supersedes the previous published revision); optimistic-concurrency protection, explicit revoke, redacted probes, and cache-invalidation tuning remain.
 - [ ] Implement per-profile Store grants and append-only audit records.
-- [x] Add Administrator management APIs (applications, merchants, store bindings) and a Store-scoped binding endpoint backed by `store:wechat:*` permissions.
-- [x] Add `app:wechat:seed-authorization` seeding the `store:wechat:read`/`store:wechat:update` permissions and the `store_wechat_manager` role.
+- [x] Add management CRUD controllers following the Core view-mixin lifecycle (`WechatApplication`, `WechatApplicationRevision`, `WechatMerchant`, `WechatMerchantRevision`, `StoreWechatSetting`, store-scoped `WechatSetting`) backed by `BaseService` subclasses.
+- [x] Add `app:wechat:seed-authorization` seeding the `store:wechat:read`/`create`/`update` permissions and the `store_wechat_manager` role.
 - [ ] Add localized Admin views (collections, router entry, locale resources).
 - [x] Register the Integration suite in project PHPUnit configuration and prove the module is discovered.
 - [ ] Verify frontend checks discover new business tests (no frontend code exists yet).
 
-Implemented evidence: `business/backend/Wechat/` (entities, `SecretCipher` AES-256-GCM, `WechatApplicationService`, `WechatMerchantService`, `StoreWechatBindingService`, `StoreWechatResolver`, `WechatClientFactory`, Admin and Store management controllers, `SeedWechatAuthorizationCommand`), migration `Version20261011040000`, and the `WechatConfigurationTest` / `WechatManagementApiTest` integration suites. The full backend suite passes (35 tests / 200 assertions), including encrypted-at-rest assertions, per-Store isolation, fail-closed behavior, secret non-disclosure in API responses, administrator authorization, and migration SQL on SQLite.
+Implemented evidence: `business/backend/Wechat/` (entities, `SecretCipher` AES-256-GCM, `BaseService`-backed services for profiles/revisions/bindings, `StoreWechatResolver`, `WechatClientFactory`, view-mixin Admin and Store controllers), migration `Version20261011040000`, and the `WechatConfigurationTest` / `WechatManagementApiTest` integration suites. The full backend suite passes (36 tests / 258 assertions), including encrypted-at-rest assertions, per-Store isolation, fail-closed behavior, secret non-disclosure in API responses, administrator authorization, deletion protection, and migration SQL on SQLite.
+
+Note: the Store binding is a single live record that pins published application/merchant revisions; binding-level draft/publication history is deferred.
 
 Exit: acceptance cases CFG, SEC, and DYN pass without real payment enablement. Not yet reached: only a subset of CFG/SEC/DYN is covered by automated tests so far.
 

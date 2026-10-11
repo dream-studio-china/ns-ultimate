@@ -32,7 +32,7 @@ final class Version20261011040000 extends AbstractMigration
         $applicationRevision = $schema->createTable('wechat_application_revision');
         $applicationRevision->addColumn('id', 'integer', ['autoincrement' => true]);
         $applicationRevision->addColumn('uuid', 'string', ['length' => 36]);
-        $applicationRevision->addColumn('application_id', 'integer');
+        $applicationRevision->addColumn('application_id', 'integer', ['notnull' => false]);
         $applicationRevision->addColumn('revision', 'integer');
         $applicationRevision->addColumn('secret_encrypted', 'text', ['notnull' => false]);
         $applicationRevision->addColumn('official_token_encrypted', 'text', ['notnull' => false]);
@@ -70,7 +70,7 @@ final class Version20261011040000 extends AbstractMigration
         $merchantRevision = $schema->createTable('wechat_merchant_revision');
         $merchantRevision->addColumn('id', 'integer', ['autoincrement' => true]);
         $merchantRevision->addColumn('uuid', 'string', ['length' => 36]);
-        $merchantRevision->addColumn('merchant_profile_id', 'integer');
+        $merchantRevision->addColumn('merchant_profile_id', 'integer', ['notnull' => false]);
         $merchantRevision->addColumn('revision', 'integer');
         $merchantRevision->addColumn('mode', 'string', ['length' => 20, 'default' => 'direct']);
         $merchantRevision->addColumn('api_v3_key_encrypted', 'text', ['notnull' => false]);
@@ -100,62 +100,41 @@ final class Version20261011040000 extends AbstractMigration
         $setting->addColumn('uuid', 'string', ['length' => 36]);
         $setting->addColumn('store_uuid', 'string', ['length' => 36]);
         $setting->addColumn('enabled', 'boolean', ['default' => true]);
+        $setting->addColumn('miniapp_revision_id', 'integer', ['notnull' => false]);
+        $setting->addColumn('official_revision_id', 'integer', ['notnull' => false]);
+        $setting->addColumn('merchant_revision_id', 'integer', ['notnull' => false]);
+        $setting->addColumn('capabilities', 'json');
         $setting->addColumn('created_at', 'datetime_immutable');
         $setting->addColumn('updated_at', 'datetime_immutable', ['notnull' => false]);
         $setting->setPrimaryKey(['id']);
         $setting->addUniqueIndex(['uuid'], 'uniq_store_wechat_setting_uuid');
         $setting->addUniqueIndex(['store_uuid'], 'uniq_store_wechat_setting_store_uuid');
-
-        $settingRevision = $schema->createTable('store_wechat_setting_revision');
-        $settingRevision->addColumn('id', 'integer', ['autoincrement' => true]);
-        $settingRevision->addColumn('uuid', 'string', ['length' => 36]);
-        $settingRevision->addColumn('setting_id', 'integer');
-        $settingRevision->addColumn('revision', 'integer');
-        $settingRevision->addColumn('miniapp_revision_id', 'integer', ['notnull' => false]);
-        $settingRevision->addColumn('official_revision_id', 'integer', ['notnull' => false]);
-        $settingRevision->addColumn('merchant_revision_id', 'integer', ['notnull' => false]);
-        $settingRevision->addColumn('capabilities', 'json');
-        $settingRevision->addColumn('state', 'string', ['length' => 20, 'default' => 'draft']);
-        $settingRevision->addColumn('created_at', 'datetime_immutable');
-        $settingRevision->addColumn('published_at', 'datetime_immutable', ['notnull' => false]);
-        $settingRevision->setPrimaryKey(['id']);
-        $settingRevision->addUniqueIndex(['uuid'], 'uniq_store_wechat_setting_revision_uuid');
-        $settingRevision->addUniqueIndex(['setting_id', 'revision'], 'uniq_store_wechat_setting_revision_version');
-        $settingRevision->addIndex(['setting_id', 'state'], 'idx_store_wechat_setting_revision_state');
-        $settingRevision->addForeignKeyConstraint(
-            'store_wechat_setting',
-            ['setting_id'],
-            ['id'],
-            ['onDelete' => 'CASCADE'],
-            'fk_store_wechat_setting_revision_setting',
-        );
-        $settingRevision->addForeignKeyConstraint(
+        $setting->addForeignKeyConstraint(
             'wechat_application_revision',
             ['miniapp_revision_id'],
             ['id'],
             ['onDelete' => 'RESTRICT'],
-            'fk_store_wechat_setting_revision_miniapp',
+            'fk_store_wechat_setting_miniapp',
         );
-        $settingRevision->addForeignKeyConstraint(
+        $setting->addForeignKeyConstraint(
             'wechat_application_revision',
             ['official_revision_id'],
             ['id'],
             ['onDelete' => 'RESTRICT'],
-            'fk_store_wechat_setting_revision_official',
+            'fk_store_wechat_setting_official',
         );
-        $settingRevision->addForeignKeyConstraint(
+        $setting->addForeignKeyConstraint(
             'wechat_merchant_revision',
             ['merchant_revision_id'],
             ['id'],
             ['onDelete' => 'RESTRICT'],
-            'fk_store_wechat_setting_revision_merchant',
+            'fk_store_wechat_setting_merchant',
         );
     }
 
     public function down(Schema $schema): void
     {
         foreach ([
-            'store_wechat_setting_revision',
             'store_wechat_setting',
             'wechat_merchant_revision',
             'wechat_merchant',

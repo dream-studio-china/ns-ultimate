@@ -29,6 +29,7 @@ $classLoader->addPsr4('NsUltimate\\Integration\\Backend\\', __DIR__.'/src/');
 $modules = NsUltimate\Integration\Backend\ModuleRegistry::discover($repositoryRoot.'/business/backend');
 foreach ($modules as $module) {
     $classLoader->addPsr4($module['namespace'], $module['path'].'/src/');
+    $classLoader->addPsr4($module['namespace'].'Tests\\', $module['path'].'/tests/');
 }
 
 $appEnvironment = $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? getenv('APP_ENV');

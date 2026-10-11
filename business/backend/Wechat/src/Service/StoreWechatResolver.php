@@ -7,8 +7,6 @@ namespace NsUltimate\Business\Wechat\Service;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Wechat\Dto\ResolvedWechatConfig;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
-use NsUltimate\Business\Wechat\Entity\StoreWechatSettingRevision;
-use NsUltimate\Business\Wechat\Entity\WechatApplication;
 use NsUltimate\Business\Wechat\Entity\WechatApplicationRevision;
 use NsUltimate\Business\Wechat\Entity\WechatMerchantRevision;
 use NsUltimate\Business\Wechat\Exception\WechatConfigurationException;
@@ -16,7 +14,7 @@ use NsUltimate\Business\Wechat\Exception\WechatConfigurationException;
 /**
  * Resolves a Store and capability to an immutable, decrypted configuration.
  *
- * Resolution reads the authoritative database state on every call so a published
+ * Resolution reads the authoritative database state on every call so a saved
  * binding takes effect for newly started operations without a process restart.
  * The caller must supply the trusted Store context; this service never selects a
  * Store from request data on its own.
@@ -39,39 +37,32 @@ final class StoreWechatResolver
             throw WechatConfigurationException::storeNotConfigured($storeUuid, $capability);
         }
 
-        $binding = $this->entityManager
-            ->getRepository(StoreWechatSettingRevision::class)
-            ->findOneBy(['setting' => $setting, 'state' => StoreWechatSettingRevision::STATE_PUBLISHED]);
-        if (!$binding instanceof StoreWechatSettingRevision) {
-            throw WechatConfigurationException::storeNotConfigured($storeUuid, $capability);
-        }
-
-        if (!$binding->supports($capability)) {
+        if (!$setting->supports($capability)) {
             throw WechatConfigurationException::capabilityDisabled($storeUuid, $capability);
         }
 
-        $applicationType = StoreWechatSettingRevision::CAPABILITY_APPLICATION_TYPE[$capability] ?? null;
+        $applicationType = StoreWechatSetting::CAPABILITY_APPLICATION_TYPE[$capability] ?? null;
         if ($applicationType === null) {
             throw WechatConfigurationException::unsupportedCapability($capability);
         }
 
-        $applicationRevision = $binding->applicationRevisionFor($applicationType);
+        $applicationRevision = $setting->applicationRevisionFor($applicationType);
         if (!$applicationRevision instanceof WechatApplicationRevision || !$applicationRevision->isPublished()) {
             throw WechatConfigurationException::applicationMissing($storeUuid, $capability);
         }
 
         $application = $applicationRevision->getApplication();
-        if (!$application->isEnabled() || $application->getType() !== $applicationType) {
+        if ($application === null || !$application->isEnabled() || $application->getType() !== $applicationType) {
             throw WechatConfigurationException::applicationMissing($storeUuid, $capability);
         }
 
         $merchantRevision = null;
-        if (in_array($capability, StoreWechatSettingRevision::PAYMENT_CAPABILITIES, true)) {
-            $merchantRevision = $binding->getMerchantRevision();
+        if (in_array($capability, StoreWechatSetting::PAYMENT_CAPABILITIES, true)) {
+            $merchantRevision = $setting->getMerchantRevision();
             if (!$merchantRevision instanceof WechatMerchantRevision || !$merchantRevision->isPublished()) {
                 throw WechatConfigurationException::merchantMissing($storeUuid, $capability);
             }
-            if (!$merchantRevision->getMerchant()->isEnabled()) {
+            if (!$merchantRevision->getMerchant()?->isEnabled()) {
                 throw WechatConfigurationException::merchantMissing($storeUuid, $capability);
             }
         }
@@ -79,7 +70,7 @@ final class StoreWechatResolver
         return new ResolvedWechatConfig(
             storeUuid: $storeUuid,
             capability: $capability,
-            bindingRevisionUuid: $binding->getUuid(),
+            bindingUuid: $setting->getUuid(),
             applicationRevisionUuid: $applicationRevision->getUuid(),
             applicationType: $application->getType(),
             appId: $application->getAppId(),
@@ -88,7 +79,7 @@ final class StoreWechatResolver
             officialAesKey: $this->decryptOptional($applicationRevision->encryptedOfficialAesKey()),
             redirectHosts: $applicationRevision->getRedirectHosts(),
             merchantRevisionUuid: $merchantRevision?->getUuid(),
-            merchantId: $merchantRevision?->getMerchant()->getMerchantId(),
+            merchantId: $merchantRevision?->getMerchant()?->getMerchantId(),
             merchantMode: $merchantRevision?->getMode(),
             apiV3Key: $merchantRevision === null ? null : $this->decryptRequired($merchantRevision->encryptedApiV3Key()),
             merchantPrivateKey: $merchantRevision === null ? null : $this->decryptRequired($merchantRevision->encryptedPrivateKey()),
@@ -128,7 +119,7 @@ final class StoreWechatResolver
 
         try {
             return $this->cipher->decrypt($payload);
-        } catch (\RuntimeException $e) {
+        } catch (\RuntimeException) {
             throw WechatConfigurationException::corruptCredentials();
         }
     }

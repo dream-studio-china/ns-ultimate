@@ -5,172 +5,107 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Wechat\Controller\Store;
 
 use App\Core\Controller\RestController;
+use App\Core\View\CreateApiViewMixin;
+use App\Core\View\DetailApiViewMixin;
+use App\Core\View\ListApiViewMixin;
+use App\Core\View\UpdateApiViewMixin;
 use App\Store\Entity\Store;
 use App\Store\Service\StoreServiceInterface;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Store\View\StoreScopedAuthorizationApiMixin;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
-use NsUltimate\Business\Wechat\Entity\StoreWechatSettingRevision;
-use NsUltimate\Business\Wechat\Exception\WechatValidationException;
-use NsUltimate\Business\Wechat\Service\StoreWechatBindingService;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use NsUltimate\Business\Wechat\Entity\WechatApplication;
+use NsUltimate\Business\Wechat\Service\StoreWechatSettingService;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-/**
- * Store-scoped management of a single Store's WeChat binding.
- *
- * The Store is resolved from the scope route parameter, never from request data.
- */
 #[Route('/store/{scopeId}/wechat-setting', name: 'store-wechat-setting-', requirements: ['scopeId' => '[0-9a-fA-F-]{36}'])]
 #[IsGranted('ROLE_USER')]
 final class WechatSettingController extends RestController
 {
+    use StoreScopedAuthorizationApiMixin, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
+
+    /** @var list<string> */
+    protected array $acceptedCreateProperties = ['enabled', 'miniappRevision', 'officialRevision', 'merchantRevision', 'capabilities'];
+
+    /** @var list<string> */
+    protected array $acceptedUpdateProperties = ['enabled', 'miniappRevision', 'officialRevision', 'merchantRevision', 'capabilities'];
+
     public function __construct(
-        private readonly EntityManagerInterface $entityManager,
-        private readonly StoreWechatBindingService $bindingService,
+        protected readonly StoreWechatSettingService $service,
         private readonly StoreServiceInterface $storeService,
     ) {
     }
 
-    #[Route('', name: 'detail', methods: ['GET'])]
-    public function detailAction(): Response
-    {
-        $store = $this->authorizeStore('read');
-        $setting = $this->entityManager
-            ->getRepository(StoreWechatSetting::class)
-            ->findOneBy(['storeUuid' => $store->getUuid()]);
-
-        if (!$setting instanceof StoreWechatSetting) {
-            throw new NotFoundHttpException('Store WeChat setting not found.');
-        }
-
-        return $this->success($this->serializeDetail($setting));
-    }
-
-    #[Route('', name: 'update', methods: ['PUT'])]
-    public function updateAction(Request $request): Response
-    {
-        $store = $this->authorizeStore('update');
-        $setting = $this->bindingService->settingForStore($store->getUuid());
-        $data = $this->jsonBody($request);
-
-        if (array_key_exists('enabled', $data)) {
-            if (!is_bool($data['enabled'])) {
-                throw new WechatValidationException('enabled must be a boolean.');
-            }
-            $setting->setEnabled($data['enabled']);
-            $this->entityManager->flush();
-        }
-
-        return $this->success($this->serializeDetail($setting));
-    }
-
-    #[Route('/revisions', name: 'create-revision', methods: ['POST'])]
-    public function createRevisionAction(Request $request): Response
-    {
-        $store = $this->authorizeStore('update');
-        $setting = $this->bindingService->settingForStore($store->getUuid());
-        $revision = $this->bindingService->createRevision($setting, $this->jsonBody($request));
-
-        return $this->success($this->serializeRevision($revision), 'SUCCESS', 201);
-    }
-
-    #[Route('/revisions/{revisionUuid}/publish', name: 'publish-revision', methods: ['POST'], requirements: ['revisionUuid' => '[0-9a-fA-F-]{36}'])]
-    public function publishRevisionAction(string $revisionUuid): Response
-    {
-        $store = $this->authorizeStore('update');
-        $setting = $this->entityManager
-            ->getRepository(StoreWechatSetting::class)
-            ->findOneBy(['storeUuid' => $store->getUuid()]);
-
-        if (!$setting instanceof StoreWechatSetting) {
-            throw new NotFoundHttpException('Store WeChat setting not found.');
-        }
-
-        $revision = $this->entityManager
-            ->getRepository(StoreWechatSettingRevision::class)
-            ->findOneBy(['uuid' => $revisionUuid, 'setting' => $setting]);
-
-        if (!$revision instanceof StoreWechatSettingRevision) {
-            throw new NotFoundHttpException('Binding revision not found.');
-        }
-
-        $this->bindingService->publish($revision);
-
-        return $this->success($this->serializeRevision($revision));
-    }
-
-    private function authorizeStore(string $action): Store
-    {
-        $scopeId = $this->getRequestStack()->getCurrentRequest()?->attributes->get('scopeId');
-        if (!is_string($scopeId) || $scopeId === '') {
-            throw new AccessDeniedException('Store scope is required.');
-        }
-
-        $store = $this->storeService->get(['uuid' => $scopeId], false);
-        if (!$store instanceof Store) {
-            throw new AccessDeniedException('Store not found or access denied.');
-        }
-
-        $this->denyAccessUnlessGranted('store:wechat:'.$action, $store);
-
-        return $store;
-    }
-
     /** @return array<string, mixed> */
-    private function serializeDetail(StoreWechatSetting $setting): array
+    protected function storeScopedFilter(Store $store): array
     {
-        $revisions = $this->entityManager
-            ->getRepository(StoreWechatSettingRevision::class)
-            ->findBy(['setting' => $setting], ['revision' => 'DESC']);
-        $published = $this->bindingService->publishedRevision($setting);
-
-        return [
-            'uuid' => $setting->getUuid(),
-            'storeUuid' => $setting->getStoreUuid(),
-            'enabled' => $setting->isEnabled(),
-            'published' => $published === null ? null : $this->serializeRevision($published),
-            'revisions' => array_map($this->serializeRevision(...), $revisions),
-        ];
+        return ['storeUuid' => $store->getUuid()];
     }
 
-    /** @return array<string, mixed> */
-    private function serializeRevision(StoreWechatSettingRevision $revision): array
+    protected function storeService(): StoreServiceInterface
     {
-        return [
-            'uuid' => $revision->getUuid(),
-            'revision' => $revision->getRevision(),
-            'state' => $revision->getState(),
-            'capabilities' => $revision->getCapabilities(),
-            'miniappRevisionUuid' => $revision->getMiniappRevision()?->getUuid(),
-            'officialRevisionUuid' => $revision->getOfficialRevision()?->getUuid(),
-            'merchantRevisionUuid' => $revision->getMerchantRevision()?->getUuid(),
-            'createdAt' => $revision->getCreatedAt()->format(\DATE_ATOM),
-            'publishedAt' => $revision->getPublishedAt()?->format(\DATE_ATOM),
-        ];
+        return $this->storeService;
     }
 
-    /** @return array<string, mixed> */
-    private function jsonBody(Request $request): array
+    protected function storeAuthorizationResource(): string
     {
-        $content = $request->getContent();
-        if ($content === '') {
-            return [];
+        return 'wechat';
+    }
+
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
+    protected function processCreateContent(array $content, object $entity): array
+    {
+        if (!$entity instanceof StoreWechatSetting) {
+            throw new \LogicException('Unexpected store WeChat setting entity.');
         }
 
-        try {
-            $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            throw new WechatValidationException('Request body must be valid JSON.');
+        $store = $this->storeForAuthorization();
+        if ($this->service->get(['storeUuid' => $store->getUuid()], false) instanceof StoreWechatSetting) {
+            throw new \InvalidArgumentException('This store already has a WeChat setting.');
+        }
+        $entity->setStoreUuid($store->getUuid());
+
+        return $this->processBinding($entity, $content);
+    }
+
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
+    protected function processUpdateContent(array $content, ?object $entity = null): array
+    {
+        if (!$entity instanceof StoreWechatSetting) {
+            throw new \LogicException('Unexpected store WeChat setting entity.');
         }
 
-        if (!is_array($data)) {
-            throw new WechatValidationException('Request body must be a JSON object.');
-        }
+        return $this->processBinding($entity, $content);
+    }
 
-        return $data;
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
+    private function processBinding(StoreWechatSetting $setting, array $content): array
+    {
+        $miniapp = array_key_exists('miniappRevision', $content)
+            ? $this->service->resolveApplicationRevision($content['miniappRevision'], WechatApplication::TYPE_MINIAPP)
+            : $setting->getMiniappRevision();
+        $official = array_key_exists('officialRevision', $content)
+            ? $this->service->resolveApplicationRevision($content['officialRevision'], WechatApplication::TYPE_OFFICIAL)
+            : $setting->getOfficialRevision();
+        $merchant = array_key_exists('merchantRevision', $content)
+            ? $this->service->resolveMerchantRevision($content['merchantRevision'])
+            : $setting->getMerchantRevision();
+
+        $requested = array_key_exists('capabilities', $content)
+            ? (array) $content['capabilities']
+            : $setting->getCapabilities();
+        $capabilities = $this->service->normalizeCapabilities($requested, $miniapp, $official, $merchant);
+
+        $setting->setMiniappRevision($miniapp)
+            ->setOfficialRevision($official)
+            ->setMerchantRevision($merchant)
+            ->setCapabilities($capabilities);
+
+        unset($content['miniappRevision'], $content['officialRevision'], $content['merchantRevision'], $content['capabilities']);
+
+        return $content;
     }
 }

@@ -7,46 +7,24 @@ namespace NsUltimate\Business\Wechat\Tests\Integration;
 use App\Authorization\Entity\Permission;
 use App\Authorization\Entity\Role;
 use App\Core\Utils\UUID;
-use App\Identity\Entity\User;
-use App\Identity\Security\TokenManager;
-use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Wechat\Command\SeedWechatAuthorizationCommand;
-use NsUltimate\Business\Wechat\Entity\StoreWechatSettingRevision;
+use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
 use NsUltimate\Business\Wechat\Service\StoreWechatResolver;
-use NsUltimate\Integration\Backend\Kernel;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Route;
 
-final class WechatManagementApiTest extends KernelTestCase
+final class WechatManagementApiTest extends WechatApiTestCase
 {
-    protected function setUp(): void
-    {
-        self::bootKernel();
-        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $schemaTool = new SchemaTool($entityManager);
-        $metadata = $entityManager->getMetadataFactory()->getAllMetadata();
-        if ($entityManager->getConnection()->createSchemaManager()->listTableNames() !== []) {
-            $schemaTool->dropSchema($metadata);
-        }
-        $schemaTool->createSchema($metadata);
-    }
-
-    protected static function getKernelClass(): string
-    {
-        return Kernel::class;
-    }
-
     public function testManagementRoutesAreRegistered(): void
     {
         $routes = self::getContainer()->get('router')->getRouteCollection();
         foreach ([
             'business-wechat-applications-list' => '/manage/wechat-applications',
+            'business-wechat-application-revisions-list' => '/manage/wechat-application-revisions',
             'business-wechat-merchants-list' => '/manage/wechat-merchants',
+            'business-wechat-merchant-revisions-list' => '/manage/wechat-merchant-revisions',
             'business-store-wechat-settings-list' => '/manage/store-wechat-settings',
-            'store-wechat-setting-detail' => '/store/{scopeId}/wechat-setting',
+            'store-wechat-setting-list' => '/store/{scopeId}/wechat-setting',
         ] as $name => $path) {
             self::assertInstanceOf(Route::class, $routes->get($name), $name);
             self::assertSame($path, $routes->get($name)?->getPath());
@@ -55,100 +33,97 @@ final class WechatManagementApiTest extends KernelTestCase
         }
     }
 
-    public function testAdministratorCanManageApplicationsWithoutLeakingSecrets(): void
+    public function testApplicationLifecycleNeverLeaksSecrets(): void
     {
-        [$status, $body] = $this->request('POST', '/api/v1/manage/wechat-applications', [
-            'name' => 'Mini A',
-            'type' => 'miniapp',
-            'appId' => 'wx-mini-a',
-        ]);
-        self::assertSame(201, $status, json_encode($body));
-        $applicationUuid = $body['data']['uuid'];
-
-        [$status, $body] = $this->request('POST', '/api/v1/manage/wechat-applications/'.$applicationUuid.'/revisions', [
-            'secret' => 'super-secret-value',
-        ]);
-        self::assertSame(201, $status, json_encode($body));
-        self::assertSame('draft', $body['data']['state']);
-        self::assertTrue($body['data']['hasSecret']);
-        self::assertStringNotContainsString('super-secret-value', json_encode($body, JSON_THROW_ON_ERROR));
-
-        $revisionUuid = $body['data']['uuid'];
-        [$status, $body] = $this->request('POST', '/api/v1/manage/wechat-applications/'.$applicationUuid.'/revisions/'.$revisionUuid.'/publish');
-        self::assertSame(200, $status, json_encode($body));
-        self::assertSame('published', $body['data']['state']);
+        $applicationId = $this->createApplication('wx-mini-a');
+        $revisionUuid = $this->publishApplicationRevision($applicationId, 'super-secret-value', ['shop.example.com']);
 
         [$status, $body] = $this->request('GET', '/api/v1/manage/wechat-applications');
         self::assertSame(200, $status);
         self::assertStringNotContainsString('super-secret-value', json_encode($body, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('secret_encrypted', json_encode($body, JSON_THROW_ON_ERROR));
 
-        [$status, $body] = $this->request('GET', '/api/v1/manage/wechat-applications/'.$applicationUuid);
+        [$status, $body] = $this->request('GET', '/api/v1/manage/wechat-application-revisions');
         self::assertSame(200, $status);
-        self::assertCount(1, $body['data']['revisions']);
-        self::assertSame('published', $body['data']['revisions'][0]['state']);
+        self::assertStringNotContainsString('super-secret-value', json_encode($body, JSON_THROW_ON_ERROR));
+
+        [$status, $body] = $this->request('GET', '/api/v1/manage/wechat-application-revisions/'.$revisionUuid);
+        self::assertSame(200, $status);
+        self::assertSame('published', $body['data']['state']);
+        self::assertTrue($body['data']['secret']);
+        self::assertSame(['shop.example.com'], $body['data']['redirectHosts']);
+        self::assertStringNotContainsString('super-secret-value', json_encode($body, JSON_THROW_ON_ERROR));
+
+        $stored = $this->entityManager()->getConnection()->fetchOne(
+            'SELECT secret_encrypted FROM wechat_application_revision WHERE uuid = ?',
+            [$revisionUuid],
+        );
+        self::assertIsString($stored);
+        self::assertStringNotContainsString('super-secret-value', $stored);
     }
 
-    public function testAdministratorCanCreateAndPublishMerchant(): void
+    public function testApplicationUpdateAndDuplicateAppIdRejection(): void
     {
-        [$status, $body] = $this->request('POST', '/api/v1/manage/wechat-merchants', [
-            'name' => 'Merchant A',
-            'merchantId' => '1900000001',
-        ]);
-        self::assertSame(201, $status, json_encode($body));
-        $merchantUuid = $body['data']['uuid'];
+        $applicationId = $this->createApplication('wx-mini-a');
+        [, $body] = $this->request('GET', '/api/v1/manage/wechat-applications/'.$this->applicationUuid($applicationId));
+        $uuid = $body['data']['uuid'];
 
-        [$status, $body] = $this->request('POST', '/api/v1/manage/wechat-merchants/'.$merchantUuid.'/revisions', [
-            'apiV3Key' => str_repeat('k', 32),
-            'privateKey' => "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
-            'certificate' => "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+        [$status, $body] = $this->request('PUT', '/api/v1/manage/wechat-applications/'.$uuid, ['name' => 'Renamed', 'enabled' => false]);
+        self::assertSame(200, $status, json_encode($body));
+        self::assertFalse($body['data']['enabled']);
+
+        [$status, $body] = $this->request('POST', '/api/v1/manage/wechat-applications', [
+            'name' => 'Duplicate',
+            'type' => 'miniapp',
+            'appId' => 'wx-mini-a',
         ]);
-        self::assertSame(201, $status, json_encode($body));
-        self::assertTrue($body['data']['hasPrivateKey']);
-        self::assertTrue($body['data']['hasCertificate']);
+        self::assertSame(400, $status, json_encode($body));
+    }
+
+    public function testMerchantLifecyclePublishesRevision(): void
+    {
+        $merchantId = $this->createMerchant('1900000001');
+        $revisionUuid = $this->publishMerchantRevision($merchantId);
+
+        [$status, $body] = $this->request('GET', '/api/v1/manage/wechat-merchant-revisions/'.$revisionUuid);
+        self::assertSame(200, $status);
+        self::assertSame('published', $body['data']['state']);
+        self::assertTrue($body['data']['privateKey']);
         self::assertStringNotContainsString('BEGIN PRIVATE KEY', json_encode($body, JSON_THROW_ON_ERROR));
-
-        [$status, $body] = $this->request(
-            'POST',
-            '/api/v1/manage/wechat-merchants/'.$merchantUuid.'/revisions/'.$body['data']['uuid'].'/publish',
-        );
-        self::assertSame(200, $status, json_encode($body));
-        self::assertSame('published', $body['data']['state']);
     }
 
-    public function testAdministratorCanBindPublishedRevisionsAndResolverAppliesThem(): void
+    public function testStoreBindingAppliesToResolver(): void
     {
-        $applicationRevision = $this->publishApplication('wx-mini-a', 'secret-a');
-        $merchantRevision = $this->publishMerchant('1900000001');
-        $storeUuid = UUID::v4();
+        $store = $this->createStore('A');
+        $applicationRevision = $this->publishApplicationRevision($this->createApplication('wx-mini-a'), 'secret-a');
+        $merchantRevision = $this->publishMerchantRevision($this->createMerchant('1900000001'));
 
-        [$status, $body] = $this->request('POST', '/api/v1/manage/store-wechat-settings/store/'.$storeUuid.'/revisions', [
-            'miniappRevisionUuid' => $applicationRevision,
-            'merchantRevisionUuid' => $merchantRevision,
-            'capabilities' => [
-                StoreWechatSettingRevision::CAP_MINIAPP_LOGIN => true,
-                StoreWechatSettingRevision::CAP_PAYMENT_JSAPI => true,
-            ],
+        $settingUuid = $this->createStoreSetting($store->getUuid(), $applicationRevision, $merchantRevision, [
+            StoreWechatSetting::CAP_MINIAPP_LOGIN => true,
+            StoreWechatSetting::CAP_PAYMENT_JSAPI => true,
         ]);
-        self::assertSame(201, $status, json_encode($body));
-        self::assertSame('draft', $body['data']['state']);
 
-        [$status, $body] = $this->request(
-            'POST',
-            '/api/v1/manage/store-wechat-settings/store/'.$storeUuid.'/revisions/'.$body['data']['uuid'].'/publish',
-        );
+        [$status, $body] = $this->request('GET', '/api/v1/manage/store-wechat-settings/'.$settingUuid);
         self::assertSame(200, $status, json_encode($body));
-        self::assertSame('published', $body['data']['state']);
-
-        [$status, $body] = $this->request('GET', '/api/v1/manage/store-wechat-settings/store/'.$storeUuid);
-        self::assertSame(200, $status, json_encode($body));
-        self::assertSame('published', $body['data']['published']['state']);
-        self::assertTrue($body['data']['published']['capabilities'][StoreWechatSettingRevision::CAP_MINIAPP_LOGIN]);
+        self::assertTrue($body['data']['capabilities'][StoreWechatSetting::CAP_MINIAPP_LOGIN]);
 
         $config = self::getContainer()->get(StoreWechatResolver::class)
-            ->resolve($storeUuid, StoreWechatSettingRevision::CAP_MINIAPP_LOGIN);
+            ->resolve($store->getUuid(), StoreWechatSetting::CAP_MINIAPP_LOGIN);
         self::assertSame('wx-mini-a', $config->appId);
         self::assertSame('secret-a', $config->appSecret);
+    }
+
+    public function testBoundApplicationCannotBeDeleted(): void
+    {
+        $store = $this->createStore('A');
+        $applicationId = $this->createApplication('wx-mini-a');
+        $applicationRevision = $this->publishApplicationRevision($applicationId, 'secret-a');
+        $this->createStoreSetting($store->getUuid(), $applicationRevision, null, [
+            StoreWechatSetting::CAP_MINIAPP_LOGIN => true,
+        ]);
+
+        [$status, $body] = $this->request('DELETE', '/api/v1/manage/wechat-applications/'.$this->applicationUuid($applicationId));
+        self::assertSame(409, $status, json_encode($body));
     }
 
     public function testManagementEndpointsRejectNonAdministrators(): void
@@ -160,8 +135,7 @@ final class WechatManagementApiTest extends KernelTestCase
     public function testInvalidInputIsRejectedWithBadRequest(): void
     {
         [$status, $body] = $this->request('POST', '/api/v1/manage/wechat-applications', ['name' => 'Missing type']);
-        self::assertSame(400, $status);
-        self::assertSame(400, $body['code']);
+        self::assertSame(400, $status, json_encode($body));
     }
 
     public function testUnknownResourceReturnsNotFound(): void
@@ -177,98 +151,20 @@ final class WechatManagementApiTest extends KernelTestCase
         self::assertSame(0, $tester->execute([]));
         self::assertSame(0, $tester->execute([]));
 
-        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        self::assertInstanceOf(Permission::class, $entityManager->getRepository(Permission::class)->findOneBy(['code' => 'store:wechat:update']));
-        $role = $entityManager->getRepository(Role::class)->findOneBy(['code' => 'store_wechat_manager']);
+        self::assertInstanceOf(
+            Permission::class,
+            $this->entityManager()->getRepository(Permission::class)->findOneBy(['code' => 'store:wechat:update']),
+        );
+        $role = $this->entityManager()->getRepository(Role::class)->findOneBy(['code' => 'store_wechat_manager']);
         self::assertInstanceOf(Role::class, $role);
         self::assertSame(Role::SCOPE_STORE, $role->getScopeType());
     }
 
-    private function publishApplication(string $appId, string $secret): string
+    private function applicationUuid(int $applicationId): string
     {
-        [, $body] = $this->request('POST', '/api/v1/manage/wechat-applications', [
-            'name' => 'Mini '.$appId,
-            'type' => 'miniapp',
-            'appId' => $appId,
-        ]);
-        $applicationUuid = $body['data']['uuid'];
-
-        [, $body] = $this->request('POST', '/api/v1/manage/wechat-applications/'.$applicationUuid.'/revisions', [
-            'secret' => $secret,
-        ]);
-        $revisionUuid = $body['data']['uuid'];
-
-        $this->request('POST', '/api/v1/manage/wechat-applications/'.$applicationUuid.'/revisions/'.$revisionUuid.'/publish');
-
-        return $revisionUuid;
+        return (string) $this->entityManager()
+            ->getRepository(\NsUltimate\Business\Wechat\Entity\WechatApplication::class)
+            ->find($applicationId)
+            ?->getUuid();
     }
-
-    private function publishMerchant(string $merchantId): string
-    {
-        [, $body] = $this->request('POST', '/api/v1/manage/wechat-merchants', [
-            'name' => 'Merchant '.$merchantId,
-            'merchantId' => $merchantId,
-        ]);
-        $merchantUuid = $body['data']['uuid'];
-
-        [, $body] = $this->request('POST', '/api/v1/manage/wechat-merchants/'.$merchantUuid.'/revisions', [
-            'apiV3Key' => str_repeat('k', 32),
-            'privateKey' => "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
-            'certificate' => "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
-        ]);
-        $revisionUuid = $body['data']['uuid'];
-
-        $this->request('POST', '/api/v1/manage/wechat-merchants/'.$merchantUuid.'/revisions/'.$revisionUuid.'/publish');
-
-        return $revisionUuid;
-    }
-
-    private function userToken(array $roles): string
-    {
-        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $user = (new User())
-            ->setEmail('wechat-'.bin2hex(random_bytes(4)).'@example.test')
-            ->setUsername('wechat-'.bin2hex(random_bytes(4)))
-            ->setRoles($roles);
-        $entityManager->persist($user);
-        $entityManager->flush();
-
-        return self::getContainer()->get(TokenManager::class)->createAccessToken($user);
-    }
-
-    /**
-     * @param array<string, mixed>|null $payload
-     * @return array{0: int, 1: array<string, mixed>}
-     */
-    private function request(string $method, string $path, ?array $payload = null, ?string $token = null): array
-    {
-        $token ??= $this->adminToken();
-        $request = Request::create(
-            $path,
-            $method,
-            [],
-            [],
-            [],
-            [
-                'HTTP_AUTHORIZATION' => 'Bearer '.$token,
-                'CONTENT_TYPE' => 'application/json',
-            ],
-            $payload === null ? null : json_encode($payload, JSON_THROW_ON_ERROR),
-        );
-
-        $response = self::$kernel->handle($request);
-        $content = $response->getContent();
-        $body = $content === '' ? [] : json_decode($content, true, 512, JSON_THROW_ON_ERROR);
-
-        return [$response->getStatusCode(), $body];
-    }
-
-    private function adminToken(): string
-    {
-        $this->adminToken ??= $this->userToken(['ROLE_ADMIN']);
-
-        return $this->adminToken;
-    }
-
-    private ?string $adminToken = null;
 }

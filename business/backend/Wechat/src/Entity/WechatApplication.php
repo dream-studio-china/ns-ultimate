@@ -11,8 +11,10 @@ use Doctrine\ORM\Mapping as ORM;
  * A store-configurable WeChat application profile (Mini Program or Official Account).
  *
  * Credentials live on immutable revisions; this profile only stores the stable
- * identity. The AppID is stable for the lifetime of the profile and cannot be
- * changed in place.
+ * identity. The AppID is stable for the lifetime of the profile.
+ *
+ * The constructor takes no required arguments so the Core CRUD lifecycle can
+ * instantiate and populate the entity through setters.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'wechat_application')]
@@ -52,19 +54,9 @@ class WechatApplication
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $updatedAt = null;
 
-    public function __construct(string $name, string $type, string $appId)
+    public function __construct()
     {
-        if (!in_array($type, self::TYPES, true)) {
-            throw new \InvalidArgumentException(sprintf('Unsupported WeChat application type "%s".', $type));
-        }
-        if (trim($appId) === '') {
-            throw new \InvalidArgumentException('A WeChat application requires a non-empty AppID.');
-        }
-
         $this->uuid = UUID::v4();
-        $this->name = $name;
-        $this->type = $type;
-        $this->appId = trim($appId);
         $this->createdAt = new \DateTimeImmutable();
     }
 
@@ -73,9 +65,26 @@ class WechatApplication
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
     public function getName(): string { return $this->name; }
-    public function setName(string $name): self { $this->name = $name; return $this->touch(); }
+    public function setName(string $name): self { $this->name = trim($name); return $this->touch(); }
     public function getType(): string { return $this->type; }
+    public function setType(string $type): self
+    {
+        if (!in_array($type, self::TYPES, true)) {
+            throw new \InvalidArgumentException(sprintf('Unsupported WeChat application type "%s".', $type));
+        }
+        $this->type = $type;
+        return $this->touch();
+    }
     public function getAppId(): string { return $this->appId; }
+    public function setAppId(string $appId): self
+    {
+        $appId = trim($appId);
+        if ($appId === '') {
+            throw new \InvalidArgumentException('A WeChat application requires a non-empty AppID.');
+        }
+        $this->appId = $appId;
+        return $this->touch();
+    }
     public function isEnabled(): bool { return $this->enabled; }
     public function setEnabled(bool $enabled): self { $this->enabled = $enabled; return $this->touch(); }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }

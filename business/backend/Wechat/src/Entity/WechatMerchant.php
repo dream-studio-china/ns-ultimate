@@ -10,9 +10,9 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * A WeChat Pay merchant profile.
  *
- * Only ordinary merchant direct mode is implemented. The service-provider mode
- * is reserved for a follow-up and is rejected during validation until its
- * request/verification rules are implemented.
+ * Only ordinary merchant direct mode is implemented. The constructor takes no
+ * required arguments so the Core CRUD lifecycle can populate the entity through
+ * setters.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'wechat_merchant')]
@@ -48,15 +48,9 @@ class WechatMerchant
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $updatedAt = null;
 
-    public function __construct(string $name, string $merchantId)
+    public function __construct()
     {
-        if (trim($merchantId) === '') {
-            throw new \InvalidArgumentException('A WeChat merchant requires a non-empty merchant ID.');
-        }
-
         $this->uuid = UUID::v4();
-        $this->name = $name;
-        $this->merchantId = trim($merchantId);
         $this->createdAt = new \DateTimeImmutable();
     }
 
@@ -65,8 +59,17 @@ class WechatMerchant
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
     public function getName(): string { return $this->name; }
-    public function setName(string $name): self { $this->name = $name; return $this->touch(); }
+    public function setName(string $name): self { $this->name = trim($name); return $this->touch(); }
     public function getMerchantId(): string { return $this->merchantId; }
+    public function setMerchantId(string $merchantId): self
+    {
+        $merchantId = trim($merchantId);
+        if ($merchantId === '') {
+            throw new \InvalidArgumentException('A WeChat merchant requires a non-empty merchant ID.');
+        }
+        $this->merchantId = $merchantId;
+        return $this->touch();
+    }
     public function getMode(): string { return $this->mode; }
     public function isEnabled(): bool { return $this->enabled; }
     public function setEnabled(bool $enabled): self { $this->enabled = $enabled; return $this->touch(); }

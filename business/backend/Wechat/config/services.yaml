@@ -3,24 +3,29 @@ services:
         autowire: true
         autoconfigure: true
 
-    # Public so integration tests can resolve them directly; consumers will
-    # inject them once the management controllers and login/payment flows land.
+    # Public so integration tests can resolve them directly.
     NsUltimate\Business\Wechat\Service\SecretCipher:
         public: true
         arguments:
             $encodedKey: '%env(WECHAT_CREDENTIAL_KEY)%'
 
+    NsUltimate\Business\Wechat\Service\StoreWechatResolver:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\WechatClientFactory:
+        public: true
+
     NsUltimate\Business\Wechat\Service\WechatApplicationService:
+        public: true
+
+    NsUltimate\Business\Wechat\Service\WechatApplicationRevisionService:
         public: true
 
     NsUltimate\Business\Wechat\Service\WechatMerchantService:
         public: true
 
-    NsUltimate\Business\Wechat\Service\StoreWechatBindingService:
+    NsUltimate\Business\Wechat\Service\WechatMerchantRevisionService:
         public: true
 
-    NsUltimate\Business\Wechat\Service\StoreWechatResolver:
-        public: true
-
-    NsUltimate\Business\Wechat\Service\WechatClientFactory:
+    NsUltimate\Business\Wechat\Service\StoreWechatSettingService:
         public: true

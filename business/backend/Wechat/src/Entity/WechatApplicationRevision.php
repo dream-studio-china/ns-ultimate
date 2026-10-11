@@ -10,9 +10,9 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * Immutable credential configuration for a WeChat application profile.
  *
- * Encrypted credential columns are intentionally exposed only through non-getter
- * methods so the serializer never emits ciphertext. All secret material is
- * encrypted by SecretCipher before it reaches this entity.
+ * Encrypted credential columns are exposed only through non-getter methods so the
+ * serializer never emits ciphertext. Secret material is encrypted by
+ * SecretCipher before it reaches this entity.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'wechat_application_revision')]
@@ -34,8 +34,8 @@ class WechatApplicationRevision
     private string $uuid;
 
     #[ORM\ManyToOne(targetEntity: WechatApplication::class)]
-    #[ORM\JoinColumn(name: 'application_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    private WechatApplication $application;
+    #[ORM\JoinColumn(name: 'application_id', referencedColumnName: 'id', nullable: true, onDelete: 'CASCADE')]
+    private ?WechatApplication $application = null;
 
     #[ORM\Column(type: 'integer')]
     private int $revision = 1;
@@ -65,27 +65,28 @@ class WechatApplicationRevision
     #[ORM\Column(name: 'published_at', type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $publishedAt = null;
 
-    public function __construct(WechatApplication $application, int $revision)
+    public function __construct()
     {
         $this->uuid = UUID::v4();
-        $this->application = $application;
-        $this->revision = $revision;
         $this->createdAt = new \DateTimeImmutable();
     }
 
     public function __toString(): string
     {
-        return sprintf('%s r%d', $this->application->getName(), $this->revision);
+        return sprintf('%s r%d', $this->application?->getName() ?? '', $this->revision);
     }
 
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
-    public function getApplication(): WechatApplication { return $this->application; }
+    public function getApplication(): ?WechatApplication { return $this->application; }
+    public function setApplication(?WechatApplication $application): self { $this->application = $application; return $this; }
     public function getRevision(): int { return $this->revision; }
+    public function setRevision(int $revision): self { $this->revision = $revision; return $this; }
     public function getState(): string { return $this->state; }
     public function isPublished(): bool { return $this->state === self::STATE_PUBLISHED; }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
     public function getPublishedAt(): ?\DateTimeImmutable { return $this->publishedAt; }
+    public function getKeyId(): ?string { return $this->keyId; }
 
     public function hasSecret(): bool { return $this->secretEncrypted !== null; }
     public function hasOfficialToken(): bool { return $this->officialTokenEncrypted !== null; }
@@ -104,9 +105,7 @@ class WechatApplicationRevision
         return $this;
     }
 
-    /**
-     * Raw encrypted material. Only SecretCipher-aware services may consume this.
-     */
+    /** Raw encrypted material. Only SecretCipher-aware services may consume this. */
     public function encryptedSecret(): ?string { return $this->secretEncrypted; }
 
     /** Raw encrypted material. Only SecretCipher-aware services may consume this. */
@@ -115,20 +114,10 @@ class WechatApplicationRevision
     /** Raw encrypted material. Only SecretCipher-aware services may consume this. */
     public function encryptedOfficialAesKey(): ?string { return $this->officialAesKeyEncrypted; }
 
-    public function getKeyId(): ?string { return $this->keyId; }
-
-    public function setEncryptedCredentials(
-        string $keyId,
-        ?string $secretEncrypted,
-        ?string $officialTokenEncrypted,
-        ?string $officialAesKeyEncrypted,
-    ): self {
-        $this->keyId = $keyId;
-        $this->secretEncrypted = $secretEncrypted;
-        $this->officialTokenEncrypted = $officialTokenEncrypted;
-        $this->officialAesKeyEncrypted = $officialAesKeyEncrypted;
-        return $this;
-    }
+    public function setKeyId(?string $keyId): self { $this->keyId = $keyId; return $this; }
+    public function setSecretEncrypted(?string $secretEncrypted): self { $this->secretEncrypted = $secretEncrypted; return $this; }
+    public function setOfficialTokenEncrypted(?string $officialTokenEncrypted): self { $this->officialTokenEncrypted = $officialTokenEncrypted; return $this; }
+    public function setOfficialAesKeyEncrypted(?string $officialAesKeyEncrypted): self { $this->officialAesKeyEncrypted = $officialAesKeyEncrypted; return $this; }
 
     public function publish(): self
     {

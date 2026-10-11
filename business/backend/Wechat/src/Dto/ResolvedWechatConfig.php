@@ -19,7 +19,7 @@ final readonly class ResolvedWechatConfig
     public function __construct(
         public string $storeUuid,
         public string $capability,
-        public string $bindingRevisionUuid,
+        public string $bindingUuid,
         public ?string $applicationRevisionUuid,
         public ?string $applicationType,
         public ?string $appId,
