@@ -66,5 +66,9 @@ export default {
   'Service provider AppID': 'Service provider AppID',
   'Sub-merchant ID': 'Sub-merchant ID',
   'Service provider AppID help': 'The service provider WeChat Official Account AppID; required in service-provider mode.',
-  'Sub-merchant ID help': 'The WeChat Pay sub-merchant ID assigned under this service provider.'
+  'Sub-merchant ID help': 'The WeChat Pay sub-merchant ID assigned under this service provider.',
+  'Available permissions': 'Available permissions',
+  'Selected permissions': 'Selected permissions',
+  'Selected permission summary': '{0} selected, {1} permissions total',
+  'Authorization permission description': 'This allows the following operation: {0}.'
 }

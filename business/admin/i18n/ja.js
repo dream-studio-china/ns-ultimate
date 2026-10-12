@@ -66,5 +66,9 @@ export default {
   'Service provider AppID': 'サービスプロバイダー AppID',
   'Sub-merchant ID': 'サブ加盟店番号',
   'Service provider AppID help': 'サービスプロバイダーのWeChat公式アカウントAppID。サービスプロバイダーモードでは必須です。',
-  'Sub-merchant ID help': 'このサービスプロバイダー配下でWeChat Payから割り当てられたサブ加盟店番号。'
+  'Sub-merchant ID help': 'このサービスプロバイダー配下でWeChat Payから割り当てられたサブ加盟店番号。',
+  'Available permissions': '利用可能な権限',
+  'Selected permissions': '選択済み権限',
+  'Selected permission summary': '{1} 件中 {0} 件を選択',
+  'Authorization permission description': '次の操作権限があります: {0}。'
 }

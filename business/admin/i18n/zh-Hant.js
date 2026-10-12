@@ -73,5 +73,13 @@ export default {
   'Service provider AppID': '服務商 AppID',
   'Sub-merchant ID': '子商戶號',
   'Service provider AppID help': '服務商微信公眾號的 AppID；服務商模式必填。',
-  'Sub-merchant ID help': '此服務商下由微信支付分配的子商戶號。'
+  'Sub-merchant ID help': '此服務商下由微信支付分配的子商戶號。',
+  'Modify Roles': '修改角色',
+  'Select roles': '請選擇角色',
+  'Roles updated successfully': '角色更新成功',
+  'Failed to update roles': '角色更新失敗',
+  'Available permissions': '可用權限',
+  'Selected permissions': '已選權限',
+  'Selected permission summary': '{0} 項已選，共 {1} 項權限',
+  'Authorization permission description': '具備「{0}」對應的操作權限。'
 }
