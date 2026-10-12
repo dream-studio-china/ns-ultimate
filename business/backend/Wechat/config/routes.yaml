@@ -1,0 +1,9 @@
+wechat_module:
+    resource: ../src/Controller/
+    type: attribute
+
+wechat_module_api:
+    resource: ../src/Controller/Admin/
+    type: attribute
+    prefix: /api/v1
+    name_prefix: api-v1-

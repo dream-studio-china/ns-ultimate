@@ -17,5 +17,14 @@ export default {
   'Counter sort help': '表示順。値が小さいほど先に表示されます。',
   'Counter metadata help': 'テーブル固有の表示情報は metadata のトップレベル項目として保存されます。',
   'Trade order UUID': '注文 UUID',
-  Enabled: '有効'
+  Enabled: '有効',
+  'WeChat applications': 'WeChatアプリ設定',
+  'WeChat merchants': 'WeChat加盟店設定',
+  'Store WeChat settings': '店舗WeChat設定',
+  'Mini Program': 'ミニプログラム',
+  'Official Account': '公式アカウント',
+  'Credential replacement help': '空欄の場合は現在の認証情報を保持します。認証情報は暗号化して保存し、返却しません。',
+  AppID: 'AppID',
+  Type: '種類',
+  'Merchant ID': '加盟店番号'
 }

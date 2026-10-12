@@ -1,0 +1,13 @@
+services:
+    NsUltimate\Business\Wechat\Service\WechatSecretCipher:
+        arguments:
+            $key: '%env(WECHAT_CONFIG_KEY)%'
+
+    App\Wechat\Service\WechatServiceInterface: '@NsUltimate\Business\Wechat\Service\StoreAwareWechatService'
+    App\Wechat\Service\WechatAuthServiceInterface: '@NsUltimate\Business\Wechat\Service\StoreWechatAuthService'
+
+    NsUltimate\Business\Wechat\Service\StoreWechatPaymentGateway:
+        autowire: true
+        autoconfigure: false
+        tags:
+            - { name: payment.gateway, priority: -100 }

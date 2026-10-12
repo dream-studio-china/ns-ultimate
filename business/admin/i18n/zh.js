@@ -24,5 +24,14 @@ export default {
   'Counter metadata help': '台位专属展示信息以顶层字段形式存储在 metadata 中。',
   'Trade order UUID': '交易订单 UUID',
   Enabled: '启用',
-  'Product store help': '所属门店，可空'
+  'Product store help': '所属门店，可空',
+  'WeChat applications': '微信应用配置',
+  'WeChat merchants': '微信商户配置',
+  'Store WeChat settings': '门店微信设置',
+  'Mini Program': '小程序',
+  'Official Account': '公众号',
+  'Credential replacement help': '留空表示保留现有凭据；凭据加密存储且不会返回。',
+  AppID: 'AppID',
+  Type: '类型',
+  'Merchant ID': '商户号'
 }

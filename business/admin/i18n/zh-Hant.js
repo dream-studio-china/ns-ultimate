@@ -24,5 +24,14 @@ export default {
   'Counter sort help': '顯示排序，數值越小越靠前。',
   'Counter metadata help': '桌台專屬展示資訊以頂層欄位形式儲存在 metadata 中。',
   'Trade order UUID': '交易訂單 UUID',
-  Enabled: '啟用'
+  Enabled: '啟用',
+  'WeChat applications': '微信應用配置',
+  'WeChat merchants': '微信商戶配置',
+  'Store WeChat settings': '門店微信設定',
+  'Mini Program': '小程式',
+  'Official Account': '公眾號',
+  'Credential replacement help': '留空表示保留現有憑據；憑據會加密儲存且不會回傳。',
+  AppID: 'AppID',
+  Type: '類型',
+  'Merchant ID': '商戶號'
 }

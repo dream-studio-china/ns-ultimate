@@ -9,6 +9,7 @@
             <directory>tests</directory>
             <directory>../../business/backend/Dummy/tests/Integration</directory>
             <directory>../../business/backend/Counter/tests/Integration</directory>
+            <directory>../../business/backend/Wechat/tests</directory>
         </testsuite>
     </testsuites>
 </phpunit>

@@ -15,7 +15,10 @@ export default {
         roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
       },
       children: [
-        ...r('PaymentSetting', t('Payment settings'))
+        ...r('PaymentSetting', t('Payment settings')),
+        ...r('WechatApplication', t('WeChat applications')),
+        ...r('WechatMerchant', t('WeChat merchants')),
+        ...r('StoreWechatSetting', t('Store WeChat settings'))
       ]
     },
     {

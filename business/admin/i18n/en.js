@@ -17,5 +17,14 @@ export default {
   'Counter sort help': 'Display order; lower values appear first.',
   'Counter metadata help': 'Counter-specific display values are stored as top-level metadata fields.',
   'Trade order UUID': 'Trade order UUID',
-  Enabled: 'Enabled'
+  Enabled: 'Enabled',
+  'WeChat applications': 'WeChat applications',
+  'WeChat merchants': 'WeChat merchants',
+  'Store WeChat settings': 'Store WeChat settings',
+  'Mini Program': 'Mini Program',
+  'Official Account': 'Official Account',
+  'Credential replacement help': 'Leave blank to keep the current credential; credentials are encrypted at rest and never returned.',
+  AppID: 'AppID',
+  Type: 'Type',
+  'Merchant ID': 'Merchant ID'
 }
