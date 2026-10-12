@@ -53,8 +53,16 @@ vi.mock('@/utils/request', () => ({
 }))
 
 import FormAdmin from '@/easyadmin/ui/vue/FormAdmin.vue'
+import PasswordField from '@/easyadmin/ui/vue/plugins/form/password.vue'
 
 const PluginStub = { name: 'PluginStub', template: '<div class="plugin-stub" />' }
+const PaymentModeSelect = {
+  props: ['form', 'property'],
+  template: `<select :value="form[property]" @change="form[property] = $event.target.value">
+    <option value="direct">Direct merchant</option>
+    <option value="service_provider">Service provider</option>
+  </select>`
+}
 
 // el-form is stubbed, so its `validate` comes from here. `$refs` is readonly,
 // therefore per-test control goes through this mock, not $refs assignment.
@@ -92,7 +100,7 @@ function mountForm({ props = {}, structure, retrieveData } = {}) {
         'el-tabs': { template: '<div><slot /></div>' },
         'el-tab-pane': { template: '<div><slot /></div>' },
         'el-form': { template: '<div><slot /></div>', methods: { validate: formValidateMock }},
-        'el-form-item': { template: '<div><slot /></div>' },
+        'el-form-item': { props: ['prop'], template: '<div class="form-item" :data-field="prop"><slot /></div>' },
         'el-button': { template: '<button><slot /></button>' },
         'el-icon': { template: '<span><slot /></span>' },
         'el-icon-info': { template: '<span />' },
@@ -246,6 +254,39 @@ describe('FormAdmin.vue', () => {
       expect(wrapper.vm.plainFields).toEqual(['name'])
       expect(wrapper.vm.properties).toEqual([{ property: 'name' }])
       expect(wrapper.vm.form).toEqual({ name: null })
+    })
+
+    it('shows callback-hidden fields when a user changes the controlling select', async() => {
+      const structure = {
+        paymentMode: { metadata: { type: 'string', nullable: false }, translation: 'Payment mode' },
+        serviceProviderAppId: { metadata: { type: 'string', nullable: true }, translation: 'Provider AppID' }
+      }
+      const { wrapper } = mountForm({
+        props: {
+          structureOverride: structure,
+          fields: [
+            {
+              property: 'paymentMode',
+              component: PaymentModeSelect,
+              default_value: 'direct'
+            },
+            { property: 'serviceProviderAppId', hidden: form => form.paymentMode !== 'service_provider' }
+          ]
+        }
+      })
+      await settled(wrapper)
+
+      expect(wrapper.vm.plainFields).toEqual(['paymentMode', 'serviceProviderAppId'])
+      expect(wrapper.find('[data-field="serviceProviderAppId"]').exists()).toBe(false)
+
+      await wrapper.find('select').setValue('service_provider')
+      await nextTick()
+      expect(wrapper.vm.form.paymentMode).toBe('service_provider')
+      expect(wrapper.find('[data-field="serviceProviderAppId"]').exists()).toBe(true)
+
+      await wrapper.find('select').setValue('direct')
+      await nextTick()
+      expect(wrapper.find('[data-field="serviceProviderAppId"]').exists()).toBe(false)
     })
 
     it('keeps custom component definitions marked raw', async() => {
@@ -585,6 +626,43 @@ describe('FormAdmin.vue', () => {
   })
 
   describe('registerFieldValidator', () => {
+    it('releases only the registered validator and tolerates repeated cleanup', async() => {
+      const { wrapper } = mountForm()
+      await settled(wrapper)
+      const originalRules = [...wrapper.vm.rules.name]
+      const validator = vi.fn()
+      const release = wrapper.vm.registerFieldValidator('name', validator)
+      release()
+      release()
+      expect(wrapper.vm.rules.name).toEqual(originalRules)
+    })
+
+    it('removes password validators on hide and validates with only the remounted instance', async() => {
+      const { wrapper } = mountForm({ props: {
+        fields: [
+          { property: 'enabled', default_value: true },
+          { property: 'password', component: PasswordField, hidden: form => !form.enabled }
+        ]
+      } })
+      await settled(wrapper)
+      const oldValidator = wrapper.vm.rules.password[0].validator
+      wrapper.vm.form.enabled = false
+      await nextTick()
+      expect(wrapper.vm.rules.password).toEqual([])
+
+      wrapper.vm.form.enabled = true
+      await nextTick()
+      expect(wrapper.vm.rules.password).toHaveLength(1)
+      expect(wrapper.vm.rules.password[0].validator).not.toBe(oldValidator)
+      wrapper.vm.form.password = 'secret123'
+      wrapper.findComponent(PasswordField).vm.confirmValue = 'secret123'
+      await nextTick()
+      const callback = vi.fn()
+      wrapper.vm.rules.password[0].validator({}, 'secret123', callback)
+      expect(callback).toHaveBeenCalledWith()
+      wrapper.unmount()
+    })
+
     it('registers validators and ignores duplicates and invalid input', async() => {
       const { wrapper } = mountForm({ props: { fields: ['name'] }})
       await settled(wrapper)
@@ -675,6 +753,97 @@ describe('FormAdmin.vue', () => {
       wrapper.vm.onSubmit()
       await flushPromises()
       expect(createMock).toHaveBeenCalledWith({ name: 'n', kept: 0 })
+    })
+
+    it('omits currently hidden callback fields without mutating the live form', async() => {
+      const { wrapper } = mountForm({
+        props: {
+          fields: [
+            { property: 'paymentMode', default_value: 'direct' },
+            { property: 'serviceProviderAppId', hidden: form => form.paymentMode !== 'service_provider' }
+          ]
+        }
+      })
+      await settled(wrapper)
+      wrapper.vm.form.serviceProviderAppId = 'provider-app-id'
+      wrapper.vm.form.paymentMode = 'direct'
+      wrapper.vm.form.settings = { optional: null, retained: 'value' }
+      wrapper.vm.form.items = [{ optional: undefined, retained: 1 }]
+      stubValidate(wrapper, true)
+
+      wrapper.vm.onSubmit()
+      await flushPromises()
+
+      expect(createMock).toHaveBeenCalledWith({
+        paymentMode: 'direct',
+        settings: { retained: 'value' },
+        items: [{ retained: 1 }]
+      })
+      expect(wrapper.vm.form.serviceProviderAppId).toBe('provider-app-id')
+      expect(wrapper.vm.form.settings).toEqual({ optional: null, retained: 'value' })
+      expect(wrapper.vm.form.items).toEqual([{ optional: undefined, retained: 1 }])
+    })
+
+    it('filters hidden callback fields from embedded model updates but retains their local values', async() => {
+      const { wrapper } = mountForm({
+        props: {
+          embedded: true,
+          modelValue: { paymentMode: 'service_provider', serviceProviderAppId: 'provider-app-id' },
+          fields: [
+            {
+              property: 'paymentMode',
+              component: PaymentModeSelect
+            },
+            { property: 'serviceProviderAppId', hidden: form => form.paymentMode !== 'service_provider' }
+          ]
+        }
+      })
+      await settled(wrapper)
+
+      await wrapper.find('select').setValue('direct')
+      await flushPromises()
+      await nextTick()
+
+      const directModel = wrapper.emitted('update:modelValue').at(-1)[0]
+      expect(directModel).toEqual({ paymentMode: 'direct' })
+      expect(wrapper.vm.form.serviceProviderAppId).toBe('provider-app-id')
+      await wrapper.setProps({ modelValue: directModel })
+
+      await wrapper.find('select').setValue('service_provider')
+      await flushPromises()
+      await nextTick()
+
+      const providerModel = wrapper.emitted('update:modelValue').at(-1)[0]
+      expect(providerModel).toEqual({ paymentMode: 'service_provider', serviceProviderAppId: 'provider-app-id' })
+    })
+
+    it('does not resurrect hidden values when the parent replaces or resets the model', async() => {
+      const { wrapper } = mountForm({ props: {
+        embedded: true,
+        modelValue: { paymentMode: 'service_provider', serviceProviderAppId: 'old-app' },
+        fields: [
+          { property: 'paymentMode' },
+          { property: 'serviceProviderAppId', hidden: form => form.paymentMode !== 'service_provider' }
+        ]
+      } })
+      await settled(wrapper)
+      wrapper.vm.form.paymentMode = 'direct'
+      await nextTick()
+      const directModel = wrapper.emitted('update:modelValue').at(-1)[0]
+      await wrapper.setProps({ modelValue: directModel })
+      expect(wrapper.vm.form.serviceProviderAppId).toBe('old-app')
+
+      await wrapper.setProps({ modelValue: { paymentMode: 'service_provider' } })
+      expect(wrapper.vm.form).toEqual({ paymentMode: 'service_provider' })
+
+      wrapper.vm.form.serviceProviderAppId = 'another-app'
+      wrapper.vm.form.paymentMode = 'direct'
+      await nextTick()
+      // Even an equal but independent replacement is authoritative.
+      await wrapper.setProps({ modelValue: { paymentMode: 'direct' } })
+      expect(wrapper.vm.form).toEqual({ paymentMode: 'direct' })
+      await wrapper.setProps({ modelValue: {} })
+      expect(wrapper.vm.form).toEqual({})
     })
   })
 
