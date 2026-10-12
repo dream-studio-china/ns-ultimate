@@ -38,6 +38,7 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
         private readonly WechatPaymentAttemptService $attempts,
         private readonly WechatPayProviderInterface $provider,
         private readonly WechatIdentityService $identities,
+        private readonly WechatPaymentCompletionService $completion,
         private readonly EntityManagerInterface $entityManager,
         private readonly WechatAuditLogger $audit,
         private readonly string $notifyUrl,
@@ -92,7 +93,7 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
         $body = [
             'description' => (string) ($invoice->getSubject() ?? $invoice->getDescription() ?? 'Payment'),
             'out_trade_no' => $attempt->getProviderOrderNo(),
-            'notify_url' => $this->notifyUrl.'?locator='.$attempt->getUuid(),
+            'notify_url' => rtrim($this->notifyUrl, '/').'/'.$attempt->getUuid(),
             'amount' => [
                 'total' => $amount,
                 'currency' => $invoice->getCurrency(),
@@ -165,19 +166,8 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
 
         $config = $this->resolver->resolveForAttempt($attempt);
         $data = $this->provider->parseNotify($request, $config);
-        $this->verify($attempt, $config, $data);
 
-        return new PaymentNotifyResult(
-            payment: self::getName(),
-            outTradeNo: $attempt->getProviderOrderNo(),
-            status: Invoice::STATUS_PAID,
-            amount: (int) ($data['amount']['total'] ?? 0),
-            currency: (string) ($data['amount']['currency'] ?? 'CNY'),
-            transactionId: isset($data['transaction_id']) ? (string) $data['transaction_id'] : null,
-            paidAt: isset($data['success_time']) ? new \DateTimeImmutable((string) $data['success_time']) : new \DateTimeImmutable(),
-            rawData: $data,
-            responseBody: (string) json_encode(['code' => 'SUCCESS', 'message' => 'OK']),
-        );
+        return $this->completion->confirmFromProviderData($attempt, $data, 'notify');
     }
 
     /** @param array<string, mixed> $options */
@@ -191,37 +181,5 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
         $decoded = json_decode($result->responseBody, true);
 
         return new JsonResponse(is_array($decoded) ? $decoded : ['code' => 'SUCCESS', 'message' => 'OK']);
-    }
-
-    /** @param array<string, mixed> $data */
-    private function verify(WechatPaymentAttempt $attempt, \NsUltimate\Business\Wechat\Dto\ResolvedWechatConfig $config, array $data): void
-    {
-        $orderNo = (string) ($data['out_trade_no'] ?? '');
-        if ($orderNo !== $attempt->getProviderOrderNo()) {
-            throw new PaymentVerificationException('WeChat notify order number does not match the attempt.');
-        }
-
-        $total = (int) ($data['amount']['total'] ?? -1);
-        if ($total !== $attempt->getExpectedAmount()) {
-            throw new PaymentVerificationException('WeChat notify amount does not match the attempt.');
-        }
-
-        $currency = (string) ($data['amount']['currency'] ?? '');
-        if (strtoupper($currency) !== strtoupper($attempt->getCurrency())) {
-            throw new PaymentVerificationException('WeChat notify currency does not match the attempt.');
-        }
-
-        if (isset($data['mchid']) && (string) $data['mchid'] !== (string) $config->merchantId) {
-            throw new PaymentVerificationException('WeChat notify merchant does not match the attempt.');
-        }
-
-        if (isset($data['appid']) && (string) $data['appid'] !== (string) $config->appId) {
-            throw new PaymentVerificationException('WeChat notify application does not match the attempt.');
-        }
-
-        $state = (string) ($data['trade_state'] ?? 'SUCCESS');
-        if ($state !== 'SUCCESS') {
-            throw new PaymentVerificationException('WeChat notify is not a successful payment.');
-        }
     }
 }

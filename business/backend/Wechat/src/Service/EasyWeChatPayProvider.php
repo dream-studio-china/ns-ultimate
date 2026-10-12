@@ -6,6 +6,7 @@ namespace NsUltimate\Business\Wechat\Service;
 
 use App\Payment\Exception\PaymentVerificationException;
 use NsUltimate\Business\Wechat\Dto\ResolvedWechatConfig;
+use NsUltimate\Business\Wechat\Entity\WechatMerchant;
 use NsUltimate\Business\Wechat\Entity\WechatPaymentAttempt;
 use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -74,6 +75,64 @@ final class EasyWeChatPayProvider implements WechatPayProviderInterface
 
         if ($message === null) {
             throw new PaymentVerificationException('Unsupported or invalid WeChat notify payload.');
+        }
+
+        $data = $message->toArray();
+
+        return is_array($data) ? $data : [];
+    }
+
+    public function createRefund(ResolvedWechatConfig $config, array $body): array
+    {
+        $url = $config->merchantMode === WechatMerchant::MODE_PARTNER
+            ? 'v3/refund/partner/refunds'
+            : 'v3/refund/domestic/refunds';
+
+        $data = $this->factory->pay($config)->getClient()->postJson($url, $body)->toArray(false);
+        if (!is_array($data)) {
+            throw new \RuntimeException('WeChat refund returned an invalid response.');
+        }
+
+        return [
+            'refund_id' => isset($data['refund_id']) ? (string) $data['refund_id'] : null,
+            'status' => isset($data['status']) ? (string) $data['status'] : null,
+            'raw' => $data,
+        ];
+    }
+
+    public function queryRefund(ResolvedWechatConfig $config, string $outRefundNo): array
+    {
+        $app = $this->factory->pay($config);
+        $query = ['mchid' => (string) $app->getMerchant()->getMerchantId()];
+        if ($config->merchantMode === WechatMerchant::MODE_PARTNER) {
+            $query['sub_mchid'] = (string) $config->subMerchantId;
+        }
+        $data = $app->getClient()->get('v3/refund/domestic/refunds/'.rawurlencode($outRefundNo), [
+            'query' => $query,
+        ])->toArray(false);
+
+        return is_array($data) ? $data : [];
+    }
+
+    public function parseRefundNotify(Request $request, ResolvedWechatConfig $config): array
+    {
+        $app = $this->factory->pay($config);
+        $psrRequest = $this->psrHttpFactory->createRequest($request);
+        $message = null;
+
+        try {
+            $app->getServer()->handleRefunded(function ($msg, \Closure $next) use ($app, $psrRequest, &$message) {
+                $app->getValidator()->validate($psrRequest);
+                $message = $msg;
+
+                return $next($msg);
+            });
+        } catch (\Throwable $e) {
+            throw new PaymentVerificationException('WeChat refund notify verification failed: '.$e->getMessage(), 0, $e);
+        }
+
+        if ($message === null) {
+            throw new PaymentVerificationException('Unsupported or invalid WeChat refund notify payload.');
         }
 
         $data = $message->toArray();

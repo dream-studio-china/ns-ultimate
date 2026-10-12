@@ -316,13 +316,15 @@ Exit: acceptance cases AUTH and relevant MIG cases pass; approved real-app login
 
 ### Phase 3: direct payments and refunds
 
-- [~] Merchant modes: `direct` and `partner` (sub-merchant) supported; partner binding requires `subMerchantId`.
-- [~] Persisted payment/refund attempts with idempotency, a trusted Invoice→Store adapter, the Store-aware `wechat` payment gateway (JSAPI/Native, signed payload), and notify verification against the pinned attempt are implemented. Provider query/reconciliation and the option-A refund orchestrator remain.
-- [~] JSAPI (Mini Program and Official Account) and Native, versioned callback verification with a pinned-attempt locator, and mode-aware request bodies (direct vs service provider + sub-merchant) are implemented; the provider-query inbox and reconciliation command remain.
-- [ ] Implement refund requests/reservations, notifications/queries, confirmed-success accounting, and failure recovery.
-- [ ] Exercise revision changes, credential rotation, duplicate/concurrent events, and crashes around external calls.
+- [x] Merchant modes: `direct` and `partner` (sub-merchant) supported; partner binding requires `subMerchantId`.
+- [x] Persisted payment/refund attempts with idempotency, a trusted Invoice→Store adapter, the Store-aware `wechat` payment gateway (Mini Program JSAPI, Official Account JSAPI, Native, signed payloads), and notify verification against the pinned attempt.
+- [x] JSAPI (Mini Program and Official Account) and Native, versioned callback verification with a pinned-attempt locator, and mode-aware request bodies (direct vs service provider + sub-merchant).
+- [x] Project-owned webhook with opaque locators, acknowledge-after-commit, and unknown-locator rejection.
+- [x] Provider query/reconciliation command (`app:wechat:reconcile`) sharing the verification path; crash-window and missed-callback recovery covered by tests.
+- [x] Option-A refund orchestrator: persisted requests with stable refund numbers, pending-amount reservation under pessimistic lock, confirmed-success-only accounting via an idempotent claim, failure/timeout recovery, over-refund protection, historical-merchant refunds, and adjusted-invoice rejection before provider access.
+- [ ] Exercise credential rotation, duplicate/concurrent provider events at the database level beyond the covered conditional-update paths, and crashes around external calls with a live provider.
 
-Exit: all PAY/REF cases pass; Core accounting compatibility proven; no unsupported refund path can reach the provider. Not yet reached; no financial path is enabled.
+Exit: all PAY/REF cases pass; Core accounting compatibility proven; no unsupported refund path can reach the provider. Automated PAY/REF coverage is in `WechatPaymentGatewayTest`, `WechatPaymentAttemptTest`, and `WechatRefundTest`; live-provider rotation/crash behavior still requires approved credentials.
 
 ### Phase 4: release validation and operations
 

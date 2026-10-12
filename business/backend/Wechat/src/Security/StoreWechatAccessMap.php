@@ -21,6 +21,7 @@ final class StoreWechatAccessMap implements AccessMapInterface
         '#^/(api/v1/)?app/stores/[0-9a-fA-F-]{36}/wechat/miniapp/login$#',
         '#^/(api/v1/)?app/stores/[0-9a-fA-F-]{36}/wechat/oauth/url$#',
         '#^/(api/v1/)?app/stores/[0-9a-fA-F-]{36}/wechat/oauth/callback$#',
+        '#^/(api/v1/)?webhooks/wechat/notify/[0-9a-fA-F-]{36}$#',
     ];
 
     public function __construct(private readonly AccessMapInterface $inner)

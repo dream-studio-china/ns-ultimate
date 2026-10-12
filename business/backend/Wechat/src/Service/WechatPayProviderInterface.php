@@ -29,4 +29,16 @@ interface WechatPayProviderInterface
 
     /** @return array<string, mixed> */
     public function parseNotify(Request $request, ResolvedWechatConfig $config): array;
+
+    /**
+     * @param array<string, mixed> $body
+     * @return array{refund_id?: string|null, status?: string|null, raw: array<string, mixed>}
+     */
+    public function createRefund(ResolvedWechatConfig $config, array $body): array;
+
+    /** @return array<string, mixed> */
+    public function queryRefund(ResolvedWechatConfig $config, string $outRefundNo): array;
+
+    /** @return array<string, mixed> */
+    public function parseRefundNotify(Request $request, ResolvedWechatConfig $config): array;
 }

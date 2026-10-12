@@ -66,6 +66,21 @@ services:
             $notifyUrl: '%env(WECHAT_STORE_PAY_NOTIFY_URL)%'
         tags: ['payment.gateway']
 
+    NsUltimate\Business\Wechat\Service\WechatPaymentCompletionService:
+        public: true
+        arguments:
+            $invoiceServices: !service_locator
+                invoice: '@App\Payment\Service\InvoiceServiceInterface'
+
+    NsUltimate\Business\Wechat\Service\WechatRefundOrchestrator:
+        public: true
+        arguments:
+            $invoiceWorkflow: '@state_machine.invoice'
+            $refundNotifyUrl: '%env(WECHAT_STORE_REFUND_NOTIFY_URL)%'
+
+    NsUltimate\Business\Wechat\Service\WechatRefundAttemptService:
+        public: true
+
     NsUltimate\Business\Wechat\Service\WechatLoginGatewayInterface:
         alias: NsUltimate\Business\Wechat\Service\EasyWeChatLoginGateway
 

@@ -45,8 +45,44 @@ final class FakeWechatPayProvider implements WechatPayProviderInterface
 
     public function queryByOutTradeNo(ResolvedWechatConfig $config, string $outTradeNo): array
     {
-        return ['out_trade_no' => $outTradeNo, 'trade_state' => 'SUCCESS'];
+        return $this->queryResults[$outTradeNo] ?? [];
     }
+
+    /** @var array<string, array<string, mixed>> */
+    public array $queryResults = [];
+
+    /**
+     * @param array<string, mixed> $body
+     * @return array{refund_id: string|null, status: string|null, raw: array<string, mixed>}
+     */
+    public function createRefund(ResolvedWechatConfig $config, array $body): array
+    {
+        $this->lastRefundBody = $body;
+
+        return $this->refundResult;
+    }
+
+    /** @var array<string, mixed> */
+    public array $lastRefundBody = [];
+
+    /** @var array{refund_id: string|null, status: string|null, raw: array<string, mixed>} */
+    public array $refundResult = ['refund_id' => 'refund-1', 'status' => 'SUCCESS', 'raw' => []];
+
+    /** @var array<string, array<string, mixed>> */
+    public array $refundQueryResults = [];
+
+    public function queryRefund(ResolvedWechatConfig $config, string $outRefundNo): array
+    {
+        return $this->refundQueryResults[$outRefundNo] ?? [];
+    }
+
+    public function parseRefundNotify(Request $request, ResolvedWechatConfig $config): array
+    {
+        return $this->refundNotifyData;
+    }
+
+    /** @var array<string, mixed> */
+    public array $refundNotifyData = [];
 
     public function parseNotify(Request $request, ResolvedWechatConfig $config): array
     {

@@ -52,7 +52,7 @@ final class WechatPaymentGatewayTest extends WechatApiTestCase
         self::assertSame($invoice->getOutTradeNo(), $attempt->getProviderOrderNo());
         self::assertSame(1000, $attempt->getExpectedAmount());
         self::assertSame('openid-pay', $attempt->getPayerIdentity()?->getOpenid());
-        self::assertStringContainsString('locator='.$attempt->getUuid(), $this->provider->lastBody['notify_url'] ?? '');
+        self::assertStringContainsString('/'.$attempt->getUuid(), $this->provider->lastBody['notify_url'] ?? '');
     }
 
     public function testNativePaymentReturnsProviderQrUrl(): void

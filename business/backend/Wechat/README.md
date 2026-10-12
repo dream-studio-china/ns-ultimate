@@ -154,23 +154,40 @@ provider + sub-merchant); a partner binding requires `subMerchantId` (and option
 - Partner mode sends service-provider fields (`sp_appid`, `sp_mchid`, `sub_mchid`,
   optional `sub_appid`, `payer.sub_openid`); direct mode sends `appid`, `mchid`,
   and `payer.openid`.
-- Notify callbacks arrive at `/api/payment/notify/wechat?locator=<attempt uuid>`;
+- `WechatPaymentCompletionService` confirms payments from notifications and
+  provider queries through one verification path. The attempt transition is
+  applied with a conditional update so concurrent deliveries confirm accounting
+  exactly once; Core accounting goes through the idempotent
+  `InvoiceService::handleNotifyResult`.
+- Project-owned webhook `POST /api/v1/webhooks/wechat/notify/{locator}` routes an
+  opaque attempt UUID to payment or refund confirmation and acknowledges only
+  after the durable transition commits. Unknown locators and verification failures
+  never receive a success acknowledgment.
+- `app:wechat:reconcile` recovers missed callbacks and ambiguous results through
+  the same verification path. Provider-unknown orders stay pending for operator
+  review, except never-sent `created` attempts past the grace period, which close
+  without charging.
+- `WechatRefundOrchestrator` (confirmed option A) persists refund requests with
+  stable provider refund numbers, reserves pending amounts under a pessimistic
+  lock so concurrent requests cannot over-refund, and applies refunded accounting
+  exactly once via an `accounting_applied_at` claim. Processing/unknown results
+  never touch accounting. Invoices with payment adjustments are rejected before
+  any provider call. Administrator refunds use `POST
+  /api/v1/manage/wechat-refunds/request`; attempts are visible through the
+  read-only list/detail endpoints.
+- Notify callbacks arrive at `/api/v1/webhooks/wechat/notify/<attempt uuid>`;
   the locator selects the pinned attempt configuration.
-
-Still to come: the provider query/reconciliation command, the versioned
-provider-query inbox, and the project-owned refund orchestrator with its safe
-accounting adapter (confirmed option A). No refund path can reach WeChat yet.
 
 ## Not implemented yet
 
-- Store-aware payment initiation, callbacks, refunds, and reconciliation.
 - A frozen legacy gateway dispatcher for pre-existing global transactions.
+- A Store-scoped refund request endpoint (Administrator refunds only for now).
 - A dedicated Store-scoped Admin page and a purpose-built credential/revision UI.
-- Per-profile Store grants, append-only audit records, redacted credential
-  probes, optimistic-concurrency protection on publication, and key rotation.
+- Explicit revoke command, cache-invalidation tuning, and live-provider key
+  rotation.
 
-Real payment and refund enablement stays blocked until the asynchronous refund
-accounting boundary in the task plan is resolved and tested.
+Payment and refund calls reach WeChat only with approved live credentials; the
+test suite substitutes a deterministic fake provider.
 
 ## Configuration
 
