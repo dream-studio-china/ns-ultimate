@@ -19,6 +19,7 @@ final class SeedWechatAuthorizationCommand extends Command
         ['store:wechat:read', 'wechat', 'read', 'Read the store WeChat configuration'],
         ['store:wechat:create', 'wechat', 'create', 'Create the store WeChat configuration'],
         ['store:wechat:update', 'wechat', 'update', 'Update the store WeChat configuration'],
+        ['store:wechat:refund', 'wechat', 'refund', 'Request store WeChat refunds'],
     ];
 
     public function __construct(private readonly EntityManagerInterface $entityManager)

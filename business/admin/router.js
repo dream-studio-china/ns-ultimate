@@ -46,7 +46,9 @@ export default {
         ...r('WechatApplicationRevision', t('WeChat application revisions')),
         ...r('WechatMerchant', t('WeChat merchants')),
         ...r('WechatMerchantRevision', t('WeChat merchant revisions')),
-        ...r('StoreWechatSetting', t('Store WeChat settings'))
+        ...r('WechatProfileGrant', t('WeChat profile grants')),
+        ...r('StoreWechatSetting', t('Store WeChat settings')),
+        ...r('WechatRefundAttempt', t('WeChat refunds'))
       ]
     }
   ],

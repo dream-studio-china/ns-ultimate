@@ -38,6 +38,9 @@ final class StoreWechatSettingService extends BaseService
         if (!$revision->isPublished()) {
             throw new \InvalidArgumentException('Only published application revisions can be bound.');
         }
+        if ($revision->isRevoked()) {
+            throw new \InvalidArgumentException('Revoked application revisions cannot be bound.');
+        }
         if ($revision->getApplication()?->getType() !== $expectedType) {
             throw new \InvalidArgumentException(sprintf('Revision is not a %s application revision.', $expectedType));
         }
@@ -59,6 +62,9 @@ final class StoreWechatSettingService extends BaseService
         }
         if (!$revision->isPublished()) {
             throw new \InvalidArgumentException('Only published merchant revisions can be bound.');
+        }
+        if ($revision->isRevoked()) {
+            throw new \InvalidArgumentException('Revoked merchant revisions cannot be bound.');
         }
 
         return $revision;

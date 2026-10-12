@@ -24,7 +24,9 @@ const collections = [
   ['WechatApplicationRevision.js', 'WechatApplicationRevision', 'wechat-application-revisions'],
   ['WechatMerchant.js', 'WechatMerchant', 'wechat-merchants'],
   ['WechatMerchantRevision.js', 'WechatMerchantRevision', 'wechat-merchant-revisions'],
-  ['StoreWechatSetting.js', 'StoreWechatSetting', 'store-wechat-settings']
+  ['WechatProfileGrant.js', 'WechatProfileGrant', 'wechat-profile-grants'],
+  ['StoreWechatSetting.js', 'StoreWechatSetting', 'store-wechat-settings'],
+  ['WechatRefund.js', 'WechatRefundAttempt', 'wechat-refunds']
 ]
 
 for (const [file, name, plural] of collections) {
@@ -37,12 +39,17 @@ for (const [file, name, plural] of collections) {
     assert.equal(config.entity.name, name)
     assert.equal(config.entity.plural, plural)
 
-    assert.ok(Array.isArray(config.form.fields) && config.form.fields.length > 0, 'form.fields must be non-empty')
-    for (const field of config.form.fields) {
-      assert.ok(
-        typeof field === 'string' || (field && typeof field.property === 'string'),
-        'every form field needs a property'
-      )
+    if (config.form !== undefined) {
+      assert.ok(Array.isArray(config.form.fields) && config.form.fields.length > 0, 'form.fields must be non-empty')
+      for (const field of config.form.fields) {
+        assert.ok(
+          typeof field === 'string' || (field && typeof field.property === 'string'),
+          'every form field needs a property'
+        )
+      }
+    } else {
+      // Read-only collections (no create/update routes) expose no form.
+      assert.ok(config.list.disabled_actions?.includes('new'), 'read-only collections must disable creation')
     }
 
     const query = config.list.query
@@ -62,7 +69,7 @@ test('the WeChat menu group exposes one list route per collection', () => {
 
   const group = router.add.find(route => route.name === 'WechatManagement')
   assert.ok(group, 'WechatManagement route group is registered')
-  assert.equal(group.children.length, 5)
+  assert.equal(group.children.length, 7)
 
   const names = group.children.map(route => route.name)
   assert.deepEqual(new Set(names).size, names.length, 'route names must be unique')
@@ -71,7 +78,9 @@ test('the WeChat menu group exposes one list route per collection', () => {
     'WechatApplicationRevisionList',
     'WechatMerchantList',
     'WechatMerchantRevisionList',
-    'StoreWechatSettingList'
+    'WechatProfileGrantList',
+    'StoreWechatSettingList',
+    'WechatRefundAttemptList'
   ]) {
     assert.ok(names.includes(name), `${name} is registered`)
   }

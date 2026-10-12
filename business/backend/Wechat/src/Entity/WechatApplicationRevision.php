@@ -63,6 +63,9 @@ class WechatApplicationRevision
     #[ORM\Column(type: 'string', length: 20, options: ['default' => self::STATE_DRAFT])]
     private string $state = self::STATE_DRAFT;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private bool $revoked = false;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
 
@@ -88,6 +91,8 @@ class WechatApplicationRevision
     public function setRevision(int $revision): self { $this->revision = $revision; return $this; }
     public function getState(): string { return $this->state; }
     public function isPublished(): bool { return $this->state === self::STATE_PUBLISHED; }
+    public function isRevoked(): bool { return $this->revoked; }
+    public function revoke(): self { $this->revoked = true; return $this; }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
     public function getPublishedAt(): ?\DateTimeImmutable { return $this->publishedAt; }
     public function getKeyId(): ?string { return $this->keyId; }

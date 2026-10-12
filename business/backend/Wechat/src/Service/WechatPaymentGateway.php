@@ -39,6 +39,7 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
         private readonly WechatPayProviderInterface $provider,
         private readonly WechatIdentityService $identities,
         private readonly WechatPaymentCompletionService $completion,
+        private readonly PaymentGatewayInterface $legacyGateway,
         private readonly EntityManagerInterface $entityManager,
         private readonly WechatAuditLogger $audit,
         private readonly string $notifyUrl,
@@ -53,6 +54,13 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
     /** @param array<string, mixed> $options */
     public function pay(Invoice $invoice, int $amount, array $options = []): PaymentResult
     {
+        if (($options['legacy'] ?? false) === true) {
+            // Frozen legacy path for pre-existing global transactions only.
+            // New store payments must never route here; the store path below
+            // fails closed when no binding exists.
+            return $this->legacyGateway->pay($invoice, $amount, $options);
+        }
+
         $storeUuid = $this->storeContext->resolveStoreUuid($invoice);
         $tradeType = (string) ($options['tradeType'] ?? WechatPaymentAttempt::TRADE_JSAPI);
 
@@ -156,7 +164,9 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
     {
         $locator = (string) $request->query->get('locator', '');
         if ($locator === '' || !UUID::is_valid($locator)) {
-            throw new PaymentVerificationException('Missing WeChat payment locator.');
+            // The frozen legacy callback route carries no locator; verify with
+            // the global core gateway instead of the pinned store configuration.
+            return $this->legacyGateway->notify($request);
         }
 
         $attempt = $this->entityManager->getRepository(WechatPaymentAttempt::class)->findOneBy(['uuid' => $locator]);
@@ -173,6 +183,10 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
     /** @param array<string, mixed> $options */
     public function refund(Invoice $invoice, int $amount, int $paidAmount, string $reason, array $options = []): PaymentRefundResult
     {
+        if (($options['legacy'] ?? false) === true) {
+            return $this->legacyGateway->refund($invoice, $amount, $paidAmount, $reason, $options);
+        }
+
         throw new \RuntimeException('Core-initiated WeChat refunds are disabled; use the store WeChat refund orchestrator.');
     }
 

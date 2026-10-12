@@ -321,10 +321,10 @@ Exit: acceptance cases AUTH and relevant MIG cases pass; approved real-app login
 - [x] JSAPI (Mini Program and Official Account) and Native, versioned callback verification with a pinned-attempt locator, and mode-aware request bodies (direct vs service provider + sub-merchant).
 - [x] Project-owned webhook with opaque locators, acknowledge-after-commit, and unknown-locator rejection.
 - [x] Provider query/reconciliation command (`app:wechat:reconcile`) sharing the verification path; crash-window and missed-callback recovery covered by tests.
-- [x] Option-A refund orchestrator: persisted requests with stable refund numbers, pending-amount reservation under pessimistic lock, confirmed-success-only accounting via an idempotent claim, failure/timeout recovery, over-refund protection, historical-merchant refunds, and adjusted-invoice rejection before provider access.
+- [x] Option-A refund orchestrator: persisted requests with stable refund numbers, pending-amount reservation under pessimistic lock, confirmed-success-only accounting via an idempotent claim, failure/timeout recovery, over-refund protection, historical-merchant refunds, adjusted-invoice rejection before provider access, administrator and store-scoped refund requests, a frozen legacy dispatcher, hard revocation, offline key rotation, and Admin UI for grants and refunds (see module README for the one required core fix).
 - [ ] Exercise credential rotation, duplicate/concurrent provider events at the database level beyond the covered conditional-update paths, and crashes around external calls with a live provider.
 
-Exit: all PAY/REF cases pass; Core accounting compatibility proven; no unsupported refund path can reach the provider. Automated PAY/REF coverage is in `WechatPaymentGatewayTest`, `WechatPaymentAttemptTest`, and `WechatRefundTest`; live-provider rotation/crash behavior still requires approved credentials.
+Exit: all PAY/REF cases pass; Core accounting compatibility proven; no unsupported refund path can reach the provider. Automated PAY/REF coverage is in `WechatPaymentGatewayTest`, `WechatPaymentAttemptTest`, `WechatRefundTest`, and `WechatOperationsTest`; live-provider rotation/crash behavior still requires approved credentials.
 
 ### Phase 4: release validation and operations
 

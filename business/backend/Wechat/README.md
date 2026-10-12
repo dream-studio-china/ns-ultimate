@@ -172,22 +172,42 @@ provider + sub-merchant); a partner binding requires `subMerchantId` (and option
   lock so concurrent requests cannot over-refund, and applies refunded accounting
   exactly once via an `accounting_applied_at` claim. Processing/unknown results
   never touch accounting. Invoices with payment adjustments are rejected before
-  any provider call. Administrator refunds use `POST
-  /api/v1/manage/wechat-refunds/request`; attempts are visible through the
+  any provider call. Refunds can be requested by administrators (`POST
+  /api/v1/manage/wechat-refunds/request`) and by authorized store operators
+  (`POST /api/v1/store/{scopeId}/wechat-refunds/request`, guarded by the
+  `store:wechat:refund` permission); attempts are visible through the
   read-only list/detail endpoints.
+- The frozen legacy dispatcher: explicit `legacy: true` payment/refund options
+  route pre-existing global transactions to the core gateway; locator-less
+  callbacks on the core route verify with global credentials. New store payments
+  fail closed without a binding and never route to the legacy merchant.
+- `app:wechat:revoke {application|merchant} {uuid}` hard-revokes a compromised
+  credential revision, blocking new and historical operations (distinct from
+  disabling, which only stops new operations).
+- `app:wechat:rotate-key --new-key=... [--dry-run]` re-encrypts stored
+  credentials under a replacement master key, preserving decryption for required
+  history.
 - Notify callbacks arrive at `/api/v1/webhooks/wechat/notify/<attempt uuid>`;
   the locator selects the pinned attempt configuration.
 
 ## Not implemented yet
 
-- A frozen legacy gateway dispatcher for pre-existing global transactions.
-- A Store-scoped refund request endpoint (Administrator refunds only for now).
 - A dedicated Store-scoped Admin page and a purpose-built credential/revision UI.
-- Explicit revoke command, cache-invalidation tuning, and live-provider key
-  rotation.
+- Cache-invalidation tuning and live-provider key rotation rehearsal.
 
 Payment and refund calls reach WeChat only with approved live credentials; the
 test suite substitutes a deterministic fake provider.
+
+## Core dependency
+
+One minimal core fix is required: `App\Store\Entity\Store` implements
+`App\Authorization\Service\ScopedResourceInterface` so the authorization voter
+can resolve the store scope from the subject that
+`StoreScopedAuthorizationApiMixin` passes. Without it, every store-scoped
+endpoint denies non-administrator store operators, including pre-existing
+Counter store endpoints. The change is generic (no WeChat specifics) and
+covered by the authorization voter contract; propose it upstream via the
+subtree workflow.
 
 ## Configuration
 

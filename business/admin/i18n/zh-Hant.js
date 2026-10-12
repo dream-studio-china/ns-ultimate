@@ -56,5 +56,11 @@ export default {
   'WeChat merchant certificate help': '商戶 apiclient_cert.pem 內容，加密儲存且永不回傳。',
   'WeChat platform public key id help': '可選的微信支付公鑰 ID，需與公鑰一起提供。',
   'WeChat platform public key help': '可選的微信支付公鑰 PEM，需與公鑰 ID 一起提供。',
+  'WeChat profile grants': '微信設定授權',
+  'WeChat refunds': '微信退款',
+  'Service provider': '服務商',
+  'WeChat sub merchant help': '子商戶號，服務商模式必填。',
+  'WeChat sub app help': '服務商模式可選的子應用 AppID。',
+  'WeChat grant profile help': '被授權的共享應用或商戶設定 UUID。',
   'WeChat capabilities help': '啟用的能力，例如 {"miniapp_login": true}。參照的版本必須已發佈。'
 }

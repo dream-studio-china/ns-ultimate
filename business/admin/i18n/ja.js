@@ -49,5 +49,11 @@ export default {
   'WeChat merchant certificate help': 'マーチャント apiclient_cert.pem の内容。暗号化保存され返却されません。',
   'WeChat platform public key id help': '任意の WeChat Pay 公開鍵 ID。公開鍵と合わせて指定します。',
   'WeChat platform public key help': '任意の WeChat Pay 公開鍵 PEM。公開鍵 ID と合わせて指定します。',
+  'WeChat profile grants': 'WeChat プロファイル付与',
+  'WeChat refunds': 'WeChat 返金',
+  'Service provider': 'サービスプロバイダー',
+  'WeChat sub merchant help': 'サブマーチャント ID。サービスプロバイダーモードでは必須です。',
+  'WeChat sub app help': 'サービスプロバイダー用の任意のサブアプリ AppID。',
+  'WeChat grant profile help': '付与する共有アプリまたはマーチャント設定の UUID。',
   'WeChat capabilities help': '有効化する機能。例: {"miniapp_login": true}。参照するリビジョンは公開済みである必要があります。'
 }

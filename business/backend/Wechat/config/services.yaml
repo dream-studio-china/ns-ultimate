@@ -63,6 +63,7 @@ services:
     NsUltimate\Business\Wechat\Service\WechatPaymentGateway:
         public: true
         arguments:
+            $legacyGateway: '@App\Wechat\Service\Payment\WechatPayGateway'
             $notifyUrl: '%env(WECHAT_STORE_PAY_NOTIFY_URL)%'
         tags: ['payment.gateway']
 

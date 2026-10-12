@@ -48,7 +48,9 @@ final class StoreWechatResolver
         }
 
         $applicationRevision = $setting->applicationRevisionFor($applicationType);
-        if (!$applicationRevision instanceof WechatApplicationRevision || !$applicationRevision->isPublished()) {
+        if (!$applicationRevision instanceof WechatApplicationRevision
+            || !$applicationRevision->isPublished()
+            || $applicationRevision->isRevoked()) {
             throw WechatConfigurationException::applicationMissing($storeUuid, $capability);
         }
 
@@ -60,7 +62,9 @@ final class StoreWechatResolver
         $merchantRevision = null;
         if (in_array($capability, StoreWechatSetting::PAYMENT_CAPABILITIES, true)) {
             $merchantRevision = $setting->getMerchantRevision();
-            if (!$merchantRevision instanceof WechatMerchantRevision || !$merchantRevision->isPublished()) {
+            if (!$merchantRevision instanceof WechatMerchantRevision
+                || !$merchantRevision->isPublished()
+                || $merchantRevision->isRevoked()) {
                 throw WechatConfigurationException::merchantMissing($storeUuid, $capability);
             }
             if (!$merchantRevision->getMerchant()?->isEnabled()) {
@@ -106,6 +110,9 @@ final class StoreWechatResolver
         $applicationRevision = $attempt->getApplicationRevision();
         $merchantRevision = $attempt->getMerchantRevision();
         if (!$applicationRevision instanceof WechatApplicationRevision || !$merchantRevision instanceof WechatMerchantRevision) {
+            throw WechatConfigurationException::corruptCredentials();
+        }
+        if ($applicationRevision->isRevoked() || $merchantRevision->isRevoked()) {
             throw WechatConfigurationException::corruptCredentials();
         }
 

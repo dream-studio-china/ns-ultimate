@@ -29,7 +29,7 @@ final class WechatMerchantRevisionController extends RestController
     protected array $requiredCreateProperties = ['merchant', 'apiV3Key', 'privateKey', 'certificate'];
 
     /** @var list<string> */
-    protected array $acceptedCreateProperties = ['merchant', 'apiV3Key', 'privateKey', 'certificate', 'platformPublicKeyId', 'platformPublicKey'];
+    protected array $acceptedCreateProperties = ['merchant', 'mode', 'apiV3Key', 'privateKey', 'certificate', 'platformPublicKeyId', 'platformPublicKey'];
 
     /** @var list<string> */
     protected array $acceptedUpdateProperties = ['state'];

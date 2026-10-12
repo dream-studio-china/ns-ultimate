@@ -12,6 +12,8 @@ export default {
         { property: 'miniappRevision', required: false, relation: { entity: 'WechatApplicationRevision', valueKey: 'uuid' } },
         { property: 'officialRevision', required: false, relation: { entity: 'WechatApplicationRevision', valueKey: 'uuid' } },
         { property: 'merchantRevision', required: false, relation: { entity: 'WechatMerchantRevision', valueKey: 'uuid' } },
+        { property: 'subMerchantId', required: false, help: t('WeChat sub merchant help') },
+        { property: 'subAppId', required: false, help: t('WeChat sub app help') },
         { property: 'capabilities', type: 'json', required: false, help: t('WeChat capabilities help') },
         { property: 'enabled', type: 'boolean', default_value: true }
       ]

@@ -8,6 +8,12 @@ export default {
       fields: [
         { property: 'name', required: true },
         { property: 'merchantId', required: true, help: t('WeChat merchant ID help') },
+        { property: 'mode', type: 'select', required: false, default_value: 'direct', type_options: {
+          options: [
+            { value: 'direct', label: t('Direct merchant') },
+            { value: 'partner', label: t('Service provider') }
+          ]
+        }},
         { property: 'enabled', type: 'boolean', default_value: true }
       ]
     },

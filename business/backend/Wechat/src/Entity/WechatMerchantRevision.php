@@ -66,6 +66,9 @@ class WechatMerchantRevision
     #[ORM\Column(type: 'string', length: 20, options: ['default' => self::STATE_DRAFT])]
     private string $state = self::STATE_DRAFT;
 
+    #[ORM\Column(type: 'boolean', options: ['default' => false])]
+    private bool $revoked = false;
+
     #[ORM\Version]
     #[ORM\Column(name: 'lock_version', type: 'integer')]
     private int $lockVersion = 1;
@@ -97,6 +100,8 @@ class WechatMerchantRevision
     public function setMode(string $mode): self { $this->mode = $mode; return $this; }
     public function getState(): string { return $this->state; }
     public function isPublished(): bool { return $this->state === self::STATE_PUBLISHED; }
+    public function isRevoked(): bool { return $this->revoked; }
+    public function revoke(): self { $this->revoked = true; return $this; }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
     public function getPublishedAt(): ?\DateTimeImmutable { return $this->publishedAt; }
     public function getCertificateSerial(): ?string { return $this->certificateSerial; }

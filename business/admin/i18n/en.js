@@ -49,5 +49,11 @@ export default {
   'WeChat merchant certificate help': 'Merchant apiclient_cert.pem contents. Stored encrypted and never returned.',
   'WeChat platform public key id help': 'Optional WeChat Pay public key ID; provide together with the public key.',
   'WeChat platform public key help': 'Optional WeChat Pay public key PEM; provide together with the public key ID.',
+  'WeChat profile grants': 'WeChat profile grants',
+  'WeChat refunds': 'WeChat refunds',
+  'Service provider': 'Service provider',
+  'WeChat sub merchant help': 'Sub-merchant ID. Required when the merchant runs in service-provider mode.',
+  'WeChat sub app help': 'Optional sub-application AppID for service-provider bindings.',
+  'WeChat grant profile help': 'UUID of the shared application or merchant profile being granted.',
   'WeChat capabilities help': 'Enabled capabilities, for example {"miniapp_login": true}. Referenced revisions must be published.'
 }

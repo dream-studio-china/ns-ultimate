@@ -9,7 +9,8 @@ export default {
         { property: 'merchant', required: true, hidden: ['update'], relation: { entity: 'WechatMerchant', valueKey: 'id' } },
         { property: 'mode', type: 'select', required: false, default_value: 'direct', hidden: ['update'], type_options: {
           options: [
-            { value: 'direct', label: t('Direct merchant') }
+            { value: 'direct', label: t('Direct merchant') },
+            { value: 'partner', label: t('Service provider') }
           ]
         }},
         { property: 'apiV3Key', type: 'input', hidden: ['update'], help: t('WeChat API v3 key help') },
