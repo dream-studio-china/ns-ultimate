@@ -10,7 +10,7 @@ export default {
       { property: 'apiV3Key', type: 'input', required: false, help: t('Credential replacement help') },
       { property: 'privateKey', type: 'textarea', required: false },
       { property: 'certificate', type: 'textarea', required: false },
-      { property: 'platformCertificate', type: 'textarea', required: false }
+      { property: 'platformCertificate', type: 'textarea', required: false, help: t('Platform certificate create/edit help') }
     ] },
     list: {
       query: orderByIdDesc,

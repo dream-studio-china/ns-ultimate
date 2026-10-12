@@ -58,6 +58,10 @@ final class WechatClientFactory
     /** @param array<string, string> $credentials */
     private function payWithCredentials(string $appId, string $merchantId, array $credentials): Pay
     {
+        $platformCertificate = $credentials['platform_certificate'] ?? '';
+        if ($platformCertificate === '' || openssl_x509_read($platformCertificate) === false) {
+            throw new \RuntimeException('A valid WeChat Pay platform certificate is required to verify callbacks and create payments.');
+        }
 
         return new Pay([
             'app_id' => $appId,
@@ -65,7 +69,7 @@ final class WechatClientFactory
             'secret_key' => $credentials['api_v3_key'] ?? '',
             'private_key' => $credentials['private_key'] ?? '',
             'certificate' => $credentials['certificate'] ?? '',
-            'platform_certs' => isset($credentials['platform_certificate']) ? [$credentials['platform_certificate']] : [],
+            'platform_certs' => [$platformCertificate],
             'http' => ['throw' => true, 'timeout' => 5.0],
         ]);
     }

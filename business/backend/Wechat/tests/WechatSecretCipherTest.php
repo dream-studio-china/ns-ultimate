@@ -27,4 +27,12 @@ final class WechatSecretCipherTest extends TestCase
         $this->expectException(\RuntimeException::class);
         (new WechatSecretCipher('test-key-two'))->decrypt($encrypted);
     }
+
+    public function testMissingKeyDoesNotBreakNonWechatServicesButRejectsCredentialUse(): void
+    {
+        $cipher = new WechatSecretCipher('');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $cipher->encrypt(['secret' => 'value']);
+    }
 }

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NsUltimate\Business\Wechat\Controller;
+namespace NsUltimate\Business\Wechat\Controller\WebHook;
 
 use App\Payment\Service\InvoiceServiceInterface;
 use App\Payment\Entity\Invoice;
@@ -13,6 +13,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 
+#[Route('/api/payment/notify')]
 final class WechatPaymentNotifyController
 {
     public function __construct(
@@ -22,7 +23,7 @@ final class WechatPaymentNotifyController
     ) {
     }
 
-    #[Route('/api/payment/notify/wechat-store/{storeUuid}/{applicationUuid}/{merchantUuid}/{appType}', name: 'wechat-payment-notify', methods: ['POST'])]
+    #[Route('/wechat-store/{storeUuid}/{applicationUuid}/{merchantUuid}/{appType}', name: 'wechat-payment-notify', methods: ['POST'])]
     public function __invoke(Request $request, string $storeUuid, string $applicationUuid, string $merchantUuid, string $appType): JsonResponse
     {
         try {

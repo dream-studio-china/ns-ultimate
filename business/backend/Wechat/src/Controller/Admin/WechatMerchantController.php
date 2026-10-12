@@ -42,9 +42,8 @@ final class WechatMerchantController extends RestController
             $credentials[$key] = $this->required($content, $field);
             unset($content[$field]);
         }
-        if (isset($content['platformCertificate']) && is_string($content['platformCertificate']) && trim($content['platformCertificate']) !== '') {
-            $credentials['platform_certificate'] = trim($content['platformCertificate']);
-        }
+        $credentials['platform_certificate'] = $this->required($content, 'platformCertificate');
+        $this->validatePlatformCertificate($credentials['platform_certificate']);
         unset($content['platformCertificate']);
         $entity->setCredentialsCipher($this->cipher->encrypt($credentials));
 
@@ -64,7 +63,11 @@ final class WechatMerchantController extends RestController
         $changed = false;
         foreach (['apiV3Key' => 'api_v3_key', 'privateKey' => 'private_key', 'certificate' => 'certificate', 'platformCertificate' => 'platform_certificate'] as $field => $key) {
             if (isset($content[$field]) && is_string($content[$field]) && trim($content[$field]) !== '') {
-                $credentials[$key] = trim($content[$field]);
+                $value = trim($content[$field]);
+                if ($field === 'platformCertificate') {
+                    $this->validatePlatformCertificate($value);
+                }
+                $credentials[$key] = $value;
                 $changed = true;
             }
             unset($content[$field]);
@@ -84,5 +87,12 @@ final class WechatMerchantController extends RestController
             throw new \InvalidArgumentException(sprintf('%s is required.', $field));
         }
         return trim($value);
+    }
+
+    private function validatePlatformCertificate(string $certificate): void
+    {
+        if (openssl_x509_read($certificate) === false) {
+            throw new \InvalidArgumentException('platformCertificate must contain a valid PEM-encoded X.509 certificate.');
+        }
     }
 }

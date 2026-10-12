@@ -31,6 +31,8 @@ export default {
   'Mini Program': '小程序',
   'Official Account': '公众号',
   'Credential replacement help': '留空表示保留现有凭据；凭据加密存储且不会返回。',
+  'WeChat Pay platform certificate required for callback signature verification': '验证微信支付回调签名所必需。',
+  'Platform certificate create/edit help': '创建商户时必填；编辑时留空可保留现有证书。',
   AppID: 'AppID',
   Type: '类型',
   'Merchant ID': '商户号'

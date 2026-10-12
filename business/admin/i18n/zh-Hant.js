@@ -31,6 +31,8 @@ export default {
   'Mini Program': '小程式',
   'Official Account': '公眾號',
   'Credential replacement help': '留空表示保留現有憑據；憑據會加密儲存且不會回傳。',
+  'WeChat Pay platform certificate required for callback signature verification': '驗證微信支付回調簽名所必需。',
+  'Platform certificate create/edit help': '建立商戶時必填；編輯時留空可保留現有憑證。',
   AppID: 'AppID',
   Type: '類型',
   'Merchant ID': '商戶號'

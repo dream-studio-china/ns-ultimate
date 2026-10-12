@@ -24,6 +24,8 @@ export default {
   'Mini Program': 'ミニプログラム',
   'Official Account': '公式アカウント',
   'Credential replacement help': '空欄の場合は現在の認証情報を保持します。認証情報は暗号化して保存し、返却しません。',
+  'WeChat Pay platform certificate required for callback signature verification': 'WeChat Payコールバック署名の検証に必要です。',
+  'Platform certificate create/edit help': '加盟店の新規作成時は必須です。編集時に空欄にすると現在の証明書を保持します。',
   AppID: 'AppID',
   Type: '種類',
   'Merchant ID': '加盟店番号'

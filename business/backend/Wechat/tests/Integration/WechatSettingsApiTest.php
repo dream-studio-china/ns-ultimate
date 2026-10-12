@@ -6,6 +6,7 @@ namespace NsUltimate\Business\Wechat\Tests\Integration;
 
 use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
+use App\Wechat\Entity\WechatUser;
 use App\Payment\Entity\Invoice;
 use App\Payment\Service\PaymentGatewayRegistry;
 use App\Wechat\Service\WechatServiceInterface;
@@ -73,14 +74,14 @@ final class WechatSettingsApiTest extends KernelTestCase
         ]);
         $merchant = $this->request('POST', '/api/v1/manage/wechat-merchants', $adminToken, [
             'name' => 'Merchant', 'merchantId' => '1900000001', 'apiV3Key' => str_repeat('a', 32),
-            'privateKey' => 'merchant-private-key', 'certificate' => 'merchant-certificate',
+            'privateKey' => 'merchant-private-key', 'certificate' => 'merchant-certificate', 'platformCertificate' => $this->testCertificate(),
         ]);
 
         self::assertStringNotContainsString('application-secret', json_encode($app, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('credentialsCipher', json_encode($app, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('merchant-private-key', json_encode($merchant, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('credentialsCipher', json_encode($merchant, JSON_THROW_ON_ERROR));
-        $selection = $this->request('PUT', '/api/v1/store/'.$store->getUuid().'/wechat-setting', $ownerToken, [
+        $selection = $this->request('PUT', '/api/v1/store/'.$store->getUuid().'/wechat-settings', $ownerToken, [
             'miniappUuid' => $app['data']['uuid'],
             'officialUuid' => $official['data']['uuid'],
             'merchantUuid' => $merchant['data']['uuid'],
@@ -118,11 +119,89 @@ final class WechatSettingsApiTest extends KernelTestCase
         $em->flush();
         $token = self::getContainer()->get(TokenManager::class)->createAccessToken($user);
 
-        $request = Request::create('/api/v1/store/'.$store->getUuid().'/wechat-setting', 'GET', [], [], [], [
+        $request = Request::create('/api/v1/store/'.$store->getUuid().'/wechat-settings', 'GET', [], [], [], [
             'HTTP_AUTHORIZATION' => 'Bearer '.$token,
         ]);
         $response = self::$kernel->handle($request);
         self::assertSame(403, $response->getStatusCode());
+    }
+
+    public function testAdminStoreSettingsListHonorsStoreFilterAndPagination(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $admin = (new User())->setEmail('wechat-list-admin@example.test')->setUsername('wechat-list-admin')->setRoles(['ROLE_ADMIN']);
+        $storeA = new Store('wechat-list-a', 'List A');
+        $storeB = new Store('wechat-list-b', 'List B');
+        $merchant = new WechatMerchant('List merchant', '1900000091', 'encrypted');
+        $application = new WechatApplication('List mini', WechatApplication::TYPE_MINIAPP, 'wx-list', 'encrypted');
+        foreach ([$admin, $storeA, $storeB, $merchant, $application] as $entity) {
+            $em->persist($entity);
+        }
+        $em->flush();
+        $em->persist(new StoreWechatSetting($storeA->getUuid(), $application, null, $merchant));
+        $em->persist(new StoreWechatSetting($storeB->getUuid(), $application, null, $merchant));
+        $em->flush();
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
+
+        $request = Request::create('/api/v1/manage/store-wechat-settings?page=1&limit=1', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+        ]);
+        $request->query->set('@filter', "(entity.getStoreUuid() matches '".$storeA->getUuid()."')");
+        $response = self::$kernel->handle($request);
+        self::assertSame(200, $response->getStatusCode(), $response->getContent());
+        $payload = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertCount(1, $payload['data']);
+        self::assertSame($storeA->getUuid(), $payload['data'][0]['storeUuid']);
+        self::assertSame(1, $payload['paginator']['total']);
+        self::assertSame(1, $payload['paginator']['limit']);
+
+        $fragment = substr($storeA->getUuid(), 0, 35);
+        self::assertStringNotContainsString($fragment, $storeB->getUuid());
+        $request->query->set('@filter', "(entity.getStoreUuid() matches '".$fragment."')");
+        $response = self::$kernel->handle($request);
+        self::assertSame(200, $response->getStatusCode(), $response->getContent());
+        $payload = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertCount(1, $payload['data']);
+        self::assertSame($storeA->getUuid(), $payload['data'][0]['storeUuid']);
+        self::assertSame(1, $payload['paginator']['total']);
+
+        foreach (['%', '_', '!'] as $literal) {
+            $request->query->set('@filter', "(entity.getStoreUuid() matches '".$literal."')");
+            $response = self::$kernel->handle($request);
+            self::assertSame(200, $response->getStatusCode(), $response->getContent());
+            $payload = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame([], $payload['data']);
+            self::assertSame(0, $payload['paginator']['total']);
+        }
+    }
+
+    public function testMatchingLegacyWechatIdentityIsLinkedInsteadOfCreatingAnotherUser(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $cipher = self::getContainer()->get(WechatSecretCipher::class);
+        $store = new Store('wechat-legacy-store', 'Legacy store');
+        $merchant = new WechatMerchant('Legacy merchant', '1900000092', $cipher->encrypt(['api_v3_key' => 'x']));
+        $application = new WechatApplication('Legacy mini', WechatApplication::TYPE_MINIAPP, 'wx-legacy-app', $cipher->encrypt(['secret' => 'x']));
+        $user = (new User())->setEmail('legacy-user@example.test')->setUsername('legacy-user');
+        $legacy = new WechatUser($user, 'same-openid', WechatUser::APP_TYPE_MINIAPP);
+        foreach ([$store, $merchant, $application, $user, $legacy] as $entity) {
+            $em->persist($entity);
+        }
+        $em->flush();
+        $em->persist(new StoreWechatSetting($store->getUuid(), $application, null, $merchant));
+        $em->flush();
+
+        $requests = new RequestStack();
+        $service = new StoreWechatAuthService(
+            new FakeWechatService(), self::getContainer()->get(StoreWechatResolver::class), $em, $requests,
+            self::getContainer()->get(\App\Wechat\Repository\WechatUserRepository::class), 'wx-legacy-app', '',
+        );
+        $requests->push(Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode(['store_uuid' => $store->getUuid()], JSON_THROW_ON_ERROR)));
+        $authenticatedUser = $service->authenticateFromMiniApp('legacy-code');
+        $requests->pop();
+
+        self::assertSame($user->getId(), $authenticatedUser->getId());
+        self::assertSame(1, $em->getRepository(StoreWechatIdentity::class)->count(['appId' => 'wx-legacy-app', 'openid' => 'same-openid']));
     }
 
     public function testWechatServiceSelectsClientsFromCurrentStoreWithoutMutableGlobalState(): void
@@ -174,7 +253,15 @@ final class WechatSettingsApiTest extends KernelTestCase
         $em->flush();
 
         $requests = new RequestStack();
-        $service = new StoreWechatAuthService(new FakeWechatService(), self::getContainer()->get(StoreWechatResolver::class), $em, $requests);
+        $service = new StoreWechatAuthService(
+            new FakeWechatService(),
+            self::getContainer()->get(StoreWechatResolver::class),
+            $em,
+            $requests,
+            self::getContainer()->get(\App\Wechat\Repository\WechatUserRepository::class),
+            '',
+            '',
+        );
         $requests->push(Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode(['store_uuid' => $storeA->getUuid()], JSON_THROW_ON_ERROR)));
         $userA = $service->authenticateFromMiniApp('same-openid-code');
         $sameAppUser = $service->authenticateFromMiniApp('same-openid-code');
@@ -199,6 +286,19 @@ final class WechatSettingsApiTest extends KernelTestCase
         $response = self::$kernel->handle($request);
         self::assertLessThan(300, $response->getStatusCode(), $response->getContent());
         return json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    private function testCertificate(): string
+    {
+        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
+        self::assertNotFalse($key);
+        $request = openssl_csr_new(['commonName' => 'wechat-test'], $key);
+        self::assertNotFalse($request);
+        $certificate = openssl_csr_sign($request, null, $key, 1);
+        self::assertNotFalse($certificate);
+        self::assertTrue(openssl_x509_export($certificate, $pem));
+
+        return $pem;
     }
 }
 

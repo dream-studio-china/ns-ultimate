@@ -24,6 +24,8 @@ export default {
   'Mini Program': 'Mini Program',
   'Official Account': 'Official Account',
   'Credential replacement help': 'Leave blank to keep the current credential; credentials are encrypted at rest and never returned.',
+  'WeChat Pay platform certificate required for callback signature verification': 'Required to verify WeChat Pay callback signatures.',
+  'Platform certificate create/edit help': 'Required when creating a merchant; leave blank on edit to keep the current certificate.',
   AppID: 'AppID',
   Type: 'Type',
   'Merchant ID': 'Merchant ID'

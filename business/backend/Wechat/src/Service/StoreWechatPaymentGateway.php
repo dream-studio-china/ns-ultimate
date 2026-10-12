@@ -39,25 +39,33 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
     {
         $lifecycle = $this->orderLifecycle($invoice);
         $setting = $this->resolver->setting($lifecycle->getStoreUuid());
-        $payer = $invoice->getPayer() ?? throw new \RuntimeException('The payer must sign in with WeChat before payment.');
-        $identityRepository = $this->entityManager->getRepository(\NsUltimate\Business\Wechat\Entity\StoreWechatIdentity::class);
-        $miniapp = $setting->getMiniapp();
-        $official = $setting->getOfficial();
-        $identity = $miniapp !== null
-            ? $identityRepository->findOneBy(['user' => $payer, 'appId' => $miniapp->getAppId()])
-            : null;
-        $type = 'miniapp';
-        $application = $miniapp;
-        if ($identity === null && $official !== null) {
-            $identity = $identityRepository->findOneBy(['user' => $payer, 'appId' => $official->getAppId()]);
-            $type = 'official';
-            $application = $official;
-        }
-        if ($identity === null) {
-            throw new \RuntimeException('The payer must sign in with this Store WeChat application before payment.');
-        }
+        $identity = null;
+        $type = $setting->getMiniapp() !== null ? 'miniapp' : 'official';
+        $application = $setting->getMiniapp() ?? $setting->getOfficial();
         if ($application === null) {
-            throw new \RuntimeException(sprintf('Store has no %s WeChat application configured.', $type));
+            throw new \RuntimeException('Store has no WeChat application configured.');
+        }
+        if ($invoice->getTradeType() !== 'native') {
+            $payer = $invoice->getPayer() ?? throw new \RuntimeException('The payer must sign in with WeChat before payment.');
+            $identityRepository = $this->entityManager->getRepository(\NsUltimate\Business\Wechat\Entity\StoreWechatIdentity::class);
+            $miniapp = $setting->getMiniapp();
+            $official = $setting->getOfficial();
+            $identity = $miniapp !== null
+                ? $identityRepository->findOneBy(['user' => $payer, 'appId' => $miniapp->getAppId()])
+                : null;
+            $type = 'miniapp';
+            $application = $miniapp;
+            if ($identity === null && $official !== null) {
+                $identity = $identityRepository->findOneBy(['user' => $payer, 'appId' => $official->getAppId()]);
+                $type = 'official';
+                $application = $official;
+            }
+            if ($identity === null) {
+                throw new \RuntimeException('The payer must sign in with this Store WeChat application before payment.');
+            }
+            if ($application === null) {
+                throw new \RuntimeException(sprintf('Store has no %s WeChat application configured.', $type));
+            }
         }
         $merchant = $setting->getMerchant();
         $tradeType = $invoice->getTradeType() ?? 'jsapi';
@@ -92,9 +100,11 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
             throw new \InvalidArgumentException(sprintf('Unsupported WeChat trade type: %s', $tradeType));
         }
 
-        $body['payer'] = ['openid' => $identity->getOpenid()];
+        $body['payer'] = ['openid' => $identity?->getOpenid()];
         $result = $this->postJson($app->getClient(), 'v3/pay/transactions/jsapi', $body)->toArray(false);
-        $payload = $app->getUtils()->buildMiniAppConfig((string) ($result['prepay_id'] ?? ''), $application->getAppId());
+        $payload = $type === 'official'
+            ? $app->getUtils()->buildSdkConfig((string) ($result['prepay_id'] ?? ''), $application->getAppId())
+            : $app->getUtils()->buildMiniAppConfig((string) ($result['prepay_id'] ?? ''), $application->getAppId());
         return new PaymentResult($invoice, Invoice::STATUS_PAYING, payload: $payload, message: 'WeChat JSAPI order created');
     }
 

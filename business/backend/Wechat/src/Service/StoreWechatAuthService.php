@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Wechat\Service;
 
 use App\Identity\Entity\User;
+use App\Wechat\Entity\WechatUser;
+use App\Wechat\Repository\WechatUserRepository;
 use App\Wechat\Service\WechatAuthServiceInterface;
 use App\Wechat\Service\WechatServiceInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -19,6 +21,9 @@ final class StoreWechatAuthService implements WechatAuthServiceInterface
         private readonly StoreWechatResolver $resolver,
         private readonly EntityManagerInterface $entityManager,
         private readonly RequestStack $requestStack,
+        private readonly WechatUserRepository $legacyWechatUsers,
+        private readonly string $legacyMiniappAppId,
+        private readonly string $legacyOfficialAppId,
     ) {
     }
 
@@ -59,6 +64,17 @@ final class StoreWechatAuthService implements WechatAuthServiceInterface
         $identity = $repository->findOneBy(['appId' => $appId, 'openid' => $openid]);
         if ($identity instanceof StoreWechatIdentity) {
             return $identity->getUser();
+        }
+
+        $legacyAppId = $type === WechatApplication::TYPE_MINIAPP ? $this->legacyMiniappAppId : $this->legacyOfficialAppId;
+        if ($legacyAppId !== '' && hash_equals($legacyAppId, $appId)) {
+            $legacyIdentity = $this->legacyWechatUsers->findByOpenid($openid);
+            if ($legacyIdentity instanceof WechatUser && $legacyIdentity->getAppType() === $type) {
+                $this->entityManager->persist(new StoreWechatIdentity($legacyIdentity->getUser(), $appId, $openid, $type));
+                $this->entityManager->flush();
+
+                return $legacyIdentity->getUser();
+            }
         }
 
         $identifier = substr(hash('sha256', $appId.'\0'.$openid), 0, 24);

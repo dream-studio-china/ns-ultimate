@@ -9,12 +9,15 @@ from the selected Store configuration.
 
 Set `WECHAT_CONFIG_KEY` to a private, stable value before creating profiles. It
 encrypts application and merchant credentials at rest. Losing or changing this
-key makes stored credentials unreadable. The `.env.test` value is test-only.
-Apply the `Version20261012100000` migration.
+key makes stored credentials unreadable. The key is only required when creating
+or using WeChat profiles; other payment methods remain available without it.
+Merchant profiles must include the WeChat Pay platform certificate used to
+verify callback signatures. The `.env.test` value is test-only.
+Apply the module migrations in version order.
 
 Administrators manage application and merchant profiles under `/manage` in the
 Admin UI. Store owners and managers can read and update their selection through
-`GET`/`PUT /api/v1/store/{storeUuid}/wechat-setting`. Login continues to use
+`GET`/`PUT /api/v1/store/{storeUuid}/wechat-settings`. Login continues to use
 Core's `/api/wechat/miniapp/login`, `/api/wechat/oauth/url`, and
 `/api/wechat/oauth/callback` endpoints; include `store_uuid` in the request
 body (or query for OAuth URL). Mini Program and Official Account OpenIDs remain

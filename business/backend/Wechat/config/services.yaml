@@ -6,6 +6,11 @@ services:
     App\Wechat\Service\WechatServiceInterface: '@NsUltimate\Business\Wechat\Service\StoreAwareWechatService'
     App\Wechat\Service\WechatAuthServiceInterface: '@NsUltimate\Business\Wechat\Service\StoreWechatAuthService'
 
+    NsUltimate\Business\Wechat\Service\StoreWechatAuthService:
+        arguments:
+            $legacyMiniappAppId: '%env(WECHAT_MINIAPP_APP_ID)%'
+            $legacyOfficialAppId: '%env(WECHAT_OFFICIAL_APP_ID)%'
+
     NsUltimate\Business\Wechat\Service\StoreWechatPaymentGateway:
         autowire: true
         autoconfigure: false

@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-namespace NsUltimate\Business\Wechat\Controller;
+namespace NsUltimate\Business\Wechat\Controller\Admin;
 
-use App\Identity\Entity\User;
-use App\Store\Entity\Membership;
 use App\Store\Entity\Store;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
@@ -18,22 +16,49 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-final class WechatConfigurationController extends AbstractController
+#[Route('/manage/store-wechat-settings', name: 'wechat-store-settings-')]
+#[IsGranted('ROLE_ADMIN')]
+final class StoreWechatSettingController extends AbstractController
 {
     public function __construct(private readonly EntityManagerInterface $entityManager)
     {
     }
 
-    #[Route('/api/v1/manage/store-wechat-settings', name: 'wechat-store-settings-list', methods: ['GET'])]
-    #[IsGranted('ROLE_ADMIN')]
-    public function list(): JsonResponse
+    #[Route('', name: 'list', methods: ['GET'])]
+    public function list(Request $request): JsonResponse
     {
-        $rows = array_map($this->settingRow(...), $this->entityManager->getRepository(StoreWechatSetting::class)->findBy([], ['id' => 'DESC']));
-        return $this->json(['data' => $rows]);
+        $repository = $this->entityManager->getRepository(StoreWechatSetting::class);
+        $query = $repository->createQueryBuilder('setting');
+        $storeUuid = $request->query->get('storeUuid');
+        if (is_string($storeUuid) && $storeUuid !== '') {
+            $query->andWhere('setting.storeUuid = :storeUuid')->setParameter('storeUuid', $storeUuid);
+        }
+        $filter = $request->query->get('@filter');
+        if (is_string($filter) && $filter !== '') {
+            if (!preg_match("/^\\(?\\s*entity\\.getStoreUuid\\(\\)\\s+matches\\s+'([^'\\r\\n]*)'\\s*\\)?$/D", $filter, $matches)) {
+                throw new BadRequestHttpException('Unsupported store settings filter.');
+            }
+            $query->andWhere("setting.storeUuid LIKE :storeSearch ESCAPE '!'")
+                ->setParameter('storeSearch', '%'.strtr($matches[1], ['!' => '!!', '%' => '!%', '_' => '!_']).'%');
+        }
+        $page = max(1, $request->query->getInt('page', 1));
+        $limit = min(100, max(1, $request->query->getInt('limit', 20)));
+        $total = (int) (clone $query)->select('COUNT(setting.id)')->getQuery()->getSingleScalarResult();
+        $rows = $query->orderBy('setting.id', 'DESC')->setMaxResults($limit)->setFirstResult(($page - 1) * $limit)->getQuery()->getResult();
+        return $this->json([
+            'data' => array_map($this->settingRow(...), $rows),
+            'paginator' => [
+                'total' => $total,
+                'page' => $page,
+                'limit' => $limit,
+                'pages' => max(1, (int) ceil($total / $limit)),
+                'has_previous' => $page > 1,
+                'has_next' => $page * $limit < $total,
+            ],
+        ]);
     }
 
-    #[Route('/api/v1/manage/store-wechat-settings/{id}', name: 'wechat-store-settings-detail', methods: ['GET'])]
-    #[IsGranted('ROLE_ADMIN')]
+    #[Route('/{id}', name: 'detail', methods: ['GET'])]
     public function detail(string $id): JsonResponse
     {
         $setting = ctype_digit($id)
@@ -44,8 +69,7 @@ final class WechatConfigurationController extends AbstractController
             : $this->json(['message' => 'Store WeChat setting not found.'], 404);
     }
 
-    #[Route('/api/v1/manage/store-wechat-settings', name: 'wechat-store-settings-create', methods: ['POST'])]
-    #[IsGranted('ROLE_ADMIN')]
+    #[Route('', name: 'create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {
         $data = $this->body($request);
@@ -55,8 +79,7 @@ final class WechatConfigurationController extends AbstractController
         return $this->save($data, $data['storeUuid']);
     }
 
-    #[Route('/api/v1/manage/store-wechat-settings/{id}', name: 'wechat-store-settings-update', methods: ['PUT'])]
-    #[IsGranted('ROLE_ADMIN')]
+    #[Route('/{id}', name: 'update', methods: ['PUT'])]
     public function update(Request $request, string $id): JsonResponse
     {
         $setting = ctype_digit($id)
@@ -66,30 +89,10 @@ final class WechatConfigurationController extends AbstractController
         return $this->save($this->body($request), $storeUuid);
     }
 
-    #[Route('/api/v1/store/{scopeId}/wechat-setting', name: 'wechat-store-setting', methods: ['GET', 'PUT'])]
-    #[IsGranted('ROLE_USER')]
-    public function store(Request $request, string $scopeId): JsonResponse
-    {
-        if (!$this->isGranted('ROLE_ADMIN') && !$this->canManageStore($scopeId)) {
-            throw $this->createAccessDeniedException();
-        }
-        if ($request->isMethod('PUT')) {
-            return $this->save($this->body($request), $scopeId);
-        }
-
-        $setting = $this->entityManager->getRepository(StoreWechatSetting::class)->findOneBy(['storeUuid' => $scopeId]);
-        return $this->json([
-            'data' => $setting instanceof StoreWechatSetting ? $this->settingRow($setting) : null,
-            'applications' => array_map($this->applicationRow(...), $this->entityManager->getRepository(WechatApplication::class)->findBy([], ['name' => 'ASC'])),
-            'merchants' => array_map($this->merchantRow(...), $this->entityManager->getRepository(WechatMerchant::class)->findBy([], ['name' => 'ASC'])),
-        ]);
-    }
-
     /** @param array<string, mixed> $data */
     private function save(array $data, string $storeUuid): JsonResponse
     {
-        $store = $this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $storeUuid]);
-        if (!$store instanceof Store) {
+        if (!$this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $storeUuid]) instanceof Store) {
             return $this->json(['message' => 'Store not found.'], 404);
         }
         $miniapp = $this->application($data['miniappUuid'] ?? null, WechatApplication::TYPE_MINIAPP);
@@ -109,21 +112,6 @@ final class WechatConfigurationController extends AbstractController
         }
         $this->entityManager->flush();
         return $this->json(['data' => $this->settingRow($setting)]);
-    }
-
-    private function canManageStore(string $storeUuid): bool
-    {
-        $user = $this->getUser();
-        $store = $this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $storeUuid]);
-        if (!$user instanceof User || !$store instanceof Store) {
-            return false;
-        }
-        $membership = $this->entityManager->getRepository(Membership::class)->findOneBy([
-            'store' => $store,
-            'userUuid' => $user->getUuid(),
-            'status' => Membership::STATUS_ACTIVE,
-        ]);
-        return $membership instanceof Membership && in_array($membership->getRole(), [Membership::ROLE_OWNER, Membership::ROLE_MANAGER], true);
     }
 
     private function application(mixed $uuid, string $type): ?WechatApplication
@@ -162,17 +150,5 @@ final class WechatConfigurationController extends AbstractController
             'miniappUuid' => $setting->getMiniapp()?->getUuid(), 'officialUuid' => $setting->getOfficial()?->getUuid(),
             'merchantUuid' => $setting->getMerchant()->getUuid(),
         ];
-    }
-
-    /** @return array<string, mixed> */
-    private function applicationRow(WechatApplication $application): array
-    {
-        return ['id' => $application->getId(), 'uuid' => $application->getUuid(), 'name' => $application->getName(), 'type' => $application->getType(), 'appId' => $application->getAppId()];
-    }
-
-    /** @return array<string, mixed> */
-    private function merchantRow(WechatMerchant $merchant): array
-    {
-        return ['id' => $merchant->getId(), 'uuid' => $merchant->getUuid(), 'name' => $merchant->getName(), 'merchantId' => $merchant->getMerchantId()];
     }
 }

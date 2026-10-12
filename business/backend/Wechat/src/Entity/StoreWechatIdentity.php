@@ -11,7 +11,6 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity]
 #[ORM\Table(name: 'store_wechat_identity')]
 #[ORM\UniqueConstraint(name: 'uniq_store_wechat_identity_app_openid', columns: ['app_id', 'openid'])]
-#[ORM\UniqueConstraint(name: 'uniq_store_wechat_identity_user', columns: ['user_id'])]
 class StoreWechatIdentity
 {
     #[ORM\Id]
@@ -22,7 +21,7 @@ class StoreWechatIdentity
     #[ORM\Column(type: 'string', length: 36, unique: true)]
     private string $uuid;
 
-    #[ORM\OneToOne(targetEntity: User::class)]
+    #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'user_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
     private User $user;
 
