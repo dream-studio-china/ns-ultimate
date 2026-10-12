@@ -17,6 +17,7 @@ use App\Store\Entity\Membership;
 use App\Store\Entity\Store;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
 use NsUltimate\Business\Wechat\Entity\StoreWechatIdentity;
 use NsUltimate\Business\Wechat\Entity\WechatApplication;
@@ -34,6 +35,7 @@ use NsUltimate\Business\Wechat\Command\SeedWechatAuthorizationCommand;
 use EasyWeChat\MiniApp\Application as MiniApp;
 use EasyWeChat\OfficialAccount\Application as OfficialAccount;
 use EasyWeChat\Pay\Application as Pay;
+use EasyWeChat\Kernel\Support\AesGcm;
 
 final class WechatSettingsApiTest extends KernelTestCase
 {
@@ -176,6 +178,91 @@ final class WechatSettingsApiTest extends KernelTestCase
 
         $stored = $em->getRepository(WechatMerchant::class)->find($provider['data']['id']);
         self::assertSame('1900000101', $stored->getSubMerchantId());
+    }
+
+    public function testMerchantProfileConstraintRejectsAnExactServiceProviderDuplicate(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $first = (new WechatMerchant('Provider one', '1900000200'))
+            ->setPaymentMode(WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER)
+            ->setServiceProviderAppId('wx-provider')
+            ->setSubMerchantId('1900000201');
+        $em->persist($first);
+        $em->flush();
+
+        $duplicate = (new WechatMerchant('Provider duplicate', '1900000200'))
+            ->setPaymentMode(WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER)
+            ->setServiceProviderAppId('wx-provider')
+            ->setSubMerchantId('1900000201');
+        $em->persist($duplicate);
+        $this->expectException(UniqueConstraintViolationException::class);
+        $em->flush();
+    }
+
+    public function testMerchantProfileConstraintKeepsDirectMerchantIdsUnique(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $em->persist(new WechatMerchant('Direct one', '1900000300'));
+        $em->flush();
+        $em->persist(new WechatMerchant('Direct duplicate', '1900000300'));
+
+        $this->expectException(UniqueConstraintViolationException::class);
+        $em->flush();
+    }
+
+    public function testPaymentCallbackRejectsMissingSignatureHeaders(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $cipher = self::getContainer()->get(WechatSecretCipher::class);
+        $store = new Store('wechat-callback-store', 'Callback store');
+        $application = new WechatApplication(
+            'Callback mini app',
+            WechatApplication::TYPE_MINIAPP,
+            'wx-callback-app',
+            $cipher->encrypt(['secret' => 'callback-secret']),
+        );
+        $merchant = new WechatMerchant('Callback merchant', '1900000400', $cipher->encrypt([
+            'api_v3_key' => str_repeat('k', 32),
+            'private_key' => 'test-private-key',
+            'certificate' => 'test-merchant-certificate',
+            'platform_certificate' => $this->testCertificate(),
+        ]));
+        foreach ([$store, $application, $merchant] as $entity) {
+            $em->persist($entity);
+        }
+        $em->flush();
+
+        $key = str_repeat('k', 32);
+        $nonce = '0123456789ab';
+        $resource = [
+            'appid' => $application->getAppId(),
+            'mchid' => $merchant->getMerchantId(),
+            'out_trade_no' => 'callback-order',
+            'trade_state' => 'SUCCESS',
+            'amount' => ['total' => 100, 'currency' => 'CNY'],
+        ];
+        $body = json_encode([
+            'event_type' => 'TRANSACTION.SUCCESS',
+            'resource' => [
+                'algorithm' => 'AEAD_AES_256_GCM',
+                'ciphertext' => AesGcm::encrypt(json_encode($resource, JSON_THROW_ON_ERROR), $key, $nonce),
+                'nonce' => $nonce,
+                'associated_data' => '',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $request = Request::create(
+            '/api/payment/notify/wechat-store/'.$store->getUuid().'/'.$application->getUuid().'/'.$merchant->getUuid().'/miniapp',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            $body,
+        );
+
+        $response = self::$kernel->handle($request);
+        self::assertSame(500, $response->getStatusCode());
+        self::assertSame(['code' => 'FAIL', 'message' => 'Notification processing failed.'], json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR));
     }
 
     public function testServiceProviderMessagesAreTranslatedInSupportedLocales(): void

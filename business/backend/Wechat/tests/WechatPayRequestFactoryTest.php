@@ -60,4 +60,42 @@ final class WechatPayRequestFactoryTest extends TestCase
         self::assertSame('v3/pay/partner/transactions/native', $request['endpoint']);
         self::assertArrayNotHasKey('payer', $request['body']);
     }
+
+    public function testNotificationIdentityMustMatchEveryConfiguredServiceProviderProfile(): void
+    {
+        $merchant = (new WechatMerchant('Provider', '1900000100'))
+            ->setPaymentMode(WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER)
+            ->setServiceProviderAppId('wx-provider')
+            ->setSubMerchantId('1900000101');
+        $application = new WechatApplication('Mini', WechatApplication::TYPE_MINIAPP, 'wx-sub-app', 'encrypted');
+        $message = (object) [
+            'sp_appid' => 'wx-provider',
+            'sp_mchid' => '1900000100',
+            'sub_mchid' => '1900000101',
+            'sub_appid' => 'wx-sub-app',
+        ];
+        $factory = new WechatPayRequestFactory();
+
+        self::assertTrue($factory->notificationMatchesProfiles($merchant, $application, $message));
+        foreach (['sp_appid', 'sp_mchid', 'sub_mchid', 'sub_appid'] as $field) {
+            $mismatched = clone $message;
+            $mismatched->{$field} .= '-wrong';
+            self::assertFalse($factory->notificationMatchesProfiles($merchant, $application, $mismatched), $field);
+        }
+        self::assertFalse($factory->notificationMatchesProfiles($merchant, $application, (object) []));
+    }
+
+    public function testRefundBodyAddsSubMerchantOnlyForServiceProviderPayments(): void
+    {
+        $factory = new WechatPayRequestFactory();
+        $body = ['out_trade_no' => 'order-1', 'out_refund_no' => 'refund-1'];
+        $direct = new WechatMerchant('Direct', '1900000001');
+        $provider = (new WechatMerchant('Provider', '1900000001'))
+            ->setPaymentMode(WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER)
+            ->setServiceProviderAppId('wx-provider')
+            ->setSubMerchantId('1900000002');
+
+        self::assertSame($body, $factory->createRefundBody($direct, $body));
+        self::assertSame($body + ['sub_mchid' => '1900000002'], $factory->createRefundBody($provider, $body));
+    }
 }

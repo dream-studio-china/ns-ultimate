@@ -129,14 +129,7 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
             $psrRequest = $this->psrHttpFactory->createRequest($request);
             $server->handlePaid(function ($message, \Closure $next) use ($app, $application, $merchant, $psrRequest, &$notifyResult) {
                 $app->getValidator()->validate($psrRequest);
-                if ($merchant->getPaymentMode() === WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER) {
-                    if (($message->sp_appid ?? null) !== $merchant->getServiceProviderAppId()
-                        || ($message->sp_mchid ?? null) !== $merchant->getMerchantId()
-                        || ($message->sub_mchid ?? null) !== $merchant->getSubMerchantId()
-                        || ($message->sub_appid ?? null) !== $application->getAppId()) {
-                        throw new PaymentVerificationException('WeChat service-provider notification does not match its configured profiles.');
-                    }
-                } elseif (($message->appid ?? null) !== $application->getAppId() || ($message->mchid ?? null) !== $merchant->getMerchantId()) {
+                if (!$this->paymentRequests->notificationMatchesProfiles($merchant, $application, $message)) {
                     throw new PaymentVerificationException('WeChat notification app or merchant does not match its configured profile.');
                 }
                 $notifyResult = new PaymentNotifyResult(
@@ -185,15 +178,12 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
             (string) $invoice->getRefundedAmount(),
             (string) $amount,
         ])), 0, 30);
-        $refundBody = [
+        $refundBody = $this->paymentRequests->createRefundBody($this->resolver->merchantByUuid($context['merchantUuid'])['profile'], [
             'out_trade_no' => $invoice->getOutTradeNo(),
             'out_refund_no' => $outRefundNo,
             'reason' => $reason,
             'amount' => ['refund' => $amount, 'total' => $paidAmount, 'currency' => $invoice->getCurrency()],
-        ];
-        if (($context['paymentMode'] ?? 'direct') === WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER) {
-            $refundBody['sub_mchid'] = $context['subMerchantId'];
-        }
+        ]);
         $result = $this->postJson($app->getClient(), 'v3/refund/domestic/refunds', $refundBody)->toArray(false);
         if (($result['status'] ?? '') !== 'SUCCESS') {
             throw new \RuntimeException('WeChat has not confirmed the refund. Recheck the same refund before retrying.');

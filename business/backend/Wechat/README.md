@@ -17,8 +17,8 @@ Apply the module migrations in version order.
 
 Administrators manage application and merchant profiles under `/manage` in the
 Admin UI. Authorized Store members use the standard Core CRUD routes under
-`/api/v1/store/{storeUuid}/wechat-settings`: `GET` lists the setting, `POST`
-creates it, and `GET`/`PUT`/`DELETE /{id}` read, update, or delete it. Application
+`/api/v1/store/{storeUuid}/wechat-settings`: `GET` lists settings, `POST`
+creates one, and `GET`/`PUT`/`DELETE /{id}` read, update, or delete it. Application
 and merchant choices are available from `GET /options`.
 
 Run `php bin/console app:wechat:seed-authorization` after migrations to register
@@ -27,10 +27,10 @@ with the same `store:wechat_setting:` prefix) and the `store_wechat_manager`
 system role. Assign that role through the existing Authorization workflow with
 the target Store scope. Like Counter, Store endpoints use
 `StoreScopedAuthorizationApiMixin` and the Store voter: access requires both
-active Store membership and the corresponding scoped permission. Membership
-roles alone do not grant access. List, detail, and options require `read`;
-writes require their respective permissions. Resource queries are always
-restricted to the route's Store, and client input cannot change Store ownership.
+active Store membership and the corresponding scoped permission. List, detail,
+and options require `read`; writes require their respective permissions. Resource
+queries are always restricted to the route's Store, and client input cannot
+change Store ownership.
 
 Login continues to use
 Core's `/api/wechat/miniapp/login`, `/api/wechat/oauth/url`, and
