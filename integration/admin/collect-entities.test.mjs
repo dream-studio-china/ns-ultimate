@@ -3,7 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { collectEntities } from '../../business/admin/config/collect-entities.mjs'
-import { mergeEntities } from './merge-config.mjs'
+import { mergeEntities, mergeRoutes, moveRouteAfter } from './merge-config.mjs'
 import { watchBusinessAdmin } from './watch-business.mjs'
 import { uuidFilter } from '../../business/admin/config/uuid-filter.mjs'
 
@@ -171,6 +171,37 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   assert.equal(business.hidden, true)
   assert.equal(counters.meta.title, 'Counter management')
   assert.deepEqual(Array.from(counters.children, route => route.name), ['Counter', 'OrderCounter'])
+  assert.equal(routes.find(route => route.name === 'WechatConfiguration').meta.icon, 'wechat')
+})
+
+test('places Counter after Product and WeChat configuration after Content', () => {
+  const coreRoutes = [
+    { name: 'ProductManage' },
+    { name: 'OrderManage' },
+    { name: 'ContentManage' },
+    { name: 'UserManage' }
+  ]
+  const businessRoutes = { add: [
+    { name: 'WechatConfiguration' },
+    { name: 'CounterManagement' }
+  ] }
+  let routes = mergeRoutes(coreRoutes, businessRoutes)
+  routes = moveRouteAfter(routes, 'CounterManagement', 'ProductManage')
+  routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
+
+  assert.deepEqual(Array.from(routes, route => route.name), [
+    'ProductManage', 'CounterManagement', 'OrderManage', 'ContentManage',
+    'WechatConfiguration', 'UserManage'
+  ])
+  assert.deepEqual(Array.from(coreRoutes, route => route.name), [
+    'ProductManage', 'OrderManage', 'ContentManage', 'UserManage'
+  ])
+})
+
+test('enlarges legacy and custom sidebar icons consistently', () => {
+  const styles = readFileSync(new URL('./menu-icons.css', import.meta.url), 'utf8')
+  assert.match(styles, /#app \.sidebar-container \.sub-el-icon,\s*#app \.sidebar-container \.svg-icon\s*\{\s*width:\s*16px;\s*height:\s*16px;/)
+  assert.match(styles, /#app \.sidebar-container li:has\(use\[href="#icon-wechat"\]\) \.svg-icon\s*\{\s*margin-right:\s*12px;\s*margin-left:\s*-2px;\s*vertical-align:\s*middle;/)
 })
 
 test('adds a read-only counter number column to the StoreOrder list', () => {

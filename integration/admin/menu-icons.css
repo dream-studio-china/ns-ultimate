@@ -1,0 +1,11 @@
+#app .sidebar-container .sub-el-icon,
+#app .sidebar-container .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+#app .sidebar-container li:has(use[href="#icon-wechat"]) .svg-icon {
+  margin-right: 12px;
+  margin-left: -2px;
+  vertical-align: middle;
+}

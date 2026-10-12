@@ -24,7 +24,7 @@ export default {
       component: Layout,
       meta: {
         title: t('WeChat configuration'),
-        icon: 'el-icon-setting',
+        icon: 'wechat',
         roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
       },
       children: [
