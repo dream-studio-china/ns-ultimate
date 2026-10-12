@@ -637,6 +637,14 @@ describe('FormAdmin.vue', () => {
       expect(wrapper.vm.rules.name).toEqual(originalRules)
     })
 
+    it('tolerates cleanup after the field rules have already been removed', async() => {
+      const { wrapper } = mountForm()
+      await settled(wrapper)
+      const release = wrapper.vm.registerFieldValidator('name', vi.fn())
+      delete wrapper.vm.rules.name
+      expect(release).not.toThrow()
+    })
+
     it('removes password validators on hide and validates with only the remounted instance', async() => {
       const { wrapper } = mountForm({ props: {
         fields: [
@@ -848,6 +856,24 @@ describe('FormAdmin.vue', () => {
   })
 
   describe('helpers and utilities', () => {
+    it('clones Date values and preserves non-plain instances', async() => {
+      const { wrapper } = mountForm()
+      await settled(wrapper)
+
+      const date = new Date('2026-10-12T00:00:00.000Z')
+      const clonedDate = wrapper.vm.cloneFormData(date)
+      expect(clonedDate).toEqual(date)
+      expect(clonedDate).not.toBe(date)
+
+      class CustomValue {
+        constructor() {
+          this.value = 'preserved'
+        }
+      }
+      const customValue = new CustomValue()
+      expect(wrapper.vm.cloneFormData(customValue)).toBe(customValue)
+    })
+
     it('exposes getMetadataType, log and cleanBlankAttributes', async() => {
       const { wrapper } = mountForm()
       await settled(wrapper)

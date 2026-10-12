@@ -42,6 +42,16 @@ describe('form/email.vue', () => {
     expect(release).toHaveBeenCalledTimes(1)
   })
 
+  it('releases validators registered through the legacy FormAdmin rules fallback', () => {
+    const admin = { id: 0, rules: {}, $refs: { form: { validateField: vi.fn() }} }
+    const wrapper = mountEmail({ provide: { getFormAdmin: () => admin } })
+    expect(admin.rules.email).toHaveLength(1)
+    wrapper.vm.registerValidator()
+    expect(admin.rules.email).toHaveLength(1)
+    wrapper.unmount()
+    expect(admin.rules.email).toEqual([])
+  })
+
   it('hides the hint when the value is empty', () => {
     const wrapper = mountEmail({ form: {}})
     expect(wrapper.vm.val).toBe('')
