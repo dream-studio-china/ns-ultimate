@@ -41,6 +41,9 @@ export default {
       default: () => { return {} }
     }
   },
+  data() {
+    return { releaseValidator: null }
+  },
   computed: {
     val() {
       return this.form[this.field.property] || ''
@@ -56,6 +59,9 @@ export default {
   },
   mounted() {
     this.registerValidator()
+  },
+  beforeUnmount() {
+    if (typeof this.releaseValidator === 'function') this.releaseValidator()
   },
   methods: {
     getFormAdminInstance() {
@@ -74,6 +80,7 @@ export default {
       return parent
     },
     registerValidator() {
+      if (typeof this.releaseValidator === 'function') this.releaseValidator()
       const formAdmin = this.getFormAdminInstance()
       if (!formAdmin) return
       const fieldName = this.field.property
@@ -83,10 +90,15 @@ export default {
         (key) => this.$t(key)
       )
       if (this.registerFieldValidator) {
-        this.registerFieldValidator(fieldName, validator, ['blur', 'change'])
+        this.releaseValidator = this.registerFieldValidator(fieldName, validator, ['blur', 'change'])
       } else if (formAdmin.rules) {
         if (!formAdmin.rules[fieldName]) formAdmin.rules[fieldName] = []
         formAdmin.rules[fieldName].push({ validator, trigger: ['blur', 'change'] })
+        this.releaseValidator = () => {
+          const rules = formAdmin.rules[fieldName]
+          const index = rules.findIndex(rule => rule.validator === validator)
+          if (index !== -1) rules.splice(index, 1)
+        }
       }
     },
     triggerValidate() {

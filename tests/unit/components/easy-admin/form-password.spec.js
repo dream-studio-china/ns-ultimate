@@ -32,6 +32,26 @@ function captureValidator({ form = {}, field = { property: 'password' }, id = 0 
 }
 
 describe('form/password.vue', () => {
+  it('releases its instance-bound validator on unmount', () => {
+    const release = vi.fn()
+    const wrapper = mountPassword({ provide: {
+      registerFieldValidator: vi.fn(() => release),
+      getFormAdmin: () => ({ id: 0, rules: {} })
+    } })
+    wrapper.unmount()
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases validators registered through the legacy FormAdmin rules fallback', () => {
+    const admin = { id: 0, rules: {}, $refs: { form: { validateField: vi.fn() }} }
+    const wrapper = mountPassword({ provide: { getFormAdmin: () => admin } })
+    expect(admin.rules.password).toHaveLength(1)
+    wrapper.vm.registerValidator()
+    expect(admin.rules.password).toHaveLength(1)
+    wrapper.unmount()
+    expect(admin.rules.password).toEqual([])
+  })
+
   it('hides hints when both password and confirm are empty', () => {
     const wrapper = mountPassword({ form: {}})
     expect(wrapper.vm.showHints).toBe(false)
