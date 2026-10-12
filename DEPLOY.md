@@ -77,6 +77,26 @@ The bootstrap determines `APP_ENV` from the process environment before loading e
 
 The database version string and credential URL encoding must match the actual database. Confirm whether Redis, mail, SMS, WeChat, payment, and inventory integrations are enabled before configuring their related variables. Keep `INVENTORY_ENABLED=0` unless the upstream production validation and business requirements explicitly approve enabling this preview-only feature. Set `ALIYUN_SMS_DRY_RUN=0` only after credentials, templates, quotas, and delivery behavior are validated. Optional WeChat/payment credentials belong only in the secret store/environment when those services are intentionally enabled. Consult [`core/crud-skeleton/.env.prod.example`](core/crud-skeleton/.env.prod.example) for the complete upstream integration variable list; do not copy its Docker-specific values blindly.
 
+When WeChat credential profiles are enabled, set `WECHAT_CONFIG_KEY` in `integration/backend/.env.prod.local`. It encrypts WeChat credentials stored in the database. From the repository root, generate a deployment-specific 32-byte key (printed as 64 hexadecimal characters) and append it once to this file; the command refuses to replace an existing key and does not print the generated value:
+
+```sh
+sudo sh -eu -c '
+  file=integration/backend/.env.prod.local
+  test -f "$file"
+  if grep -q "^WECHAT_CONFIG_KEY=" "$file"; then
+    echo "WECHAT_CONFIG_KEY already exists; refusing to replace it." >&2
+    exit 1
+  fi
+  key=$(openssl rand -hex 32)
+  test "${#key}" -eq 64
+  printf "\\nWECHAT_CONFIG_KEY=%s\\n" "$key" >> "$file"
+'
+```
+
+The command preserves the file's ownership and permissions; ensure the dotenv file remains restricted to the deployment administrator and application runtime.
+
+Use the same key for every backend instance and every release that accesses this database. Back it up with the other production secrets. The current implementation does not support key rotation: changing or losing the key makes existing encrypted WeChat credentials unreadable. Do not reuse a development key in production.
+
 Generate a deployment-specific JWT key pair using an approved secret-generation procedure. For a basic unencrypted RSA pair:
 
 ```sh
