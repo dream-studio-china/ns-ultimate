@@ -42,13 +42,9 @@ export default {
         roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
       },
       children: [
-        ...r('WechatApplication', t('WeChat applications')),
-        ...r('WechatApplicationRevision', t('WeChat application revisions')),
-        ...r('WechatMerchant', t('WeChat merchants')),
-        ...r('WechatMerchantRevision', t('WeChat merchant revisions')),
-        ...r('WechatProfileGrant', t('WeChat profile grants')),
-        ...r('StoreWechatSetting', t('Store WeChat settings')),
-        ...r('WechatRefundAttempt', t('WeChat refunds'))
+        ...r('WechatApplication', t('Application configuration')),
+        ...r('WechatMerchant', t('Merchant configuration')),
+        ...r('StoreWechatSetting', t('Store WeChat settings'))
       ]
     }
   ],

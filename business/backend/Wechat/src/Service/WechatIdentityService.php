@@ -18,22 +18,15 @@ use NsUltimate\Business\Wechat\Entity\WechatIdentity;
  */
 final class WechatIdentityService
 {
-    public function __construct(
-        private readonly EntityManagerInterface $entityManager,
-        private readonly SecretCipher $cipher,
-    ) {
+    public function __construct(private readonly EntityManagerInterface $entityManager)
+    {
     }
 
-    /**
-     * @param array<string, mixed>|null $rawData
-     */
     public function findOrCreate(
         string $appId,
         string $applicationType,
         string $openid,
         ?string $unionid = null,
-        string $sessionKey = '',
-        ?array $rawData = null,
     ): User {
         if ($appId === '' || $openid === '') {
             throw new \InvalidArgumentException('A WeChat identity requires an AppID and OpenID.');
@@ -41,7 +34,7 @@ final class WechatIdentityService
 
         $identity = $this->find($appId, $openid);
         if ($identity instanceof WechatIdentity) {
-            $this->touch($identity, $unionid, $sessionKey, $rawData);
+            $this->touch($identity, $unionid);
             $user = $identity->getUser();
             if (!$user instanceof User) {
                 throw new \RuntimeException('WeChat identity has no system user.');
@@ -55,7 +48,7 @@ final class WechatIdentityService
             ->setAppId($appId)
             ->setApplicationType($applicationType)
             ->setOpenid($openid);
-        $this->touch($identity, $unionid, $sessionKey, $rawData);
+        $this->touch($identity, $unionid);
 
         $this->entityManager->persist($user);
         $this->entityManager->persist($identity);
@@ -75,8 +68,6 @@ final class WechatIdentityService
         string $applicationType,
         string $openid,
         ?string $unionid = null,
-        string $sessionKey = '',
-        ?array $rawData = null,
     ): WechatIdentity {
         $identity = $this->find($appId, $openid);
 
@@ -84,7 +75,7 @@ final class WechatIdentityService
             if ($identity->getUser()?->getId() !== $user->getId()) {
                 throw new \InvalidArgumentException('This WeChat identity is already linked to another account.');
             }
-            $this->touch($identity, $unionid, $sessionKey, $rawData);
+            $this->touch($identity, $unionid);
             $this->entityManager->flush();
 
             return $identity;
@@ -95,7 +86,7 @@ final class WechatIdentityService
             ->setAppId($appId)
             ->setApplicationType($applicationType)
             ->setOpenid($openid);
-        $this->touch($identity, $unionid, $sessionKey, $rawData);
+        $this->touch($identity, $unionid);
 
         $this->entityManager->persist($identity);
         $this->entityManager->flush();
@@ -131,15 +122,11 @@ final class WechatIdentityService
         return $identity instanceof WechatIdentity ? $identity : null;
     }
 
-    private function touch(WechatIdentity $identity, ?string $unionid, string $sessionKey, ?array $rawData): void
+    private function touch(WechatIdentity $identity, ?string $unionid): void
     {
         if ($unionid !== null && $unionid !== '') {
             $identity->setUnionid($unionid);
         }
-        if ($sessionKey !== '') {
-            $identity->setSessionKeyEncrypted($this->cipher->encrypt($sessionKey), $this->cipher->keyId());
-        }
-        $identity->setRawData($rawData);
         $identity->setLastLoginAt(new \DateTimeImmutable());
     }
 

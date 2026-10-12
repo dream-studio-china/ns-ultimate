@@ -38,8 +38,6 @@ final class StoreWechatLoginService
             applicationType: WechatApplication::TYPE_MINIAPP,
             openid: $session['openid'],
             unionid: $session['unionid'] ?? null,
-            sessionKey: $session['session_key'] ?? '',
-            rawData: $session,
         );
     }
 
@@ -87,7 +85,6 @@ final class StoreWechatLoginService
             applicationType: WechatApplication::TYPE_OFFICIAL,
             openid: $data['openid'],
             unionid: $data['unionid'] ?? null,
-            rawData: $data['raw'] ?? $data,
         );
     }
 
@@ -102,8 +99,6 @@ final class StoreWechatLoginService
             WechatApplication::TYPE_MINIAPP,
             $session['openid'],
             unionid: $session['unionid'] ?? null,
-            sessionKey: $session['session_key'] ?? '',
-            rawData: $session,
         );
     }
 

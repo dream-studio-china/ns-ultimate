@@ -8,6 +8,7 @@ use App\Core\Service\BaseService;
 use Doctrine\ORM\OptimisticLockException;
 use NsUltimate\Business\Wechat\Entity\WechatApplication;
 use NsUltimate\Business\Wechat\Entity\WechatApplicationRevision;
+use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 

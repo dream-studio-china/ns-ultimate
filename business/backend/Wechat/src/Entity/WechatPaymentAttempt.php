@@ -61,6 +61,12 @@ class WechatPaymentAttempt
     #[ORM\Column(name: 'provider_order_no', type: 'string', length: 64, unique: true)]
     private string $providerOrderNo = '';
 
+    #[ORM\Column(name: 'sub_merchant_id', type: 'string', length: 64, nullable: true)]
+    private ?string $subMerchantId = null;
+
+    #[ORM\Column(name: 'sub_app_id', type: 'string', length: 64, nullable: true)]
+    private ?string $subAppId = null;
+
     #[ORM\Column(name: 'trade_type', type: 'string', length: 20)]
     private string $tradeType = self::TRADE_JSAPI;
 
@@ -109,6 +115,10 @@ class WechatPaymentAttempt
     public function setMerchantRevision(?WechatMerchantRevision $revision): self { $this->merchantRevision = $revision; return $this->touch(); }
     public function getProviderOrderNo(): string { return $this->providerOrderNo; }
     public function setProviderOrderNo(string $providerOrderNo): self { $this->providerOrderNo = $providerOrderNo; return $this->touch(); }
+    public function getSubMerchantId(): ?string { return $this->subMerchantId; }
+    public function setSubMerchantId(?string $subMerchantId): self { $this->subMerchantId = $subMerchantId; return $this->touch(); }
+    public function getSubAppId(): ?string { return $this->subAppId; }
+    public function setSubAppId(?string $subAppId): self { $this->subAppId = $subAppId; return $this->touch(); }
     public function getTradeType(): string { return $this->tradeType; }
     public function setTradeType(string $tradeType): self { $this->tradeType = $tradeType; return $this->touch(); }
     public function getExpectedAmount(): int { return $this->expectedAmount; }

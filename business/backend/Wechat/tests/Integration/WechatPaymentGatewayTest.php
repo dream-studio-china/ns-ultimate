@@ -7,6 +7,7 @@ namespace NsUltimate\Business\Wechat\Tests\Integration;
 use App\Payment\Entity\Invoice;
 use App\Payment\Exception\PaymentVerificationException;
 use App\Payment\Service\PaymentGatewayRegistry;
+use App\Payment\Service\InvoiceService;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderStoreLifecycle;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
@@ -53,6 +54,48 @@ final class WechatPaymentGatewayTest extends WechatApiTestCase
         self::assertSame(1000, $attempt->getExpectedAmount());
         self::assertSame('openid-pay', $attempt->getPayerIdentity()?->getOpenid());
         self::assertStringContainsString('/'.$attempt->getUuid(), $this->provider->lastBody['notify_url'] ?? '');
+    }
+
+    public function testInvoiceCommitsBeforeWechatAttemptAndProviderCall(): void
+    {
+        [$invoice] = $this->invoiceForOrder();
+        $entityManager = $this->entityManager();
+        $this->provider->beforePrepay = function () use ($entityManager, $invoice): void {
+            self::assertFalse($entityManager->getConnection()->isTransactionActive());
+            self::assertSame(1, (int) $entityManager->getConnection()->fetchOne(
+                'SELECT COUNT(*) FROM wechat_payment_attempt WHERE invoice_uuid = ?',
+                [$invoice->getUuid()],
+            ));
+        };
+
+        $result = self::getContainer()->get(InvoiceService::class)->pay(
+            $invoice,
+            Invoice::PAYMENT_WECHAT,
+            ['tradeType' => WechatPaymentAttempt::TRADE_NATIVE],
+        );
+
+        self::assertSame(Invoice::STATUS_PAYING, $result->status);
+        self::assertFalse($entityManager->getConnection()->isTransactionActive());
+    }
+
+    public function testProviderTimeoutLeavesDurableUnknownAttemptForReconciliation(): void
+    {
+        [$invoice] = $this->invoiceForOrder();
+        $this->provider->prepayException = new \RuntimeException('synthetic provider timeout');
+
+        $result = self::getContainer()->get(InvoiceService::class)->pay(
+            $invoice,
+            Invoice::PAYMENT_WECHAT,
+            ['tradeType' => WechatPaymentAttempt::TRADE_NATIVE],
+        );
+
+        $attempt = $this->entityManager()->getRepository(WechatPaymentAttempt::class)
+            ->findOneBy(['invoiceUuid' => $invoice->getUuid()]);
+        self::assertInstanceOf(WechatPaymentAttempt::class, $attempt);
+        self::assertSame(WechatPaymentAttempt::STATUS_UNKNOWN, $attempt->getStatus());
+        self::assertSame(Invoice::STATUS_PAYING, $result->status);
+        $this->entityManager()->refresh($invoice);
+        self::assertSame(Invoice::STATUS_PAYING, $invoice->getStatus());
     }
 
     public function testNativePaymentReturnsProviderQrUrl(): void

@@ -16,11 +16,13 @@ explicitly out of scope until approved smoke tests run.**
   `store_wechat_setting`, `wechat_profile_grant`, `wechat_audit_event`,
   `wechat_identity`, `wechat_oauth_state`, `wechat_payment_attempt`,
   `wechat_refund_attempt`. Explicit index/constraint names follow their tables.
-- Migrations `Version20261011040000`–`Version20261011080000` create the schema;
-  forward-only, data-preserving.
-- One narrow core dependency: `App\Store\Entity\Store` implements
+- Migrations `Version20261011040000`–`Version20261012090000` create and evolve the
+  schema. The latest migration pins partner identifiers to attempts and removes
+  unused identity session/raw-response data, including existing rows.
+- Two narrow core dependencies: `App\Store\Entity\Store` implements
   `App\Authorization\Service\ScopedResourceInterface` so the authorization voter
-  can resolve the store scope. Proposed upstream via the subtree workflow.
+  can resolve the store scope; and `PostCommitPaymentGatewayInterface` lets
+  gateways with provider-side effects run after the Invoice transaction commits.
 
 ## Configuration model
 
@@ -28,7 +30,9 @@ explicitly out of scope until approved smoke tests run.**
   merchant ID, mode `direct|partner`). Credentials live on immutable revisions
   encrypted with AES-256-GCM (`SecretCipher`, key from `WECHAT_CREDENTIAL_KEY`).
 - Publishing supersedes the previous published revision (optimistic locking;
-  concurrent publication returns 409). Only published, non-revoked revisions bind.
+  concurrent publication returns 409). Existing bindings to superseded revisions
+  remain usable; new bindings must select the current published revision. Revoked
+  revisions are rejected for both new and historical operations.
 - A store binding (`StoreWechatSetting`) pins specific published revisions and a
   capability map (`miniapp_login`, `official_oauth`, `payment_jsapi`,
   `payment_native`, `payment_official`). Partner bindings require `subMerchantId`.
@@ -73,15 +77,15 @@ Anonymous exposure is composed by `StoreWechatAccessMap` decorating
   pass removes the core registration tag. Trade types `jsapi`, `official_jsapi`,
   `native` map to capabilities and application types; partner mode sends
   `sp_*`/`sub_*` fields.
-- Attempts pin store, revisions, payer identity, provider numbers, and expected
+- Attempts pin store, revisions, partner identifiers, payer identity, provider numbers, and expected
   amounts. One unresolved collection per invoice; idempotency keys with
   conflicting inputs fail.
 - Payment confirmation (notify, query, reconcile) shares one verification path
-  with conditional-update transitions; Core accounting via idempotent
-  `handleNotifyResult`.
+  with conditional-update transitions; confirmation and Core accounting use one
+  database transaction.
 - Refunds (option A): persisted requests with stable refund numbers, pending
   reservation under pessimistic lock, accounting only after verified success via
-  an idempotent claim, adjusted-invoice rejection before provider access.
+  an idempotent claim and invoice lock, adjusted-invoice rejection before provider access.
   Core-initiated refunds are refused.
 - Frozen legacy path: explicit `legacy: true` options and locator-less callbacks
   delegate to the core gateway. New store payments fail closed without a binding.
@@ -94,8 +98,9 @@ Anonymous exposure is composed by `StoreWechatAccessMap` decorating
 
 ## Admin UI
 
-Collections for all seven resources plus a `WechatManagement` menu group;
-credential inputs are create-only; en/zh/ja/zh-Hant locales.
+The `WechatManagement` menu exposes exactly three configuration areas:
+Application configuration, Merchant configuration, and Store WeChat settings.
+Credential inputs remain write-only; en/zh/ja/zh-Hant locales are supported.
 
 ## Known limitations (must not be relied upon)
 
@@ -105,3 +110,6 @@ credential inputs are create-only; en/zh/ja/zh-Hant locales.
 - Binding-level draft/publication history is deferred; bindings apply immediately.
 - No dedicated store self-service Admin page; store operators use the API.
 - Adjusted-invoice refunds are rejected until adjusted-refund accounting exists.
+- The WeChat gateway uses `PostCommitPaymentGatewayInterface`: Invoice state
+  commits first, then its attempt is committed before the provider call. Provider
+  timeouts remain `unknown` and are reconciled using that durable attempt.

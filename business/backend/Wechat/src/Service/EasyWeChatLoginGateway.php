@@ -35,7 +35,6 @@ final class EasyWeChatLoginGateway implements WechatLoginGatewayInterface
         return [
             'openid' => (string) $data['openid'],
             'unionid' => isset($data['unionid']) ? (string) $data['unionid'] : null,
-            'session_key' => (string) ($data['session_key'] ?? ''),
         ];
     }
 
@@ -71,7 +70,6 @@ final class EasyWeChatLoginGateway implements WechatLoginGatewayInterface
                 'unionid' => isset($raw['unionid']) ? (string) $raw['unionid'] : null,
                 'nickname' => (string) ($user->getNickname() ?? ''),
                 'avatar' => (string) ($user->getAvatar() ?? ''),
-                'raw' => is_array($raw) ? $raw : [],
             ];
         } catch (\Throwable $e) {
             throw new \RuntimeException('WeChat OAuth failed: '.$e->getMessage(), 0, $e);

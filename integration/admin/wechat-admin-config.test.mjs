@@ -60,7 +60,7 @@ for (const [file, name, plural] of collections) {
   })
 }
 
-test('the WeChat menu group exposes one list route per collection', () => {
+test('the WeChat menu group exposes only the three configuration areas', () => {
   const router = loadModule('../../business/admin/router.js', {
     t: key => key,
     Layout: { name: 'Layout' },
@@ -69,19 +69,25 @@ test('the WeChat menu group exposes one list route per collection', () => {
 
   const group = router.add.find(route => route.name === 'WechatManagement')
   assert.ok(group, 'WechatManagement route group is registered')
-  assert.equal(group.children.length, 7)
+  assert.equal(group.children.length, 3)
 
   const names = group.children.map(route => route.name)
   assert.deepEqual(new Set(names).size, names.length, 'route names must be unique')
-  for (const name of [
-    'WechatApplicationList',
-    'WechatApplicationRevisionList',
-    'WechatMerchantList',
-    'WechatMerchantRevisionList',
-    'WechatProfileGrantList',
-    'StoreWechatSettingList',
-    'WechatRefundAttemptList'
-  ]) {
+  for (const name of ['WechatApplicationList', 'WechatMerchantList', 'StoreWechatSettingList']) {
     assert.ok(names.includes(name), `${name} is registered`)
+  }
+})
+
+test('application and merchant configuration forms capture write-only credentials', () => {
+  const application = loadModule('../../business/admin/config/collections/wechat/WechatApplication.js', collectionStubs)
+  const merchant = loadModule('../../business/admin/config/collections/wechat/WechatMerchant.js', collectionStubs)
+  const applicationFields = application.WechatApplication.form.fields.map(field => field.property)
+  const merchantFields = merchant.WechatMerchant.form.fields.map(field => field.property)
+
+  for (const field of ['secret', 'officialToken', 'officialAesKey']) {
+    assert.ok(applicationFields.includes(field), `${field} is part of application configuration`)
+  }
+  for (const field of ['apiV3Key', 'privateKey', 'certificate']) {
+    assert.ok(merchantFields.includes(field), `${field} is part of merchant configuration`)
   }
 })

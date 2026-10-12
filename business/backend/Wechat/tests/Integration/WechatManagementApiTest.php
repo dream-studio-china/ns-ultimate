@@ -9,6 +9,8 @@ use App\Authorization\Entity\Role;
 use App\Core\Utils\UUID;
 use NsUltimate\Business\Wechat\Command\SeedWechatAuthorizationCommand;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
+use NsUltimate\Business\Wechat\Entity\WechatApplicationRevision;
+use NsUltimate\Business\Wechat\Entity\WechatMerchantRevision;
 use NsUltimate\Business\Wechat\Service\StoreWechatResolver;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Routing\Route;
@@ -78,6 +80,48 @@ final class WechatManagementApiTest extends WechatApiTestCase
             'appId' => 'wx-mini-a',
         ]);
         self::assertSame(400, $status, json_encode($body));
+    }
+
+    public function testApplicationAndMerchantConfigurationCreateRevisionsInline(): void
+    {
+        [$status, $application] = $this->request('POST', '/api/v1/manage/wechat-applications', [
+            'name' => 'Inline application',
+            'type' => 'miniapp',
+            'appId' => 'wx-inline-app',
+            'secret' => 'inline-app-secret',
+        ]);
+        self::assertSame(201, $status);
+        self::assertStringNotContainsString('inline-app-secret', json_encode($application, JSON_THROW_ON_ERROR));
+        $applicationEntity = $this->entityManager()->getRepository(\NsUltimate\Business\Wechat\Entity\WechatApplication::class)
+            ->find((int) $application['data']['id']);
+        $applicationRevisions = $this->entityManager()->getRepository(WechatApplicationRevision::class)
+            ->findBy(['application' => $applicationEntity]);
+        self::assertCount(1, $applicationRevisions);
+        self::assertSame('published', $applicationRevisions[0]->getState());
+
+        [$status] = $this->request('PUT', '/api/v1/manage/wechat-applications/'.$application['data']['uuid'], [
+            'secret' => 'rotated-app-secret',
+        ]);
+        self::assertSame(200, $status);
+        self::assertCount(2, $this->entityManager()->getRepository(WechatApplicationRevision::class)
+            ->findBy(['application' => $applicationEntity]));
+
+        [$status, $merchant] = $this->request('POST', '/api/v1/manage/wechat-merchants', [
+            'name' => 'Inline merchant',
+            'merchantId' => '1900000019',
+            'mode' => 'direct',
+            'apiV3Key' => str_repeat('k', 32),
+            'privateKey' => "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
+            'certificate' => "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+        ]);
+        self::assertSame(201, $status);
+        self::assertStringNotContainsString(str_repeat('k', 32), json_encode($merchant, JSON_THROW_ON_ERROR));
+        $merchantEntity = $this->entityManager()->getRepository(\NsUltimate\Business\Wechat\Entity\WechatMerchant::class)
+            ->find((int) $merchant['data']['id']);
+        $merchantRevisions = $this->entityManager()->getRepository(WechatMerchantRevision::class)
+            ->findBy(['merchant' => $merchantEntity]);
+        self::assertCount(1, $merchantRevisions);
+        self::assertSame('published', $merchantRevisions[0]->getState());
     }
 
     public function testMerchantLifecyclePublishesRevision(): void

@@ -14,6 +14,11 @@ export default {
             { value: 'partner', label: t('Service provider') }
           ]
         }},
+        { property: 'apiV3Key', type: 'input', help: t('WeChat API v3 key help') },
+        { property: 'privateKey', type: 'textarea', help: t('WeChat merchant private key help') },
+        { property: 'certificate', type: 'textarea', help: t('WeChat merchant certificate help') },
+        { property: 'platformPublicKeyId', type: 'input', help: t('WeChat platform public key id help') },
+        { property: 'platformPublicKey', type: 'textarea', help: t('WeChat platform public key help') },
         { property: 'enabled', type: 'boolean', default_value: true }
       ]
     },

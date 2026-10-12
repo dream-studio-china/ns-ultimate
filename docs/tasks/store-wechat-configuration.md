@@ -205,7 +205,7 @@ Proposed customer routes use `/api/v1/app/stores/{storeUuid}/wechat/...`; exact 
 - Resolve the Invoice's trusted Store, enabled payment capability, compatible app/merchant revisions, and the payer identity for that exact AppID.
 - Persist the immutable attempt and stable provider `out_trade_no` before making the external call. Record the actual gateway amount after adjustments, not blindly the Invoice total.
 - A repeated idempotency key with identical inputs reuses the attempt; conflicting inputs fail. Permit only one unresolved external collection attempt per Invoice until it is reconciled/closed.
-- The Core payment call currently occurs inside a transaction. Phase 0 must prove a durable attempt/outbox or staged orchestration approach that survives a process crash after provider success but before local commit. An attempt inside a rolled-back transaction is not sufficient.
+- WeChat implements the generic `PostCommitPaymentGatewayInterface`: Core commits Invoice payment state before provider initiation, then the gateway commits its attempt before making the external call. Provider timeouts remain unknown and use that attempt for reconciliation.
 - Treat network timeouts as unknown results, not confirmed failures. Query the provider using the same order number before retrying or selecting a new merchant.
 - Either retain Invoice `outTradeNo` as the provider number with safe retry constraints, or explicitly map an attempt-specific provider number back to the Invoice before calling Core. Document and test the chosen mapping.
 - Persist only redacted reconciliation data, not credentials, in Invoice extra data or API payloads.
@@ -280,7 +280,7 @@ All items are pending. Each package ends with recorded evidence, not only a chec
 - [ ] Confirm Section 3 decisions and create an approved scope record.
 - [ ] Prove module route/security loading and deterministic single `wechat` gateway registration in the compiled production container.
 - [ ] Prove trusted Store derivation for supported Invoice sources; explicitly list unsupported sources.
-- [ ] Design and test durable payment attempts across Core transaction rollback/crash windows.
+- [x] Design and test durable payment attempts across Core transaction rollback/crash windows through the post-commit gateway extension.
 - [ ] Decide the asynchronous refund completion integration; document any narrowly scoped Core change before implementation.
 - [ ] Confirm merchant/app binding requirements, credential storage/key custody, and historical rotation policy against current official WeChat documentation.
 
@@ -328,7 +328,8 @@ Exit: all PAY/REF cases pass; Core accounting compatibility proven; no unsupport
 
 ### Phase 4: release validation and operations
 
-- [x] Run migration rehearsal and production-container/route tests; review final diff for accidental Core changes and secrets. Fresh-install rehearsal on isolated MySQL 8.0 succeeded (all WeChat tables, indexes, and foreign keys verified; down/up round-trip clean); the rehearsal also caught and fixed a wrong `user` table reference in `Version20261011050000` (core table is `users`). Production container lints clean with 118 WeChat routes, one deterministic `wechat` gateway, and the access-map decorator present.
+- [x] Run the original migration rehearsal and production-container/route tests. Fresh-install rehearsal on isolated MySQL 8.0 succeeded for migrations through `Version20261011080000`; the rehearsal caught and fixed a wrong `user` table reference in `Version20261011050000` (core table is `users`). Production container previously linted with one deterministic `wechat` gateway and the access-map decorator present.
+- [ ] Rehearse `Version20261012090000` on isolated MySQL and verify its identity-data cleanup and partner-attempt columns before release.
 - [x] Document deployment, master-key backup/recovery, rotation, revocation, reconciliation, and rollback procedures (`docs/runbooks/wechat-operations.md`).
 - [ ] Complete explicitly approved live smoke tests with controlled amounts and recorded provider outcomes.
 - [x] Publish validated API/adapter contracts (`docs/contracts/wechat-module.md`), test evidence, known limitations, and an operator sign-off. Operator sign-off itself remains outstanding.

@@ -62,9 +62,10 @@ final class WechatRefundTest extends WechatApiTestCase
         // A duplicate confirmation must not apply accounting twice.
         self::getContainer()->get(WechatRefundOrchestrator::class)->confirmRefund($refund, [
             'out_refund_no' => $refund->getProviderRefundNo(),
+            'out_trade_no' => $refund->getPaymentAttempt()?->getProviderOrderNo(),
             'refund_status' => 'SUCCESS',
             'refund_id' => 'refund-1',
-            'amount' => ['refund' => 1000],
+            'amount' => ['refund' => 1000, 'total' => 1000, 'currency' => 'CNY'],
         ], 'notify');
 
         self::assertSame(1000, $this->freshInvoice($invoice)->getRefundedAmount());
@@ -153,9 +154,10 @@ final class WechatRefundTest extends WechatApiTestCase
 
         $this->provider->refundNotifyData = [
             'out_refund_no' => $refund->getProviderRefundNo(),
+            'out_trade_no' => $refund->getPaymentAttempt()?->getProviderOrderNo(),
             'refund_status' => 'SUCCESS',
             'refund_id' => 'refund-1',
-            'amount' => ['refund' => 1000],
+            'amount' => ['refund' => 1000, 'total' => 1000, 'currency' => 'CNY'],
         ];
 
         $request = Request::create('/api/v1/webhooks/wechat/notify/'.$refund->getUuid(), 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], '{}');

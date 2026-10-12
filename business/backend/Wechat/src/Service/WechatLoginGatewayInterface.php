@@ -15,7 +15,7 @@ use NsUltimate\Business\Wechat\Dto\ResolvedWechatConfig;
 interface WechatLoginGatewayInterface
 {
     /**
-     * @return array{openid: string, unionid?: string|null, session_key: string}
+     * @return array{openid: string, unionid?: string|null}
      */
     public function miniappSession(ResolvedWechatConfig $config, string $jsCode): array;
 
@@ -24,7 +24,7 @@ interface WechatLoginGatewayInterface
     public function oauthRedirectUrl(ResolvedWechatConfig $config, string $callbackUrl): string;
 
     /**
-     * @return array{openid: string, unionid?: string|null, nickname?: string, avatar?: string, raw?: array<string, mixed>}
+     * @return array{openid: string, unionid?: string|null, nickname?: string, avatar?: string}
      */
     public function oauthUser(ResolvedWechatConfig $config, string $code): array;
 }

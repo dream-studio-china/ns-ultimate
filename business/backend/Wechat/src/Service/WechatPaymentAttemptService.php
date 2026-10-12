@@ -34,6 +34,8 @@ final class WechatPaymentAttemptService
         string $idempotencyKey,
         ?WechatApplicationRevision $applicationRevision = null,
         ?WechatMerchantRevision $merchantRevision = null,
+        ?string $subMerchantId = null,
+        ?string $subAppId = null,
     ): WechatPaymentAttempt {
         if (!in_array($tradeType, [WechatPaymentAttempt::TRADE_JSAPI, WechatPaymentAttempt::TRADE_NATIVE, WechatPaymentAttempt::TRADE_OFFICIAL_JSAPI], true)) {
             throw new \InvalidArgumentException('Unsupported WeChat trade type.');
@@ -84,6 +86,7 @@ final class WechatPaymentAttemptService
             ->setIdempotencyKey(trim($idempotencyKey))
             ->setStatus(WechatPaymentAttempt::STATUS_CREATED);
         $this->pinRevisions($attempt, $applicationRevision, $merchantRevision);
+        $attempt->setSubMerchantId($subMerchantId)->setSubAppId($subAppId);
 
         $this->entityManager->persist($attempt);
         $this->entityManager->flush();

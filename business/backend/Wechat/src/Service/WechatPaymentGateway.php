@@ -11,6 +11,7 @@ use App\Payment\DTO\PaymentResult;
 use App\Payment\Entity\Invoice;
 use App\Payment\Exception\PaymentVerificationException;
 use App\Payment\Service\PaymentGatewayInterface;
+use App\Payment\Service\PostCommitPaymentGatewayInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
 use NsUltimate\Business\Wechat\Entity\WechatApplication;
@@ -30,7 +31,7 @@ use Symfony\Component\HttpFoundation\Response;
  * routed here; Core refunds are refused so refunds must go through the
  * project-owned orchestrator.
  */
-final class WechatPaymentGateway implements PaymentGatewayInterface
+final class WechatPaymentGateway implements PostCommitPaymentGatewayInterface
 {
     public function __construct(
         private readonly InvoiceStoreContextAdapter $storeContext,
@@ -95,7 +96,16 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
             (string) ($options['idempotencyKey'] ?? $invoice->getUuid()),
             $this->entityManager->getRepository(WechatApplicationRevision::class)->findOneBy(['uuid' => $config->applicationRevisionUuid]),
             $this->entityManager->getRepository(WechatMerchantRevision::class)->findOneBy(['uuid' => $config->merchantRevisionUuid]),
+            $config->subMerchantId,
+            $config->subAppId,
         );
+
+        // A retry must use the immutable configuration selected by its original
+        // attempt, not today's Store binding or payer identity.
+        if ($attempt->getApplicationRevision() !== null && $attempt->getMerchantRevision() !== null) {
+            $config = $this->resolver->resolveForAttempt($attempt);
+            $payerIdentity = $attempt->getPayerIdentity();
+        }
 
         $partner = $config->merchantMode === WechatMerchant::MODE_PARTNER;
         $body = [
@@ -129,26 +139,41 @@ final class WechatPaymentGateway implements PaymentGatewayInterface
                 : ['openid' => $payerIdentity->getOpenid()];
         }
 
-        $prepay = $this->provider->prepay($config, $tradeType, $body);
+        try {
+            $prepay = $this->provider->prepay($config, $tradeType, $body);
+            $attempt->setStatus(WechatPaymentAttempt::STATUS_PENDING);
+            $this->entityManager->flush();
+            $this->audit->record('payment-start', 'WechatPaymentAttempt', $attempt->getUuid(), 'success', $storeUuid, [
+                'tradeType' => $tradeType,
+            ]);
 
-        $attempt->setStatus(WechatPaymentAttempt::STATUS_PENDING);
-        $this->entityManager->flush();
-        $this->audit->record('payment-start', 'WechatPaymentAttempt', $attempt->getUuid(), 'success', $storeUuid, [
-            'tradeType' => $tradeType,
-        ]);
+            if ($tradeType === WechatPaymentAttempt::TRADE_NATIVE) {
+                return new PaymentResult(
+                    invoice: $invoice,
+                    status: Invoice::STATUS_PAYING,
+                    payUrl: $prepay['code_url'] ?? null,
+                    qrCode: $prepay['code_url'] ?? null,
+                    message: 'WeChat Native order created',
+                );
+            }
 
-        if ($tradeType === WechatPaymentAttempt::TRADE_NATIVE) {
+            $jsapiAppId = $partner ? (string) ($config->subAppId ?? $config->appId) : (string) $config->appId;
+            $payload = $this->provider->buildJsapiConfig($config, $tradeType, (string) ($prepay['prepay_id'] ?? ''), $jsapiAppId);
+        } catch (\Throwable) {
+            // The attempt is already committed. Do not treat a timeout or a
+            // response-signing failure as proof that WeChat did not create it.
+            $attempt->setStatus(WechatPaymentAttempt::STATUS_UNKNOWN);
+            $this->entityManager->flush();
+            $this->audit->record('payment-unknown', 'WechatPaymentAttempt', $attempt->getUuid(), 'failure', $storeUuid, [
+                'tradeType' => $tradeType,
+            ]);
+
             return new PaymentResult(
                 invoice: $invoice,
                 status: Invoice::STATUS_PAYING,
-                payUrl: $prepay['code_url'] ?? null,
-                qrCode: $prepay['code_url'] ?? null,
-                message: 'WeChat Native order created',
+                message: 'WeChat payment outcome is being reconciled.',
             );
         }
-
-        $jsapiAppId = $partner ? (string) ($config->subAppId ?? $config->appId) : (string) $config->appId;
-        $payload = $this->provider->buildJsapiConfig($config, $tradeType, (string) ($prepay['prepay_id'] ?? ''), $jsapiAppId);
 
         return new PaymentResult(
             invoice: $invoice,

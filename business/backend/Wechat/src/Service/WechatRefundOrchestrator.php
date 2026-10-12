@@ -132,8 +132,10 @@ final class WechatRefundOrchestrator
         $refund->setProviderRefundId($created['refund_id'] ?? null);
         $status = strtoupper((string) ($created['status'] ?? ''));
         if ($status === 'SUCCESS') {
+            $providerData = is_array($created['raw'] ?? null) ? $created['raw'] : [];
+            $this->verify($refund, $config, $providerData);
             $refund->setStatus(WechatRefundAttempt::STATUS_SUCCEEDED);
-            $this->applyAccounting($refund, $created['raw'] ?? []);
+            $this->applyAccounting($refund, $providerData);
         } elseif (in_array($status, ['CLOSED', 'ABNORMAL'], true)) {
             $refund->setStatus(WechatRefundAttempt::STATUS_FAILED);
         } else {
@@ -205,6 +207,23 @@ final class WechatRefundOrchestrator
      */
     public function applyAccounting(WechatRefundAttempt $refund, array $rawData): bool
     {
+        $this->entityManager->beginTransaction();
+        try {
+            $applied = $this->applyAccountingInTransaction($refund, $rawData);
+            $this->entityManager->commit();
+
+            return $applied;
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+            throw $e;
+        }
+    }
+
+    /** @param array<string, mixed> $rawData */
+    private function applyAccountingInTransaction(WechatRefundAttempt $refund, array $rawData): bool
+    {
         // Persist caller-set state (status, provider refund id) first: the
         // refresh() below would otherwise discard unflushed in-memory changes.
         $this->entityManager->flush();
@@ -228,6 +247,8 @@ final class WechatRefundOrchestrator
         if (!$invoice instanceof Invoice) {
             throw new \RuntimeException('The invoice for this refund was not found.');
         }
+        $this->entityManager->lock($invoice, LockMode::PESSIMISTIC_WRITE);
+        $this->entityManager->refresh($invoice);
 
         $newRefundedAmount = $invoice->getRefundedAmount() + $refund->getAmount();
         if ($newRefundedAmount > $invoice->getAmount()) {
@@ -271,13 +292,29 @@ final class WechatRefundOrchestrator
     private function verify(WechatRefundAttempt $refund, ResolvedWechatConfig $config, array $data): void
     {
         $refundNo = (string) ($data['out_refund_no'] ?? '');
-        if ($refundNo !== '' && $refundNo !== $refund->getProviderRefundNo()) {
+        if ($refundNo === '' || $refundNo !== $refund->getProviderRefundNo()) {
             throw new \InvalidArgumentException('The refund notification does not match this refund attempt.');
         }
 
-        $refundAmount = (int) ($data['amount']['refund'] ?? $refund->getAmount());
+        $refundAmount = filter_var($data['amount']['refund'] ?? null, FILTER_VALIDATE_INT);
+        if ($refundAmount === false || $refundAmount === null) {
+            throw new \InvalidArgumentException('The refund notification is missing its verified refund amount.');
+        }
         if ($refundAmount !== $refund->getAmount()) {
             throw new \InvalidArgumentException('The refund notification amount does not match this refund attempt.');
+        }
+        $paymentAttempt = $refund->getPaymentAttempt();
+        if (($data['out_trade_no'] ?? null) !== $paymentAttempt?->getProviderOrderNo()) {
+            throw new \InvalidArgumentException('The refund notification does not match its payment attempt.');
+        }
+        if (isset($data['amount']['total']) && (int) $data['amount']['total'] !== $paymentAttempt?->getExpectedAmount()) {
+            throw new \InvalidArgumentException('The refund notification total does not match its payment attempt.');
+        }
+        if (isset($data['amount']['currency']) && strtoupper((string) $data['amount']['currency']) !== strtoupper((string) $paymentAttempt?->getCurrency())) {
+            throw new \InvalidArgumentException('The refund notification currency does not match its payment attempt.');
+        }
+        if (isset($data['mchid']) && (string) $data['mchid'] !== (string) $config->merchantId) {
+            throw new \InvalidArgumentException('The refund notification merchant does not match its payment attempt.');
         }
     }
 

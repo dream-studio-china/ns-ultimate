@@ -49,7 +49,7 @@ final class StoreWechatResolver
 
         $applicationRevision = $setting->applicationRevisionFor($applicationType);
         if (!$applicationRevision instanceof WechatApplicationRevision
-            || !$applicationRevision->isPublished()
+            || !in_array($applicationRevision->getState(), [WechatApplicationRevision::STATE_PUBLISHED, WechatApplicationRevision::STATE_SUPERSEDED], true)
             || $applicationRevision->isRevoked()) {
             throw WechatConfigurationException::applicationMissing($storeUuid, $capability);
         }
@@ -63,7 +63,7 @@ final class StoreWechatResolver
         if (in_array($capability, StoreWechatSetting::PAYMENT_CAPABILITIES, true)) {
             $merchantRevision = $setting->getMerchantRevision();
             if (!$merchantRevision instanceof WechatMerchantRevision
-                || !$merchantRevision->isPublished()
+                || !in_array($merchantRevision->getState(), [WechatMerchantRevision::STATE_PUBLISHED, WechatMerchantRevision::STATE_SUPERSEDED], true)
                 || $merchantRevision->isRevoked()) {
                 throw WechatConfigurationException::merchantMissing($storeUuid, $capability);
             }
@@ -122,10 +122,6 @@ final class StoreWechatResolver
             throw WechatConfigurationException::corruptCredentials();
         }
 
-        $setting = $this->entityManager
-            ->getRepository(StoreWechatSetting::class)
-            ->findOneBy(['storeUuid' => $attempt->getStoreUuid()]);
-
         return new ResolvedWechatConfig(
             storeUuid: $attempt->getStoreUuid(),
             capability: $attempt->getTradeType(),
@@ -146,8 +142,8 @@ final class StoreWechatResolver
             certificateSerial: $merchantRevision->getCertificateSerial(),
             platformPublicKeyId: $merchantRevision->getPlatformPublicKeyId(),
             platformPublicKey: $this->decryptOptional($merchantRevision->encryptedPlatformPublicKey()),
-            subMerchantId: $setting?->getSubMerchantId(),
-            subAppId: $setting?->getSubAppId(),
+            subMerchantId: $attempt->getSubMerchantId(),
+            subAppId: $attempt->getSubAppId(),
         );
     }
 

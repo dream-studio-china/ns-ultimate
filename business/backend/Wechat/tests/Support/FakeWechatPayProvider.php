@@ -14,6 +14,10 @@ use Symfony\Component\HttpFoundation\Request;
  */
 final class FakeWechatPayProvider implements WechatPayProviderInterface
 {
+    /** @var \Closure(): void|null */
+    public ?\Closure $beforePrepay = null;
+    public ?\Throwable $prepayException = null;
+
     /** @var array<string, mixed> */
     public array $lastBody = [];
 
@@ -22,6 +26,10 @@ final class FakeWechatPayProvider implements WechatPayProviderInterface
 
     public function prepay(ResolvedWechatConfig $config, string $tradeType, array $body): array
     {
+        ($this->beforePrepay ?? static fn () => null)();
+        if ($this->prepayException !== null) {
+            throw $this->prepayException;
+        }
         $this->lastBody = $body;
 
         return $tradeType === WechatPaymentAttempt::TRADE_NATIVE
@@ -58,8 +66,14 @@ final class FakeWechatPayProvider implements WechatPayProviderInterface
     public function createRefund(ResolvedWechatConfig $config, array $body): array
     {
         $this->lastRefundBody = $body;
+        $result = $this->refundResult;
+        $result['raw'] += [
+            'out_refund_no' => $body['out_refund_no'],
+            'out_trade_no' => $body['out_trade_no'],
+            'amount' => $body['amount'],
+        ];
 
-        return $this->refundResult;
+        return $result;
     }
 
     /** @var array<string, mixed> */

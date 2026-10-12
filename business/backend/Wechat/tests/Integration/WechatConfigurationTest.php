@@ -82,6 +82,24 @@ final class WechatConfigurationTest extends WechatApiTestCase
         self::assertSame('wx-mini-b', $resolver->resolve($storeB->getUuid(), StoreWechatSetting::CAP_MINIAPP_LOGIN)->appId);
     }
 
+    public function testPublishingNewRevisionDoesNotBreakExistingStoreBinding(): void
+    {
+        $resolver = self::getContainer()->get(StoreWechatResolver::class);
+        $applicationId = $this->createApplication('wx-revision-stability');
+        $firstRevision = $this->publishApplicationRevision($applicationId, 'first-secret');
+        $store = $this->createStore('REV');
+        $this->createStoreSetting($store->getUuid(), $firstRevision, null, [
+            StoreWechatSetting::CAP_MINIAPP_LOGIN => true,
+        ]);
+
+        $this->publishApplicationRevision($applicationId, 'second-secret');
+
+        self::assertSame('first-secret', $resolver->resolve(
+            $store->getUuid(),
+            StoreWechatSetting::CAP_MINIAPP_LOGIN,
+        )->appSecret);
+    }
+
     public function testUnconfiguredStoreFailsClosed(): void
     {
         $resolver = self::getContainer()->get(StoreWechatResolver::class);

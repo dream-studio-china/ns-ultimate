@@ -25,8 +25,8 @@ implemented.
   so the core serializer never emits ciphertext. Mutating commands expose
   `isXConfigured()` booleans instead.
 - `WechatApplicationRevisionService` and `WechatMerchantRevisionService` validate
-  and encrypt credentials during creation, and publish revisions by superseding
-  the previous published revision of the same profile.
+  and encrypt credentials during creation. Publishing supersedes the current
+  revision for new bindings without breaking Stores pinned to the old revision.
 - `StoreWechatSetting` pins specific published application/merchant revisions, so
   editing a shared profile does not silently change every bound Store.
 - `StoreWechatResolver` resolves `(storeUuid, capability)` to a decrypted,
@@ -63,31 +63,31 @@ produced by the core `success()`/`warning()` pipeline.
 
 ## Admin UI
 
-The Admin frontend provides configuration-driven collections under
-`business/admin/config/collections/wechat/` and a "Wechat management" menu group in
-`business/admin/router.js`. Endpoints follow the default
+The Admin frontend exposes exactly three WeChat menu entries: Application
+configuration, Merchant configuration, and Store WeChat settings. Configuration
+collections live under `business/admin/config/collections/wechat/`; endpoints follow the default
 `/api/v1/manage/<plural>` convention:
 
 | Collection | Endpoint |
 | --- | --- |
 | `WechatApplication` | `/api/v1/manage/wechat-applications` |
-| `WechatApplicationRevision` | `/api/v1/manage/wechat-application-revisions` |
 | `WechatMerchant` | `/api/v1/manage/wechat-merchants` |
-| `WechatMerchantRevision` | `/api/v1/manage/wechat-merchant-revisions` |
 | `StoreWechatSetting` | `/api/v1/manage/store-wechat-settings` |
 
-Credential inputs (`secret`, `officialToken`, `officialAesKey`, `apiV3Key`,
-`privateKey`, `certificate`, `platformPublicKey`) are create-only fields; they are
-hidden on update and the backend never returns them. Publishing a revision is done
-by setting its `state` to `published` in the update form. Store-scoped
-self-management is available through the API but has no dedicated Admin page yet.
+Credentials are write-only fields on the Application and Merchant forms. Creating
+a profile with credentials, or submitting replacement credentials on update,
+creates and publishes a new immutable revision in the same request. Revision
+resources remain API-managed for integrations but are not separate Admin menu
+entries. Store-scoped self-management is available through the API but has no
+dedicated Admin page yet.
 
 ## Login and identity
 
 - `WechatIdentity` (`wechat_identity`) keys identity by the verified
   `(app_id, openid)` pair and may attach many identities to one system User.
-  Session keys are encrypted; equal OpenID strings under different AppIDs never
-  collide and accounts are never merged implicitly.
+  Ephemeral session keys and raw provider responses are not persisted; equal
+  OpenID strings under different AppIDs never collide and accounts are never
+  merged implicitly.
 - `StoreWechatLoginService` orchestrates Mini Program login, phone binding,
   explicit identity linking, and Official Account OAuth, always resolving the
   published Store configuration first.
@@ -198,9 +198,9 @@ provider + sub-merchant); a partner binding requires `subMerchantId` (and option
 Payment and refund calls reach WeChat only with approved live credentials; the
 test suite substitutes a deterministic fake provider.
 
-## Core dependency
+## Core dependencies
 
-One minimal core fix is required: `App\Store\Entity\Store` implements
+A small core fix allows scoped authorization: `App\Store\Entity\Store` implements
 `App\Authorization\Service\ScopedResourceInterface` so the authorization voter
 can resolve the store scope from the subject that
 `StoreScopedAuthorizationApiMixin` passes. Without it, every store-scoped
@@ -208,6 +208,12 @@ endpoint denies non-administrator store operators, including pre-existing
 Counter store endpoints. The change is generic (no WeChat specifics) and
 covered by the authorization voter contract; propose it upstream via the
 subtree workflow.
+
+The generic `PostCommitPaymentGatewayInterface` lifecycle is also used by this
+module: `InvoiceService` commits the Invoice's paying state before calling a
+gateway that implements it. The WeChat attempt is consequently committed before
+the provider request, so a process crash does not erase the callback locator.
+Other gateways retain their existing in-transaction behavior.
 
 ## Configuration
 

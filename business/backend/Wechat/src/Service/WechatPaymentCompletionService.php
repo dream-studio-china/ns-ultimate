@@ -37,6 +37,23 @@ final class WechatPaymentCompletionService
     /** @param array<string, mixed> $providerData */
     public function confirmFromProviderData(WechatPaymentAttempt $attempt, array $providerData, string $source): PaymentNotifyResult
     {
+        $this->entityManager->beginTransaction();
+        try {
+            $result = $this->confirmInTransaction($attempt, $providerData, $source);
+            $this->entityManager->commit();
+
+            return $result;
+        } catch (\Throwable $e) {
+            if ($this->entityManager->getConnection()->isTransactionActive()) {
+                $this->entityManager->rollback();
+            }
+            throw $e;
+        }
+    }
+
+    /** @param array<string, mixed> $providerData */
+    private function confirmInTransaction(WechatPaymentAttempt $attempt, array $providerData, string $source): PaymentNotifyResult
+    {
         $config = $this->resolver->resolveForAttempt($attempt);
         $this->verify($attempt, $config, $providerData);
 

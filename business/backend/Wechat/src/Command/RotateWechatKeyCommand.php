@@ -6,7 +6,6 @@ namespace NsUltimate\Business\Wechat\Command;
 
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Wechat\Entity\WechatApplicationRevision;
-use NsUltimate\Business\Wechat\Entity\WechatIdentity;
 use NsUltimate\Business\Wechat\Entity\WechatMerchantRevision;
 use NsUltimate\Business\Wechat\Service\SecretCipher;
 use NsUltimate\Business\Wechat\Service\WechatAuditLogger;
@@ -102,22 +101,6 @@ final class RotateWechatKeyCommand extends Command
                 } elseif ($result === 'failure') {
                     $failures[] = sprintf('merchant %s: %s', $revision->getUuid(), $name);
                 }
-            }
-        }
-
-        $identities = $this->entityManager->getRepository(WechatIdentity::class)->findAll();
-        foreach ($identities as $identity) {
-            $result = $this->rotatePayload($identity->encryptedSessionKey(), $replacement, $dryRun);
-            if ($result === 'rotated') {
-                if (!$dryRun) {
-                    $identity->setSessionKeyEncrypted(
-                        $this->replacementEncrypt($replacement, $identity->encryptedSessionKey()),
-                        $replacement->keyId(),
-                    );
-                }
-                $rotated++;
-            } elseif ($result === 'failure') {
-                $failures[] = sprintf('identity %s: sessionKey', $identity->getUuid());
             }
         }
 

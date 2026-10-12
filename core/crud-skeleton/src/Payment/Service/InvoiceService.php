@@ -64,7 +64,7 @@ final class InvoiceService extends BaseService implements InvoiceServiceInterfac
     /** @param array<string, mixed> $options */
     public function pay(Invoice $invoice, string $payment, array $options = []): PaymentResult
     {
-        return $this->wrapInTransaction(function () use ($invoice, $payment, $options) {
+        $operation = $this->wrapInTransaction(function () use ($invoice, $payment, $options) {
             if (!$this->workflow->can($invoice, 'start_pay')) {
                 throw new InvoiceInvalidTransitionException($invoice, 'start_pay');
             }
@@ -116,8 +116,16 @@ final class InvoiceService extends BaseService implements InvoiceServiceInterfac
                 );
             }
 
+            $gateway = $this->gatewayRegistry->get($payment);
+            if ($gateway instanceof PostCommitPaymentGatewayInterface) {
+                return [
+                    'postCommit' => true,
+                    'gateway' => $gateway,
+                    'gatewayAmount' => $gatewayAmount,
+                ];
+            }
+
             try {
-                $gateway = $this->gatewayRegistry->get($payment);
                 $result = $gateway->pay($invoice, $gatewayAmount, $options);
             } catch (\Throwable $e) {
                 if ($adjustments !== []) {
@@ -125,26 +133,58 @@ final class InvoiceService extends BaseService implements InvoiceServiceInterfac
                 }
                 throw $e;
             }
-            $payload = $result->payload ?? [];
-            if ($payload) {
-                $invoice->appendExtraData('pay', $this->sanitizePayload($payload));
-            }
-
-            if ($result->status === Invoice::STATUS_PAID) {
-                $this->markPaid($invoice, new PaymentNotifyResult(
-                    payment: $payment,
-                    outTradeNo: $invoice->getOutTradeNo(),
-                    status: Invoice::STATUS_PAID,
-                    amount: $gatewayAmount,
-                    currency: $invoice->getCurrency(),
-                    transactionId: $payload['transactionId'] ?? null,
-                    paidAt: new \DateTimeImmutable(),
-                    rawData: $payload,
-                ));
-            }
-
-            return $result;
+            return $this->completeGatewayResult($invoice, $payment, $gatewayAmount, $result);
         });
+
+        if (!is_array($operation) || ($operation['postCommit'] ?? false) !== true) {
+            return $operation;
+        }
+
+        /** @var PostCommitPaymentGatewayInterface $gateway */
+        $gateway = $operation['gateway'];
+        $gatewayAmount = $operation['gatewayAmount'];
+        try {
+            $result = $gateway->pay($invoice, $gatewayAmount, $options);
+        } catch (\Throwable $e) {
+            // Provider uncertainty is returned by the gateway as STATUS_PAYING;
+            // thrown errors here are pre-initiation validation failures.
+            $failure = new PaymentNotifyResult(
+                payment: $payment,
+                outTradeNo: $invoice->getOutTradeNo(),
+                status: Invoice::STATUS_FAILED,
+                amount: 0,
+                currency: $invoice->getCurrency(),
+                rawData: ['message' => 'Payment gateway initialization failed.'],
+            );
+            $this->markFailed($invoice, $failure);
+            throw $e;
+        }
+
+        return $this->wrapInTransaction(fn (): PaymentResult =>
+            $this->completeGatewayResult($invoice, $payment, $gatewayAmount, $result)
+        );
+    }
+
+    private function completeGatewayResult(Invoice $invoice, string $payment, int $gatewayAmount, PaymentResult $result): PaymentResult
+    {
+        $payload = $result->payload ?? [];
+        if ($payload !== []) {
+            $invoice->appendExtraData('pay', $this->sanitizePayload($payload));
+        }
+        if ($result->status === Invoice::STATUS_PAID) {
+            $this->markPaid($invoice, new PaymentNotifyResult(
+                payment: $payment,
+                outTradeNo: $invoice->getOutTradeNo(),
+                status: Invoice::STATUS_PAID,
+                amount: $gatewayAmount,
+                currency: $invoice->getCurrency(),
+                transactionId: $payload['transactionId'] ?? null,
+                paidAt: new \DateTimeImmutable(),
+                rawData: $payload,
+            ));
+        }
+
+        return $result;
     }
 
     public function handleNotifyResult(PaymentNotifyResult $result): Invoice

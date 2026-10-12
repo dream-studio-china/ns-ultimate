@@ -47,16 +47,6 @@ class WechatIdentity
     #[ORM\Column(type: 'string', length: 64, nullable: true)]
     private ?string $unionid = null;
 
-    #[ORM\Column(name: 'session_key_encrypted', type: 'text', nullable: true)]
-    private ?string $sessionKeyEncrypted = null;
-
-    #[ORM\Column(name: 'session_key_key_id', type: 'string', length: 32, nullable: true)]
-    private ?string $sessionKeyKeyId = null;
-
-    /** @var array<string, mixed>|null */
-    #[ORM\Column(name: 'raw_data', type: 'json', nullable: true)]
-    private ?array $rawData = null;
-
     #[ORM\Column(name: 'last_login_at', type: 'datetime_immutable')]
     private \DateTimeImmutable $lastLoginAt;
 
@@ -90,29 +80,10 @@ class WechatIdentity
     public function setOpenid(string $openid): self { $this->openid = $openid; return $this->touch(); }
     public function getUnionid(): ?string { return $this->unionid; }
     public function setUnionid(?string $unionid): self { $this->unionid = $unionid; return $this->touch(); }
-    public function getSessionKeyKeyId(): ?string { return $this->sessionKeyKeyId; }
-
-    /** @return array<string, mixed>|null */
-    public function getRawData(): ?array { return $this->rawData; }
-    /** @param array<string, mixed>|null $rawData */
-    public function setRawData(?array $rawData): self { $this->rawData = $rawData; return $this->touch(); }
-
     public function getLastLoginAt(): \DateTimeImmutable { return $this->lastLoginAt; }
     public function setLastLoginAt(\DateTimeImmutable $lastLoginAt): self { $this->lastLoginAt = $lastLoginAt; return $this->touch(); }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
     public function getUpdatedAt(): ?\DateTimeImmutable { return $this->updatedAt; }
-
-    public function hasSessionKey(): bool { return $this->sessionKeyEncrypted !== null; }
-
-    /** Raw encrypted material. Only SecretCipher-aware services may consume this. */
-    public function encryptedSessionKey(): ?string { return $this->sessionKeyEncrypted; }
-
-    public function setSessionKeyEncrypted(?string $sessionKeyEncrypted, ?string $keyId): self
-    {
-        $this->sessionKeyEncrypted = $sessionKeyEncrypted;
-        $this->sessionKeyKeyId = $keyId;
-        return $this->touch();
-    }
 
     private function touch(): self
     {

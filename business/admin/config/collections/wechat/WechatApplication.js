@@ -14,6 +14,10 @@ export default {
           ]
         }},
         { property: 'appId', required: true, help: t('WeChat AppID help') },
+        { property: 'secret', type: 'input', help: t('WeChat secret help') },
+        { property: 'officialToken', type: 'input', help: t('WeChat official token help') },
+        { property: 'officialAesKey', type: 'input', help: t('WeChat official AES key help') },
+        { property: 'redirectHosts', type: 'array', help: t('WeChat redirect hosts help') },
         { property: 'enabled', type: 'boolean', default_value: true }
       ]
     },

@@ -77,8 +77,6 @@ final class ImportLegacyWechatIdentitiesCommand extends Command
                     $type,
                     $openid,
                     $legacy->getUnionid(),
-                    (string) ($legacy->getSessionKey() ?? ''),
-                    $legacy->getRawData(),
                 );
                 $imported++;
             } catch (\InvalidArgumentException $e) {
