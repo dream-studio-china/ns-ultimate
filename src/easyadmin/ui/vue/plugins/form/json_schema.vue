@@ -32,7 +32,7 @@ export default {
     field: { type: Object, default: () => ({}) }
   },
   data() {
-    return { loading: true, failed: false, definition: null, schema: null, validateValue: null, validatedOnce: false }
+    return { loading: true, failed: false, definition: null, schema: null, validateValue: null, validatedOnce: false, releaseValidator: null, disposed: false }
   },
   computed: {
     schemaValue() {
@@ -58,6 +58,7 @@ export default {
       const schema = typeof source === 'function'
         ? await source({ entity: admin?.em?.name, id: admin?.id, property: this.field.property, form: this.form })
         : source
+      if (this.disposed) return
       const definition = createSchemaForm(schema, this.field.type_options?.fields)
       if (!definition) throw new Error('Unsupported JSON Schema')
 
@@ -65,12 +66,16 @@ export default {
       this.schema = schema
       this.form[this.field.property] = applySchemaDefaults(schema, this.form[this.field.property])
       this.validateValue = schema.$id ? ajv.getSchema(schema.$id) || ajv.compile(schema) : ajv.compile(schema)
-      admin?.registerFieldValidator(this.field.property, this.validateSchema, 'change')
+      this.releaseValidator = admin?.registerFieldValidator(this.field.property, this.validateSchema, 'change')
     } catch (_) {
       this.failed = true
     } finally {
       this.loading = false
     }
+  },
+  beforeUnmount() {
+    this.disposed = true
+    if (typeof this.releaseValidator === 'function') this.releaseValidator()
   },
   methods: {
     triggerValidate() {

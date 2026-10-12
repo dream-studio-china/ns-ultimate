@@ -247,6 +247,17 @@ interface FieldOption {
 }
 ```
 
+Callback-hidden fields remain registered so their visibility can react to other
+form values. Hidden callback fields are omitted from top-level save payloads and
+embedded `v-model` updates. Their local values are retained while hidden, so a
+user can switch modes without losing input; when the field becomes visible again,
+its value is included. An embedded form retains hidden values only when the parent
+echoes the exact emitted model unchanged. An independent replacement (including a
+cloned model) or reset is authoritative and clears omitted values. Plugins that
+register instance-bound validators must invoke the cleanup function returned by
+`registerFieldValidator` before unmounting. Static hidden fields are still excluded when the form is
+initialized for the current create/update operation.
+
 ### JSON Schema Fields
 
 Use `type: 'json_schema'` to render an object-valued JSON property with generated
@@ -275,7 +286,7 @@ lengths, numeric bounds, `pattern`, primitive array item schemas, `uniqueItems`,
 Schema validation is performed with Ajv when the outer form submits. Empty optional
 properties are excluded from the validation copy; empty required properties remain
 invalid. Before submission, FormAdmin recursively removes `null` and `undefined`
-object properties from the payload.
+object properties from a deep copy of the payload, leaving the live form model intact.
 
 Static schemas should live beside their entity configuration:
 

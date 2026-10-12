@@ -259,6 +259,9 @@ export default {
       // form data
       form: {},
 
+      // Identify an unchanged v-model echo, not an independent parent reset.
+      lastEmittedModel: null,
+
       // field vaildations
       rules: {},
 
@@ -297,8 +300,23 @@ export default {
       // Guard with a deep comparison: the nested v-model echo always produces a new
       // object reference, so a reference check alone ping-pongs forever between the
       // parent and the embedded form and starves sibling schema forms on create.
-      if (this.embedded && value && typeof value === 'object' && !deepEqualFormValue(value, this.form)) {
-        this.form = value
+      if (this.embedded && value && typeof value === 'object') {
+        // Keep locally-entered values for callback-hidden fields when the
+        // parent echoes the exact filtered model we emitted. Any independent
+        // replacement remains authoritative, including omitted field values.
+        const merged = { ...value }
+        const isEcho = toRaw(value) === toRaw(this.lastEmittedModel)
+          && deepEqualFormValue(value, this.filteredFormModel())
+        this.lastEmittedModel = null
+        for (const field of isEcho ? this.properties : []) {
+          if (typeof field.hidden === 'function'
+            && this.isHidden(field)
+            && !Object.prototype.hasOwnProperty.call(value, field.property)
+            && Object.prototype.hasOwnProperty.call(this.form, field.property)) {
+            merged[field.property] = this.form[field.property]
+          }
+        }
+        if (!deepEqualFormValue(merged, this.form)) this.form = merged
       }
     },
     form: {
@@ -309,8 +327,9 @@ export default {
         // Skip the echo back to the parent when nothing actually changed.
         // Without this, every embedded sync emits a fresh object copy which the
         // parent feeds straight back into the child (infinite recursive updates).
-        const merged = { ...this.modelValue, ...this.form }
+        const merged = this.filteredFormModel()
         if (deepEqualFormValue(merged, this.modelValue)) return
+        this.lastEmittedModel = merged
         this.$emit('update:modelValue', merged)
       },
       deep: true
@@ -347,7 +366,10 @@ export default {
 
       for (const field of fields) {
         const normalized = typeof field === 'string' ? { property: field } : field
-        if (this.isHidden(normalized)) continue
+        // Dynamic hidden callbacks must stay registered: their visibility can
+        // change as the user edits another field. Static hidden fields can be
+        // discarded for the current form operation.
+        if (typeof normalized.hidden !== 'function' && this.isHidden(normalized)) continue
         if (typeof field === 'string') {
           this.properties.push({
             property: field
@@ -432,6 +454,31 @@ export default {
     })
   },
   methods: {
+    filteredFormModel() {
+      const merged = { ...this.modelValue, ...this.form }
+      for (const field of this.properties) {
+        if (typeof field.hidden === 'function' && this.isHidden(field)) {
+          delete merged[field.property]
+        }
+      }
+      return merged
+    },
+
+    cloneFormData(value) {
+      if (Array.isArray(value)) return value.map(item => this.cloneFormData(item))
+      if (value instanceof Date) return new Date(value.getTime())
+      if (!value || typeof value !== 'object') return value
+
+      const prototype = Object.getPrototypeOf(value)
+      if (prototype !== Object.prototype && prototype !== null) return value
+
+      const clone = Object.create(prototype)
+      for (const [key, item] of Object.entries(value)) {
+        clone[key] = this.cloneFormData(item)
+      }
+      return clone
+    },
+
     log(...arg) {
       return console.log(...arg)
     },
@@ -469,6 +516,12 @@ export default {
       const exists = this.rules[fieldName].some(r => r.validator === validator)
       if (!exists) {
         this.rules[fieldName].push({ validator, trigger })
+      }
+      // Plugins must release instance-bound closures when visibility unmounts them.
+      return () => {
+        const rules = this.rules[fieldName]
+        const index = rules?.findIndex(rule => rule.validator === validator) ?? -1
+        if (index !== -1) rules.splice(index, 1)
       }
     },
 
@@ -608,15 +661,21 @@ export default {
     }) {
       this.$refs['form'].validate((valid) => {
         if (valid) {
-          // Remove blank attributes
-          this.cleanBlankAttributes(this.form)
+          const submitData = this.cloneFormData(this.form)
+          for (const field of this.properties) {
+            if (typeof field.hidden === 'function' && this.isHidden(field)) {
+              delete submitData[field.property]
+            }
+          }
+          // Remove blank attributes from the submitted copy, not the live form.
+          this.cleanBlankAttributes(submitData)
 
           if (isUpdateOperation(this.id)) {
-            this.em.update(this.id, this.form)
+            this.em.update(this.id, submitData)
               .then(res => success(res))
               .catch(err => { this.uiFeedback().error(err.message) })
           } else {
-            this.em.create(this.form)
+            this.em.create(submitData)
               .then(res => success(res))
               .catch(err => { this.uiFeedback().error(err.message) })
           }

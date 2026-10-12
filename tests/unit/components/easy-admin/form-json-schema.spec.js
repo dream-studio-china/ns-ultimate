@@ -49,6 +49,27 @@ describe('form-json-schema plugin', () => {
     }
   }
 
+  it('releases its registered validator on unmount', async() => {
+    const release = vi.fn()
+    const wrapper = mountPlugin({ schema, admin: { registerFieldValidator: vi.fn(() => release) } })
+    await settled(wrapper)
+    wrapper.unmount()
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not register a validator or mutate the model after an async schema resolves on an unmounted field', async() => {
+    let resolveSchema
+    const pending = new Promise(resolve => { resolveSchema = resolve })
+    const registerFieldValidator = vi.fn()
+    const form = reactive({ value: null })
+    const wrapper = mountPlugin({ form, schema: () => pending, admin: { registerFieldValidator } })
+    wrapper.unmount()
+    resolveSchema(schema)
+    await flushPromises()
+    expect(registerFieldValidator).not.toHaveBeenCalled()
+    expect(form.value).toBeNull()
+  })
+
   it('renders a local embedded FormAdmin and registers full-object validation', async() => {
     const registerFieldValidator = vi.fn()
     const wrapper = mountPlugin({ admin: { em: { name: 'Store' }, id: 3, registerFieldValidator }, schema })
