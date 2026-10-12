@@ -23,8 +23,8 @@ final class WechatMerchantController extends RestController
     use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
 
     protected array $requiredCreateProperties = ['name', 'merchantId', 'apiV3Key', 'privateKey', 'certificate'];
-    protected array $acceptedCreateProperties = ['name', 'merchantId', 'apiV3Key', 'privateKey', 'certificate', 'platformCertificate'];
-    protected array $acceptedUpdateProperties = ['name', 'merchantId', 'apiV3Key', 'privateKey', 'certificate', 'platformCertificate'];
+    protected array $acceptedCreateProperties = ['name', 'merchantId', 'paymentMode', 'serviceProviderAppId', 'subMerchantId', 'apiV3Key', 'privateKey', 'certificate', 'platformCertificate'];
+    protected array $acceptedUpdateProperties = ['name', 'merchantId', 'paymentMode', 'serviceProviderAppId', 'subMerchantId', 'apiV3Key', 'privateKey', 'certificate', 'platformCertificate'];
 
     public function __construct(
         protected readonly WechatMerchantService $service,
@@ -37,6 +37,7 @@ final class WechatMerchantController extends RestController
         if (!$entity instanceof WechatMerchant) {
             throw new \LogicException('Unexpected merchant entity.');
         }
+        $content = $this->validatePaymentMode($content, $entity);
         $credentials = [];
         foreach (['apiV3Key' => 'api_v3_key', 'privateKey' => 'private_key', 'certificate' => 'certificate'] as $field => $key) {
             $credentials[$key] = $this->required($content, $field);
@@ -58,7 +59,18 @@ final class WechatMerchantController extends RestController
         if (isset($content['merchantId']) && $content['merchantId'] !== $entity->getMerchantId()) {
             throw new \InvalidArgumentException('Merchant ID cannot be changed after creation.');
         }
+        foreach (['paymentMode' => $entity->getPaymentMode(), 'serviceProviderAppId' => $entity->getServiceProviderAppId(), 'subMerchantId' => $entity->getSubMerchantId()] as $field => $originalValue) {
+            if (array_key_exists($field, $content) && $content[$field] !== $originalValue) {
+                $message = match ($field) {
+                    'paymentMode' => 'WeChat payment mode cannot be changed after creation.',
+                    'serviceProviderAppId' => 'Service provider AppID cannot be changed after creation.',
+                    'subMerchantId' => 'Sub-merchant ID cannot be changed after creation.',
+                };
+                throw new \InvalidArgumentException($message);
+            }
+        }
         unset($content['merchantId']);
+        unset($content['paymentMode'], $content['serviceProviderAppId'], $content['subMerchantId']);
         $credentials = $entity->decryptCredentials($this->cipher);
         $changed = false;
         foreach (['apiV3Key' => 'api_v3_key', 'privateKey' => 'private_key', 'certificate' => 'certificate', 'platformCertificate' => 'platform_certificate'] as $field => $key) {
@@ -94,5 +106,31 @@ final class WechatMerchantController extends RestController
         if (openssl_x509_read($certificate) === false) {
             throw new \InvalidArgumentException('platformCertificate must contain a valid PEM-encoded X.509 certificate.');
         }
+    }
+
+    /** @param array<string, mixed> $content */
+    private function validatePaymentMode(array $content, WechatMerchant $entity): array
+    {
+        $mode = $content['paymentMode'] ?? WechatMerchant::PAYMENT_MODE_DIRECT;
+        if (!in_array($mode, [WechatMerchant::PAYMENT_MODE_DIRECT, WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER], true)) {
+            throw new \InvalidArgumentException('WeChat payment mode must be direct or service_provider.');
+        }
+        if ($mode === WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER) {
+            foreach (['serviceProviderAppId', 'subMerchantId'] as $field) {
+                if (!is_string($content[$field] ?? null) || trim($content[$field]) === '') {
+                    throw new \InvalidArgumentException($field === 'serviceProviderAppId'
+                        ? 'Service provider AppID is required for service-provider payments.'
+                        : 'Sub-merchant ID is required for service-provider payments.');
+                }
+                $content[$field] = trim($content[$field]);
+            }
+        } else {
+            unset($content['serviceProviderAppId'], $content['subMerchantId']);
+        }
+        $entity->setPaymentMode($mode)
+            ->setServiceProviderAppId($mode === WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER ? trim($content['serviceProviderAppId']) : null)
+            ->setSubMerchantId($mode === WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER ? trim($content['subMerchantId']) : null);
+
+        return $content;
     }
 }

@@ -64,6 +64,16 @@ final class Kernel extends CoreKernel
         }
 
         $container->import(__DIR__.'/../config/services.yaml');
+        $projectTranslationDirectory = dirname(__DIR__).'/translations';
+        if (is_dir($projectTranslationDirectory)) {
+            $container->extension('framework', [
+                'translator' => [
+                    // Make project translations take precedence over upstream labels.
+                    'default_path' => $projectTranslationDirectory,
+                    'paths' => [$this->getProjectDir().'/translations'],
+                ],
+            ]);
+        }
         $services = $container->services()
             ->defaults()
                 ->autowire()

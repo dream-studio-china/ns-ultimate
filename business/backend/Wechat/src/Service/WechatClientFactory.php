@@ -8,6 +8,7 @@ use EasyWeChat\MiniApp\Application as MiniApp;
 use EasyWeChat\OfficialAccount\Application as OfficialAccount;
 use EasyWeChat\Pay\Application as Pay;
 use NsUltimate\Business\Wechat\Entity\WechatApplication;
+use NsUltimate\Business\Wechat\Entity\WechatMerchant;
 
 final class WechatClientFactory
 {
@@ -44,7 +45,7 @@ final class WechatClientFactory
         $application = $this->resolver->application($storeUuid, $type);
         $merchant = $this->resolver->merchant($storeUuid);
 
-        return $this->payWithCredentials($application['profile']->getAppId(), $merchant['profile']->getMerchantId(), $merchant['credentials']);
+        return $this->payWithCredentials($application['profile']->getAppId(), $merchant['profile']->getMerchantId(), $this->paymentCredentials($merchant));
     }
 
     public function payByUuid(string $applicationUuid, string $merchantUuid, string $type): Pay
@@ -52,12 +53,28 @@ final class WechatClientFactory
         $application = $this->resolver->applicationByUuid($applicationUuid, $type);
         $merchant = $this->resolver->merchantByUuid($merchantUuid);
 
-        return $this->payWithCredentials($application['profile']->getAppId(), $merchant['profile']->getMerchantId(), $merchant['credentials']);
+        return $this->payWithCredentials($application['profile']->getAppId(), $merchant['profile']->getMerchantId(), $this->paymentCredentials($merchant));
+    }
+
+    /** @param array{profile: WechatMerchant, credentials: array<string, string>} $merchant
+     *  @return array<string, string>
+     */
+    private function paymentCredentials(array $merchant): array
+    {
+        return array_merge($merchant['credentials'], [
+            'payment_mode' => $merchant['profile']->getPaymentMode(),
+            'service_provider_app_id' => $merchant['profile']->getServiceProviderAppId() ?? '',
+            'sub_merchant_id' => $merchant['profile']->getSubMerchantId() ?? '',
+        ]);
     }
 
     /** @param array<string, string> $credentials */
     private function payWithCredentials(string $appId, string $merchantId, array $credentials): Pay
     {
+        $serviceProviderMode = ($credentials['payment_mode'] ?? 'direct') === 'service_provider';
+        if ($serviceProviderMode) {
+            $appId = $credentials['service_provider_app_id'] ?? '';
+        }
         $platformCertificate = $credentials['platform_certificate'] ?? '';
         if ($platformCertificate === '' || openssl_x509_read($platformCertificate) === false) {
             throw new \RuntimeException('A valid WeChat Pay platform certificate is required to verify callbacks and create payments.');

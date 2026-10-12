@@ -45,6 +45,86 @@ test('registers the actual Counter configurations with their API identities', ()
   assert.equal(entities.OrderCounter.form.fields[1].relation.valueKey, 'uuid')
 })
 
+test('keeps immutable WeChat profile fields out of update payloads', () => {
+  const loadWechatCollection = name => {
+    const source = readFileSync(new URL(
+      `../../business/admin/config/collections/wechat/${name}.js`, import.meta.url
+    ), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+    const context = { t: key => key, orderByIdDesc: {} }
+    runInNewContext(source, context)
+    return context.config[name]
+  }
+
+  const application = loadWechatCollection('WechatApplication')
+  const merchant = loadWechatCollection('WechatMerchant')
+  const storeSetting = loadWechatCollection('StoreWechatSetting')
+  const fieldsByEntity = { application, merchant, storeSetting }
+
+  for (const [entityName, fields] of Object.entries({
+    application: ['type', 'appId'],
+    merchant: ['merchantId', 'paymentMode'],
+    storeSetting: ['storeUuid']
+  })) {
+    const configured = fieldsByEntity[entityName].form.fields
+    for (const property of fields) {
+      assert.equal(configured.find(field => field.property === property)?.hidden, 'update', `${entityName}.${property}`)
+    }
+  }
+
+  assert.equal(application.entity.plural, 'wechat-applications')
+  assert.equal(merchant.entity.plural, 'wechat-merchants')
+  assert.equal(storeSetting.entity.plural, 'store-wechat-settings')
+
+  for (const property of ['serviceProviderAppId', 'subMerchantId']) {
+    const hidden = merchant.form.fields.find(field => field.property === property)?.hidden
+    assert.equal(typeof hidden, 'function')
+    assert.equal(hidden({ paymentMode: 'direct' }, null), true)
+    assert.equal(hidden({ paymentMode: 'service_provider' }, null), false)
+    assert.equal(hidden({ paymentMode: 'service_provider' }, 42), true)
+  }
+})
+
+test('localizes WeChat form labels, placeholders and help in every business locale', () => {
+  for (const locale of ['en', 'zh', 'zh-Hant', 'ja']) {
+    const messagesContext = {}
+    const messagesSource = readFileSync(new URL(`../../business/admin/i18n/${locale}.js`, import.meta.url), 'utf8')
+      .replace('export default', 'globalThis.messages =')
+    runInNewContext(messagesSource, messagesContext)
+    const t = key => {
+      if (['Name', 'Store'].includes(key)) return key
+      assert.ok(messagesContext.messages[key], `Missing ${locale} translation: ${key}`)
+      return messagesContext.messages[key]
+    }
+
+    for (const [name, properties] of [
+      ['WechatApplication', ['secret', 'token', 'aesKey']],
+      ['WechatMerchant', ['apiV3Key', 'privateKey', 'certificate', 'platformCertificate']],
+      ['StoreWechatSetting', ['miniappUuid', 'officialUuid', 'merchantUuid']]
+    ]) {
+      const source = readFileSync(new URL(`../../business/admin/config/collections/wechat/${name}.js`, import.meta.url), 'utf8')
+        .replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+      // Core labels used outside the fields under test are not business translations.
+      const context = { t, orderByIdDesc: {} }
+      runInNewContext(source, context)
+      for (const property of properties) {
+        const field = context.config[name].form.fields.find(field => field.property === property)
+        for (const value of [field.field_options?.label, field.type_options?.placeholder, field.help]) {
+          assert.ok(value && value !== property, `${locale} ${name}.${property} must explain its input`)
+          assert.ok(Object.values(messagesContext.messages).includes(value), `${locale} ${name}.${property} must use business translations`)
+        }
+      }
+      if (name === 'StoreWechatSetting') {
+        assert.equal(context.config[name].form.fields.find(field => field.property === 'miniappUuid').relation_filter['@filter'], 'entity.getType() == "miniapp"')
+        assert.equal(context.config[name].form.fields.find(field => field.property === 'officialUuid').relation_filter['@filter'], 'entity.getType() == "official"')
+        for (const property of ['miniappUuid', 'officialUuid', 'merchantUuid']) {
+          assert.ok(context.config[name].list.list_display.find(field => field.property === property)?.label)
+          assert.ok(context.config[name].detail.detail_display.find(field => field.property === property)?.label)
+        }
+      }
+    }
+  }
+})
+
 test('Counter UUID filters load labels but submit UUIDs with exact getter expressions', async () => {
   const entities = collectEntities(loadCounterCollections())
   for (const [name, property, target] of [

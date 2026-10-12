@@ -4,114 +4,104 @@ declare(strict_types=1);
 
 namespace NsUltimate\Business\Wechat\Controller\Admin;
 
+use App\Core\Controller\RestController;
+use App\Core\View\ApiView;
+use App\Core\View\CreateApiViewMixin;
+use App\Core\View\DetailApiViewMixin;
+use App\Core\View\ListApiViewMixin;
+use App\Core\View\UpdateApiViewMixin;
 use App\Store\Entity\Store;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
 use NsUltimate\Business\Wechat\Entity\WechatApplication;
 use NsUltimate\Business\Wechat\Entity\WechatMerchant;
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use NsUltimate\Business\Wechat\Service\StoreWechatSettingService;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/manage/store-wechat-settings', name: 'wechat-store-settings-')]
 #[IsGranted('ROLE_ADMIN')]
-final class StoreWechatSettingController extends AbstractController
+final class StoreWechatSettingController extends RestController
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
-    {
+    use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
+
+    protected array $requiredCreateProperties = ['storeUuid', 'merchantUuid'];
+    protected array $acceptedCreateProperties = ['storeUuid', 'miniappUuid', 'officialUuid', 'merchantUuid'];
+    protected array $acceptedUpdateProperties = ['storeUuid', 'miniappUuid', 'officialUuid', 'merchantUuid'];
+
+    public function __construct(
+        protected readonly StoreWechatSettingService $service,
+        private readonly EntityManagerInterface $entityManager,
+    ) {
     }
 
-    #[Route('', name: 'list', methods: ['GET'])]
-    public function list(Request $request): JsonResponse
+    protected function processCreateContent(array $content, object $entity): array
     {
-        $repository = $this->entityManager->getRepository(StoreWechatSetting::class);
-        $query = $repository->createQueryBuilder('setting');
-        $storeUuid = $request->query->get('storeUuid');
-        if (is_string($storeUuid) && $storeUuid !== '') {
-            $query->andWhere('setting.storeUuid = :storeUuid')->setParameter('storeUuid', $storeUuid);
+        if (!$entity instanceof StoreWechatSetting) {
+            throw new \LogicException('Unexpected store WeChat setting entity.');
         }
-        $filter = $request->query->get('@filter');
-        if (is_string($filter) && $filter !== '') {
-            if (!preg_match("/^\\(?\\s*entity\\.getStoreUuid\\(\\)\\s+matches\\s+'([^'\\r\\n]*)'\\s*\\)?$/D", $filter, $matches)) {
-                throw new BadRequestHttpException('Unsupported store settings filter.');
-            }
-            $query->andWhere("setting.storeUuid LIKE :storeSearch ESCAPE '!'")
-                ->setParameter('storeSearch', '%'.strtr($matches[1], ['!' => '!!', '%' => '!%', '_' => '!_']).'%');
+        return $this->processSettingContent($content, $entity, true);
+    }
+
+    protected function processUpdateContent(array $content, ?object $entity = null): array
+    {
+        if (!$entity instanceof StoreWechatSetting) {
+            throw new \LogicException('Unexpected store WeChat setting entity.');
         }
-        $page = max(1, $request->query->getInt('page', 1));
-        $limit = min(100, max(1, $request->query->getInt('limit', 20)));
-        $total = (int) (clone $query)->select('COUNT(setting.id)')->getQuery()->getSingleScalarResult();
-        $rows = $query->orderBy('setting.id', 'DESC')->setMaxResults($limit)->setFirstResult(($page - 1) * $limit)->getQuery()->getResult();
-        return $this->json([
-            'data' => array_map($this->settingRow(...), $rows),
-            'paginator' => [
-                'total' => $total,
-                'page' => $page,
-                'limit' => $limit,
-                'pages' => max(1, (int) ceil($total / $limit)),
-                'has_previous' => $page > 1,
-                'has_next' => $page * $limit < $total,
-            ],
-        ]);
+        return $this->processSettingContent($content, $entity, false);
     }
 
-    #[Route('/{id}', name: 'detail', methods: ['GET'])]
-    public function detail(string $id): JsonResponse
+    /** @param array<string, mixed> $content
+     *  @return array<string, mixed>
+     */
+    private function processSettingContent(array $content, StoreWechatSetting $setting, bool $creating): array
     {
-        $setting = ctype_digit($id)
-            ? $this->entityManager->getRepository(StoreWechatSetting::class)->find((int) $id)
-            : $this->entityManager->getRepository(StoreWechatSetting::class)->findOneBy(['storeUuid' => $id]);
-        return $setting instanceof StoreWechatSetting
-            ? $this->json(['data' => $this->settingRow($setting)])
-            : $this->json(['message' => 'Store WeChat setting not found.'], 404);
-    }
-
-    #[Route('', name: 'create', methods: ['POST'])]
-    public function create(Request $request): JsonResponse
-    {
-        $data = $this->body($request);
-        if (!is_string($data['storeUuid'] ?? null) || trim($data['storeUuid']) === '') {
-            throw new BadRequestHttpException('storeUuid is required.');
+        $storeUuid = $content['storeUuid'] ?? ($creating ? null : $setting->getStoreUuid());
+        if (!is_string($storeUuid) || trim($storeUuid) === '') {
+            throw new \InvalidArgumentException('storeUuid is required.');
         }
-        return $this->save($data, $data['storeUuid']);
-    }
-
-    #[Route('/{id}', name: 'update', methods: ['PUT'])]
-    public function update(Request $request, string $id): JsonResponse
-    {
-        $setting = ctype_digit($id)
-            ? $this->entityManager->getRepository(StoreWechatSetting::class)->find((int) $id)
-            : $this->entityManager->getRepository(StoreWechatSetting::class)->findOneBy(['storeUuid' => $id]);
-        $storeUuid = $setting instanceof StoreWechatSetting ? $setting->getStoreUuid() : $id;
-        return $this->save($this->body($request), $storeUuid);
-    }
-
-    /** @param array<string, mixed> $data */
-    private function save(array $data, string $storeUuid): JsonResponse
-    {
+        $storeUuid = trim($storeUuid);
         if (!$this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $storeUuid]) instanceof Store) {
-            return $this->json(['message' => 'Store not found.'], 404);
+            throw new \InvalidArgumentException('Store not found.');
         }
-        $miniapp = $this->application($data['miniappUuid'] ?? null, WechatApplication::TYPE_MINIAPP);
-        $official = $this->application($data['officialUuid'] ?? null, WechatApplication::TYPE_OFFICIAL);
-        $merchant = is_string($data['merchantUuid'] ?? null)
-            ? $this->entityManager->getRepository(WechatMerchant::class)->findOneBy(['uuid' => $data['merchantUuid']])
-            : null;
-        if (!$merchant instanceof WechatMerchant || ($miniapp === null && $official === null)) {
-            throw new BadRequestHttpException('Select a merchant and at least one application.');
+        if (!$creating && $storeUuid !== $setting->getStoreUuid()) {
+            throw new \InvalidArgumentException('storeUuid cannot be changed after creation.');
         }
-        $setting = $this->entityManager->getRepository(StoreWechatSetting::class)->findOneBy(['storeUuid' => $storeUuid]);
-        if (!$setting instanceof StoreWechatSetting) {
-            $setting = new StoreWechatSetting($storeUuid, $miniapp, $official, $merchant);
-            $this->entityManager->persist($setting);
-        } else {
-            $setting->setMiniapp($miniapp)->setOfficial($official)->setMerchant($merchant);
+
+        $applicationIds = [];
+        foreach (['miniappUuid' => ['miniapp', WechatApplication::TYPE_MINIAPP], 'officialUuid' => ['official', WechatApplication::TYPE_OFFICIAL]] as $field => [$property, $type]) {
+            if (array_key_exists($field, $content)) {
+                $application = $this->application($content[$field], $type);
+                $applicationIds[$property] = $application?->getId();
+                unset($content[$field]);
+            } elseif ($creating) {
+                $applicationIds[$property] = null;
+            }
         }
-        $this->entityManager->flush();
-        return $this->json(['data' => $this->settingRow($setting)]);
+
+        if (array_key_exists('merchantUuid', $content)) {
+            $merchant = is_string($content['merchantUuid'])
+                ? $this->entityManager->getRepository(WechatMerchant::class)->findOneBy(['uuid' => $content['merchantUuid']])
+                : null;
+            if (!$merchant instanceof WechatMerchant) {
+                throw new \InvalidArgumentException('Selected WeChat merchant is invalid.');
+            }
+            $content['merchant'] = $merchant->getId();
+            unset($content['merchantUuid']);
+        } elseif ($creating) {
+            throw new \InvalidArgumentException('merchantUuid is required.');
+        }
+
+        $miniappId = array_key_exists('miniapp', $applicationIds) ? $applicationIds['miniapp'] : $setting->getMiniapp()?->getId();
+        $officialId = array_key_exists('official', $applicationIds) ? $applicationIds['official'] : $setting->getOfficial()?->getId();
+        if ($miniappId === null && $officialId === null) {
+            throw new \InvalidArgumentException('Select at least one WeChat application.');
+        }
+
+        if ($creating || array_key_exists('storeUuid', $content)) {
+            $content['storeUuid'] = $storeUuid;
+        }
+        return array_merge($content, $applicationIds);
     }
 
     private function application(mixed $uuid, string $type): ?WechatApplication
@@ -123,32 +113,8 @@ final class StoreWechatSettingController extends AbstractController
             ? $this->entityManager->getRepository(WechatApplication::class)->findOneBy(['uuid' => $uuid])
             : null;
         if (!$application instanceof WechatApplication || $application->getType() !== $type) {
-            throw new BadRequestHttpException('Selected WeChat application is invalid.');
+            throw new \InvalidArgumentException('Selected WeChat application is invalid.');
         }
         return $application;
-    }
-
-    /** @return array<string, mixed> */
-    private function body(Request $request): array
-    {
-        try {
-            $body = json_decode($request->getContent(), true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $exception) {
-            throw new BadRequestHttpException('Invalid JSON body.', $exception);
-        }
-        if (!is_array($body)) {
-            throw new BadRequestHttpException('A JSON object is required.');
-        }
-        return $body;
-    }
-
-    /** @return array<string, mixed> */
-    private function settingRow(StoreWechatSetting $setting): array
-    {
-        return [
-            'id' => $setting->getId(), 'uuid' => $setting->getUuid(), 'storeUuid' => $setting->getStoreUuid(),
-            'miniappUuid' => $setting->getMiniapp()?->getUuid(), 'officialUuid' => $setting->getOfficial()?->getUuid(),
-            'merchantUuid' => $setting->getMerchant()->getUuid(),
-        ];
     }
 }

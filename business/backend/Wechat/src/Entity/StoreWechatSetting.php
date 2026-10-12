@@ -47,10 +47,14 @@ class StoreWechatSetting
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
     public function getStoreUuid(): string { return $this->storeUuid; }
+    public function setStoreUuid(string $storeUuid): self { $this->storeUuid = $storeUuid; return $this; }
     public function getMiniapp(): ?WechatApplication { return $this->miniapp; }
+    public function getMiniappUuid(): ?string { return $this->miniapp?->getUuid(); }
     public function setMiniapp(?WechatApplication $miniapp): self { $this->miniapp = $miniapp; return $this; }
     public function getOfficial(): ?WechatApplication { return $this->official; }
+    public function getOfficialUuid(): ?string { return $this->official?->getUuid(); }
     public function setOfficial(?WechatApplication $official): self { $this->official = $official; return $this; }
     public function getMerchant(): WechatMerchant { return $this->merchant; }
+    public function getMerchantUuid(): string { return $this->merchant->getUuid(); }
     public function setMerchant(WechatMerchant $merchant): self { $this->merchant = $merchant; return $this; }
 }

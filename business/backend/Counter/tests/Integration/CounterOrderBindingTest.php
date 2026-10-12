@@ -85,6 +85,27 @@ final class CounterOrderBindingTest extends KernelTestCase
         }
     }
 
+    public function testEveryCounterEntityFieldHasBackendTranslations(): void
+    {
+        $metadataFactory = self::getContainer()->get(EntityManagerInterface::class)->getMetadataFactory();
+        $translator = self::getContainer()->get('translator');
+        foreach ([Counter::class, OrderCounter::class] as $entityClass) {
+            $metadata = $metadataFactory->getMetadataFor($entityClass);
+            $fields = array_merge(array_keys($metadata->fieldMappings), array_keys($metadata->associationMappings));
+            foreach ($fields as $field) {
+                $parts = preg_split('/(?=[A-Z])/', $field);
+                $plainText = ucfirst(strtolower(ucwords(implode(' ', is_array($parts) ? $parts : [$field]))));
+                foreach (['zh', 'zh_Hant', 'ja'] as $locale) {
+                    self::assertNotSame(
+                        $plainText,
+                        $translator->trans($plainText, [], 'messages', $locale),
+                        sprintf('Missing %s translation for %s::$%s.', $locale, $entityClass, $field),
+                    );
+                }
+            }
+        }
+    }
+
     public function testCounterEntitiesUseNamesForStringDisplay(): void
     {
         $counter = (new Counter())->setCode('A01')->setName('Window seat');

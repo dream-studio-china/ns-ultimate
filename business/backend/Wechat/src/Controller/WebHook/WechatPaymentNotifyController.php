@@ -49,6 +49,9 @@ final class WechatPaymentNotifyController
                     'applicationUuid' => $applicationUuid,
                     'merchantUuid' => $merchantUuid,
                     'appType' => $appType,
+                    'paymentMode' => $result->rawData['payment_mode'] ?? 'direct',
+                    'serviceProviderAppId' => $result->rawData['service_provider_app_id'] ?? null,
+                    'subMerchantId' => $result->rawData['sub_mchid'] ?? null,
                 ]);
                 $this->entityManager->flush();
             }

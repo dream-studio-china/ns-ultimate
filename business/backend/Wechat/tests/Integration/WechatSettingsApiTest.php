@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Wechat\Tests\Integration;
 
 use App\Identity\Entity\User;
+use App\Authorization\Entity\Assignment;
+use App\Authorization\Entity\Permission;
+use App\Authorization\Entity\Role;
 use App\Identity\Security\TokenManager;
 use App\Wechat\Entity\WechatUser;
 use App\Payment\Entity\Invoice;
@@ -26,6 +29,8 @@ use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\Console\Tester\CommandTester;
+use NsUltimate\Business\Wechat\Command\SeedWechatAuthorizationCommand;
 use EasyWeChat\MiniApp\Application as MiniApp;
 use EasyWeChat\OfficialAccount\Application as OfficialAccount;
 use EasyWeChat\Pay\Application as Pay;
@@ -61,6 +66,10 @@ final class WechatSettingsApiTest extends KernelTestCase
         }
         $em->flush();
         $em->persist(new Membership($store, $owner->getUuid(), Membership::ROLE_OWNER));
+        $seed = new CommandTester(new SeedWechatAuthorizationCommand($em));
+        self::assertSame(0, $seed->execute([]));
+        $role = $em->getRepository(Role::class)->findOneBy(['code' => 'store_wechat_manager']);
+        $em->persist(new Assignment($role, $owner->getUuid(), Assignment::SCOPE_STORE, $store->getUuid()));
         $em->flush();
 
         $adminToken = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
@@ -81,7 +90,7 @@ final class WechatSettingsApiTest extends KernelTestCase
         self::assertStringNotContainsString('credentialsCipher', json_encode($app, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('merchant-private-key', json_encode($merchant, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('credentialsCipher', json_encode($merchant, JSON_THROW_ON_ERROR));
-        $selection = $this->request('PUT', '/api/v1/store/'.$store->getUuid().'/wechat-settings', $ownerToken, [
+        $selection = $this->request('POST', '/api/v1/store/'.$store->getUuid().'/wechat-settings', $ownerToken, [
             'miniappUuid' => $app['data']['uuid'],
             'officialUuid' => $official['data']['uuid'],
             'merchantUuid' => $merchant['data']['uuid'],
@@ -89,6 +98,17 @@ final class WechatSettingsApiTest extends KernelTestCase
         self::assertSame($store->getUuid(), $selection['data']['storeUuid']);
         self::assertSame($app['data']['uuid'], $selection['data']['miniappUuid']);
         self::assertSame($official['data']['uuid'], $selection['data']['officialUuid']);
+
+        $storeSettingId = $selection['data']['id'];
+        $updated = $this->request('PUT', '/api/v1/store/'.$store->getUuid().'/wechat-settings/'.$storeSettingId, $ownerToken, [
+            'officialUuid' => null,
+        ]);
+        self::assertNull($updated['data']['officialUuid']);
+        self::assertSame($store->getUuid(), $updated['data']['storeUuid']);
+
+        $options = $this->request('GET', '/api/v1/store/'.$store->getUuid().'/wechat-settings/options', $ownerToken);
+        self::assertCount(2, $options['applications']);
+        self::assertCount(1, $options['merchants']);
 
         $this->request('PUT', '/api/v1/manage/wechat-applications/'.$app['data']['id'], $adminToken, ['secret' => 'rotated-secret']);
         $detail = $this->request('GET', '/api/v1/manage/wechat-applications/'.$app['data']['id'], $adminToken);
@@ -109,6 +129,93 @@ final class WechatSettingsApiTest extends KernelTestCase
         self::assertContains(Invoice::PAYMENT_MOCK, $registry->names());
     }
 
+    public function testAdminCanConfigureImmutableServiceProviderMerchantProfile(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $admin = (new User())->setEmail('wechat-provider-admin@example.test')->setUsername('wechat-provider-admin')->setRoles(['ROLE_ADMIN']);
+        $em->persist($admin);
+        $em->flush();
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
+        $provider = $this->request('POST', '/api/v1/manage/wechat-merchants', $token, [
+            'name' => 'Service provider',
+            'merchantId' => '1900000100',
+            'paymentMode' => WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER,
+            'serviceProviderAppId' => ' wx-provider-app ',
+            'subMerchantId' => ' 1900000101 ',
+            'apiV3Key' => str_repeat('p', 32),
+            'privateKey' => 'provider-private-key',
+            'certificate' => 'provider-merchant-certificate',
+            'platformCertificate' => $this->testCertificate(),
+        ]);
+        self::assertSame(WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER, $provider['data']['paymentMode']);
+        self::assertSame('wx-provider-app', $provider['data']['serviceProviderAppId']);
+        self::assertSame('1900000101', $provider['data']['subMerchantId']);
+        self::assertArrayNotHasKey('credentialsCipher', $provider['data']);
+
+        $secondSubMerchant = $this->request('POST', '/api/v1/manage/wechat-merchants', $token, [
+            'name' => 'Second service-provider sub-merchant',
+            'merchantId' => '1900000100',
+            'paymentMode' => WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER,
+            'serviceProviderAppId' => 'wx-provider-app',
+            'subMerchantId' => '1900000102',
+            'apiV3Key' => str_repeat('p', 32),
+            'privateKey' => 'provider-private-key',
+            'certificate' => 'provider-merchant-certificate',
+            'platformCertificate' => $this->testCertificate(),
+        ]);
+        self::assertSame('1900000100', $secondSubMerchant['data']['merchantId']);
+        self::assertSame('1900000102', $secondSubMerchant['data']['subMerchantId']);
+        self::assertNotSame($provider['data']['id'], $secondSubMerchant['data']['id']);
+
+        $request = Request::create('/api/v1/manage/wechat-merchants/'.$provider['data']['id'], 'PUT', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['subMerchantId' => '1900000102'], JSON_THROW_ON_ERROR));
+        $response = self::$kernel->handle($request);
+        self::assertGreaterThanOrEqual(400, $response->getStatusCode(), $response->getContent());
+
+        $stored = $em->getRepository(WechatMerchant::class)->find($provider['data']['id']);
+        self::assertSame('1900000101', $stored->getSubMerchantId());
+    }
+
+    public function testServiceProviderMessagesAreTranslatedInSupportedLocales(): void
+    {
+        $translator = self::getContainer()->get('translator');
+        foreach ([
+            'en' => ['Service provider', 'Sub-merchant ID is required for service-provider payments.'],
+            'zh' => ['服务商', '服务商模式必须填写子商户号。'],
+            'zh_Hant' => ['服務商', '服務商模式必須填寫子商戶號。'],
+            'ja' => ['サービスプロバイダー', 'サービスプロバイダーモードではサブ加盟店番号が必要です。'],
+        ] as $locale => [$mode, $error]) {
+            self::assertSame($mode, $translator->trans('Service provider', [], 'messages', $locale));
+            self::assertSame($error, $translator->trans('Sub-merchant ID is required for service-provider payments.', [], 'messages', $locale));
+        }
+    }
+
+    public function testEveryRegisteredEntityFieldHasBackendTranslations(): void
+    {
+        $metadataFactory = self::getContainer()->get(EntityManagerInterface::class)->getMetadataFactory();
+        $translator = self::getContainer()->get('translator');
+        foreach ($metadataFactory->getAllMetadata() as $metadata) {
+            $fields = array_merge(array_keys($metadata->fieldMappings), array_keys($metadata->associationMappings));
+            foreach ($fields as $field) {
+                $parts = preg_split('/(?=[A-Z])/', $field);
+                $plainText = ucfirst(strtolower(ucwords(implode(' ', is_array($parts) ? $parts : [$field]))));
+                self::assertTrue(
+                    $translator->getCatalogue('en')->defines($plainText),
+                    sprintf('Missing en translation for %s::$%s (%s).', $metadata->getName(), $field, $plainText),
+                );
+                foreach (['zh', 'zh_Hant', 'ja'] as $locale) {
+                    self::assertNotSame(
+                        $plainText,
+                        $translator->trans($plainText, [], 'messages', $locale),
+                        sprintf('Missing %s translation for %s::$%s (%s).', $locale, $metadata->getName(), $field, $plainText),
+                    );
+                }
+            }
+        }
+    }
+
     public function testNonMemberCannotReadStoreSettings(): void
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
@@ -124,6 +231,97 @@ final class WechatSettingsApiTest extends KernelTestCase
         ]);
         $response = self::$kernel->handle($request);
         self::assertSame(403, $response->getStatusCode());
+
+        $request = Request::create('/api/v1/store/'.$store->getUuid().'/wechat-settings', 'POST', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'CONTENT_TYPE' => 'application/json',
+        ], '{}');
+        $response = self::$kernel->handle($request);
+        self::assertSame(403, $response->getStatusCode());
+    }
+
+    public function testStoreSettingsRequireScopedPermissionsAndActiveMembership(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $seed = new CommandTester(new SeedWechatAuthorizationCommand($em));
+        self::assertSame(0, $seed->execute([]));
+        self::assertSame(0, $seed->execute([]));
+        $role = $em->getRepository(Role::class)->findOneBy(['code' => 'store_wechat_manager']);
+        self::assertInstanceOf(Role::class, $role);
+        self::assertCount(4, $role->getPermissions());
+        foreach (['read', 'create', 'update', 'delete'] as $action) {
+            self::assertTrue($role->hasPermission('store:wechat_setting:'.$action));
+        }
+
+        $store = new Store('wechat-auth-a', 'Authorization A');
+        $otherStore = new Store('wechat-auth-b', 'Authorization B');
+        $app = new WechatApplication('Auth mini', 'miniapp', 'wx-auth', 'encrypted');
+        $merchant = new WechatMerchant('Auth merchant', '1900000999', 'encrypted');
+        $readerRole = new Role('wechat_test_reader', 'WeChat Reader', Role::SCOPE_STORE);
+        $readerRole->addPermission($em->getRepository(Permission::class)->findOneBy(['code' => 'store:wechat_setting:read']));
+        foreach ([$store, $otherStore, $app, $merchant, $readerRole] as $entity) {
+            $em->persist($entity);
+        }
+        $users = [];
+        foreach (['manager', 'reader', 'unassigned', 'nonmember', 'inactive', 'wrong_scope'] as $kind) {
+            $users[$kind] = (new User())->setEmail($kind.'@wechat-auth.test')->setUsername('wechat-auth-'.$kind);
+            $em->persist($users[$kind]);
+        }
+        $em->flush();
+        foreach ($users as $kind => $user) {
+            if ($kind !== 'nonmember') {
+                $membership = new Membership($store, $user->getUuid(), Membership::ROLE_MANAGER);
+                if ($kind === 'inactive') {
+                    $membership->suspend();
+                }
+                $em->persist($membership);
+            }
+            if ($kind !== 'unassigned') {
+                $em->persist(new Assignment($kind === 'reader' ? $readerRole : $role, $user->getUuid(), Assignment::SCOPE_STORE, $kind === 'wrong_scope' ? $otherStore->getUuid() : $store->getUuid()));
+            }
+        }
+        $otherSetting = new StoreWechatSetting($otherStore->getUuid(), $app, null, $merchant);
+        $em->persist($otherSetting);
+        $em->flush();
+        $base = '/api/v1/store/'.$store->getUuid().'/wechat-settings';
+        $tokens = [];
+        foreach ($users as $kind => $user) {
+            $tokens[$kind] = self::getContainer()->get(TokenManager::class)->createAccessToken($user);
+        }
+        $send = function (string $kind, string $method, string $path, array $body = []) use ($tokens) {
+            return self::$kernel->handle(Request::create($path, $method, [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer '.$tokens[$kind],
+                'CONTENT_TYPE' => 'application/json',
+            ], json_encode($body, JSON_THROW_ON_ERROR)));
+        };
+        foreach (['unassigned', 'nonmember', 'inactive', 'wrong_scope'] as $kind) {
+            foreach ([$base, $base.'/options'] as $path) {
+                self::assertSame(403, $send($kind, 'GET', $path)->getStatusCode(), $kind);
+            }
+            self::assertSame(403, $send($kind, 'POST', $base)->getStatusCode(), $kind);
+        }
+        self::assertSame(200, $send('reader', 'GET', $base)->getStatusCode());
+        self::assertSame(200, $send('reader', 'GET', $base.'/options')->getStatusCode());
+        self::assertSame(403, $send('reader', 'POST', $base)->getStatusCode());
+        $created = $send('manager', 'POST', $base, ['miniappUuid' => $app->getUuid(), 'merchantUuid' => $merchant->getUuid(), 'storeUuid' => $otherStore->getUuid()]);
+        self::assertSame(201, $created->getStatusCode(), $created->getContent());
+        $payload = json_decode($created->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame($store->getUuid(), $payload['data']['storeUuid']);
+        $path = $base.'/'.$payload['data']['id'];
+        self::assertSame(200, $send('reader', 'GET', $path)->getStatusCode());
+        self::assertSame(403, $send('reader', 'PUT', $path)->getStatusCode());
+        self::assertSame(403, $send('reader', 'DELETE', $path)->getStatusCode());
+        foreach (['unassigned', 'nonmember', 'inactive', 'wrong_scope'] as $kind) {
+            foreach (['GET', 'PUT', 'DELETE'] as $method) {
+                self::assertSame(403, $send($kind, $method, $path)->getStatusCode(), $kind);
+            }
+        }
+        foreach (['GET', 'PUT', 'DELETE'] as $method) {
+            self::assertSame(404, $send('manager', $method, $base.'/'.$otherSetting->getId())->getStatusCode());
+            self::assertSame(404, $send('manager', $method, $base.'/'.$otherSetting->getUuid())->getStatusCode());
+        }
+        self::assertSame(200, $send('manager', 'PUT', $path, ['merchantUuid' => $merchant->getUuid()])->getStatusCode());
+        self::assertSame(204, $send('manager', 'DELETE', $path)->getStatusCode());
     }
 
     public function testAdminStoreSettingsListHonorsStoreFilterAndPagination(): void

@@ -6,14 +6,23 @@ export default {
     entity: { name: 'WechatApplication', plural: 'wechat-applications' },
     form: { fields: [
       { property: 'name', required: true },
-      { property: 'type', type: 'select', required: true, type_options: { options: [
+      { property: 'type', type: 'select', required: true, hidden: 'update', type_options: { options: [
         { value: 'miniapp', label: t('Mini Program') },
         { value: 'official', label: t('Official Account') }
       ] } },
-      { property: 'appId', required: true },
-      { property: 'secret', type: 'input', required: false, help: t('Credential replacement help') },
-      { property: 'token', type: 'input', required: false },
-      { property: 'aesKey', type: 'input', required: false }
+      { property: 'appId', required: true, hidden: 'update' },
+      { property: 'secret', type: 'input', required: false,
+        field_options: { label: t('WeChat AppSecret') },
+        type_options: { placeholder: t('WeChat AppSecret placeholder'), type: 'password', showPassword: true },
+        help: t('WeChat application secret help') },
+      { property: 'token', type: 'input', required: false,
+        field_options: { label: t('WeChat server Token') },
+        type_options: { placeholder: t('WeChat server Token placeholder'), type: 'password', showPassword: true },
+        help: t('WeChat server Token help') },
+      { property: 'aesKey', type: 'input', required: false,
+        field_options: { label: t('WeChat EncodingAESKey') },
+        type_options: { placeholder: t('WeChat EncodingAESKey placeholder'), type: 'password', showPassword: true },
+        help: t('WeChat EncodingAESKey help') }
     ] },
     list: {
       query: orderByIdDesc,

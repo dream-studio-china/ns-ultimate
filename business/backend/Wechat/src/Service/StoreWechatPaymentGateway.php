@@ -11,6 +11,7 @@ use App\Payment\Entity\Invoice;
 use App\Payment\Exception\PaymentVerificationException;
 use App\Payment\Service\PaymentGatewayInterface;
 use App\Trade\Entity\OrderStoreLifecycle;
+use NsUltimate\Business\Wechat\Entity\WechatMerchant;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -25,6 +26,7 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
         private readonly EntityManagerInterface $entityManager,
         private readonly StoreWechatResolver $resolver,
         private readonly WechatClientFactory $clients,
+        private readonly WechatPayRequestFactory $paymentRequests,
         private readonly HttpMessageFactoryInterface $psrHttpFactory,
         private readonly UrlGeneratorInterface $urlGenerator,
     ) {
@@ -76,13 +78,11 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
             'appType' => $type,
         ], UrlGeneratorInterface::ABSOLUTE_URL);
         $app = $this->clients->payByUuid($application->getUuid(), $merchant->getUuid(), $type);
-        $body = [
-            'mchid' => $merchant->getMerchantId(),
-            'out_trade_no' => $invoice->getOutTradeNo(),
-            'appid' => $application->getAppId(),
+        $commonFields = [
             'description' => $invoice->getSubject() ?? $invoice->getDescription() ?? 'Payment',
             'notify_url' => $notifyUrl,
             'amount' => ['total' => $amount, 'currency' => $invoice->getCurrency()],
+            'out_trade_no' => $invoice->getOutTradeNo(),
         ];
 
         $invoice->appendExtraData('wechat_config', [
@@ -90,18 +90,22 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
             'applicationUuid' => $application->getUuid(),
             'merchantUuid' => $merchant->getUuid(),
             'appType' => $type,
+            'paymentMode' => $merchant->getPaymentMode(),
+            'serviceProviderAppId' => $merchant->getServiceProviderAppId(),
+            'subMerchantId' => $merchant->getSubMerchantId(),
         ]);
 
         if ($tradeType === 'native') {
-            $result = $this->postJson($app->getClient(), 'v3/pay/transactions/native', $body)->toArray(false);
+            $request = $this->paymentRequests->createOrder($merchant, $application, $tradeType, $commonFields);
+            $result = $this->postJson($app->getClient(), $request['endpoint'], $request['body'])->toArray(false);
             return new PaymentResult($invoice, Invoice::STATUS_PAYING, payUrl: $result['code_url'] ?? null, qrCode: $result['code_url'] ?? null, message: 'WeChat Native order created');
         }
         if ($tradeType !== 'jsapi') {
             throw new \InvalidArgumentException(sprintf('Unsupported WeChat trade type: %s', $tradeType));
         }
 
-        $body['payer'] = ['openid' => $identity?->getOpenid()];
-        $result = $this->postJson($app->getClient(), 'v3/pay/transactions/jsapi', $body)->toArray(false);
+        $request = $this->paymentRequests->createOrder($merchant, $application, $tradeType, $commonFields, $identity?->getOpenid());
+        $result = $this->postJson($app->getClient(), $request['endpoint'], $request['body'])->toArray(false);
         $payload = $type === 'official'
             ? $app->getUtils()->buildSdkConfig((string) ($result['prepay_id'] ?? ''), $application->getAppId())
             : $app->getUtils()->buildMiniAppConfig((string) ($result['prepay_id'] ?? ''), $application->getAppId());
@@ -125,7 +129,14 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
             $psrRequest = $this->psrHttpFactory->createRequest($request);
             $server->handlePaid(function ($message, \Closure $next) use ($app, $application, $merchant, $psrRequest, &$notifyResult) {
                 $app->getValidator()->validate($psrRequest);
-                if (($message->appid ?? null) !== $application->getAppId() || ($message->mchid ?? null) !== $merchant->getMerchantId()) {
+                if ($merchant->getPaymentMode() === WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER) {
+                    if (($message->sp_appid ?? null) !== $merchant->getServiceProviderAppId()
+                        || ($message->sp_mchid ?? null) !== $merchant->getMerchantId()
+                        || ($message->sub_mchid ?? null) !== $merchant->getSubMerchantId()
+                        || ($message->sub_appid ?? null) !== $application->getAppId()) {
+                        throw new PaymentVerificationException('WeChat service-provider notification does not match its configured profiles.');
+                    }
+                } elseif (($message->appid ?? null) !== $application->getAppId() || ($message->mchid ?? null) !== $merchant->getMerchantId()) {
                     throw new PaymentVerificationException('WeChat notification app or merchant does not match its configured profile.');
                 }
                 $notifyResult = new PaymentNotifyResult(
@@ -137,8 +148,11 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
                     transactionId: $message->transaction_id ?? null,
                     paidAt: isset($message->success_time) ? new \DateTimeImmutable($message->success_time) : new \DateTimeImmutable(),
                     rawData: [
-                        'appid' => $application->getAppId(),
-                        'mchid' => $merchant->getMerchantId(),
+                        'appid' => $message->appid ?? $message->sub_appid ?? $application->getAppId(),
+                        'mchid' => $message->mchid ?? $message->sp_mchid ?? $merchant->getMerchantId(),
+                        'payment_mode' => $merchant->getPaymentMode(),
+                        'service_provider_app_id' => $merchant->getServiceProviderAppId(),
+                        'sub_mchid' => $message->sub_mchid ?? null,
                         'out_trade_no' => (string) ($message->out_trade_no ?? ''),
                         'transaction_id' => $message->transaction_id ?? null,
                     ],
@@ -171,12 +185,16 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
             (string) $invoice->getRefundedAmount(),
             (string) $amount,
         ])), 0, 30);
-        $result = $this->postJson($app->getClient(), 'v3/refund/domestic/refunds', [
+        $refundBody = [
             'out_trade_no' => $invoice->getOutTradeNo(),
             'out_refund_no' => $outRefundNo,
             'reason' => $reason,
             'amount' => ['refund' => $amount, 'total' => $paidAmount, 'currency' => $invoice->getCurrency()],
-        ])->toArray(false);
+        ];
+        if (($context['paymentMode'] ?? 'direct') === WechatMerchant::PAYMENT_MODE_SERVICE_PROVIDER) {
+            $refundBody['sub_mchid'] = $context['subMerchantId'];
+        }
+        $result = $this->postJson($app->getClient(), 'v3/refund/domestic/refunds', $refundBody)->toArray(false);
         if (($result['status'] ?? '') !== 'SUCCESS') {
             throw new \RuntimeException('WeChat has not confirmed the refund. Recheck the same refund before retrying.');
         }
