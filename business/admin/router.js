@@ -15,7 +15,22 @@ export default {
         roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
       },
       children: [
-        ...r('PaymentSetting', t('Payment settings'))
+        ...r('PaymentSetting', t('Payment settings')),
+      ]
+    },
+    {
+      path: '/wechat-configuration',
+      name: 'WechatConfiguration',
+      component: Layout,
+      meta: {
+        title: t('WeChat configuration'),
+        icon: 'wechat',
+        roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
+      },
+      children: [
+        ...r('WechatApplication', t('WeChat applications')),
+        ...r('WechatMerchant', t('WeChat merchants')),
+        ...r('StoreWechatSetting', t('Store WeChat settings'))
       ]
     },
     {

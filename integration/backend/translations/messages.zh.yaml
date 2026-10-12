@@ -1,0 +1,7 @@
+# Missing Simplified Chinese labels for mapped entity fields.
+"Dsl": "DSL"
+"Acceptance status": "接单状态"
+"Fulfillment status": "履约状态"
+"Verification status": "核验状态"
+"Specifications": "规格"
+"Verification required": "需要核验"

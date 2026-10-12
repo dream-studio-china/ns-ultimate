@@ -100,6 +100,30 @@ export function mergeRoutes(coreRoutes, operations = {}) {
   return routes
 }
 
+/** Move one top-level route immediately after another without mutating the input. */
+export function moveRouteAfter(routes, routeName, anchorName) {
+  assertOperationList(routes, 'Routes')
+  if (routeName === anchorName) {
+    throw new Error(`Route "${routeName}" cannot be positioned after itself.`)
+  }
+
+  const result = [...routes]
+  const routeIndex = result.findIndex(route => route?.name === routeName)
+  const anchorIndex = result.findIndex(route => route?.name === anchorName)
+  if (routeIndex === -1) {
+    throw new Error(`Cannot position unknown route "${routeName}".`)
+  }
+  if (anchorIndex === -1) {
+    throw new Error(`Cannot position route after unknown anchor "${anchorName}".`)
+  }
+
+  const [route] = result.splice(routeIndex, 1)
+  const updatedAnchorIndex = result.findIndex(item => item?.name === anchorName)
+  result.splice(updatedAnchorIndex + 1, 0, route)
+
+  return result
+}
+
 /** Merge flat entity configuration keys with explicit replacement/removal. */
 export function mergeEntities(coreEntities, operations = {}) {
   if (!coreEntities || typeof coreEntities !== 'object' || Array.isArray(coreEntities)) {

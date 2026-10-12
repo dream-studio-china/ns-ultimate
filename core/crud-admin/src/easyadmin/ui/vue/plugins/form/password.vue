@@ -80,7 +80,8 @@ export default {
   data() {
     return {
       passwordVisible: false,
-      confirmValue: ''
+      confirmValue: '',
+      releaseValidator: null
     }
   },
   computed: {
@@ -124,6 +125,9 @@ export default {
   mounted() {
     this.registerValidator()
   },
+  beforeUnmount() {
+    if (typeof this.releaseValidator === 'function') this.releaseValidator()
+  },
   methods: {
     getFormAdminInstance() {
       if (this.getFormAdmin) {
@@ -141,6 +145,7 @@ export default {
       return parent
     },
     registerValidator() {
+      if (typeof this.releaseValidator === 'function') this.releaseValidator()
       const formAdmin = this.getFormAdminInstance()
       const fieldName = this.field.property
       const validator = createPasswordValidator(
@@ -151,10 +156,15 @@ export default {
         (key) => this.$t(key)
       )
       if (this.registerFieldValidator) {
-        this.registerFieldValidator(fieldName, validator, ['blur', 'change'])
+        this.releaseValidator = this.registerFieldValidator(fieldName, validator, ['blur', 'change'])
       } else if (formAdmin && formAdmin.rules) {
         if (!formAdmin.rules[fieldName]) formAdmin.rules[fieldName] = []
         formAdmin.rules[fieldName].push({ validator, trigger: ['blur', 'change'] })
+        this.releaseValidator = () => {
+          const rules = formAdmin.rules[fieldName]
+          const index = rules.findIndex(rule => rule.validator === validator)
+          if (index !== -1) rules.splice(index, 1)
+        }
       }
     },
     triggerValidate() {

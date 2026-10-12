@@ -1,0 +1,14 @@
+wechat_module_store:
+    resource: ../src/Controller/Store/
+    type: attribute
+    prefix: /api/v1
+
+wechat_module_webhook:
+    resource: ../src/Controller/WebHook/
+    type: attribute
+
+wechat_module_api:
+    resource: ../src/Controller/Admin/
+    type: attribute
+    prefix: /api/v1
+    name_prefix: api-v1-

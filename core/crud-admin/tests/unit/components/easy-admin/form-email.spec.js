@@ -32,6 +32,16 @@ function captureValidator({ form = {}, field = { property: 'email' }} = {}) {
 }
 
 describe('form/email.vue', () => {
+  it('releases its instance-bound validator on unmount', () => {
+    const release = vi.fn()
+    const wrapper = mountEmail({ provide: {
+      registerFieldValidator: vi.fn(() => release),
+      getFormAdmin: () => ({ id: 0, rules: {} })
+    } })
+    wrapper.unmount()
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
   it('hides the hint when the value is empty', () => {
     const wrapper = mountEmail({ form: {}})
     expect(wrapper.vm.val).toBe('')

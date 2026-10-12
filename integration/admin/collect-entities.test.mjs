@@ -3,7 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { collectEntities } from '../../business/admin/config/collect-entities.mjs'
-import { mergeEntities } from './merge-config.mjs'
+import { mergeEntities, mergeRoutes, moveRouteAfter } from './merge-config.mjs'
 import { watchBusinessAdmin } from './watch-business.mjs'
 import { uuidFilter } from '../../business/admin/config/uuid-filter.mjs'
 
@@ -43,6 +43,86 @@ test('registers the actual Counter configurations with their API identities', ()
   assert.ok(entities.OrderCounter.list.disabled_actions.includes('edit'))
   assert.equal(entities.OrderCounter.form.fields[1].property, 'counter')
   assert.equal(entities.OrderCounter.form.fields[1].relation.valueKey, 'uuid')
+})
+
+test('keeps immutable WeChat profile fields out of update payloads', () => {
+  const loadWechatCollection = name => {
+    const source = readFileSync(new URL(
+      `../../business/admin/config/collections/wechat/${name}.js`, import.meta.url
+    ), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+    const context = { t: key => key, orderByIdDesc: {} }
+    runInNewContext(source, context)
+    return context.config[name]
+  }
+
+  const application = loadWechatCollection('WechatApplication')
+  const merchant = loadWechatCollection('WechatMerchant')
+  const storeSetting = loadWechatCollection('StoreWechatSetting')
+  const fieldsByEntity = { application, merchant, storeSetting }
+
+  for (const [entityName, fields] of Object.entries({
+    application: ['type', 'appId'],
+    merchant: ['merchantId', 'paymentMode'],
+    storeSetting: ['storeUuid']
+  })) {
+    const configured = fieldsByEntity[entityName].form.fields
+    for (const property of fields) {
+      assert.equal(configured.find(field => field.property === property)?.hidden, 'update', `${entityName}.${property}`)
+    }
+  }
+
+  assert.equal(application.entity.plural, 'wechat-applications')
+  assert.equal(merchant.entity.plural, 'wechat-merchants')
+  assert.equal(storeSetting.entity.plural, 'store-wechat-settings')
+
+  for (const property of ['serviceProviderAppId', 'subMerchantId']) {
+    const hidden = merchant.form.fields.find(field => field.property === property)?.hidden
+    assert.equal(typeof hidden, 'function')
+    assert.equal(hidden({ paymentMode: 'direct' }, null), true)
+    assert.equal(hidden({ paymentMode: 'service_provider' }, null), false)
+    assert.equal(hidden({ paymentMode: 'service_provider' }, 42), true)
+  }
+})
+
+test('localizes WeChat form labels, placeholders and help in every business locale', () => {
+  for (const locale of ['en', 'zh', 'zh-Hant', 'ja']) {
+    const messagesContext = {}
+    const messagesSource = readFileSync(new URL(`../../business/admin/i18n/${locale}.js`, import.meta.url), 'utf8')
+      .replace('export default', 'globalThis.messages =')
+    runInNewContext(messagesSource, messagesContext)
+    const t = key => {
+      if (['Name', 'Store'].includes(key)) return key
+      assert.ok(messagesContext.messages[key], `Missing ${locale} translation: ${key}`)
+      return messagesContext.messages[key]
+    }
+
+    for (const [name, properties] of [
+      ['WechatApplication', ['secret', 'token', 'aesKey']],
+      ['WechatMerchant', ['apiV3Key', 'privateKey', 'certificate', 'platformCertificate']],
+      ['StoreWechatSetting', ['miniappUuid', 'officialUuid', 'merchantUuid']]
+    ]) {
+      const source = readFileSync(new URL(`../../business/admin/config/collections/wechat/${name}.js`, import.meta.url), 'utf8')
+        .replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+      // Core labels used outside the fields under test are not business translations.
+      const context = { t, orderByIdDesc: {} }
+      runInNewContext(source, context)
+      for (const property of properties) {
+        const field = context.config[name].form.fields.find(field => field.property === property)
+        for (const value of [field.field_options?.label, field.type_options?.placeholder, field.help]) {
+          assert.ok(value && value !== property, `${locale} ${name}.${property} must explain its input`)
+          assert.ok(Object.values(messagesContext.messages).includes(value), `${locale} ${name}.${property} must use business translations`)
+        }
+      }
+      if (name === 'StoreWechatSetting') {
+        assert.equal(context.config[name].form.fields.find(field => field.property === 'miniappUuid').relation_filter['@filter'], 'entity.getType() == "miniapp"')
+        assert.equal(context.config[name].form.fields.find(field => field.property === 'officialUuid').relation_filter['@filter'], 'entity.getType() == "official"')
+        for (const property of ['miniappUuid', 'officialUuid', 'merchantUuid']) {
+          assert.ok(context.config[name].list.list_display.find(field => field.property === property)?.label)
+          assert.ok(context.config[name].detail.detail_display.find(field => field.property === property)?.label)
+        }
+      }
+    }
+  }
 })
 
 test('Counter UUID filters load labels but submit UUIDs with exact getter expressions', async () => {
@@ -91,6 +171,37 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   assert.equal(business.hidden, true)
   assert.equal(counters.meta.title, 'Counter management')
   assert.deepEqual(Array.from(counters.children, route => route.name), ['Counter', 'OrderCounter'])
+  assert.equal(routes.find(route => route.name === 'WechatConfiguration').meta.icon, 'wechat')
+})
+
+test('places Counter after Product and WeChat configuration after Content', () => {
+  const coreRoutes = [
+    { name: 'ProductManage' },
+    { name: 'OrderManage' },
+    { name: 'ContentManage' },
+    { name: 'UserManage' }
+  ]
+  const businessRoutes = { add: [
+    { name: 'WechatConfiguration' },
+    { name: 'CounterManagement' }
+  ] }
+  let routes = mergeRoutes(coreRoutes, businessRoutes)
+  routes = moveRouteAfter(routes, 'CounterManagement', 'ProductManage')
+  routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
+
+  assert.deepEqual(Array.from(routes, route => route.name), [
+    'ProductManage', 'CounterManagement', 'OrderManage', 'ContentManage',
+    'WechatConfiguration', 'UserManage'
+  ])
+  assert.deepEqual(Array.from(coreRoutes, route => route.name), [
+    'ProductManage', 'OrderManage', 'ContentManage', 'UserManage'
+  ])
+})
+
+test('enlarges legacy and custom sidebar icons consistently', () => {
+  const styles = readFileSync(new URL('./menu-icons.css', import.meta.url), 'utf8')
+  assert.match(styles, /#app \.sidebar-container \.sub-el-icon,\s*#app \.sidebar-container \.svg-icon\s*\{\s*width:\s*16px;\s*height:\s*16px;/)
+  assert.match(styles, /#app \.sidebar-container li:has\(use\[href="#icon-wechat"\]\) \.svg-icon\s*\{\s*margin-right:\s*12px;\s*margin-left:\s*-2px;\s*vertical-align:\s*middle;/)
 })
 
 test('adds a read-only counter number column to the StoreOrder list', () => {
