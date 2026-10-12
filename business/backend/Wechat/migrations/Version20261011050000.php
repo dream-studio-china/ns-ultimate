@@ -35,7 +35,7 @@ final class Version20261011050000 extends AbstractMigration
         $identity->addUniqueIndex(['app_id', 'openid'], 'uniq_wechat_identity_app_openid');
         $identity->addIndex(['user_id'], 'idx_wechat_identity_user');
         $identity->addIndex(['unionid'], 'idx_wechat_identity_unionid');
-        $identity->addForeignKeyConstraint('user', ['user_id'], ['id'], ['onDelete' => 'CASCADE'], 'fk_wechat_identity_user');
+        $identity->addForeignKeyConstraint('users', ['user_id'], ['id'], ['onDelete' => 'CASCADE'], 'fk_wechat_identity_user');
 
         $state = $schema->createTable('wechat_oauth_state');
         $state->addColumn('id', 'integer', ['autoincrement' => true]);

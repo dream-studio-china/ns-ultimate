@@ -3,7 +3,7 @@
 ## 1. Status and purpose
 
 - Created: 2026-10-11.
-- Status: partially implemented. Phases 1 and 2 (configuration foundation, management APIs, Admin UI, authorization seeding, app-scoped identities, Mini Program login/phone, Official Account OAuth, and legacy identity import) are implemented and tested. Payments/refunds, the legacy gateway dispatcher, Store grants/audit records, and all live-provider validation remain pending. No financial capability is enabled.
+- Status: substantially implemented. Phases 1-3 are implemented and tested (configuration, management APIs, Admin UI, identities/login, payments/refunds with reconciliation, legacy dispatcher, grants/audit, revocation, rotation). Phase 4 code-independent items are done (migration rehearsal, prod container checks, runbook, contracts). Remaining: approved live smoke tests with controlled amounts, MySQL upgrade rehearsal on a production-like dataset, and operator sign-off. No live financial capability is enabled.
 - Goal: independently configure WeChat capabilities for each Store, dynamically select the correct application and merchant, and preserve login, payment, callback, and refund isolation across stores.
 - Ownership: project-specific behavior belongs in `business/`; `integration/` owns composition only. Core changes require a demonstrated generic limitation and a separately reviewed fix.
 
@@ -328,10 +328,10 @@ Exit: all PAY/REF cases pass; Core accounting compatibility proven; no unsupport
 
 ### Phase 4: release validation and operations
 
-- [ ] Run migration rehearsal and production-container/route tests; review final diff for accidental Core changes and secrets.
-- [ ] Document deployment, master-key backup/recovery, rotation, revocation, reconciliation, and rollback procedures.
+- [x] Run migration rehearsal and production-container/route tests; review final diff for accidental Core changes and secrets. Fresh-install rehearsal on isolated MySQL 8.0 succeeded (all WeChat tables, indexes, and foreign keys verified; down/up round-trip clean); the rehearsal also caught and fixed a wrong `user` table reference in `Version20261011050000` (core table is `users`). Production container lints clean with 118 WeChat routes, one deterministic `wechat` gateway, and the access-map decorator present.
+- [x] Document deployment, master-key backup/recovery, rotation, revocation, reconciliation, and rollback procedures (`docs/runbooks/wechat-operations.md`).
 - [ ] Complete explicitly approved live smoke tests with controlled amounts and recorded provider outcomes.
-- [ ] Publish validated API/adapter contracts, test evidence, known limitations, and an operator sign-off.
+- [x] Publish validated API/adapter contracts (`docs/contracts/wechat-module.md`), test evidence, known limitations, and an operator sign-off. Operator sign-off itself remains outstanding.
 
 Exit: all mandatory acceptance cases pass or the associated capability is excluded from the release and technically disabled. Security/isolation/accounting requirements cannot be waived for an enabled capability.
 
