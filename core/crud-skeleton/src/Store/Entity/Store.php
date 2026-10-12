@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Store\Entity;
 
+use App\Authorization\Service\AuthorizationScope;
+use App\Authorization\Service\ScopedResourceInterface;
 use App\Core\Utils\UUID;
 use App\Store\Repository\StoreRepository;
 use Doctrine\ORM\Mapping as ORM;
@@ -12,7 +14,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'store')]
 #[ORM\UniqueConstraint(name: 'uniq_store_uuid', columns: ['uuid'])]
 #[ORM\UniqueConstraint(name: 'uniq_store_code', columns: ['code'])]
-class Store
+class Store implements ScopedResourceInterface
 {
     public const STATUS_ACTIVE = 'active';
     public const STATUS_SUSPENDED = 'suspended';
@@ -75,6 +77,11 @@ class Store
 
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
+
+    public function getAuthorizationScope(): ?AuthorizationScope
+    {
+        return AuthorizationScope::store($this->uuid);
+    }
     public function getCode(): string { return $this->code; }
     public function getName(): string { return $this->name; }
     public function getStatus(): string { return $this->status; }
