@@ -56,7 +56,7 @@ export default {
   'Store Official Account application help': '先にWeChatアプリ設定で公式アカウントを作成し、ここで名前から選択してください。設定のUUIDは自動送信されるため、AppID、AppSecret、UUIDの手入力は不要です。ミニプログラムか公式アカウントの少なくとも一方が必要です。店舗がミニプログラムのみを使用する場合は空欄にしてください。',
   'Store WeChat merchant': 'WeChat Pay加盟店設定',
   'Store WeChat merchant placeholder': '設定済みのWeChat Pay加盟店を選択してください',
-  'Store WeChat merchant help': 'この店舗でWeChat Payに使用する加盟店設定を選択してください。先にWeChat加盟店設定でプロフィールを作成してください。サービスプロバイダーモードでは、この店舗のサブ加盟店番号を設定したサービスプロバイダー加盟店を選択します。設定UUIDは自動送信されるため、IDの入力は不要です。',
+  'Store WeChat merchant help': '任意：この店舗でWeChat Payに使用する加盟店設定を選択してください。WeChat Payを利用しない場合は空欄にできます。支払いを開始する前に設定してください。サービスプロバイダーモードでは、この店舗のサブ加盟店番号を設定したプロバイダー加盟店を選択します。設定UUIDは自動送信されます。',
   AppID: 'AppID',
   Type: '種類',
   'Merchant ID': '加盟店番号',

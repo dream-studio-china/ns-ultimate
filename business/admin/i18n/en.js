@@ -56,7 +56,7 @@ export default {
   'Store Official Account application help': 'First create an Official Account entry under WeChat applications, then select it here by name. The form submits its configuration UUID automatically; do not enter an AppID, AppSecret or UUID manually. Select at least one Mini Program or Official Account application; leave this empty if the store only uses a Mini Program.',
   'Store WeChat merchant': 'WeChat Pay merchant profile',
   'Store WeChat merchant placeholder': 'Select a configured WeChat Pay merchant',
-  'Store WeChat merchant help': 'Select the merchant profile this store will use for WeChat Pay. Create the profile under WeChat merchants first. For service-provider payments, select the service provider profile configured with this store’s sub-merchant ID. The profile UUID is submitted automatically; do not enter an ID manually.',
+  'Store WeChat merchant help': 'Optional: select the merchant profile this store will use for WeChat Pay. Leave this empty if the store does not use WeChat Pay; configure it before starting WeChat payments. For service-provider payments, select the provider profile configured with this store’s sub-merchant ID. The profile UUID is submitted automatically; do not enter an ID manually.',
   AppID: 'AppID',
   Type: 'Type',
   'Merchant ID': 'Merchant ID',
