@@ -46,6 +46,7 @@ class StoreWechatSetting
 
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
+    public function __toString(): string { return sprintf('Store WeChat settings (%s)', $this->storeUuid); }
     public function getStoreUuid(): string { return $this->storeUuid; }
     public function setStoreUuid(string $storeUuid): self { $this->storeUuid = $storeUuid; return $this; }
     public function getMiniapp(): ?WechatApplication { return $this->miniapp; }

@@ -49,6 +49,7 @@ class StoreWechatIdentity
 
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
+    public function __toString(): string { return sprintf('WeChat %s identity (%s)', $this->appType, substr($this->uuid, 0, 8)); }
     public function getUser(): User { return $this->user; }
     public function getAppId(): string { return $this->appId; }
     public function getOpenid(): string { return $this->openid; }
