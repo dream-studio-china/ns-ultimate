@@ -69,7 +69,8 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
                 throw new \RuntimeException(sprintf('Store has no %s WeChat application configured.', $type));
             }
         }
-        $merchant = $setting->getMerchant();
+        $merchant = $setting->getMerchant()
+            ?? throw new \RuntimeException('Store has no WeChat Pay merchant configured.');
         $tradeType = $invoice->getTradeType() ?? 'jsapi';
         $notifyUrl = $this->urlGenerator->generate('wechat-payment-notify', [
             'storeUuid' => $lifecycle->getStoreUuid(),

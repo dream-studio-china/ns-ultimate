@@ -113,10 +113,11 @@ test('localizes WeChat form labels, placeholders and help in every business loca
           assert.ok(Object.values(messagesContext.messages).includes(value), `${locale} ${name}.${property} must use business translations`)
         }
       }
-      if (name === 'StoreWechatSetting') {
-        assert.equal(context.config[name].form.fields.find(field => field.property === 'miniappUuid').relation_filter['@filter'], 'entity.getType() == "miniapp"')
-        assert.equal(context.config[name].form.fields.find(field => field.property === 'officialUuid').relation_filter['@filter'], 'entity.getType() == "official"')
-        for (const property of ['miniappUuid', 'officialUuid', 'merchantUuid']) {
+        if (name === 'StoreWechatSetting') {
+          assert.equal(context.config[name].form.fields.find(field => field.property === 'miniappUuid').relation_filter['@filter'], 'entity.getType() == "miniapp"')
+          assert.equal(context.config[name].form.fields.find(field => field.property === 'officialUuid').relation_filter['@filter'], 'entity.getType() == "official"')
+          assert.equal(context.config[name].form.fields.find(field => field.property === 'merchantUuid').required, false)
+          for (const property of ['miniappUuid', 'officialUuid', 'merchantUuid']) {
           assert.ok(context.config[name].list.list_display.find(field => field.property === property)?.label)
           assert.ok(context.config[name].detail.detail_display.find(field => field.property === property)?.label)
         }

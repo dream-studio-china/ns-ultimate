@@ -16,7 +16,7 @@ export default {
         type_options: { placeholder: t('Store Official Account application placeholder') },
         relation_filter: { '@filter': 'entity.getType() == "official"' },
         help: t('Store Official Account application help') },
-      { property: 'merchantUuid', required: true, relation: { entity: 'WechatMerchant', valueKey: 'uuid' },
+      { property: 'merchantUuid', required: false, relation: { entity: 'WechatMerchant', valueKey: 'uuid' },
         field_options: { label: t('Store WeChat merchant') },
         type_options: { placeholder: t('Store WeChat merchant placeholder') },
         help: t('Store WeChat merchant help') }
