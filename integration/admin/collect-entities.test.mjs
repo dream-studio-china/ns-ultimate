@@ -170,6 +170,7 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   const counters = routes.find(route => route.name === 'CounterManagement')
   assert.equal(business.hidden, true)
   assert.equal(counters.meta.title, 'Counter management')
+  assert.equal(counters.meta.icon, 'counter')
   assert.deepEqual(Array.from(counters.children, route => route.name), ['Counter', 'OrderCounter'])
   assert.equal(routes.find(route => route.name === 'WechatConfiguration').meta.icon, 'wechat')
 })
@@ -201,7 +202,8 @@ test('places Counter after Product and WeChat configuration after Content', () =
 test('enlarges legacy and custom sidebar icons consistently', () => {
   const styles = readFileSync(new URL('./menu-icons.css', import.meta.url), 'utf8')
   assert.match(styles, /#app \.sidebar-container \.sub-el-icon,\s*#app \.sidebar-container \.svg-icon\s*\{\s*width:\s*16px;\s*height:\s*16px;/)
-  assert.match(styles, /#app \.sidebar-container li:has\(use\[href="#icon-wechat"\]\) \.svg-icon\s*\{\s*margin-right:\s*12px;\s*margin-left:\s*-2px;\s*vertical-align:\s*middle;/)
+  assert.match(styles, /#app \.sidebar-container li:has\(use\[href="#icon-wechat"\]\) \.svg-icon,\s*#app \.sidebar-container li:has\(use\[href="#icon-counter"\]\) \.svg-icon\s*\{\s*margin-right:\s*12px;\s*margin-left:\s*-2px;\s*vertical-align:\s*middle;/)
+  assert.match(readFileSync(new URL('../../business/admin/icons/counter.svg', import.meta.url), 'utf8'), /<svg[^>]+viewBox="0 0 24 24"/)
 })
 
 test('adds a read-only counter number column to the StoreOrder list', () => {

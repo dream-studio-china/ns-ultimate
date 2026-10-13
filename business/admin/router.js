@@ -39,7 +39,7 @@ export default {
       component: Layout,
       meta: {
         title: t('Counter management'),
-        icon: 'el-icon-fork-spoon',
+        icon: 'counter',
         roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
       },
       children: [

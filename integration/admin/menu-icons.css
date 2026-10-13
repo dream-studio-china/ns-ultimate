@@ -4,7 +4,8 @@
   height: 16px;
 }
 
-#app .sidebar-container li:has(use[href="#icon-wechat"]) .svg-icon {
+#app .sidebar-container li:has(use[href="#icon-wechat"]) .svg-icon,
+#app .sidebar-container li:has(use[href="#icon-counter"]) .svg-icon {
   margin-right: 12px;
   margin-left: -2px;
   vertical-align: middle;
