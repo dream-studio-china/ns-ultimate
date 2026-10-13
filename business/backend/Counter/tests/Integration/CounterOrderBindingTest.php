@@ -161,6 +161,47 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertContains('uniq_counter_order_pair', $orderCounterIndexes);
     }
 
+    public function testPublicCounterDetailExposesOnlyEnabledCountersOfActiveStoresWithoutId(): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $store = new Store('public-counter', 'Public counter store');
+        $suspendedStore = new Store('suspended-counter', 'Suspended store');
+        $suspendedStore->suspend();
+        $counter = (new Counter())->setStoreUuid($store->getUuid())->setCode('A01')->setName('Table A01')->setCapacity(4)->setSort(3)->setMetadata(['color' => 'red']);
+        $disabled = (new Counter())->setStoreUuid($store->getUuid())->setCode('A02')->setName('Table A02')->setEnabled(false);
+        $suspended = (new Counter())->setStoreUuid($suspendedStore->getUuid())->setCode('B01')->setName('Suspended table');
+        foreach ([$store, $suspendedStore, $counter, $disabled, $suspended] as $entity) {
+            $entityManager->persist($entity);
+        }
+        $entityManager->flush();
+
+        $get = static function (string $path) {
+            return self::$kernel->handle(Request::create($path, 'GET'));
+        };
+
+        $response = $get('/api/v1/public/counters/'.$counter->getUuid());
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $payload = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertArrayNotHasKey('id', $payload['data']);
+        self::assertSame([
+            'uuid' => $counter->getUuid(),
+            'storeUuid' => $store->getUuid(),
+            'code' => 'A01',
+            'name' => 'Table A01',
+            'capacity' => 4,
+            'sort' => 3,
+            'metadata' => ['color' => 'red'],
+        ], $payload['data']);
+
+        self::assertSame(404, $get('/api/v1/public/counters/'.$disabled->getUuid())->getStatusCode());
+        self::assertSame(404, $get('/api/v1/public/counters/'.$suspended->getUuid())->getStatusCode());
+        self::assertSame(404, $get('/api/v1/public/counters/1')->getStatusCode());
+
+        $routes = self::getContainer()->get('router')->getRouteCollection();
+        self::assertInstanceOf(Route::class, $routes->get('api-v1-public-counters-detail'));
+        self::assertSame('/api/v1/public/counters/{id}', $routes->get('api-v1-public-counters-detail')?->getPath());
+    }
+
     public function testAdminApiStoresCounterSortAndMetadata(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
