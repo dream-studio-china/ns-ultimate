@@ -77,6 +77,26 @@ Bootstrap 会在加载环境专属 dotenv 文件之前，根据进程环境确�
 
 数据库版本字符串和凭据 URL 编码必须与实际数据库相匹配。根据实际启用的功能配置 Redis、邮件、短信、微信、支付和库存相关变量。除非上游生产验证及业务需求明确批准启用此预览功能，否则保持 `INVENTORY_ENABLED=0`。只有在凭据、模板、配额和投递行为均完成验证后，才将 `ALIYUN_SMS_DRY_RUN` 设为 `0`。仅当确实启用微信/支付服务时，才通过密钥管理系统或进程环境提供对应凭据。完整的上游集成变量列表见 [`core/crud-skeleton/.env.prod.example`](core/crud-skeleton/.env.prod.example)；不要直接照搬其中面向 Docker 的值。
 
+启用微信凭据档案时，必须在 `integration/backend/.env.prod.local` 中配置 `WECHAT_CONFIG_KEY`。它用于加密数据库中保存的微信凭据。从仓库根目录运行以下命令，为此部署生成一个专用的 32 字节随机密钥（以 64 位十六进制字符串表示）并仅追加一次到该文件。命令会在密钥已存在时拒绝覆盖，且不会把新密钥打印到终端：
+
+```sh
+sudo sh -eu -c '
+  file=integration/backend/.env.prod.local
+  test -f "$file"
+  if grep -q "^WECHAT_CONFIG_KEY=" "$file"; then
+    echo "WECHAT_CONFIG_KEY already exists; refusing to replace it." >&2
+    exit 1
+  fi
+  key=$(openssl rand -hex 32)
+  test "${#key}" -eq 64
+  printf "\\nWECHAT_CONFIG_KEY=%s\\n" "$key" >> "$file"
+'
+```
+
+命令会保留文件现有的所有者和权限；请确保 dotenv 文件仅允许部署管理员和应用运行用户访问。对于发布目录部署，应先按本指南前文将该路径链接到 release 目录之外的密钥文件。
+
+所有后端实例及访问同一数据库的所有发布版本都必须使用同一个密钥。请像备份其他生产密钥一样安全备份它。当前实现不支持密钥轮换；更换或丢失密钥会导致已有加密微信凭据无法读取。不要在生产环境复用开发密钥。
+
 使用经批准的密钥生成流程，为部署单独生成 JWT 密钥对。以下为生成未加密 RSA 密钥对的基本示例：
 
 ```sh
