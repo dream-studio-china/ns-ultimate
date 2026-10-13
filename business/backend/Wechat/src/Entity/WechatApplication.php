@@ -51,6 +51,7 @@ class WechatApplication
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
     public function getName(): string { return $this->name; }
+    public function __toString(): string { return $this->name; }
     public function setName(string $name): self { $this->name = $name; return $this; }
     public function getType(): string { return $this->type; }
     public function setType(string $type): self

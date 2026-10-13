@@ -53,6 +53,7 @@ class WechatMerchant
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
     public function getName(): string { return $this->name; }
+    public function __toString(): string { return $this->name; }
     public function setName(string $name): self { $this->name = $name; return $this; }
     public function getMerchantId(): string { return $this->merchantId; }
     public function setMerchantId(string $merchantId): self { $this->merchantId = $merchantId; return $this; }
