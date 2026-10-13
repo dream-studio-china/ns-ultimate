@@ -41,6 +41,10 @@ case "$command" in
     npm test -- "$@"
     ;;
   test-backend) exec php core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml "$@" ;;
+  phpstan)
+    (cd "$ROOT/core/crud-skeleton" && DATABASE_URL="sqlite:///$PWD/var/phpstan.db" php bin/console cache:warmup --env=dev)
+    DATABASE_URL="sqlite:///$ROOT/core/crud-skeleton/var/phpstan-business.db" php "$ROOT/integration/backend/bin/console" cache:warmup --env=dev
+    DATABASE_URL="sqlite:///$ROOT/core/crud-skeleton/var/phpstan.db" php core/crud-skeleton/vendor/bin/phpstan analyse --configuration=core/crud-skeleton/phpstan.neon --memory-limit=512M && DATABASE_URL="sqlite:///$ROOT/core/crud-skeleton/var/phpstan-business.db" exec php core/crud-skeleton/vendor/bin/phpstan analyse --configuration=integration/backend/phpstan.neon --memory-limit=512M "$@" ;;
   type-check|lint) cd core/crud-admin; npm run "$command" -- "$@" ;;
   console) console "$@" ;;
   routes) console debug:router "$@" ;;

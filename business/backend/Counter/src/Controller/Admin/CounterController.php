@@ -39,7 +39,8 @@ final class CounterController extends RestController
     {
     }
 
-    /** @param array<string, mixed> $content */
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     protected function processCreateContent(array $content, object $entity): array
     {
         if (!is_string($content['storeUuid'] ?? null) || !UUID::is_valid($content['storeUuid'])) {
@@ -51,7 +52,8 @@ final class CounterController extends RestController
         return $this->validateCounterFields($content);
     }
 
-    /** @param array<string, mixed> $content */
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         return $this->validateCounterFields($content);

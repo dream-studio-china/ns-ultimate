@@ -45,6 +45,9 @@ jobs:
       - name: Run backend composition and business integration tests
         run: php core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml
 
+      - name: Run PHPStan across core and business backend code
+        run: make phpstan
+
       - name: Build composed admin without upstream test scripts
         working-directory: core/crud-admin
         run: ./node_modules/.bin/vite build --config ../../integration/admin/vite.config.ts

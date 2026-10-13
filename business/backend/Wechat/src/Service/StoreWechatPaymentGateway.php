@@ -11,6 +11,8 @@ use App\Payment\Entity\Invoice;
 use App\Payment\Exception\PaymentVerificationException;
 use App\Payment\Service\PaymentGatewayInterface;
 use App\Trade\Entity\OrderStoreLifecycle;
+use EasyWeChat\Pay\Client as WechatPayClient;
+use EasyWeChat\Pay\Server as WechatPayServer;
 use NsUltimate\Business\Wechat\Entity\WechatMerchant;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
@@ -98,7 +100,7 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
 
         if ($tradeType === 'native') {
             $request = $this->paymentRequests->createOrder($merchant, $application, $tradeType, $commonFields);
-            $result = $this->postJson($app->getClient(), $request['endpoint'], $request['body'])->toArray(false);
+            $result = $this->postJson($this->payClient($app), $request['endpoint'], $request['body'])->toArray(false);
             return new PaymentResult($invoice, Invoice::STATUS_PAYING, payUrl: $result['code_url'] ?? null, qrCode: $result['code_url'] ?? null, message: 'WeChat Native order created');
         }
         if ($tradeType !== 'jsapi') {
@@ -106,7 +108,7 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
         }
 
         $request = $this->paymentRequests->createOrder($merchant, $application, $tradeType, $commonFields, $identity?->getOpenid());
-        $result = $this->postJson($app->getClient(), $request['endpoint'], $request['body'])->toArray(false);
+        $result = $this->postJson($this->payClient($app), $request['endpoint'], $request['body'])->toArray(false);
         $payload = $type === 'official'
             ? $app->getUtils()->buildSdkConfig((string) ($result['prepay_id'] ?? ''), $application->getAppId())
             : $app->getUtils()->buildMiniAppConfig((string) ($result['prepay_id'] ?? ''), $application->getAppId());
@@ -125,7 +127,7 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
         $merchant = $this->resolver->merchantByUuid($merchantUuid)['profile'];
         $app = $this->clients->payByUuid($applicationUuid, $merchantUuid, $type);
         try {
-            $server = $app->getServer();
+            $server = $this->payServer($app);
             $notifyResult = null;
             $psrRequest = $this->psrHttpFactory->createRequest($request);
             $server->handlePaid(function ($message, \Closure $next) use ($app, $application, $merchant, $psrRequest, &$notifyResult) {
@@ -185,7 +187,7 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
             'reason' => $reason,
             'amount' => ['refund' => $amount, 'total' => $paidAmount, 'currency' => $invoice->getCurrency()],
         ]);
-        $result = $this->postJson($app->getClient(), 'v3/refund/domestic/refunds', $refundBody)->toArray(false);
+        $result = $this->postJson($this->payClient($app), 'v3/refund/domestic/refunds', $refundBody)->toArray(false);
         if (($result['status'] ?? '') !== 'SUCCESS') {
             throw new \RuntimeException('WeChat has not confirmed the refund. Recheck the same refund before retrying.');
         }
@@ -220,12 +222,26 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
     }
 
     /** @param array<string, mixed> $body */
-    private function postJson(object $client, string $path, array $body): ResponseInterface
+    private function postJson(WechatPayClient $client, string $path, array $body): ResponseInterface
     {
-        $response = $client->postJson($path, $body);
-        if (!$response instanceof ResponseInterface) {
-            throw new \RuntimeException('WeChat SDK returned an invalid response.');
+        return $client->postJson($path, $body);
+    }
+
+    private function payClient(\EasyWeChat\Pay\Application $app): WechatPayClient
+    {
+        $client = $app->getClient();
+        if (!$client instanceof WechatPayClient) {
+            throw new \RuntimeException('WeChat Pay client is unavailable.');
         }
-        return $response;
+        return $client;
+    }
+
+    private function payServer(\EasyWeChat\Pay\Application $app): WechatPayServer
+    {
+        $server = $app->getServer();
+        if (!$server instanceof WechatPayServer) {
+            throw new \RuntimeException('WeChat Pay server is unavailable.');
+        }
+        return $server;
     }
 }

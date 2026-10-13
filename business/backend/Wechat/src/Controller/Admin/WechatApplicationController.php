@@ -22,8 +22,11 @@ final class WechatApplicationController extends RestController
 {
     use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
 
+    /** @var list<string> */
     protected array $requiredCreateProperties = ['name', 'type', 'appId', 'secret'];
+    /** @var list<string> */
     protected array $acceptedCreateProperties = ['name', 'type', 'appId', 'secret', 'token', 'aesKey'];
+    /** @var list<string> */
     protected array $acceptedUpdateProperties = ['name', 'type', 'appId', 'secret', 'token', 'aesKey'];
 
     public function __construct(
@@ -32,6 +35,8 @@ final class WechatApplicationController extends RestController
     ) {
     }
 
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     protected function processCreateContent(array $content, object $entity): array
     {
         if (!$entity instanceof WechatApplication) {
@@ -50,6 +55,8 @@ final class WechatApplicationController extends RestController
         return $content;
     }
 
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         if (!$entity instanceof WechatApplication) {

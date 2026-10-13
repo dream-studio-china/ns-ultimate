@@ -28,8 +28,11 @@ final class WechatSettingController extends RestController
 {
     use StoreScopedAuthorizationApiMixin, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin, DeleteApiViewMixin;
 
+    /** @var list<string> */
     protected array $requiredCreateProperties = [];
+    /** @var list<string> */
     protected array $acceptedCreateProperties = ['miniappUuid', 'officialUuid', 'merchantUuid'];
+    /** @var list<string> */
     protected array $acceptedUpdateProperties = ['miniappUuid', 'officialUuid', 'merchantUuid'];
 
     public function __construct(
@@ -54,11 +57,14 @@ final class WechatSettingController extends RestController
         return 'wechat_setting';
     }
 
+    /** @return array<string, string> */
     protected function storeActionPermissions(): array
     {
         return ['options' => 'store:wechat_setting:read'];
     }
 
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     protected function processCreateContent(array $content, object $entity): array
     {
         if (!$entity instanceof StoreWechatSetting) {
@@ -68,6 +74,8 @@ final class WechatSettingController extends RestController
         return $this->processSettingContent($content, $entity, true);
     }
 
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         if (!$entity instanceof StoreWechatSetting) {

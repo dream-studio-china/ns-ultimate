@@ -1,0 +1,22 @@
+includes:
+    - ../../core/crud-skeleton/vendor/phpstan/phpstan-symfony/extension.neon
+    - ../../core/crud-skeleton/vendor/phpstan/phpstan-doctrine/extension.neon
+
+parameters:
+    level: 8
+    paths:
+        - ../../business/backend
+    excludePaths:
+        analyse:
+            - ../../business/backend/*/tests/**
+    bootstrapFiles:
+        - ../../core/crud-skeleton/vendor/autoload.php
+    tmpDir: ../../var/cache/phpstan-business
+    treatPhpDocTypesAsCertain: false
+    universalObjectCratesClasses:
+        - EasyWeChat\Kernel\Contracts\AccessToken
+        - EasyWeChat\Kernel\Contracts\Server
+    symfony:
+        containerXmlPath: ../../var/cache/backend/dev/NsUltimate_Integration_Backend_KernelDevDebugContainer.xml
+    doctrine:
+        objectManagerLoader: phpstan-bootstrap.php

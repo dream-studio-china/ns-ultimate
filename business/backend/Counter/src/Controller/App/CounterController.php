@@ -10,7 +10,6 @@ use App\Core\View\DetailApiViewMixin;
 use App\Core\View\ListApiViewMixin;
 use App\Store\Entity\Store;
 use App\Store\Service\StoreServiceInterface;
-use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Service\CounterService;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
@@ -25,7 +24,6 @@ final class CounterController extends RestController
     public function __construct(
         protected readonly CounterService $service,
         private readonly StoreServiceInterface $storeService,
-        private readonly EntityManagerInterface $entityManager,
     ) {
     }
 

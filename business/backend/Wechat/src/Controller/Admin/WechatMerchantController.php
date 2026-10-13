@@ -22,8 +22,11 @@ final class WechatMerchantController extends RestController
 {
     use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
 
+    /** @var list<string> */
     protected array $requiredCreateProperties = ['name', 'merchantId', 'apiV3Key', 'privateKey', 'certificate'];
+    /** @var list<string> */
     protected array $acceptedCreateProperties = ['name', 'merchantId', 'paymentMode', 'serviceProviderAppId', 'subMerchantId', 'apiV3Key', 'privateKey', 'certificate', 'platformCertificate'];
+    /** @var list<string> */
     protected array $acceptedUpdateProperties = ['name', 'merchantId', 'paymentMode', 'serviceProviderAppId', 'subMerchantId', 'apiV3Key', 'privateKey', 'certificate', 'platformCertificate'];
 
     public function __construct(
@@ -32,6 +35,8 @@ final class WechatMerchantController extends RestController
     ) {
     }
 
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     protected function processCreateContent(array $content, object $entity): array
     {
         if (!$entity instanceof WechatMerchant) {
@@ -51,6 +56,8 @@ final class WechatMerchantController extends RestController
         return $content;
     }
 
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         if (!$entity instanceof WechatMerchant) {
@@ -108,7 +115,8 @@ final class WechatMerchantController extends RestController
         }
     }
 
-    /** @param array<string, mixed> $content */
+    /** @param array<string, mixed> $content
+     * @return array<string, mixed> */
     private function validatePaymentMode(array $content, WechatMerchant $entity): array
     {
         $mode = $content['paymentMode'] ?? WechatMerchant::PAYMENT_MODE_DIRECT;
