@@ -88,6 +88,19 @@ final class WechatSettingsApiTest extends KernelTestCase
             'privateKey' => 'merchant-private-key', 'certificate' => 'merchant-certificate', 'platformCertificate' => $this->testCertificate(),
         ]);
 
+        foreach ([
+            ['/api/v1/manage/wechat-applications?@display=reduce', $app, 'Mini app'],
+            ['/api/v1/manage/wechat-merchants?@display=reduce', $merchant, 'Merchant'],
+        ] as [$path, $profile, $expectedLabel]) {
+            $reduced = $this->request('GET', $path, $adminToken);
+            $option = array_values(array_filter(
+                $reduced['data'],
+                static fn (array $row): bool => $row['uuid'] === $profile['data']['uuid'],
+            ))[0] ?? null;
+            self::assertIsArray($option);
+            self::assertSame($expectedLabel, $option['__toString']);
+        }
+
         self::assertStringNotContainsString('application-secret', json_encode($app, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('credentialsCipher', json_encode($app, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('merchant-private-key', json_encode($merchant, JSON_THROW_ON_ERROR));
