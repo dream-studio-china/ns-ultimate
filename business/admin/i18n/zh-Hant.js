@@ -63,7 +63,7 @@ export default {
   'Store Official Account application help': '先在「微信應用配置」中建立公眾號類型的應用，再在這裡按名稱選擇。系統會自動提交該配置的 UUID，不需要手動填寫 AppID、AppSecret 或 UUID。小程式及公眾號至少選擇一個；門店僅使用小程式時，此項可留空。',
   'Store WeChat merchant': '微信支付商戶配置',
   'Store WeChat merchant placeholder': '選擇已配置的微信支付商戶',
-  'Store WeChat merchant help': '選擇此門店用於微信支付的商戶配置。請先在「微信商戶配置」中建立商戶。使用服務商模式時，選擇已配置此門店子商戶號的服務商商戶資料。系統會自動提交配置 UUID，不需要手動填寫 ID。',
+  'Store WeChat merchant help': '選填。選擇商戶配置後，此門店才能使用微信支付。使用服務商模式時，請選擇已配置此門店子商戶號的服務商商戶資料。系統會自動提交配置 UUID，不需要手動填寫 ID。',
   AppID: 'AppID',
   Type: '類型',
   'Merchant ID': '商戶號',

@@ -25,7 +25,7 @@ final class StoreWechatSettingController extends RestController
 {
     use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
 
-    protected array $requiredCreateProperties = ['storeUuid', 'merchantUuid'];
+    protected array $requiredCreateProperties = ['storeUuid'];
     protected array $acceptedCreateProperties = ['storeUuid', 'miniappUuid', 'officialUuid', 'merchantUuid'];
     protected array $acceptedUpdateProperties = ['storeUuid', 'miniappUuid', 'officialUuid', 'merchantUuid'];
 
@@ -80,16 +80,17 @@ final class StoreWechatSettingController extends RestController
         }
 
         if (array_key_exists('merchantUuid', $content)) {
-            $merchant = is_string($content['merchantUuid'])
+            $merchantUuid = $content['merchantUuid'];
+            $merchant = is_string($merchantUuid) && $merchantUuid !== ''
                 ? $this->entityManager->getRepository(WechatMerchant::class)->findOneBy(['uuid' => $content['merchantUuid']])
                 : null;
-            if (!$merchant instanceof WechatMerchant) {
+            if ($merchantUuid !== null && $merchantUuid !== '' && !$merchant instanceof WechatMerchant) {
                 throw new \InvalidArgumentException('Selected WeChat merchant is invalid.');
             }
-            $content['merchant'] = $merchant->getId();
+            $content['merchant'] = $merchant?->getId();
             unset($content['merchantUuid']);
         } elseif ($creating) {
-            throw new \InvalidArgumentException('merchantUuid is required.');
+            $content['merchant'] = null;
         }
 
         $miniappId = array_key_exists('miniapp', $applicationIds) ? $applicationIds['miniapp'] : $setting->getMiniapp()?->getId();

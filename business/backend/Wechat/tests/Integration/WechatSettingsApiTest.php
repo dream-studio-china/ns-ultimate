@@ -63,15 +63,19 @@ final class WechatSettingsApiTest extends KernelTestCase
         $admin = (new User())->setEmail('wechat-admin@example.test')->setUsername('wechat-admin')->setRoles(['ROLE_ADMIN']);
         $owner = (new User())->setEmail('wechat-owner@example.test')->setUsername('wechat-owner');
         $store = new Store('wechat-store', 'WeChat Store');
-        foreach ([$admin, $owner, $store] as $entity) {
+        $adminNoMerchantStore = new Store('wechat-admin-no-merchant', 'Admin Store Without Merchant');
+        $ownerNoMerchantStore = new Store('wechat-owner-no-merchant', 'Owner Store Without Merchant');
+        foreach ([$admin, $owner, $store, $adminNoMerchantStore, $ownerNoMerchantStore] as $entity) {
             $em->persist($entity);
         }
         $em->flush();
         $em->persist(new Membership($store, $owner->getUuid(), Membership::ROLE_OWNER));
+        $em->persist(new Membership($ownerNoMerchantStore, $owner->getUuid(), Membership::ROLE_OWNER));
         $seed = new CommandTester(new SeedWechatAuthorizationCommand($em));
         self::assertSame(0, $seed->execute([]));
         $role = $em->getRepository(Role::class)->findOneBy(['code' => 'store_wechat_manager']);
         $em->persist(new Assignment($role, $owner->getUuid(), Assignment::SCOPE_STORE, $store->getUuid()));
+        $em->persist(new Assignment($role, $owner->getUuid(), Assignment::SCOPE_STORE, $ownerNoMerchantStore->getUuid()));
         $em->flush();
 
         $adminToken = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
@@ -105,6 +109,13 @@ final class WechatSettingsApiTest extends KernelTestCase
         self::assertStringNotContainsString('credentialsCipher', json_encode($app, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('merchant-private-key', json_encode($merchant, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('credentialsCipher', json_encode($merchant, JSON_THROW_ON_ERROR));
+
+        $adminSettingWithoutMerchant = $this->request('POST', '/api/v1/manage/store-wechat-settings', $adminToken, [
+            'storeUuid' => $adminNoMerchantStore->getUuid(),
+            'miniappUuid' => $app['data']['uuid'],
+        ]);
+        self::assertNull($adminSettingWithoutMerchant['data']['merchantUuid']);
+
         $selection = $this->request('POST', '/api/v1/store/'.$store->getUuid().'/wechat-settings', $ownerToken, [
             'miniappUuid' => $app['data']['uuid'],
             'officialUuid' => $official['data']['uuid'],
@@ -114,11 +125,18 @@ final class WechatSettingsApiTest extends KernelTestCase
         self::assertSame($app['data']['uuid'], $selection['data']['miniappUuid']);
         self::assertSame($official['data']['uuid'], $selection['data']['officialUuid']);
 
+        $ownerSettingWithoutMerchant = $this->request('POST', '/api/v1/store/'.$ownerNoMerchantStore->getUuid().'/wechat-settings', $ownerToken, [
+            'miniappUuid' => $app['data']['uuid'],
+        ]);
+        self::assertNull($ownerSettingWithoutMerchant['data']['merchantUuid']);
+
         $storeSettingId = $selection['data']['id'];
         $updated = $this->request('PUT', '/api/v1/store/'.$store->getUuid().'/wechat-settings/'.$storeSettingId, $ownerToken, [
             'officialUuid' => null,
+            'merchantUuid' => null,
         ]);
         self::assertNull($updated['data']['officialUuid']);
+        self::assertNull($updated['data']['merchantUuid']);
         self::assertSame($store->getUuid(), $updated['data']['storeUuid']);
 
         $options = $this->request('GET', '/api/v1/store/'.$store->getUuid().'/wechat-settings/options', $ownerToken);

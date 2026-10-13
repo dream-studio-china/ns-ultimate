@@ -36,7 +36,8 @@ final class StoreWechatResolver
     /** @return array{profile: WechatMerchant, credentials: array<string, string>} */
     public function merchant(string $storeUuid): array
     {
-        $profile = $this->setting($storeUuid)->getMerchant();
+        $profile = $this->setting($storeUuid)->getMerchant()
+            ?? throw new \RuntimeException('Store has no WeChat Pay merchant configured.');
 
         return ['profile' => $profile, 'credentials' => $profile->decryptCredentials($this->cipher)];
     }
