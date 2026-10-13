@@ -155,6 +155,41 @@ final class WechatSettingsApiTest extends KernelTestCase
         self::assertInstanceOf(StoreWechatSetting::class, $em->getRepository(StoreWechatSetting::class)->findOneBy(['storeUuid' => $store->getUuid()]));
     }
 
+    public function testPublicOAuthUrlUsesTheRequestedStoreThroughTheContainer(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $cipher = self::getContainer()->get(WechatSecretCipher::class);
+        $callbackUrl = 'https://example.test/order?counterId=1&ns_oauth=test';
+
+        foreach (['a', 'b'] as $suffix) {
+            $store = new Store('wechat-oauth-'.$suffix, 'OAuth Store '.$suffix);
+            $official = new WechatApplication(
+                'OAuth Official '.$suffix,
+                WechatApplication::TYPE_OFFICIAL,
+                'wx-oauth-'.$suffix,
+                $cipher->encrypt(['secret' => 'oauth-test-secret']),
+            );
+            $em->persist($store);
+            $em->persist($official);
+            $em->persist(new StoreWechatSetting($store->getUuid(), null, $official));
+            $em->flush();
+
+            $request = Request::create('/api/wechat/oauth/url', 'GET', [
+                'store_uuid' => $store->getUuid(),
+                'redirect_uri' => $callbackUrl,
+            ]);
+            $response = self::$kernel->handle($request);
+            self::assertSame(200, $response->getStatusCode(), $response->getContent());
+            $payload = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame('open.weixin.qq.com', parse_url($payload['url'], PHP_URL_HOST));
+            parse_str(parse_url($payload['url'], PHP_URL_QUERY), $query);
+            self::assertSame($official->getAppId(), $query['appid']);
+            self::assertSame($callbackUrl, $query['redirect_uri']);
+            self::assertSame('snsapi_userinfo', $query['scope']);
+            self::assertSame('code', $query['response_type']);
+        }
+    }
+
     public function testStoreWechatGatewayOverridesOnlyTheCoreWechatRegistration(): void
     {
         $registry = self::getContainer()->get(PaymentGatewayRegistry::class);
