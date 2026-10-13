@@ -1,0 +1,5 @@
+business_store_public_api:
+    resource: '../src/Controller/'
+    type: attribute
+    prefix: /api/v1
+    name_prefix: api-v1-
