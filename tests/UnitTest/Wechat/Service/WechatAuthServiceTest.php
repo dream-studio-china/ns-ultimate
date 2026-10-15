@@ -10,6 +10,8 @@ use App\Wechat\Repository\WechatUserRepository;
 use App\Wechat\Service\WechatAuthService;
 use App\Wechat\Service\WechatServiceInterface;
 use Doctrine\ORM\EntityManagerInterface;
+use EasyWeChat\MiniApp\Application as MiniApp;
+use EasyWeChat\OfficialAccount\Application as OfficialAccount;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
@@ -24,6 +26,8 @@ final class WechatAuthServiceTest extends TestCase
     protected function setUp(): void
     {
         $this->wechatService = $this->createMock(WechatServiceInterface::class);
+        $this->wechatService->method('getMiniApp')->willReturn(new MiniApp(['app_id' => 'wx-mini-test', 'secret' => 'test']));
+        $this->wechatService->method('getOfficialAccount')->willReturn(new OfficialAccount(['app_id' => 'wx-official-test', 'secret' => 'test']));
         $this->wechatUserRepo = $this->createMock(WechatUserRepository::class);
         $this->em = $this->createMock(EntityManagerInterface::class);
 
@@ -44,8 +48,8 @@ final class WechatAuthServiceTest extends TestCase
             ->with('valid_js_code')
             ->willReturn(['openid' => 'o_test', 'unionid' => 'u_test', 'session_key' => 'sk_test']);
 
-        $this->wechatUserRepo->method('findByOpenid')
-            ->with('o_test')
+        $this->wechatUserRepo->method('findByAppIdAndOpenid')
+            ->with('wx-mini-test', 'o_test')
             ->willReturn($existingWechatUser);
 
         $result = $this->authService->authenticateFromMiniApp('valid_js_code');
@@ -59,8 +63,8 @@ final class WechatAuthServiceTest extends TestCase
             ->with('new_js_code')
             ->willReturn(['openid' => 'o_new', 'unionid' => null, 'session_key' => 'sk_new']);
 
-        $this->wechatUserRepo->method('findByOpenid')
-            ->with('o_new')
+        $this->wechatUserRepo->method('findByAppIdAndOpenid')
+            ->with('wx-mini-test', 'o_new')
             ->willReturn(null);
 
         $this->em->expects(self::exactly(2))->method('persist');
@@ -69,8 +73,41 @@ final class WechatAuthServiceTest extends TestCase
         $result = $this->authService->authenticateFromMiniApp('new_js_code');
 
         self::assertInstanceOf(User::class, $result);
-        self::assertStringStartsWith('wx_', $result->getUsername());
-        self::assertStringEndsWith('@wechat.local', $result->getEmail());
+        $identifier = substr(hash('sha256', "wx-mini-test\0o_new"), 0, 24);
+        self::assertSame('wx_'.$identifier, $result->getUsername());
+        self::assertSame('wx_'.$identifier.'@wechat.local', $result->getEmail());
+    }
+
+    public function testSameOpenidFromDifferentAppsCreatesDistinctUsers(): void
+    {
+        $this->wechatService->method('code2Session')->willReturnMap([
+            ['app_code', ['openid' => 'same_openid', 'unionid' => null, 'session_key' => 'session']],
+        ]);
+        $this->wechatUserRepo->method('findByAppIdAndOpenid')->willReturn(null);
+        $users = [];
+        $this->em->expects(self::exactly(4))
+            ->method('persist')
+            ->willReturnCallback(static function (object $entity) use (&$users): void {
+                if ($entity instanceof User) {
+                    $users[] = $entity;
+                }
+            });
+        $this->em->expects(self::exactly(2))->method('flush');
+
+        $this->authService->authenticateFromMiniApp('app_code');
+        $otherAppService = $this->createMock(WechatServiceInterface::class);
+        $otherAppService->method('getMiniApp')->willReturn(new MiniApp(['app_id' => 'wx-mini-other', 'secret' => 'test']));
+        $otherAppService->method('code2Session')->willReturn([
+            'openid' => 'same_openid',
+            'unionid' => null,
+            'session_key' => 'session',
+        ]);
+        $otherAuthService = new WechatAuthService($otherAppService, $this->wechatUserRepo, $this->em);
+        $otherAuthService->authenticateFromMiniApp('app_code');
+
+        self::assertCount(2, $users);
+        self::assertNotSame($users[0]->getUsername(), $users[1]->getUsername());
+        self::assertNotSame($users[0]->getEmail(), $users[1]->getEmail());
     }
 
     public function testAuthenticateFromOfficialAccountExistingUser(): void
@@ -92,8 +129,8 @@ final class WechatAuthServiceTest extends TestCase
                 'unionid' => null,
             ]);
 
-        $this->wechatUserRepo->method('findByOpenid')
-            ->with('o_oa')
+        $this->wechatUserRepo->method('findByAppIdAndOpenid')
+            ->with('wx-official-test', 'o_oa')
             ->willReturn($existingWechatUser);
 
         $result = $this->authService->authenticateFromOfficialAccount('oauth_code');
@@ -116,8 +153,8 @@ final class WechatAuthServiceTest extends TestCase
                 'unionid' => 'u_union',
             ]);
 
-        $this->wechatUserRepo->method('findByOpenid')
-            ->with('o_new_oa')
+        $this->wechatUserRepo->method('findByAppIdAndOpenid')
+            ->with('wx-official-test', 'o_new_oa')
             ->willReturn(null);
 
         $this->em->expects(self::exactly(2))->method('persist');

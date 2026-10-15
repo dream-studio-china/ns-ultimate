@@ -11,8 +11,8 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: WechatUserRepository::class)]
 #[ORM\Table(name: 'wechat_user')]
-#[ORM\UniqueConstraint(name: 'uniq_wechat_user_openid', columns: ['openid'])]
-#[ORM\UniqueConstraint(name: 'uniq_wechat_user_user', columns: ['user_id'])]
+#[ORM\UniqueConstraint(name: 'uniq_wechat_user_app_openid', columns: ['app_id', 'openid'])]
+#[ORM\Index(name: 'idx_wechat_user_user', columns: ['user_id'])]
 #[ORM\HasLifecycleCallbacks]
 class WechatUser
 {
@@ -27,11 +27,14 @@ class WechatUser
     #[ORM\Column(type: 'string', length: 36, unique: true)]
     private string $uuid;
 
-    #[ORM\OneToOne(targetEntity: User::class)]
+    #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'user_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
     private User $user;
 
-    #[ORM\Column(type: 'string', length: 64)]
+    #[ORM\Column(name: 'app_id', type: 'string', length: 128, nullable: true)]
+    private ?string $appId = null;
+
+    #[ORM\Column(type: 'string', length: 128)]
     private string $openid;
 
     #[ORM\Column(type: 'string', length: 64, nullable: true)]
@@ -74,12 +77,13 @@ class WechatUser
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $updatedAt = null;
 
-    public function __construct(User $user, string $openid, string $appType)
+    public function __construct(User $user, string $openid, string $appType, ?string $appId = null)
     {
         $this->uuid = UUID::v4();
         $this->user = $user;
         $this->openid = $openid;
         $this->appType = $appType;
+        $this->appId = $appId;
         $this->lastLoginAt = new \DateTimeImmutable();
         $this->createdAt = new \DateTimeImmutable();
     }
@@ -93,6 +97,10 @@ class WechatUser
     public function getUuid(): string { return $this->uuid; }
 
     public function getUser(): User { return $this->user; }
+
+    public function getAppId(): ?string { return $this->appId; }
+
+    public function setAppId(?string $appId): self { $this->appId = $appId; $this->touch(); return $this; }
 
     public function getOpenid(): string { return $this->openid; }
 
@@ -167,6 +175,7 @@ class WechatUser
         return [
             'id' => $this->id,
             'userId' => $this->user->getId(),
+            'appId' => $this->appId,
             'openid' => $this->openid,
             'appType' => $this->appType,
         ];

@@ -196,8 +196,8 @@ final class WechatPayGatewayTest extends TestCase
         $wechatUser = $this->createMock(WechatUser::class);
         $wechatUser->method('getOpenid')->willReturn('o_jsapi_user');
 
-        $this->wechatUserRepo->method('findByUser')
-            ->with($payer)
+        $this->wechatUserRepo->method('findByUserAndAppId')
+            ->with($payer, 'wx_mini_app')
             ->willReturn($wechatUser);
 
         $payApp = $this->createMock(PayApp::class);
