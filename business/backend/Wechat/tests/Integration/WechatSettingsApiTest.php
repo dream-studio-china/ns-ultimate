@@ -19,7 +19,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
-use NsUltimate\Business\Wechat\Entity\StoreWechatIdentity;
 use NsUltimate\Business\Wechat\Entity\WechatApplication;
 use NsUltimate\Business\Wechat\Entity\WechatMerchant;
 use NsUltimate\Business\Wechat\Service\StoreAwareWechatService;
@@ -559,17 +558,29 @@ final class WechatSettingsApiTest extends KernelTestCase
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $user = (new User())->setEmail('wechat-migration@example.test')->setUsername('wechat-migration');
-        $legacy = new WechatUser($user, 'migration-openid', WechatUser::APP_TYPE_OFFICIAL);
         $em->persist($user);
-        $em->persist($legacy);
-        $em->persist(new StoreWechatIdentity($user, 'wx-migration-a', 'migration-openid', WechatApplication::TYPE_OFFICIAL));
-        $em->persist(new StoreWechatIdentity($user, 'wx-migration-b', 'migration-openid', WechatApplication::TYPE_OFFICIAL));
         $em->flush();
 
         $connection = $em->getConnection();
+        $connection->executeStatement('CREATE TABLE store_wechat_identity (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, app_id VARCHAR(128) NOT NULL, openid VARCHAR(128) NOT NULL, app_type VARCHAR(20) NOT NULL, created_at DATETIME NOT NULL)');
+        foreach (['wx-migration-a', 'wx-migration-b'] as $appId) {
+            $connection->insert('store_wechat_identity', [
+                'user_id' => $user->getId(),
+                'app_id' => $appId,
+                'openid' => 'migration-openid',
+                'app_type' => WechatApplication::TYPE_OFFICIAL,
+                'created_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+            ]);
+        }
         require_once dirname(__DIR__, 2).'/migrations/Version20261015100000.php';
         $migration = new \NsUltimate\Business\Wechat\Migrations\Version20261015100000($connection, new \Psr\Log\NullLogger());
         $migration->up($connection->createSchemaManager()->introspectSchema());
+        require_once dirname(__DIR__, 2).'/migrations/Version20261015110000.php';
+        $dropMigration = new \NsUltimate\Business\Wechat\Migrations\Version20261015110000($connection, new \Psr\Log\NullLogger());
+        $dropMigration->up($connection->createSchemaManager()->introspectSchema());
+        foreach ($dropMigration->getSql() as $query) {
+            $connection->executeStatement($query->getStatement());
+        }
         $userId = $user->getId();
         $em->clear();
         $user = $em->find(User::class, $userId);
@@ -585,7 +596,7 @@ final class WechatSettingsApiTest extends KernelTestCase
             'appId' => 'wx-migration-b',
             'openid' => 'migration-openid',
         ]));
-        self::assertSame(2, $em->getRepository(StoreWechatIdentity::class)->count(['openid' => 'migration-openid']));
+        self::assertFalse($connection->createSchemaManager()->tablesExist(['store_wechat_identity']));
     }
 
     public function testWechatServiceSelectsClientsFromCurrentStoreWithoutMutableGlobalState(): void
