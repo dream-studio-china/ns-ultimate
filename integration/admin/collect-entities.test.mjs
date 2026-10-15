@@ -45,6 +45,41 @@ test('registers the actual Counter configurations with their API identities', ()
   assert.equal(entities.OrderCounter.form.fields[1].relation.valueKey, 'uuid')
 })
 
+test('overrides WechatUser display fields without changing core configuration', () => {
+  const source = readFileSync(new URL(
+    '../../business/admin/config/overrides/wechat/wechat-user.js', import.meta.url
+  ), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+  const coreWechatUser = {
+    entity: { name: 'WechatUser' },
+    list: { list_display: ['id', 'user', 'openid', 'nickname'] },
+    detail: { detail_display: ['id', 'avatarUrl', 'openid'] }
+  }
+  const context = {
+    coreWechatUserConfig: { WechatUser: coreWechatUser },
+    h: (type, props, children) => ({ type, props, children }),
+    SIP: { getPicture: value => `processed:${value}` }
+  }
+  runInNewContext(source, context)
+
+  const configured = context.config
+  assert.deepEqual(Array.from(configured.list.list_display, field => typeof field === 'string' ? field : field.property), [
+    'id', 'user', 'appId', 'openid', 'avatar', 'nickname'
+  ])
+  const avatarColumn = configured.list.list_display.find(field => typeof field === 'object')
+  assert.equal(avatarColumn.type, 'image')
+  assert.equal(avatarColumn.field_options.className, 'wechat-user-avatar-column')
+  const avatarDetail = configured.detail.detail_display.find(field => typeof field === 'object')
+  assert.equal(avatarDetail.property, 'avatar')
+  const rendered = avatarDetail.component.render.call({ data: 'avatar-url' })
+  assert.equal(rendered.type, 'img')
+  assert.equal(rendered.props.style.width, '256px')
+  assert.equal(rendered.props.style.height, '256px')
+  assert.equal(rendered.props.src, 'processed:avatar-url')
+  assert.equal(configured.detail.detail_display[0], 'id')
+  assert.deepEqual(coreWechatUser.list.list_display, ['id', 'user', 'openid', 'nickname'])
+  assert.deepEqual(coreWechatUser.detail.detail_display, ['id', 'avatarUrl', 'openid'])
+})
+
 test('keeps immutable WeChat profile fields out of update payloads', () => {
   const loadWechatCollection = name => {
     const source = readFileSync(new URL(
