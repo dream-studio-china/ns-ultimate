@@ -49,6 +49,18 @@ class FlatNormalizer implements NormalizerInterface, DenormalizerInterface, Norm
             return null;
         }
 
+        // PersistentCollection is a Doctrine ORM object, but its contents are
+        // API data rather than ORM internals. Preserve the serializer context
+        // while normalizing each member before applying the internal-object guard.
+        if ($object instanceof \Doctrine\Common\Collections\Collection) {
+            $items = [];
+            foreach ($object as $key => $item) {
+                $items[$key] = is_object($item) ? $this->normalize($item, $format, $context) : $item;
+            }
+
+            return $items;
+        }
+
         $className = get_class($object);
 
         // Avoid normalizing Doctrine internal objects (ClassMetadata, etc.)
@@ -102,7 +114,7 @@ class FlatNormalizer implements NormalizerInterface, DenormalizerInterface, Norm
             }
 
             // Reduce transform function for related objects
-            $reduceTransform = function (object $o): array {
+            $reduceTransform = function (object $o, mixed $normalized): array {
                 $res = [];
                 if (method_exists($o, 'getId')) {
                     $res['id'] = $o->getId();
@@ -113,8 +125,12 @@ class FlatNormalizer implements NormalizerInterface, DenormalizerInterface, Norm
                 if (method_exists($o, '__toString')) {
                     $res['__toString'] = $o->__toString();
                 }
-                if (($expanded = $this->expansionMetadata->get($o)) !== null) {
-                    $res['__metadata'] = $expanded;
+                if ($this->expansionMetadata->get($o) !== null) {
+                    // The decorated normalizer already processed this relation with
+                    // the current context, including circular-reference handling.
+                    // Never reinsert an entity into normalized data: JSON would
+                    // encode its private properties as an empty object.
+                    $res['__metadata'] = $normalized;
                 } elseif (method_exists($o, '__metadata')) {
                     $res['__metadata'] = $o->__metadata();
                 } elseif (property_exists($o, '__metadata')) {
@@ -126,16 +142,16 @@ class FlatNormalizer implements NormalizerInterface, DenormalizerInterface, Norm
 
             // when object is a relation
             if (is_object($raw) && method_exists($raw, 'getId')) {
-                $data[$attribute] = $reduceTransform($raw);
+                $data[$attribute] = $reduceTransform($raw, $data[$attribute]);
                 continue;
             }
 
             // when value is traversable (collections)
             if ($raw instanceof \Traversable) {
                 $tmp = [];
-                foreach ($raw as $o) {
+                foreach ($raw as $key => $o) {
                     if (is_object($o) && method_exists($o, 'getId')) {
-                        $tmp[] = $reduceTransform($o);
+                        $tmp[] = $reduceTransform($o, $data[$attribute][$key] ?? null);
                     }
                 }
                 $data[$attribute] = $tmp;
