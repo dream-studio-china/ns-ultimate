@@ -270,6 +270,8 @@ final class CoreDynamicQueryApiTest extends IntegrationWebTestCase
         $beta = current(array_filter($body['data'], static fn (array $item): bool => $item['name'] === 'Beta'));
         self::assertArrayHasKey('__metadata', $beta['parent']);
         self::assertIsArray($beta['parent']['__metadata']);
+        self::assertSame('Alpha', $beta['parent']['__metadata']['name'] ?? null);
+        self::assertSame('slug-0', $beta['parent']['__metadata']['slug'] ?? null);
     }
 
     public function testRegexMatchesWorksOnCurrentDb(): void
