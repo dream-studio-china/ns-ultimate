@@ -11,6 +11,7 @@ use App\Payment\Entity\Invoice;
 use App\Payment\Exception\PaymentVerificationException;
 use App\Payment\Service\PaymentGatewayInterface;
 use App\Trade\Entity\OrderStoreLifecycle;
+use App\Wechat\Entity\WechatUser;
 use EasyWeChat\Pay\Client as WechatPayClient;
 use EasyWeChat\Pay\Server as WechatPayServer;
 use NsUltimate\Business\Wechat\Entity\WechatMerchant;
@@ -51,16 +52,16 @@ final class StoreWechatPaymentGateway implements PaymentGatewayInterface
         }
         if ($invoice->getTradeType() !== 'native') {
             $payer = $invoice->getPayer() ?? throw new \RuntimeException('The payer must sign in with WeChat before payment.');
-            $identityRepository = $this->entityManager->getRepository(\NsUltimate\Business\Wechat\Entity\StoreWechatIdentity::class);
+            $wechatUsers = $this->entityManager->getRepository(WechatUser::class);
             $miniapp = $setting->getMiniapp();
             $official = $setting->getOfficial();
             $identity = $miniapp !== null
-                ? $identityRepository->findOneBy(['user' => $payer, 'appId' => $miniapp->getAppId()])
+                ? $wechatUsers->findByUserAndAppId($payer, $miniapp->getAppId())
                 : null;
             $type = 'miniapp';
             $application = $miniapp;
             if ($identity === null && $official !== null) {
-                $identity = $identityRepository->findOneBy(['user' => $payer, 'appId' => $official->getAppId()]);
+                $identity = $wechatUsers->findByUserAndAppId($payer, $official->getAppId());
                 $type = 'official';
                 $application = $official;
             }

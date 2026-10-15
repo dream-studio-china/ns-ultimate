@@ -552,7 +552,40 @@ final class WechatSettingsApiTest extends KernelTestCase
         $requests->pop();
 
         self::assertSame($user->getId(), $authenticatedUser->getId());
-        self::assertSame(1, $em->getRepository(StoreWechatIdentity::class)->count(['appId' => 'wx-legacy-app', 'openid' => 'same-openid']));
+        self::assertSame(1, $em->getRepository(WechatUser::class)->count(['appId' => 'wx-legacy-app', 'openid' => 'same-openid']));
+    }
+
+    public function testIdentityMigrationPromotesLegacyRowsAndCopiesAdditionalAppIds(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $user = (new User())->setEmail('wechat-migration@example.test')->setUsername('wechat-migration');
+        $legacy = new WechatUser($user, 'migration-openid', WechatUser::APP_TYPE_OFFICIAL);
+        $em->persist($user);
+        $em->persist($legacy);
+        $em->persist(new StoreWechatIdentity($user, 'wx-migration-a', 'migration-openid', WechatApplication::TYPE_OFFICIAL));
+        $em->persist(new StoreWechatIdentity($user, 'wx-migration-b', 'migration-openid', WechatApplication::TYPE_OFFICIAL));
+        $em->flush();
+
+        $connection = $em->getConnection();
+        require_once dirname(__DIR__, 2).'/migrations/Version20261015100000.php';
+        $migration = new \NsUltimate\Business\Wechat\Migrations\Version20261015100000($connection, new \Psr\Log\NullLogger());
+        $migration->up($connection->createSchemaManager()->introspectSchema());
+        $userId = $user->getId();
+        $em->clear();
+        $user = $em->find(User::class, $userId);
+
+        self::assertSame(2, $em->getRepository(WechatUser::class)->count(['user' => $user]));
+        self::assertSame(1, $em->getRepository(WechatUser::class)->count([
+            'user' => $user,
+            'appId' => 'wx-migration-a',
+            'openid' => 'migration-openid',
+        ]));
+        self::assertSame(1, $em->getRepository(WechatUser::class)->count([
+            'user' => $user,
+            'appId' => 'wx-migration-b',
+            'openid' => 'migration-openid',
+        ]));
+        self::assertSame(2, $em->getRepository(StoreWechatIdentity::class)->count(['openid' => 'migration-openid']));
     }
 
     public function testWechatServiceSelectsClientsFromCurrentStoreWithoutMutableGlobalState(): void
@@ -623,7 +656,7 @@ final class WechatSettingsApiTest extends KernelTestCase
 
         self::assertNotSame($userA->getId(), $userB->getId());
         self::assertSame($userA->getId(), $sameAppUser->getId());
-        self::assertSame(2, $em->getRepository(StoreWechatIdentity::class)->count(['openid' => 'same-openid']));
+        self::assertSame(2, $em->getRepository(WechatUser::class)->count(['openid' => 'same-openid']));
     }
 
     /** @param array<string, mixed>|null $data

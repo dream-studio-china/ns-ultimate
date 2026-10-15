@@ -38,9 +38,11 @@ Core's `/api/wechat/miniapp/login`, `/api/wechat/oauth/url`, and
 body (or query for OAuth URL). Mini Program and Official Account OpenIDs remain
 separate naturally because WeChat issues them per AppID.
 
-Login identities are stored as `(AppID, OpenID)` mappings to Core Users; no
-session key or raw WeChat response is retained. A payer must have logged in
-through the exact application selected by the order's Store.
+Login identities are stored in Core `WechatUser` as `(AppID, OpenID)` mappings
+to Core Users; legacy rows without an AppID are retained and linked to the
+configured application on a matching legacy login. No session key or raw WeChat
+response is retained. A payer must have logged in through the exact application
+selected by the order's Store.
 
 Payments support Core Invoice JSAPI and Native flows for store-scoped Trade
 orders. A payment records the selected profile identifiers on the Invoice so
