@@ -4,20 +4,26 @@ import SIP from '@/utils/simple-image-process'
 import './wechat-user.css'
 
 const wechatUser = coreWechatUserConfig.WechatUser
-const listDisplay = [...wechatUser.list.list_display]
+const propertyOf = field => typeof field === 'string' ? field : field.property
+const listDisplay = wechatUser.list.list_display.filter(field => propertyOf(field) !== 'createdAt')
 const openidIndex = listDisplay.indexOf('openid')
 if (openidIndex !== -1 && !listDisplay.includes('appId')) {
   listDisplay.splice(openidIndex, 0, 'appId')
 }
 
-const nicknameIndex = listDisplay.indexOf('nickname')
-if (nicknameIndex !== -1 && !listDisplay.some(field => (typeof field === 'string' ? field : field.property) === 'avatar')) {
-  listDisplay.splice(nicknameIndex, 0, {
-    property: 'avatar',
-    type: 'image',
-    field_options: { className: 'wechat-user-avatar-column' }
-  })
+const avatarColumn = {
+  property: 'avatar',
+  type: 'image',
+  field_options: { className: 'wechat-user-avatar-column' }
 }
+const remainingListFields = listDisplay.filter(field => !['id', 'avatar', 'nickname'].includes(propertyOf(field)))
+const idIndex = listDisplay.findIndex(field => propertyOf(field) === 'id')
+listDisplay.splice(0, listDisplay.length, ...[
+  ...listDisplay.slice(0, idIndex + 1),
+  avatarColumn,
+  'nickname',
+  ...remainingListFields
+])
 
 const AvatarDetail = {
   props: ['data'],

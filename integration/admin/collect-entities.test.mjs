@@ -51,7 +51,7 @@ test('overrides WechatUser display fields without changing core configuration', 
   ), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
   const coreWechatUser = {
     entity: { name: 'WechatUser' },
-    list: { list_display: ['id', 'user', 'openid', 'nickname'] },
+    list: { list_display: ['id', 'user', 'openid', 'unionid', 'nickname', 'appType', 'lastLoginAt', 'createdAt'] },
     detail: { detail_display: ['id', 'avatarUrl', 'openid'] }
   }
   const context = {
@@ -63,11 +63,12 @@ test('overrides WechatUser display fields without changing core configuration', 
 
   const configured = context.config
   assert.deepEqual(Array.from(configured.list.list_display, field => typeof field === 'string' ? field : field.property), [
-    'id', 'user', 'appId', 'openid', 'avatar', 'nickname'
+    'id', 'avatar', 'nickname', 'user', 'appId', 'openid', 'unionid', 'appType', 'lastLoginAt'
   ])
   const avatarColumn = configured.list.list_display.find(field => typeof field === 'object')
   assert.equal(avatarColumn.type, 'image')
   assert.equal(avatarColumn.field_options.className, 'wechat-user-avatar-column')
+  assert.equal(configured.list.list_display.some(field => (typeof field === 'string' ? field : field.property) === 'createdAt'), false)
   const avatarDetail = configured.detail.detail_display.find(field => typeof field === 'object')
   assert.equal(avatarDetail.property, 'avatar')
   const rendered = avatarDetail.component.render.call({ data: 'avatar-url' })
@@ -76,7 +77,7 @@ test('overrides WechatUser display fields without changing core configuration', 
   assert.equal(rendered.props.style.height, '256px')
   assert.equal(rendered.props.src, 'processed:avatar-url')
   assert.equal(configured.detail.detail_display[0], 'id')
-  assert.deepEqual(coreWechatUser.list.list_display, ['id', 'user', 'openid', 'nickname'])
+  assert.deepEqual(coreWechatUser.list.list_display, ['id', 'user', 'openid', 'unionid', 'nickname', 'appType', 'lastLoginAt', 'createdAt'])
   assert.deepEqual(coreWechatUser.detail.detail_display, ['id', 'avatarUrl', 'openid'])
 })
 
