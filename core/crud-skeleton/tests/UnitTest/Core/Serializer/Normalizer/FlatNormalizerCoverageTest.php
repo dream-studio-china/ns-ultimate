@@ -178,12 +178,13 @@ final class FlatNormalizerCoverageTest extends TestCase
         $metadata = new ExpansionMetadata();
         $metadata->mark($relation);
         $decorated = $this->createMock(NormalizerInterface::class);
-        $decorated->method('normalize')->willReturn(['relation' => ['id' => 9]]);
+        $decorated->method('normalize')->willReturn(['relation' => ['id' => 9, 'name' => 'Expanded relation']]);
         $normalizer = new FlatNormalizer($decorated, PropertyAccess::createPropertyAccessor(), $metadata);
 
         $result = $normalizer->normalize($obj, 'json');
 
-        self::assertSame($relation, $result['relation']['__metadata']);
+        $json = json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(['id' => 9, 'name' => 'Expanded relation'], $json['relation']['__metadata']);
         self::assertFalse(property_exists($relation, '__metadata'));
     }
 
