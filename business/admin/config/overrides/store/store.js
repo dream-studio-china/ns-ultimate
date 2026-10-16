@@ -3,6 +3,7 @@ import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collec
 import StoreContactSchema from '../../../../../core/crud-admin/src/configs/collections/store/StoreContact.json'
 import StoreAddressSchema from './StoreAddress.json'
 import StoreSettingsSchema from './StoreSettings.json'
+import StoreUserBindingAction from '../../components/StoreUserBindingAction.js'
 
 // Business override of the core Store entity (declared explicitly in
 // business/admin/config/index.js `replace`). Only code, name and status are
@@ -37,6 +38,9 @@ export default {
   list: {
     query: orderByIdDesc,
     disabled_actions: ['delete'],
+    actions: [
+      { name: 'store-user-binding', position: 'list', component: StoreUserBindingAction }
+    ],
     list_filter: {
       code: t('Code'),
       name: t('Name'),
