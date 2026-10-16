@@ -1,0 +1,62 @@
+.counter-qr-dialog {
+  text-align: center;
+}
+
+.counter-qr-dialog__hint {
+  margin: 0 0 16px;
+  color: var(--el-text-color-regular);
+}
+
+.counter-qr-dialog__image {
+  display: block;
+  width: 256px;
+  height: 256px;
+  margin: 0 auto 16px;
+  padding: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: #fff;
+  image-rendering: pixelated;
+}
+
+.counter-qr-dialog__placeholder {
+  display: grid;
+  width: 256px;
+  height: 256px;
+  margin: 0 auto 16px;
+  place-items: center;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+}
+
+.counter-qr-dialog__url {
+  padding: 10px 12px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+  overflow-wrap: anywhere;
+  user-select: all;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+}
+
+.counter-qr-dialog__uuid {
+  margin: 10px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.counter-qr-dialog__copied {
+  margin: 8px 0 0;
+  color: var(--el-color-success);
+  font-size: 12px;
+}
+
+.counter-qr-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

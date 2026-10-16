@@ -126,6 +126,11 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column :label="$t('Actions')" width="160" fixed="right">
+          <template #default="{ row }">
+            <CounterQrCodeAction :record="row" />
+          </template>
+        </el-table-column>
       </el-table>
       <el-empty v-else-if="!loading" :description="$t('No counters')" />
     </section>
@@ -163,6 +168,7 @@ import router from '@/router'
 import request from '@/utils/request'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import { t } from '@/i18n'
+import CounterQrCodeAction from '../../config/components/CounterQrCodeAction.js'
 
 const loading = ref(false)
 const scopes = ref({})
