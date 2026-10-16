@@ -1,6 +1,6 @@
 // Business override of the core Product entity (declared explicitly in
 // business/admin/config/index.js `replace`). Adds category binding and
-// metadata-backed display fields (cover, recommendation, kitchen print, sold-out, and order).
+// metadata-backed display fields (cover, recommendation, kitchen print, sold-out, order, and sale schedule).
 // List and specifications behavior mirror the core configuration.
 import { defineAsyncComponent } from 'vue'
 import { t } from '@/i18n'
@@ -200,7 +200,9 @@ export default {
               { property: 'cover', type: 'image', type_options: { storage: 'qiniu' }, help: t('Product cover help') },
               { property: 'kitchenPrintEnabled', field_options: { label: t('Kitchen print enabled') } },
               { property: 'soldout', field_options: { label: t('Kitchen and ordering sold out') } },
-              { property: 'listOrder', field_options: { label: t('Kitchen display order') } }
+              { property: 'listOrder', field_options: { label: t('Kitchen display order') } },
+              { property: 'startSaleTime', field_options: { label: t('Sale start time') }, type_options: { type: 'time' } },
+              { property: 'endSaleTime', field_options: { label: t('Sale end time') }, type_options: { type: 'time' } }
             ]
           },
           help: t('Product metadata help')
@@ -266,7 +268,9 @@ export default {
               { property: 'cover', type: 'image', type_options: { storage: 'qiniu' } },
               { property: 'kitchenPrintEnabled', field_options: { label: t('Kitchen print enabled') } },
               { property: 'soldout', field_options: { label: t('Kitchen and ordering sold out') } },
-              { property: 'listOrder', field_options: { label: t('Kitchen display order') } }
+              { property: 'listOrder', field_options: { label: t('Kitchen display order') } },
+              { property: 'startSaleTime', field_options: { label: t('Sale start time') }, type_options: { type: 'time' } },
+              { property: 'endSaleTime', field_options: { label: t('Sale end time') }, type_options: { type: 'time' } }
             ]
           }
         },

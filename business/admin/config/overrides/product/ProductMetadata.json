@@ -38,6 +38,16 @@
       "title": "Kitchen display order",
       "description": "Lower values appear earlier in the kitchen product list.",
       "minimum": 0
+    },
+    "startSaleTime": {
+      "type": "string",
+      "title": "Sale start time",
+      "description": "Daily sale start time in HH:mm format. Leave both sale times empty for no time restriction."
+    },
+    "endSaleTime": {
+      "type": "string",
+      "title": "Sale end time",
+      "description": "Daily sale end time in HH:mm format. Leave both sale times empty for no time restriction."
     }
   },
   "required": []
