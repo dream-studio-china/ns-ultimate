@@ -10,11 +10,6 @@
       "type": "string",
       "title": "Cover"
     },
-    "soldOut": {
-      "type": "boolean",
-      "title": "Sold out",
-      "default": false
-    },
     "recommendLevel": {
       "type": "integer",
       "title": "Recommendation level",

@@ -18,14 +18,48 @@ const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmi
 import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
 import ProductMetadataSchema from './ProductMetadata.json'
 
+const RecommendationLevelInput = {
+  props: ['form', 'field'],
+  render() {
+    const rawValue = Number(this.form[this.field.property]) || 0
+    const value = Math.max(0, Math.min(10, Math.floor(rawValue)))
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }} role={'group'} aria-label={t('Recommendation level')}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+          {Array.from({ length: 10 }, (_, index) => {
+            const level = index + 1
+            const selected = level <= value
+            return (
+              <button
+                key={level}
+                type={'button'}
+                title={`${t('Set recommendation level')} ${level}`}
+                aria-label={`${t('Set recommendation level')} ${level}`}
+                aria-pressed={selected}
+                onClick={() => { this.form[this.field.property] = level }}
+                style={{ border: 0, padding: '0 1px', background: 'transparent', color: selected ? '#D6A31E' : '#AAB2BD', cursor: 'pointer', fontSize: '22px', lineHeight: 1 }}
+              >★</button>
+            )
+          })}
+        </span>
+        <span>{value ? `${value} / 10` : t('Not recommended')}</span>
+        {value ? <el-button size={'small'} link onClick={() => { this.form[this.field.property] = null }}>{t('Clear recommendation level')}</el-button> : null}
+      </div>
+    )
+  }
+}
+
 const ProductNameWithCover = {
   props: ['data', 'record'],
   render() {
     const cover = this.record?.metadata?.cover
+    const rawLevel = Number(this.record?.metadata?.recommendLevel) || 0
+    const recommendationLevel = Math.max(0, Math.min(10, Math.floor(rawLevel)))
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
         {cover ? <el-image src={SIP.getPicture(cover)} fit={'cover'} style={{ width: '40px', height: '40px', borderRadius: '4px', flexShrink: 0 }} /> : null}
         <span>{this.data}</span>
+        {recommendationLevel ? <span title={`${t('Recommendation level')}: ${recommendationLevel} / 10`} aria-label={`${t('Recommendation level')} ${recommendationLevel} / 10`} style={{ color: '#D6A31E', whiteSpace: 'nowrap' }}>{'★'.repeat(recommendationLevel)} <small>{recommendationLevel}/10</small></span> : null}
       </span>
     )
   }
@@ -198,6 +232,7 @@ export default {
             schema: ProductMetadataSchema,
             fields: [
               { property: 'cover', type: 'image', type_options: { storage: 'qiniu' }, help: t('Product cover help') },
+              { property: 'recommendLevel', component: RecommendationLevelInput, field_options: { label: t('Recommendation level') } },
               { property: 'kitchenPrintEnabled', field_options: { label: t('Kitchen print enabled') } },
               { property: 'soldout', field_options: { label: t('Kitchen and ordering sold out') } },
               { property: 'listOrder', field_options: { label: t('Kitchen display order') } },
