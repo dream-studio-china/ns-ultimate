@@ -5,6 +5,48 @@ import Layout from '@/layout'
 export default {
   add: [
     {
+      path: '/store-workspace',
+      name: 'StoreWorkspace',
+      component: Layout,
+      redirect: '/store-workspace/overview',
+      meta: {
+        title: t('Store performance dashboard'),
+        icon: 'el-icon-data-line'
+      },
+      children: [
+        {
+          path: 'overview',
+          name: 'StorePerformanceOverview',
+          component: () => import('./views/store/StoreWorkspacePage.vue'),
+          meta: { title: t('Performance overview'), icon: 'el-icon-s-data' }
+        },
+        {
+          path: 'products',
+          name: 'StoreWorkspaceProducts',
+          component: () => import('./views/store/StoreWorkspacePage.vue'),
+          meta: { title: t('Store products'), icon: 'el-icon-goods' }
+        },
+        {
+          path: 'counters',
+          name: 'StoreWorkspaceCounters',
+          component: () => import('./views/store/StoreWorkspacePage.vue'),
+          meta: { title: t('Store counters'), icon: 'counter' }
+        },
+        {
+          path: 'orders',
+          name: 'StoreWorkspaceOrders',
+          component: () => import('./views/store/StoreWorkspacePage.vue'),
+          meta: { title: t('Store orders'), icon: 'el-icon-list' }
+        },
+        {
+          path: 'employees',
+          name: 'StoreWorkspaceEmployees',
+          component: () => import('./views/store/StoreWorkspacePage.vue'),
+          meta: { title: t('Store employees'), icon: 'el-icon-user' }
+        }
+      ]
+    },
+    {
       path: '/business',
       name: 'BusinessManage',
       hidden: true,
