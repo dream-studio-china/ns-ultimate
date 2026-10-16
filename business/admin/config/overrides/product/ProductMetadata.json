@@ -20,6 +20,24 @@
       "title": "Recommendation level",
       "minimum": 1,
       "maximum": 10
+    },
+    "kitchenPrintEnabled": {
+      "type": "boolean",
+      "title": "Kitchen print enabled",
+      "description": "Controls whether this product is included in kitchen printing.",
+      "default": false
+    },
+    "soldout": {
+      "type": "boolean",
+      "title": "Kitchen and ordering sold out",
+      "description": "Marks this product as sold out in kitchen and ordering screens.",
+      "default": false
+    },
+    "listOrder": {
+      "type": "integer",
+      "title": "Kitchen display order",
+      "description": "Lower values appear earlier in the kitchen product list.",
+      "minimum": 0
     }
   },
   "required": []

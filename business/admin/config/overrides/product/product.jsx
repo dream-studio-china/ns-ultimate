@@ -1,6 +1,6 @@
 // Business override of the core Product entity (declared explicitly in
 // business/admin/config/index.js `replace`). Adds category binding and
-// metadata-backed display fields (sold out / recommendation 1-10 / cover).
+// metadata-backed display fields (cover, recommendation, kitchen print, sold-out, and order).
 // List and specifications behavior mirror the core configuration.
 import { defineAsyncComponent } from 'vue'
 import { t } from '@/i18n'
@@ -197,7 +197,10 @@ export default {
           type_options: {
             schema: ProductMetadataSchema,
             fields: [
-              { property: 'cover', type: 'image', type_options: { storage: 'qiniu' }, help: t('Product cover help') }
+              { property: 'cover', type: 'image', type_options: { storage: 'qiniu' }, help: t('Product cover help') },
+              { property: 'kitchenPrintEnabled', field_options: { label: t('Kitchen print enabled') } },
+              { property: 'soldout', field_options: { label: t('Kitchen and ordering sold out') } },
+              { property: 'listOrder', field_options: { label: t('Kitchen display order') } }
             ]
           },
           help: t('Product metadata help')
@@ -260,7 +263,10 @@ export default {
           type_options: {
             schema: ProductMetadataSchema,
             fields: [
-              { property: 'cover', type: 'image', type_options: { storage: 'qiniu' } }
+              { property: 'cover', type: 'image', type_options: { storage: 'qiniu' } },
+              { property: 'kitchenPrintEnabled', field_options: { label: t('Kitchen print enabled') } },
+              { property: 'soldout', field_options: { label: t('Kitchen and ordering sold out') } },
+              { property: 'listOrder', field_options: { label: t('Kitchen display order') } }
             ]
           }
         },
