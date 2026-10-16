@@ -53,9 +53,11 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertInstanceOf(Route::class, $routes->get('business-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('store-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('store-order-counters-list'));
-        self::assertInstanceOf(Route::class, $routes->get('app-counters-list'));
+        self::assertInstanceOf(Route::class, $routes->get('app-store-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('manage-order-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('app-counter-orders-list'));
+        self::assertInstanceOf(Route::class, $routes->get('app-order-counters-list'));
+        self::assertInstanceOf(Route::class, $routes->get('api-v1-public-counters-detail'));
         self::assertContains(Counter::class, $entityNames);
         self::assertContains(OrderCounter::class, $entityNames);
         foreach ([
@@ -63,12 +65,125 @@ final class CounterOrderBindingTest extends KernelTestCase
             'manage-order-counters-list' => '/manage/order-counters',
             'store-counters-list' => '/store/{scopeId}/counters',
             'store-order-counters-list' => '/store/{scopeId}/order-counters',
-            'app-counters-list' => '/app/counters',
+            'app-store-counters-list' => '/app/stores/{storeUuid}/counters',
             'app-counter-orders-list' => '/app/counters/{counterUuid}/orders',
+            'app-order-counters-list' => '/app/orders/{orderUuid}/counters',
+            'api-v1-public-counters-detail' => '/api/v1/public/counters/{id}',
         ] as $name => $path) {
             self::assertSame($path, $routes->get($name)?->getPath());
-            self::assertSame('/api/v1'.$path, $routes->get('api-v1-'.$name)?->getPath());
+            if (!str_starts_with($name, 'api-v1-')) {
+                self::assertSame('/api/v1'.$path, $routes->get('api-v1-'.$name)?->getPath());
+            }
         }
+    }
+
+    public function testPublicCounterBootstrapAndSharedOrdersExposeTableScopedOrderContent(): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $store = new Store('shared-order-test', 'Shared order test');
+        $counter = (new Counter())
+            ->setStoreUuid($store->getUuid())
+            ->setCode('T01')
+            ->setName('Table 1');
+        $users = [
+            (new User())->setEmail('diner-one@example.test')->setUsername('diner-one')->setRoles(['ROLE_USER']),
+            (new User())->setEmail('diner-two@example.test')->setUsername('diner-two')->setRoles(['ROLE_USER']),
+        ];
+        $orders = [];
+        foreach ($users as $index => $user) {
+            $order = (new Order())
+                ->setUser($user)
+                ->setStatus(Order::STATUS_PENDING)
+                ->setTotalAmount(($index + 1) * 1250)
+                ->setMetadata(['guests' => $index + 1]);
+            $order->addItem((new OrderItem())
+                ->setSpecificationUuid(UUID::v4())
+                ->setSpecificationTitle('Beef cut '.($index + 1))
+                ->setQuantity($index + 1)
+                ->setUnitPrice(1250)
+                ->setPrice(($index + 1) * 1250)
+                ->setSpecSnapshot(['name' => 'Beef cut '.($index + 1)])
+                ->setProductSnapshot(['name' => 'Beef '.($index + 1)]));
+            $orders[] = $order;
+            $entityManager->persist($user);
+            $entityManager->persist($order);
+        }
+        foreach ($orders as $order) {
+            $entityManager->persist((new OrderCounter())
+                ->setTradeOrderUuid($order->getUuid())
+                ->setCounter($counter)
+                ->setStoreUuid($store->getUuid()));
+        }
+        $entityManager->persist($store);
+        $entityManager->persist($counter);
+        $entityManager->flush();
+
+        $bootstrapRequest = Request::create('/api/v1/public/counters/'.$counter->getId(), 'GET');
+        $bootstrapResponse = self::$kernel->handle($bootstrapRequest);
+        self::assertSame(200, $bootstrapResponse->getStatusCode(), $bootstrapResponse->getContent());
+        $bootstrap = json_decode($bootstrapResponse->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame($counter->getUuid(), $bootstrap['data']['uuid']);
+        self::assertSame($store->getUuid(), $bootstrap['data']['storeUuid']);
+        self::$kernel->terminate($bootstrapRequest, $bootstrapResponse);
+
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($users[0]);
+        $ordersRequest = Request::create('/api/v1/app/counters/'.$counter->getUuid().'/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+        ]);
+        $ordersResponse = self::$kernel->handle($ordersRequest);
+        self::assertSame(200, $ordersResponse->getStatusCode(), $ordersResponse->getContent());
+        $payload = json_decode($ordersResponse->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame(0, $payload['code']);
+        self::assertCount(2, $payload['data']);
+        self::assertCount(1, $payload['data'][0]['items']);
+        self::assertEqualsCanonicalizing([true, false], array_column($payload['data'], 'isMine'));
+        self::assertEqualsCanonicalizing([1, 2], array_column($payload['data'], 'guests'));
+        self::assertNotEmpty($payload['data'][0]['id']);
+        $specificationTitles = [];
+        foreach ($payload['data'] as $orderPayload) {
+            foreach ($orderPayload['items'] as $itemPayload) {
+                $specificationTitles[] = $itemPayload['specificationTitle'];
+            }
+        }
+        self::assertEqualsCanonicalizing(['Beef cut 1', 'Beef cut 2'], $specificationTitles);
+        self::$kernel->terminate($ordersRequest, $ordersResponse);
+    }
+
+    public function testAppOrderCounterListIsLimitedToTheAuthenticatedCustomersOrder(): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $owner = (new User())->setEmail('counter-order-owner@example.test')->setUsername('counter-order-owner');
+        $otherUser = (new User())->setEmail('counter-order-other@example.test')->setUsername('counter-order-other');
+        $store = new Store('counter-order-owner', 'Counter order owner store');
+        $counter = (new Counter())->setStoreUuid($store->getUuid())->setCode('A01')->setName('Table A01');
+        $ownerOrder = (new Order())->setUser($owner);
+        $otherOrder = (new Order())->setUser($otherUser);
+        foreach ([$owner, $otherUser, $store, $counter, $ownerOrder, $otherOrder] as $entity) {
+            $entityManager->persist($entity);
+        }
+        $entityManager->persist((new OrderCounter())
+            ->setTradeOrderUuid($ownerOrder->getUuid())
+            ->setStoreUuid($store->getUuid())
+            ->setCounter($counter));
+        $entityManager->flush();
+
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($owner);
+        $request = Request::create('/api/v1/app/orders/'.$ownerOrder->getUuid().'/counters', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+        ]);
+        $response = self::$kernel->handle($request);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $payload = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertCount(1, $payload['data']);
+        self::assertSame($ownerOrder->getUuid(), $payload['data'][0]['tradeOrderUuid']);
+        self::$kernel->terminate($request, $response);
+
+        $otherRequest = Request::create('/api/v1/app/orders/'.$otherOrder->getUuid().'/counters', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+        ]);
+        $otherResponse = self::$kernel->handle($otherRequest);
+        self::assertSame(404, $otherResponse->getStatusCode());
+        self::$kernel->terminate($otherRequest, $otherResponse);
     }
 
     public function testCounterMetadataLabelsAreTranslatedForSupportedLocales(): void
@@ -162,7 +277,7 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertContains('uniq_counter_order_pair', $orderCounterIndexes);
     }
 
-    public function testPublicCounterDetailExposesOnlyEnabledCountersOfActiveStoresWithoutId(): void
+    public function testPublicCounterDetailAcceptsUuidOrIdAndExposesOnlyEnabledCountersOfActiveStores(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
         $store = new Store('public-counter', 'Public counter store');
@@ -196,14 +311,17 @@ final class CounterOrderBindingTest extends KernelTestCase
 
         self::assertSame(404, $get('/api/v1/public/counters/'.$disabled->getUuid())->getStatusCode());
         self::assertSame(404, $get('/api/v1/public/counters/'.$suspended->getUuid())->getStatusCode());
-        self::assertSame(404, $get('/api/v1/public/counters/1')->getStatusCode());
+        $byIdResponse = $get('/api/v1/public/counters/'.$counter->getId());
+        self::assertSame(200, $byIdResponse->getStatusCode(), (string) $byIdResponse->getContent());
+        $byIdPayload = json_decode((string) $byIdResponse->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame($counter->getUuid(), $byIdPayload['data']['uuid']);
 
         $routes = self::getContainer()->get('router')->getRouteCollection();
         self::assertInstanceOf(Route::class, $routes->get('api-v1-public-counters-detail'));
         self::assertSame('/api/v1/public/counters/{id}', $routes->get('api-v1-public-counters-detail')?->getPath());
     }
 
-    public function testAppCounterListUsesStoreCodeHeaderInsteadOfStorePathParameter(): void
+    public function testAppCounterListUsesExplicitActiveStorePath(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
         $user = (new User())->setEmail('app-counter-context@example.test')->setUsername('app-counter-context');
@@ -215,9 +333,8 @@ final class CounterOrderBindingTest extends KernelTestCase
         $entityManager->flush();
         $token = self::getContainer()->get(TokenManager::class)->createAccessToken($user);
 
-        $request = Request::create('/api/v1/app/counters', 'GET', [], [], [], [
+        $request = Request::create('/api/v1/app/stores/'.$store->getUuid().'/counters', 'GET', [], [], [], [
             'HTTP_AUTHORIZATION' => 'Bearer '.$token,
-            'HTTP_X_STORE_CODE' => $store->getCode(),
         ]);
         $response = self::$kernel->handle($request);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
@@ -225,7 +342,7 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertCount(1, $payload['data']);
         self::assertSame($counter->getUuid(), $payload['data'][0]['uuid']);
 
-        $request = Request::create('/api/v1/app/counters', 'GET', [], [], [], [
+        $request = Request::create('/api/v1/app/stores/'.$store->getUuid().'/counters', 'GET', [], [], [], [
             'HTTP_AUTHORIZATION' => 'Bearer '.$token,
         ]);
         $response = self::$kernel->handle($request);
@@ -281,13 +398,12 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         $payload = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR);
         self::assertSame([$openOrder->getUuid()], array_column($payload['data'], 'uuid'));
-        self::assertSame([
-            'productName' => 'Coffee',
-            'specificationName' => 'Latte',
-            'quantity' => 2,
-            'unitPrice' => 450,
-            'price' => 900,
-        ], $payload['data'][0]['items'][0]);
+        self::assertSame('Coffee', $payload['data'][0]['items'][0]['productName']);
+        self::assertSame('Latte', $payload['data'][0]['items'][0]['specificationName']);
+        self::assertSame('Latte', $payload['data'][0]['items'][0]['specificationTitle']);
+        self::assertSame(2, $payload['data'][0]['items'][0]['quantity']);
+        self::assertSame(450, $payload['data'][0]['items'][0]['unitPrice']);
+        self::assertSame(900, $payload['data'][0]['items'][0]['price']);
         self::assertArrayNotHasKey('cost', $payload['data'][0]['items'][0]);
         self::assertArrayNotHasKey('profit', $payload['data'][0]['items'][0]);
     }

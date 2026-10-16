@@ -29,21 +29,6 @@ final class CounterController extends RestController
         return ['enabled' => true];
     }
 
-    /**
-     * @param array<string, mixed>|\Doctrine\ORM\QueryBuilder|\App\Core\Query\DqlExpression|null $filter
-     * @return array<string, mixed>|\Doctrine\ORM\QueryBuilder|\App\Core\Query\DqlExpression|null
-     */
-    protected function detailFilter(array|\Doctrine\ORM\QueryBuilder|\App\Core\Query\DqlExpression|null $filter = null)
-    {
-        // The public API only exposes UUID identifiers; numeric ids resolve to
-        // an `id` criterion and must never match.
-        if (is_array($filter) && array_key_exists('id', $filter)) {
-            return null;
-        }
-
-        return $filter;
-    }
-
     /** @return array{uuid: string, storeUuid: string, code: string, name: string, capacity: ?int, sort: int, metadata: array<string, mixed>|null}|null */
     protected function detailResponse(?object $entity): ?array
     {

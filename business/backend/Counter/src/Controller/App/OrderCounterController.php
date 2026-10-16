@@ -8,6 +8,7 @@ use App\Core\Controller\RestController;
 use App\Core\Query\DqlExpression;
 use App\Core\View\ApiView;
 use App\Core\View\ListApiViewMixin;
+use App\Identity\Entity\User;
 use App\Store\Service\StoreServiceInterface;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderItem;
@@ -16,6 +17,7 @@ use Doctrine\ORM\QueryBuilder;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Service\OrderCounterService;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
@@ -30,6 +32,7 @@ final class OrderCounterController extends RestController
         protected readonly OrderCounterService $service,
         private readonly EntityManagerInterface $entityManager,
         private readonly StoreServiceInterface $storeService,
+        private readonly Security $security,
     ) {
     }
 
@@ -93,7 +96,7 @@ final class OrderCounterController extends RestController
     }
 
     /** @param mixed $entities
-     * @return list<array{uuid: string, status: string, totalAmount: int, currency: string, createdAt: string, items: list<array{productName: ?string, specificationName: ?string, quantity: int, unitPrice: int, price: int}>}> */
+     * @return list<array<string, mixed>> */
     protected function listProcessor(mixed $entities): array
     {
         if ($entities instanceof QueryBuilder) {
@@ -116,17 +119,23 @@ final class OrderCounterController extends RestController
 
         $orders = $this->entityManager->getRepository(Order::class)->findBy(['uuid' => $orderUuids]);
         usort($orders, static fn (Order $left, Order $right): int => $left->getCreatedAt() <=> $right->getCreatedAt());
+        $currentUser = $this->security->getUser();
 
         return array_map(static fn (Order $order): array => [
+            'id' => $order->getId(),
             'uuid' => $order->getUuid(),
             'status' => $order->getStatus(),
             'totalAmount' => $order->getTotalAmount(),
             'currency' => $order->getCurrency(),
             'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
+            'isMine' => $currentUser instanceof User && $order->getUser()?->getId() === $currentUser->getId(),
+            'guests' => (int) (($order->getMetadata()['guests'] ?? 0)),
             'items' => array_values(array_map(static function (OrderItem $item): array {
                 $productSnapshot = $item->getProductSnapshot();
 
                 return [
+                    'specificationUuid' => $item->getSpecificationUuid(),
+                    'specificationTitle' => $item->getSpecificationTitle(),
                     'productName' => is_string($productSnapshot['name'] ?? null) ? $productSnapshot['name'] : null,
                     'specificationName' => $item->getSpecificationTitle(),
                     'quantity' => $item->getQuantity(),
