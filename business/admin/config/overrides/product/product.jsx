@@ -209,7 +209,18 @@ export default {
           field_options: { label: '', 'label-width': '60px' },
           component: SpecificationManager
         }
-      ]
+      ],
+      batch_edit: {
+        fields: [
+          {
+            property: 'store',
+            type: 'RelationToOne',
+            relation: { entity: 'Store', plural: 'stores', valueKey: 'uuid', multiple: false },
+            field_options: { label: t('Store') },
+            help: t('Product store help')
+          }
+        ]
+      }
     },
     list: {
       query: orderByIdDesc,
