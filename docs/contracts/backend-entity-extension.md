@@ -45,6 +45,24 @@ Business services can extend `ExtendedEntityService<CoreEntity>` and pass the ro
 
 This is an ordering adapter, not a general extension-query language: `@filter`, `@select`, grouping, and aggregation over subtype-only fields are not automatically supported. Read serialization and explicit CRUD write permissions are separate from query adaptation. Existing concrete root rows remain visible but have NULL subtype-field values in ordering; their placement follows the database platform's NULL ordering. Enabling or changing `order_fields` does not grant additional endpoint permissions.
 
+## Business-owned JSON Schema validation
+
+Each business module may provide `config/validation.yaml` using Symfony's YAML validation mapping format and place schema files in `resources/json-schema/<Name>.json`. The logical schema name is `<Module>/<Name>`; for example Common uses:
+
+```yaml
+App\Common\Entity\Content:
+    properties:
+        metadata:
+            - NsUltimate\Integration\Backend\Validator\JsonSchema:
+                  schema: Common/ContentMetadata
+```
+
+The business module owns both mapping and JSON file. Integration discovers the optional mapping and schema files, registers Symfony's validation mapping, and resolves the logical schema name. The schema is validated against the final entity value during Doctrine `onFlush`, after the core service has deserialized input and before changes are written. This also covers writes that use Doctrine flush without going through the JSON API. Invalid values become Symfony validation violations and the existing REST create/update handling returns a client error.
+
+The initial adapter supports standalone JSON Schema documents and delegates value validation to the core `JsonSchemaValidator::validateInline()` implementation. External or relative `$ref` resolution is not currently supported by the business schema adapter. A `null` value is skipped, matching core validator behavior; declare an additional Symfony constraint when a value must be non-null. Schemas are mapped on the root entity so the constraint is inherited by its business subtype. Validation applies to the entire entity whenever the unit of work flushes it, so historical JSON must satisfy a newly deployed schema before such entities can be updated. Direct SQL bypasses Doctrine validation.
+
+Content's `metadata` schema is an integration example: only `featured` boolean and `layout` values `article` or `landing` are accepted, with unknown properties rejected. Integration tests verify valid and invalid create/update values, rejection before persistence, optional file discovery, and invalid JSON schema failure during configuration discovery.
+
 ## Product example
 
 `business/backend/Store/` adds integer `sortOrder` (database column `sort_order`) to `trade_product` and reuses the core manage Product CRUD actions. The initial Store migration adds `product_type` and `sort`, then marks existing rows as `store` so they hydrate as the subtype and receive the default sort value. A follow-up migration renames `sort` to `sort_order`, preserving existing values. New core-class rows use the database discriminator default `core`.

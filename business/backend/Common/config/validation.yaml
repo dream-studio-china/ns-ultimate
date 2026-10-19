@@ -1,0 +1,5 @@
+App\Common\Entity\Content:
+    properties:
+        metadata:
+            - NsUltimate\Integration\Backend\Validator\JsonSchema:
+                  schema: Common/ContentMetadata

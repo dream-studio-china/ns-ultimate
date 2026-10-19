@@ -93,11 +93,26 @@ final class Kernel extends CoreKernel
             $builder->addResource($resource);
         }
         $extensions = EntityExtensionRegistry::discover($modules);
+        foreach (BusinessValidationRegistry::resources($modules) as $resource) {
+            $builder->addResource($resource);
+        }
+        $businessValidation = BusinessValidationRegistry::discover($modules);
+        if ($businessValidation['mappings'] !== []) {
+            $container->extension('framework', [
+                'validation' => [
+                    'mapping' => [
+                        'paths' => $businessValidation['mappings'],
+                    ],
+                ],
+            ]);
+        }
         $services->set(InheritanceMappingDriver::class)
             ->decorate('doctrine.orm.default_metadata_driver')
             ->args([service('.inner'), $extensions['inheritance']]);
         $services->set(EntityExtensionQueryBuilderFactory::class)
             ->args([service('doctrine.orm.entity_manager'), $extensions['ordering']]);
+        $services->set(\NsUltimate\Integration\Backend\Validator\JsonSchemaValidator::class)
+            ->args([service(\App\Core\Validator\JsonSchemaValidator::class), $businessValidation['schemas']]);
 
         foreach ($modules as $module) {
             $translationDirectory = $module['path'].'/translations';
@@ -169,7 +184,7 @@ final class Kernel extends CoreKernel
         ControllerRouteOverride::apply(
             $routes,
             EntityExtensionRegistry::discover($modules)['controllers'],
-            EntityExtensionRegistry::resources($modules),
+            [...EntityExtensionRegistry::resources($modules), ...BusinessValidationRegistry::resources($modules)],
         );
     }
 

@@ -141,6 +141,32 @@ final class ContentSortOrderExtensionTest extends IntegrationWebTestCase
         self::assertResponseStatusCodeSame(403);
     }
 
+    public function testBusinessSchemaValidatesCoreJsonFieldOnCreateAndUpdate(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $entityManager = $client->getContainer()->get(EntityManagerInterface::class);
+        $countBefore = $entityManager->getRepository(CoreContent::class)->count([]);
+
+        $valid = $this->request($client, 'POST', '/api/v1/manage/contents', [
+            'title' => 'Schema checked content',
+            'metadata' => ['featured' => true, 'layout' => 'article'],
+        ]);
+        self::assertSame(['featured' => true, 'layout' => 'article'], $valid['metadata']);
+
+        $client->jsonRequest('POST', '/api/v1/manage/contents', [
+            'title' => 'Invalid content',
+            'metadata' => ['featured' => 'yes'],
+        ]);
+        self::assertResponseStatusCodeSame(400);
+
+        $client->jsonRequest('PUT', '/api/v1/manage/contents/'.$valid['id'], [
+            'metadata' => ['layout' => 'unknown'],
+        ]);
+        self::assertResponseStatusCodeSame(400);
+
+        self::assertSame($countBefore + 1, $entityManager->getRepository(CoreContent::class)->count([]));
+    }
+
     /** @return array<string|int, mixed> */
     private function request(KernelBrowser $client, string $method, string $path, array $content = []): array
     {
