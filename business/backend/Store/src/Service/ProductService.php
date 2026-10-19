@@ -35,7 +35,7 @@ final class ProductService extends BaseService implements ProductServiceInterfac
         if (is_array($order)) {
             $mappedOrder = [];
             foreach ($order as $field => $direction) {
-                $mappedOrder[$field === 'entity.sort' ? 'storeProductExtension.sort' : $field] = $direction;
+                $mappedOrder[$field === 'entity.sortOrder' ? 'storeProductExtension.sortOrder' : $field] = $direction;
             }
             $order = $mappedOrder;
         }
@@ -44,8 +44,8 @@ final class ProductService extends BaseService implements ProductServiceInterfac
         $originalOrder = $request?->query->get('@order');
         if (!$disableRequest && is_string($originalOrder)) {
             $request->query->set('@order', preg_replace(
-                '/(?<![\w.])entity\.sort\b/',
-                'storeProductExtension.sort',
+                '/(?<![\w.])entity\.sortOrder\b/',
+                'storeProductExtension.sortOrder',
                 $originalOrder,
             ));
         }

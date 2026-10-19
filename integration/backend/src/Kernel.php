@@ -153,6 +153,7 @@ final class Kernel extends CoreKernel
         }
 
         ControllerRouteOverride::apply($routes, [
+            'App\\Common\\Controller\\Manage\\ContentController' => 'NsUltimate\\Business\\Common\\Adapter\\ManageContentController',
             'App\\Store\\Controller\\Manage\\ProductController' => 'NsUltimate\\Business\\Store\\Adapter\\ManageProductController',
         ]);
     }

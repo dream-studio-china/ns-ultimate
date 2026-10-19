@@ -13,16 +13,16 @@ use Doctrine\ORM\Mapping as ORM;
 class Product extends CoreProduct
 {
     #[ORM\Column(type: 'integer', nullable: true, options: ['default' => 0])]
-    private int $sort = 0;
+    private int $sortOrder = 0;
 
-    public function getSort(): int
+    public function getSortOrder(): int
     {
-        return $this->sort;
+        return $this->sortOrder;
     }
 
-    public function setSort(int $sort): self
+    public function setSortOrder(int $sortOrder): self
     {
-        $this->sort = $sort;
+        $this->sortOrder = $sortOrder;
         $this->touch();
 
         return $this;

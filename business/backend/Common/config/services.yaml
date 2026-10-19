@@ -1,0 +1,3 @@
+services:
+    App\Common\Service\ContentServiceInterface:
+        alias: NsUltimate\Business\Common\Service\ContentService

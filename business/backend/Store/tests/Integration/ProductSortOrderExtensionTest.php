@@ -13,7 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Store\Entity\Product as StoreProduct;
 use Symfony\Component\HttpFoundation\Request;
 
-final class ProductSortExtensionTest extends IntegrationWebTestCase
+final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
 {
     use DatabaseBootstrapTrait;
 
@@ -51,22 +51,23 @@ final class ProductSortExtensionTest extends IntegrationWebTestCase
             return json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
         };
 
-        $created = $request('POST', '/api/v1/manage/products', ['name' => 'Sorted item', 'sort' => 25]);
-        self::assertSame(25, $created['sort']);
-        $second = $request('POST', '/api/v1/manage/products', ['name' => 'Earlier item', 'sort' => 3]);
+        $created = $request('POST', '/api/v1/manage/products', ['name' => 'Sorted item', 'sortOrder' => 25]);
+        self::assertSame(25, $created['sortOrder']);
+        self::assertArrayNotHasKey('sort', $created);
+        $second = $request('POST', '/api/v1/manage/products', ['name' => 'Earlier item', 'sortOrder' => 3]);
 
         $entityManager->clear();
         $loadedByCoreRepository = $entityManager->getRepository(CoreProduct::class)->find($created['id']);
         self::assertInstanceOf(StoreProduct::class, $loadedByCoreRepository);
-        self::assertSame(25, $loadedByCoreRepository->getSort());
+        self::assertSame(25, $loadedByCoreRepository->getSortOrder());
 
-        $request('PUT', '/api/v1/manage/products/'.$created['id'], ['sort' => 4]);
+        $request('PUT', '/api/v1/manage/products/'.$created['id'], ['sortOrder' => 4]);
         $ordered = $request('GET', '/api/v1/manage/products?'.http_build_query([
-            '@order' => 'entity.sort|ASC',
+            '@order' => 'entity.sortOrder|ASC',
         ]));
 
         self::assertSame([$second['id'], $created['id']], array_column($ordered, 'id'));
-        self::assertSame([3, 4], array_column($ordered, 'sort'));
+        self::assertSame([3, 4], array_column($ordered, 'sortOrder'));
 
         $coreProduct = (new CoreProduct())->setName('Core item');
         $entityManager->persist($coreProduct);
@@ -83,16 +84,16 @@ final class ProductSortExtensionTest extends IntegrationWebTestCase
 
         foreach (['ASC', 'DESC'] as $direction) {
             $mixed = $request('GET', '/api/v1/manage/products?'.http_build_query([
-                '@order' => 'entity.sort|'.$direction,
+                '@order' => 'entity.sortOrder|'.$direction,
             ]));
             self::assertCount(3, $mixed);
             self::assertContains($coreId, array_column($mixed, 'id'));
             $businessRows = array_values(array_filter($mixed, static fn (array $row): bool => $row['id'] !== $coreId));
-            self::assertSame($direction === 'ASC' ? [3, 4] : [4, 3], array_column($businessRows, 'sort'));
+            self::assertSame($direction === 'ASC' ? [3, 4] : [4, 3], array_column($businessRows, 'sortOrder'));
         }
     }
 
-    public function testChangingSortUpdatesProductTimestamp(): void
+    public function testChangingSortOrderUpdatesProductTimestamp(): void
     {
         self::bootKernel();
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
@@ -106,7 +107,7 @@ final class ProductSortExtensionTest extends IntegrationWebTestCase
 
         $product = $entityManager->find(StoreProduct::class, $id);
         self::assertNotNull($product);
-        $product->setSort(7);
+        $product->setSortOrder(7);
 
         self::assertNotSame($before, $product->getUpdatedAt());
         self::assertNotNull($product->getUpdatedAt());
@@ -117,6 +118,6 @@ final class ProductSortExtensionTest extends IntegrationWebTestCase
         $loaded = $entityManager->find(StoreProduct::class, $id);
         self::assertNotNull($loaded);
         self::assertGreaterThan($before, $loaded->getUpdatedAt());
-        self::assertSame(7, $loaded->getSort());
+        self::assertSame(7, $loaded->getSortOrder());
     }
 }

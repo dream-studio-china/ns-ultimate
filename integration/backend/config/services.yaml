@@ -18,3 +18,8 @@ services:
                     map:
                         core: App\Store\Entity\Product
                         store: NsUltimate\Business\Store\Entity\Product
+                App\Common\Entity\Content:
+                    column: content_type
+                    map:
+                        core: App\Common\Entity\Content
+                        common: NsUltimate\Business\Common\Entity\Content
