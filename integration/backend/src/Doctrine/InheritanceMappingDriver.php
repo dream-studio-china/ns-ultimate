@@ -11,13 +11,10 @@ use Doctrine\Persistence\Mapping\Driver\MappingDriver;
  * Adds integration-owned single-table entity subtypes without changing the
  * mapped core classes. Each mapping is configured as root class => discriminator
  * value => concrete class.
- *
- * @implements MappingDriver<ClassMetadata<object>>
  */
 final class InheritanceMappingDriver implements MappingDriver
 {
     /**
-     * @param MappingDriver<ClassMetadata<object>> $inner
      * @param array<class-string, array{column: string, map: array<string, class-string>}> $inheritanceMaps
      */
     public function __construct(

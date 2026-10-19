@@ -6,18 +6,24 @@ namespace NsUltimate\Integration\Backend;
 
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Symfony\Component\Routing\RouteCollection;
+use Symfony\Component\Config\Resource\ResourceInterface;
 
 /** Applies explicit controller substitutions to already-imported routes. */
 final class ControllerRouteOverride
 {
     /**
      * @param array<class-string, class-string> $overrides Original controller => replacement controller
+     * @param list<ResourceInterface> $resources Configuration resources affecting route overrides
      */
-    public static function apply(RoutingConfigurator $configurator, array $overrides): void
+    public static function apply(RoutingConfigurator $configurator, array $overrides, array $resources = []): void
     {
         $collection = (new \ReflectionProperty(RoutingConfigurator::class, 'collection'))->getValue($configurator);
         if (!$collection instanceof RouteCollection) {
             throw new \LogicException('Unable to inspect the composed route collection.');
+        }
+
+        foreach ($resources as $resource) {
+            $collection->addResource($resource);
         }
 
         foreach ($collection as $route) {

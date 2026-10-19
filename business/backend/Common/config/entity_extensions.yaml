@@ -1,0 +1,11 @@
+entities:
+    App\Common\Entity\Content:
+        column: content_type
+        map:
+            core: App\Common\Entity\Content
+            common: NsUltimate\Business\Common\Entity\Content
+        order_fields:
+            sortOrder: NsUltimate\Business\Common\Entity\Content
+
+controllers:
+    App\Common\Controller\Manage\ContentController: NsUltimate\Business\Common\Adapter\ManageContentController

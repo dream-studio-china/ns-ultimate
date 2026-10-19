@@ -4,58 +4,23 @@ declare(strict_types=1);
 
 namespace NsUltimate\Business\Store\Service;
 
-use App\Core\Service\BaseService;
 use App\Store\Entity\Product as CoreProduct;
 use App\Store\Service\ProductServiceInterface;
-use Doctrine\ORM\QueryBuilder;
 use NsUltimate\Business\Store\Entity\Product;
+use NsUltimate\Integration\Backend\Doctrine\EntityExtensionQueryBuilderFactory;
+use NsUltimate\Integration\Backend\ExtendedEntityService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
-/** @extends BaseService<\App\Store\Entity\Product> */
-final class ProductService extends BaseService implements ProductServiceInterface
+/** @extends ExtendedEntityService<CoreProduct> */
+final class ProductService extends ExtendedEntityService implements ProductServiceInterface
 {
-    public function __construct(ContainerInterface $container)
+    public function __construct(ContainerInterface $container, EntityExtensionQueryBuilderFactory $extensionQueries)
     {
-        parent::__construct($container, CoreProduct::class);
-        $this->qbFactory = new ProductQueryBuilderFactory($this->em);
+        parent::__construct($container, CoreProduct::class, $extensionQueries);
     }
 
     public function new(): Product
     {
         return new Product();
-    }
-
-    public function list(mixed $object = null, mixed $order = null, bool $disableRequest = true): mixed
-    {
-        if ($object instanceof QueryBuilder) {
-            // Caller-provided queries bypass the service's query builder factory.
-            ProductQueryBuilderFactory::joinExtension($object);
-        }
-
-        if (is_array($order)) {
-            $mappedOrder = [];
-            foreach ($order as $field => $direction) {
-                $mappedOrder[$field === 'entity.sortOrder' ? 'storeProductExtension.sortOrder' : $field] = $direction;
-            }
-            $order = $mappedOrder;
-        }
-
-        $request = $disableRequest ? null : $this->getCurrentRequest();
-        $originalOrder = $request?->query->get('@order');
-        if (!$disableRequest && is_string($originalOrder)) {
-            $request->query->set('@order', preg_replace(
-                '/(?<![\w.])entity\.sortOrder\b/',
-                'storeProductExtension.sortOrder',
-                $originalOrder,
-            ));
-        }
-
-        try {
-            return parent::list($object, $order, $disableRequest);
-        } finally {
-            if (!$disableRequest && is_string($originalOrder)) {
-                $request->query->set('@order', $originalOrder);
-            }
-        }
     }
 }

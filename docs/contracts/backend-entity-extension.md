@@ -1,6 +1,6 @@
 # Backend entity extension contract
 
-**Status: Validated with `App\Store\Entity\Product` and `App\Common\Entity\Content` extended by their business modules.** The integration explicitly configures both inheritance mappings; the driver and route substitution helper are reusable for additional explicit mappings.
+**Status: Validated with `App\Store\Entity\Product` and `App\Common\Entity\Content` extended by their business modules.** Optional module declarations configure inheritance, controller substitutions, and extension-field ordering without entity-specific edits to integration.
 
 ## Goal and ownership
 
@@ -8,37 +8,48 @@ Integration may extend a core entity with additional mapped fields while reusing
 
 - Core entities remain the default implementation and own the base fields and behavior.
 - A business module owns the subtype, added fields, business migrations, and CRUD field permissions.
-- Integration owns the Doctrine inheritance composition and any service/controller substitutions needed to select the extension.
+- Business modules declare their inheritance maps and controller substitutions. Integration owns discovery, validation, Doctrine composition, route substitution, and the shared ordering adapter.
 - Extension is additive. This contract does not support removing core fields, changing their types, or replacing the core model with an unrelated class.
 
 ## Mechanism
 
-`NsUltimate\Integration\Backend\Doctrine\InheritanceMappingDriver` decorates Doctrine's default metadata driver. Configuration maps each root entity to a discriminator column and a complete discriminator map:
+Each discovered module may provide `config/entity_extensions.yaml`. For example, Store declares:
 
 ```yaml
-NsUltimate\Integration\Backend\Doctrine\InheritanceMappingDriver:
-    decorates: doctrine.orm.default_metadata_driver
-    arguments:
-        - '@.inner'
-        -
-            App\Store\Entity\Product:
-                column: product_type
-                map:
-                    core: App\Store\Entity\Product
-                    store: NsUltimate\Business\Store\Entity\Product
+entities:
+    App\Store\Entity\Product:
+        column: product_type
+        map:
+            core: App\Store\Entity\Product
+            store: NsUltimate\Business\Store\Entity\Product
+        order_fields:
+            sortOrder: NsUltimate\Business\Store\Entity\Product
+
+controllers:
+    App\Store\Controller\Manage\ProductController: NsUltimate\Business\Store\Adapter\ManageProductController
 ```
 
-The integration mapping is single-table inheritance. Each extension class must be a Doctrine entity extending its configured root entity. The discriminator map must list every concrete class in that entity hierarchy, including the root. Added fields must be nullable at the database mapping level because rows of other discriminator types share the table.
+`EntityExtensionRegistry` merges these declarations. Missing or empty files are valid; `entities`, `controllers`, and `order_fields` are optional. Unknown keys, duplicate root/controller registrations, invalid inheritance, duplicate discriminator classes, and unmapped ordering fields fail during configuration loading. Replacement controllers must expose the original public attribute-routed actions. The same declaration file cannot be split between modules for one root entity. Configuration existence and contents are tracked as both container and routing cache resources, including optional files not yet present. Production deployments still require normal cache clearing/warmup after changing configuration.
+
+`InheritanceMappingDriver` decorates Doctrine's default metadata driver using the merged maps. The integration mapping is single-table inheritance. Each extension class must be a concrete Doctrine entity extending its configured root entity. The discriminator map must list every concrete class in that entity hierarchy, starting with the root; its first discriminator value supplies the database default. Added fields must be nullable at the database mapping level because rows of other discriminator types share the table. Declarative composition does not create schema migrations automatically.
 
 The business subtype declares only its additional mapped fields. Its repository must bind to the subtype so subtype-only fields are queryable through that repository. A business service can reuse `BaseService` and be selected through the core service interface. When the composition retains concrete root-class rows, read queries must use the root class rather than the subtype; otherwise Doctrine filters those rows out. Override entity creation separately to select the business subtype.
 
-For CRUD writes, business controller composition must explicitly add extension fields to both create and update allowlists. Field presence in Doctrine metadata does not grant API write access. `ControllerRouteOverride` re-points existing routes to a compatible controller subclass while preserving route names and other route metadata.
+For CRUD writes, business controller composition must explicitly add extension fields to both create and update allowlists. Field presence in Doctrine metadata does not grant API write access. `ControllerRouteOverride` re-points existing routes to a compatible replacement class while preserving route names and other route metadata. Replacement controllers remain responsible for their authorization attributes and dependencies; declaring an override does not copy class-level security attributes.
+
+## Shared service and query adaptation
+
+Business services can extend `ExtendedEntityService<CoreEntity>` and pass the root class plus the injected `EntityExtensionQueryBuilderFactory` to its constructor. They still implement the core service interface, select it through module `config/services.yaml`, and override `new()` to construct their business subtype. Entity initialization, field validation, authorization, lifecycle effects, and association handling stay in business code.
+
+`order_fields` maps scalar property names to their discriminator-mapped subtype. The shared query factory left-joins each declared subtype once and rewrites `entity.<field>` ordering to the joined alias. It also supports caller-provided query builders, custom root aliases, and programmatic order arrays, preserving order priority. Only declared field names are rewritten; conflicting query aliases fail explicitly. Temporary request-order changes are restored even when core processing throws. The adapter follows the core service convention of a single root with an `id` identifier.
+
+This is an ordering adapter, not a general extension-query language: `@filter`, `@select`, grouping, and aggregation over subtype-only fields are not automatically supported. Read serialization and explicit CRUD write permissions are separate from query adaptation. Existing concrete root rows remain visible but have NULL subtype-field values in ordering; their placement follows the database platform's NULL ordering. Enabling or changing `order_fields` does not grant additional endpoint permissions.
 
 ## Product example
 
 `business/backend/Store/` adds integer `sortOrder` (database column `sort_order`) to `trade_product` and reuses the core manage Product CRUD actions. The initial Store migration adds `product_type` and `sort`, then marks existing rows as `store` so they hydrate as the subtype and receive the default sort value. A follow-up migration renames `sort` to `sort_order`, preserving existing values. New core-class rows use the database discriminator default `core`.
 
-The Product service queries the core root entity but creates business subtypes. Its business-owned query builder factory left-joins the subtype so `entity.sortOrder` ordering can be translated to the joined field without excluding core rows. Core rows have no subtype sort value and use the database platform's NULL ordering; their core fields remain readable and writable. Only ordering is adapted: this does not make `sortOrder` a root metadata field for arbitrary filter or select expressions. Changes to `sortOrder` call the root entity's `touch()` method to update `updatedAt`.
+The Product service queries the core root entity but creates business subtypes. Its module declares `sortOrder` for the shared query adapter; its core fields remain readable and writable for both root and subtype rows. Changes to `sortOrder` call the root entity's `touch()` method to update `updatedAt`.
 
 The extension API uses `sortOrder` for request and response fields; the former `sort` field and `entity.sort` ordering expression are no longer supported. Existing installations must apply the rename migration before running the updated application.
 
@@ -48,7 +59,7 @@ The integration test verifies create, update, serialization, subtype hydration t
 
 `business/backend/Common/` adds integer `sortOrder` (database column `sort_order`, default `0`) to `App\Common\Entity\Content` without changing the core subtree. Its migration adds `content_type` to `common_content` and marks existing rows as `common` so they hydrate as the business subtype. Apply the migration before deploying the updated application.
 
-The Content service reads the root entity, creates business subtypes using the core constructor, and left-joins the subtype for `entity.sortOrder` ordering. The existing management API at `/api/v1/manage/contents` accepts and returns `sortOrder`. The app API at `/api/v1/app/contents` also returns the extension field and supports the same ordering expression, for example `?@order=entity.sortOrder|ASC`. Core-type rows remain visible and retain database-platform NULL ordering. Like Product, this adaptation covers ordering, not arbitrary subtype-field filtering or projection. Updating `sortOrder` refreshes `updatedAt`.
+The Content service reads the root entity, creates business subtypes using the core constructor, and declares `sortOrder` for the same shared adapter. The existing management API at `/api/v1/manage/contents` accepts and returns `sortOrder`. The app API at `/api/v1/app/contents` also returns the extension field and supports the same ordering expression, for example `?@order=entity.sortOrder|ASC`. Updating `sortOrder` refreshes `updatedAt`.
 
 The core management controller depends on a final concrete service rather than its interface. Its business replacement therefore reuses the core REST mixins with `ContentServiceInterface`, preserves the existing route names and `ROLE_ADMIN` requirement, and adds `sortOrder` to the write allowlists. It explicitly resolves `category` and `tags` ids to preserve existing association writes: the core mutation service's reflection does not inspect private fields inherited by an entity subtype.
 
@@ -64,6 +75,8 @@ Content tests cover default values, CRUD, mixed-type ordering on both APIs, root
 - Migrations must be backed up and reviewed for the target database platform. Routine integration tests use isolated SQLite databases and do not execute production migrations.
 
 ## Validation
+
+Integration tests cover declaration discovery and conflicts, invalid mappings/controllers, optional configuration cache resources, shared query adaptation, alias collisions, and request restoration. Existing Product and Content API tests exercise the composed container, routes, and mixed root/subtype data. Adding another extension requires module-owned declarations, code, migrations, and tests, not edits to the integration Kernel or central service configuration. The current PHPUnit configuration still explicitly lists business test directories; add new module suites there when necessary.
 
 Run the backend integration suite with:
 

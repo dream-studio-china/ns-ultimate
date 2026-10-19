@@ -10,6 +10,8 @@ The directory name determines the `NsUltimate\Business\<Module>\` PSR-4 namespac
 
 The bootstrap registers each discovered namespace against its `src/` directory. The integration Kernel autowires/autoconfigures classes under `src/`, excluding `src/Entity/` and `src/Migrations/`; REST controller setter injection is wired centrally. It removes business controllers from Symfony's broad `routing.controllers` service resource, then imports each module's `config/routes.yaml` independently so route-name collisions with core or other modules fail during route loading. Module route files own route prefixes (for example `/api/v1`) and may import controller attributes. If no route file exists, controller attributes are imported directly. Doctrine mappings are added when `src/Entity/` exists, and migrations are registered when `migrations/` exists. Module-specific overrides stay with the module.
 
+An optional module `config/entity_extensions.yaml` declares core entity inheritance, controller replacements, and supported extension ordering fields. Integration discovers and validates these declarations without entity-specific Kernel or central service edits. See [backend entity extension](backend-entity-extension.md) for the schema, service adapter, ownership, and query limitations.
+
 ## Ownership and security
 
 The bootstrap reads project-owned env files under `integration/backend/`, not upstream core env files. Process environment overrides remain supported. Tests use project-owned test defaults and portable upstream test JWT fixtures, not development keys. See [environment management](../operations/development.md).

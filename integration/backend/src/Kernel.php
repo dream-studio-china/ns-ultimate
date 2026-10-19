@@ -6,6 +6,8 @@ namespace NsUltimate\Integration\Backend;
 
 use App\Kernel as CoreKernel;
 use App\Core\Controller\RestController;
+use NsUltimate\Integration\Backend\Doctrine\EntityExtensionQueryBuilderFactory;
+use NsUltimate\Integration\Backend\Doctrine\InheritanceMappingDriver;
 use Symfony\Component\Config\Resource\GlobResource;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
@@ -86,7 +88,18 @@ final class Kernel extends CoreKernel
             ->call('setExpansionMetadata', [service('App\\Core\\Serializer\\ExpansionMetadata')])
             ->call('setServiceContainer', [service('service_container')]);
 
-        foreach ($this->modules() as $module) {
+        $modules = $this->modules();
+        foreach (EntityExtensionRegistry::resources($modules) as $resource) {
+            $builder->addResource($resource);
+        }
+        $extensions = EntityExtensionRegistry::discover($modules);
+        $services->set(InheritanceMappingDriver::class)
+            ->decorate('doctrine.orm.default_metadata_driver')
+            ->args([service('.inner'), $extensions['inheritance']]);
+        $services->set(EntityExtensionQueryBuilderFactory::class)
+            ->args([service('doctrine.orm.entity_manager'), $extensions['ordering']]);
+
+        foreach ($modules as $module) {
             $translationDirectory = $module['path'].'/translations';
             if (is_dir($translationDirectory)) {
                 $container->extension('framework', [
@@ -142,7 +155,8 @@ final class Kernel extends CoreKernel
         RouteImportGuard::import($routes, $configDir.'/routes/*.{php,yaml}');
         RouteImportGuard::import($routes, $configDir.'/routes.yaml');
 
-        foreach ($this->modules() as $module) {
+        $modules = $this->modules();
+        foreach ($modules as $module) {
             $controllerDirectory = $module['path'].'/src/Controller';
             $routesFile = $module['path'].'/config/routes.yaml';
             if (is_file($routesFile)) {
@@ -152,13 +166,14 @@ final class Kernel extends CoreKernel
             }
         }
 
-        ControllerRouteOverride::apply($routes, [
-            'App\\Common\\Controller\\Manage\\ContentController' => 'NsUltimate\\Business\\Common\\Adapter\\ManageContentController',
-            'App\\Store\\Controller\\Manage\\ProductController' => 'NsUltimate\\Business\\Store\\Adapter\\ManageProductController',
-        ]);
+        ControllerRouteOverride::apply(
+            $routes,
+            EntityExtensionRegistry::discover($modules)['controllers'],
+            EntityExtensionRegistry::resources($modules),
+        );
     }
 
-    /** @return array<string, array{namespace: string, path: string, doctrine_alias: string, migration_namespace: string}> */
+    /** @return list<array{name: string, namespace: string, path: string, doctrine_alias: string, migration_namespace: string}> */
     private function modules(): array
     {
         return ModuleRegistry::discover(self::repositoryRoot().'/business/backend');

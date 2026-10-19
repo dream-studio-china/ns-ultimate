@@ -7,19 +7,3 @@ services:
         resource: '../src/'
         exclude:
             - '../src/Kernel.php'
-
-    NsUltimate\Integration\Backend\Doctrine\InheritanceMappingDriver:
-        decorates: doctrine.orm.default_metadata_driver
-        arguments:
-            - '@.inner'
-            -
-                App\Store\Entity\Product:
-                    column: product_type
-                    map:
-                        core: App\Store\Entity\Product
-                        store: NsUltimate\Business\Store\Entity\Product
-                App\Common\Entity\Content:
-                    column: content_type
-                    map:
-                        core: App\Common\Entity\Content
-                        common: NsUltimate\Business\Common\Entity\Content
