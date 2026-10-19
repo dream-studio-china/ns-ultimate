@@ -1,0 +1,3 @@
+services:
+    App\Store\Service\ProductServiceInterface:
+        alias: NsUltimate\Business\Store\Service\ProductService

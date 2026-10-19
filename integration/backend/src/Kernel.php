@@ -151,6 +151,10 @@ final class Kernel extends CoreKernel
                 RouteImportGuard::import($routes, $controllerDirectory, 'attribute');
             }
         }
+
+        ControllerRouteOverride::apply($routes, [
+            'App\\Store\\Controller\\Manage\\ProductController' => 'NsUltimate\\Business\\Store\\Adapter\\ManageProductController',
+        ]);
     }
 
     /** @return array<string, array{namespace: string, path: string, doctrine_alias: string, migration_namespace: string}> */
