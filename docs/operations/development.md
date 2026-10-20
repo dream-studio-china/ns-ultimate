@@ -79,3 +79,17 @@ make preview
 `ARGS` forwards CLI options to individual commands; test filters belong on `test-admin` or `test-backend`, not aggregate `test`. Local `make test-admin` includes upstream core frontend tests; the GitHub Actions workflow deliberately avoids all upstream core test suites and runs only project workflow/admin composition tests, integration/business PHPUnit tests, and the composed admin build. Console commands always use the integration Kernel. Logs follow `var/log/backend/<APP_ENV>.log`; a missing file is reported until the first log is written. Admin output is under `dist/admin/`, with a default production `/admin/` base path.
 
 `backend-debug` checks that Xdebug is installed, enables `debug,develop`, and connects for each request. Configure your IDE to listen on port 9003. Override `XDEBUG_CLIENT_HOST` and `XDEBUG_CLIENT_PORT` as needed. Browser debugging uses Vite's development source maps; build source maps should remain local unless publishing them is intentional.
+
+### Admin build resource use
+
+Prefer building deployment images in CI or on a separate build host, then pulling the images on the application server. Docker multi-stage builds keep build dependencies out of the runtime image but do not isolate build-time CPU or memory from other services on the host.
+
+The JSX plugin only transforms `.jsx` and `.tsx` application files and excludes `node_modules`. Keep JSX in those extensions; ordinary JavaScript, TypeScript, and prebuilt dependencies should not pass through Babel's JSX transform. The build and test configurations enforce the same boundary.
+
+Measure the full composed build with `/usr/bin/time -v` on Linux (`/usr/bin/time -l` on macOS):
+
+```sh
+/usr/bin/time -v npm run build --prefix core/crud-admin -- --config ../../integration/admin/vite.config.ts
+```
+
+Watch host memory, swap, and CPU during a slow deployment; build time and browser bundle size are separate concerns. `NODE_OPTIONS=--max-old-space-size=...` limits V8's old-generation heap, not the total process or build-process-tree memory. Too small a limit causes garbage collection overhead or build failure; increasing it on a memory-constrained application server can worsen contention. Test resource limits against the actual build and leave headroom for PHP, MySQL, Redis, and the operating system.
