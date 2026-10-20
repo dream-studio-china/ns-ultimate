@@ -19,12 +19,13 @@ final class EntityExtensionRegistry
      * @return array{
      *     inheritance: array<class-string, array{column: string, map: array<string, class-string>}>,
      *     ordering: array<class-string, array<string, class-string>>,
+     *     metadata: array<class-string, class-string>,
      *     controllers: array<class-string, class-string>
      * }
      */
     public static function discover(array $modules): array
     {
-        $result = ['inheritance' => [], 'ordering' => [], 'controllers' => []];
+        $result = ['inheritance' => [], 'ordering' => [], 'metadata' => [], 'controllers' => []];
         foreach ($modules as $module) {
             $file = $module['path'].'/config/entity_extensions.yaml';
             if (!is_file($file)) {
@@ -47,6 +48,9 @@ final class EntityExtensionRegistry
                 $result['inheritance'][$root] = ['column' => $extension['column'], 'map' => $extension['map']];
                 if (!empty($extension['order_fields'])) {
                     $result['ordering'][$root] = $extension['order_fields'];
+                }
+                if (isset($extension['metadata_class'])) {
+                    $result['metadata'][$root] = $extension['metadata_class'];
                 }
             }
 
@@ -84,7 +88,7 @@ final class EntityExtensionRegistry
     {
         self::assertEntity($root, $file);
         self::assertMap($extension, $file);
-        self::assertKeys($extension, ['column', 'map', 'order_fields'], $file);
+        self::assertKeys($extension, ['column', 'map', 'order_fields', 'metadata_class'], $file);
         if (!is_string($extension['column'] ?? null) || !preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/D', $extension['column'])) {
             throw new \LogicException(sprintf('Entity "%s" requires a valid discriminator column (%s).', $root, $file));
         }
@@ -104,6 +108,13 @@ final class EntityExtensionRegistry
                 throw new \LogicException(sprintf('Discriminator class "%s" must uniquely extend "%s" (%s).', $class, $root, $file));
             }
             $seen[$class] = true;
+        }
+
+        if (isset($extension['metadata_class'])) {
+            $metadataClass = $extension['metadata_class'];
+            if (!is_string($metadataClass) || !in_array($metadataClass, $map, true)) {
+                throw new \LogicException(sprintf('Metadata class for "%s" must be one of its discriminator-mapped classes (%s).', $root, $file));
+            }
         }
 
         $fields = $extension['order_fields'] ?? [];

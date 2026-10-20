@@ -4,6 +4,7 @@ entities:
         map:
             core: App\Store\Entity\Product
             store: NsUltimate\Business\Store\Entity\Product
+        metadata_class: NsUltimate\Business\Store\Entity\Product
         order_fields:
             sortOrder: NsUltimate\Business\Store\Entity\Product
 

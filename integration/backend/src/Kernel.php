@@ -8,6 +8,8 @@ use App\Kernel as CoreKernel;
 use App\Core\Controller\RestController;
 use NsUltimate\Integration\Backend\Doctrine\EntityExtensionQueryBuilderFactory;
 use NsUltimate\Integration\Backend\Doctrine\InheritanceMappingDriver;
+use App\Core\Controller\System\EntityController as CoreSystemEntityController;
+use NsUltimate\Integration\Backend\System\EntityMetadataController;
 use Symfony\Component\Config\Resource\GlobResource;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
@@ -111,6 +113,8 @@ final class Kernel extends CoreKernel
             ->args([service('.inner'), $extensions['inheritance']]);
         $services->set(EntityExtensionQueryBuilderFactory::class)
             ->args([service('doctrine.orm.entity_manager'), $extensions['ordering']]);
+        $services->set(EntityMetadataController::class)
+            ->args([service('doctrine.orm.entity_manager'), $extensions['metadata']]);
         $services->set(\NsUltimate\Integration\Backend\Validator\JsonSchemaValidator::class)
             ->args([service(\App\Core\Validator\JsonSchemaValidator::class), $businessValidation['schemas']]);
 
@@ -183,7 +187,10 @@ final class Kernel extends CoreKernel
 
         ControllerRouteOverride::apply(
             $routes,
-            EntityExtensionRegistry::discover($modules)['controllers'],
+            [
+                ...EntityExtensionRegistry::discover($modules)['controllers'],
+                CoreSystemEntityController::class => EntityMetadataController::class,
+            ],
             [...EntityExtensionRegistry::resources($modules), ...BusinessValidationRegistry::resources($modules)],
         );
     }

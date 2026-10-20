@@ -192,6 +192,7 @@ final class EntityExtensionRegistryTest extends TestCase
                 CoreContent::class => ['sortOrder' => Content::class],
                 CoreProduct::class => ['sortOrder' => Product::class],
             ],
+            'metadata' => [CoreProduct::class => Product::class],
             'controllers' => [
                 ContentController::class => ManageContentController::class,
                 ProductController::class => ManageProductController::class,
@@ -203,11 +204,13 @@ final class EntityExtensionRegistryTest extends TestCase
     {
         $extension = self::productExtension();
         unset($extension['order_fields']);
+        unset($extension['metadata_class']);
         $this->createModule('Store', ['entities' => [CoreProduct::class => $extension]]);
 
         self::assertSame([
-            'inheritance' => [CoreProduct::class => $extension],
+            'inheritance' => [CoreProduct::class => ['column' => $extension['column'], 'map' => $extension['map']]],
             'ordering' => [],
+            'metadata' => [],
             'controllers' => [],
         ], $this->discover());
     }
@@ -267,6 +270,7 @@ final class EntityExtensionRegistryTest extends TestCase
             'unrelated entity subtype' => [...$valid, 'map' => ['core' => CoreProduct::class, 'common' => Content::class]],
             'non-entity subtype' => [...$valid, 'map' => ['core' => CoreProduct::class, 'store' => NonEntityProductExtension::class]],
             'order fields must be a map' => [...$valid, 'order_fields' => 'sortOrder'],
+            'metadata class must be a mapped class' => [...$valid, 'metadata_class' => CoreContent::class],
             'typo ordering field' => [...$valid, 'order_fields' => ['sortOder' => Product::class]],
             'ordering subtype must be in discriminator map' => [...$valid, 'order_fields' => ['sortOrder' => Content::class]],
             'ordering field mapped on wrong subtype' => [...$valid, 'order_fields' => ['sortOrder' => CoreProduct::class]],
@@ -297,6 +301,7 @@ final class EntityExtensionRegistryTest extends TestCase
         return [
             'column' => 'product_type',
             'map' => ['core' => CoreProduct::class, 'store' => Product::class],
+            'metadata_class' => Product::class,
             'order_fields' => ['sortOrder' => Product::class],
         ];
     }
@@ -312,7 +317,7 @@ final class EntityExtensionRegistryTest extends TestCase
 
     private static function emptyMaps(): array
     {
-        return ['inheritance' => [], 'ordering' => [], 'controllers' => []];
+        return ['inheritance' => [], 'ordering' => [], 'metadata' => [], 'controllers' => []];
     }
 
     private function createModule(string $name, array|string|null $configuration = null): void

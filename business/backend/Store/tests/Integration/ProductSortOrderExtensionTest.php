@@ -28,6 +28,23 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
         return 'NsUltimate\\Integration\\Backend\\Kernel';
     }
 
+    public function testSystemProductMetadataIncludesBusinessFieldsAndTranslations(): void
+    {
+        self::bootKernel();
+        $request = Request::create('/system/entities/App/Store/Entity/Product', 'GET');
+        $response = self::$kernel->handle($request);
+        self::assertSame(200, $response->getStatusCode());
+        $data = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+
+        self::assertSame('integer', $data['sortOrder']['metadata']['type']);
+        self::assertSame('integer', $data['recommendationLevel']['metadata']['type']);
+        self::assertSame('boolean', $data['isSoldout']['metadata']['type']);
+        self::assertSame('json', $data['settings']['metadata']['type']);
+        self::assertSame('Recommendation level', $data['recommendationLevel']['plantext']);
+        self::assertSame('Recommendation level', $data['recommendationLevel']['translation']);
+        self::assertSame('Sold out', $data['isSoldout']['translation']);
+    }
+
     public function testBusinessFieldUsesExistingManageProductCrud(): void
     {
         self::bootKernel();

@@ -22,6 +22,7 @@ entities:
         map:
             core: App\Store\Entity\Product
             store: NsUltimate\Business\Store\Entity\Product
+        metadata_class: NsUltimate\Business\Store\Entity\Product
         order_fields:
             sortOrder: NsUltimate\Business\Store\Entity\Product
 
@@ -42,6 +43,8 @@ For CRUD writes, business controller composition must explicitly add extension f
 Business services can extend `ExtendedEntityService<CoreEntity>` and pass the root class plus the injected `EntityExtensionQueryBuilderFactory` to its constructor. They still implement the core service interface, select it through module `config/services.yaml`, and override `new()` to construct their business subtype. Entity initialization, field validation, authorization, lifecycle effects, and association handling stay in business code.
 
 `order_fields` maps scalar property names to their discriminator-mapped subtype. The shared query factory left-joins each declared subtype once and rewrites `entity.<field>` ordering to the joined alias. It also supports caller-provided query builders, custom root aliases, and programmatic order arrays, preserving order priority. Only declared field names are rewritten; conflicting query aliases fail explicitly. Temporary request-order changes are restored even when core processing throws. The adapter follows the core service convention of a single root with an `id` identifier.
+
+`metadata_class` optionally identifies the mapped class whose Doctrine fields should augment the root entity's `/system/entities/{entityName}` metadata response. The integration-owned system controller keeps the public root entity name stable for Admin while adding fields and translations from that configured class. It does not grant CRUD permissions or query capabilities. The class must be present in the entity's discriminator map; when omitted, system metadata retains core behavior.
 
 This is an ordering adapter, not a general extension-query language: `@filter`, `@select`, grouping, and aggregation over subtype-only fields are not automatically supported. Read serialization and explicit CRUD write permissions are separate from query adaptation. Existing concrete root rows remain visible but have NULL subtype-field values in ordering; their placement follows the database platform's NULL ordering. Enabling or changing `order_fields` does not grant additional endpoint permissions.
 
