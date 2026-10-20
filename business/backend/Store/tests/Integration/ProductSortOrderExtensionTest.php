@@ -128,6 +128,13 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
             $businessRows = array_values(array_filter($mixed, static fn (array $row): bool => $row['id'] !== $coreId));
             self::assertSame($direction === 'ASC' ? [3, 4] : [4, 3], array_column($businessRows, 'sortOrder'));
         }
+
+        foreach (['recommendationLevel', 'isSoldout'] as $field) {
+            $orderedByExtensionField = $request('GET', '/api/v1/manage/products?'.http_build_query([
+                '@order' => 'entity.'.$field.'|ASC',
+            ]));
+            self::assertCount(3, $orderedByExtensionField);
+        }
     }
 
     public function testChangingSortOrderUpdatesProductTimestamp(): void
@@ -183,6 +190,8 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
         self::assertSame(400, $post(['name' => 'Invalid printer', 'settings' => ['kitchenPrinterEnable' => 'yes']]));
         self::assertSame(400, $post(['name' => 'Invalid time', 'settings' => ['startSaleTime' => '25:90']]));
         self::assertSame(400, $post(['name' => 'Invalid cover', 'metadata' => ['cover' => 'javascript:alert(1)']]));
+        self::assertSame(201, $post(['name' => 'Cleared optional values', 'settings' => ['startSaleTime' => '', 'endSaleTime' => ''], 'metadata' => ['cover' => '']]));
+        self::assertSame(201, $post(['name' => 'Legacy relative cover', 'metadata' => ['cover' => '/uploads/images/legacy.jpg']]));
         self::assertSame(201, $post(['name' => 'Defaults']));
 
         $entityManager->clear();

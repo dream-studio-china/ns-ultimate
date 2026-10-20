@@ -13,12 +13,12 @@
     "startSaleTime": {
       "type": "string",
       "title": "Sale start time",
-      "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+      "pattern": "^(?:|(?:[01][0-9]|2[0-3]):[0-5][0-9])$"
     },
     "endSaleTime": {
       "type": "string",
       "title": "Sale end time",
-      "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$"
+      "pattern": "^(?:|(?:[01][0-9]|2[0-3]):[0-5][0-9])$"
     }
   },
   "required": []

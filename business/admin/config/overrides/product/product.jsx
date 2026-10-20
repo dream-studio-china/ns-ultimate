@@ -185,8 +185,8 @@ export default {
         { property: 'description', type: 'text', required: false },
         { property: 'category', required: false, help: t('Product category help') },
         { property: 'store', required: false, help: t('Product store help') },
-        { property: 'sortOrder', type: 'number', required: false, default_value: 0 },
-        { property: 'recommendationLevel', type: 'number', required: false, default_value: 0 },
+        { property: 'sortOrder', type: 'integer', required: false, default_value: 0 },
+        { property: 'recommendationLevel', type: 'integer', required: false, default_value: 0 },
         { property: 'isSoldout', type: 'boolean', required: false, default_value: false },
         { property: 'status', type: 'select', default_value: 'active', help: t('Product status help'), type_options: {
           options: [

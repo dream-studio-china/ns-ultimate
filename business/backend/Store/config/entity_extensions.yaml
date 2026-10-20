@@ -7,6 +7,8 @@ entities:
         metadata_class: NsUltimate\Business\Store\Entity\Product
         order_fields:
             sortOrder: NsUltimate\Business\Store\Entity\Product
+            recommendationLevel: NsUltimate\Business\Store\Entity\Product
+            isSoldout: NsUltimate\Business\Store\Entity\Product
 
 controllers:
     App\Store\Controller\Manage\ProductController: NsUltimate\Business\Store\Adapter\ManageProductController
