@@ -7,6 +7,7 @@ namespace NsUltimate\Business\Store\Tests\Integration;
 use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
 use App\Store\Entity\Product as CoreProduct;
+use App\Store\Entity\Store;
 use App\Tests\Integration\DatabaseBootstrapTrait;
 use App\Tests\Integration\IntegrationWebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
@@ -54,6 +55,8 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
             ->setUsername('catalog-sort')
             ->setRoles(['ROLE_ADMIN']);
         $entityManager->persist($admin);
+        $store = new Store('product-extension-store', 'Product extension store');
+        $entityManager->persist($store);
         $entityManager->flush();
 
         $token = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
@@ -70,6 +73,7 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
 
         $created = $request('POST', '/api/v1/manage/products', [
             'name' => 'Sorted item',
+            'store' => $store->getUuid(),
             'sortOrder' => 25,
             'recommendationLevel' => 3,
             'isSoldout' => true,
@@ -81,6 +85,7 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
             ],
         ]);
         self::assertSame(25, $created['sortOrder']);
+        self::assertSame($store->getUuid(), $created['store']['uuid']);
         self::assertSame(3, $created['recommendationLevel']);
         self::assertTrue($created['isSoldout']);
         self::assertSame('Limited offer', $created['metadata']['subtitle']);
@@ -98,7 +103,14 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
         self::assertTrue($loadedByCoreRepository->isSoldout());
         self::assertSame(['kitchenPrinterEnable' => true, 'startSaleTime' => '09:30', 'endSaleTime' => '21:45'], $loadedByCoreRepository->getSettings());
 
-        $request('PUT', '/api/v1/manage/products/'.$created['id'], ['sortOrder' => 4]);
+        $detail = $request('GET', '/api/v1/manage/products/'.$created['id']);
+        self::assertSame($store->getId(), $detail['store']['id']);
+        self::assertSame($store->getUuid(), $detail['store']['uuid']);
+        $updated = $request('PUT', '/api/v1/manage/products/'.$created['id'], [
+            'sortOrder' => 4,
+            'store' => $detail['store']['uuid'],
+        ]);
+        self::assertSame($store->getUuid(), $updated['store']['uuid']);
         $ordered = $request('GET', '/api/v1/manage/products?'.http_build_query([
             '@order' => 'entity.sortOrder|ASC',
         ]));

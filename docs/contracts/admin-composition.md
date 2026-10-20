@@ -18,6 +18,7 @@ The composed Vite config reads environment defaults and overrides from `integrat
 - Duplicate route names and normalized paths are rejected, including duplicates inside nested routes. Dynamic parameter names normalize to the same path segment for collision detection.
 - Entity additions may not shadow core names. Replacement and removal of core entity keys must be explicit. Unknown replacement/removal keys are errors.
 - Core configuration is not mutated. Authentication, permission filtering, layout, and generic CRUD behavior remain owned by core.
+- Product's business form explicitly configures its Store relation with `valueKey: 'uuid'`. Both option values and edit hydration must use the Store UUID, matching the Product management API; Doctrine's numeric association ID is not the write identifier for this field.
 - Custom business pages must be imported explicitly from business routes; core view auto-discovery does not scan the business directory.
 
 Run the dependency-free composition tests with `node --test integration/admin/*.test.mjs`. Build the composed application with `make build`; interactive business flows require separate runtime validation.

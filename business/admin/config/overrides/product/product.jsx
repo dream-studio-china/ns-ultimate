@@ -184,7 +184,7 @@ export default {
         'name',
         { property: 'description', type: 'text', required: false },
         { property: 'category', required: false, help: t('Product category help') },
-        { property: 'store', required: false, help: t('Product store help') },
+        { property: 'store', relation: { entity: 'Store', valueKey: 'uuid' }, required: false, help: t('Product store help') },
         { property: 'sortOrder', type: 'integer', required: false, default_value: 0 },
         { property: 'recommendationLevel', type: 'integer', required: false, default_value: 0 },
         { property: 'isSoldout', type: 'boolean', required: false, default_value: false },
