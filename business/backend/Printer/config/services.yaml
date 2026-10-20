@@ -1,0 +1,5 @@
+services:
+    NsUltimate\Business\Printer\Service\XpyunClient:
+        arguments:
+            $user: '%env(XPYUN_USER)%'
+            $userKey: '%env(XPYUN_USER_KEY)%'

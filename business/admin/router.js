@@ -1,9 +1,26 @@
 import { r } from '@/router/generator'
 import { t } from '@/i18n'
 import Layout from '@/layout'
+import PrinterWorkbench from './printer/PrintWorkbench.vue'
 
 export default {
   add: [
+    {
+      path: '/printer-workbench',
+      name: 'PrinterWorkbench',
+      component: Layout,
+      meta: {
+        title: t('Printer workbench'),
+        icon: 'el-icon-printer',
+        roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
+      },
+      children: [{
+        path: '',
+        name: 'PrinterWorkbenchIndex',
+        component: PrinterWorkbench,
+        meta: { title: t('Printer workbench'), roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] }
+      }]
+    },
     {
       path: '/business',
       name: 'BusinessManage',

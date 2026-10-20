@@ -1,0 +1,5 @@
+printer_module_admin:
+    resource: ../src/Controller/Admin/
+    type: attribute
+    prefix: /api/v1
+    name_prefix: api-v1-

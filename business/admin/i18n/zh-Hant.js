@@ -1,4 +1,5 @@
 export default {
+  'Printer workbench': '列印調試台',
   Business: '業務管理',
   'Payment rate': '支付費率',
   'Payment settings': '支付設定',

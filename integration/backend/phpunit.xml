@@ -12,6 +12,7 @@
             <directory>../../business/backend/Counter/tests/Integration</directory>
             <directory>../../business/backend/Store/tests/Integration</directory>
             <directory>../../business/backend/Wechat/tests</directory>
+            <directory>../../business/backend/Printer/tests</directory>
         </testsuite>
     </testsuites>
 </phpunit>

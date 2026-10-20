@@ -19,6 +19,7 @@ export default {
   'Sale end time': '结束售卖时间',
   Counters: '台位',
   'Counter management': '台位管理',
+  'Printer workbench': '打印调试台',
   'Counter number': '台号',
   'Counter numbers failed to load': '台号加载失败',
   'Order counter bindings': '订单台位绑定',
