@@ -1,5 +1,7 @@
 services:
     NsUltimate\Business\Printer\Service\XpyunClient:
+        autowire: true
+
+    NsUltimate\Business\Printer\Service\PrinterCredentialCipher:
         arguments:
-            $user: '%env(XPYUN_USER)%'
-            $userKey: '%env(XPYUN_USER_KEY)%'
+            $key: '%env(PRINTER_CONFIG_KEY)%'

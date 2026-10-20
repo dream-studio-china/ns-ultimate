@@ -33,6 +33,7 @@ services:
       COMPOSER_HOME: /tmp/composer
       APP_SECRET: ns-ultimate-docker-dev-secret
       REFRESH_TOKEN_SECRET: ns-ultimate-docker-dev-refresh-secret
+      PRINTER_CONFIG_KEY: ns-ultimate-docker-dev-printer-config-key
       DATABASE_URL: "mysql://ns_ultimate:ns_ultimate_dev@database:3306/ns_ultimate?serverVersion=8.4&charset=utf8mb4"
       DEFAULT_URI: http://127.0.0.1:8000
       APP_SHARE_DIR: /srv/app/var/docker-dev/data

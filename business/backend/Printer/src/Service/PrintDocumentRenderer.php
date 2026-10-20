@@ -19,8 +19,25 @@ final class PrintDocumentRenderer
         $width = $this->dimension($template['widthMm'] ?? 40, 'widthMm');
         $height = $this->dimension($template['heightMm'] ?? 30, 'heightMm');
         $pages = $this->nodes($template['nodes'] ?? [], $data, 0);
+        if ($kind === 'receipt') {
+            $pages = [implode('', $pages)];
+        }
+        $pages = array_values(array_filter($pages, static fn (string $page): bool => trim($page) !== ''));
         if ($pages === [] || count($pages) > 200) {
             throw new \InvalidArgumentException('A print document must produce between 1 and 200 pages.');
+        }
+        if ($kind === 'label') {
+            foreach ($pages as $page) {
+                preg_match_all('/<(?:TEXT|BC128|BC39|QRC) x="(\d+)" y="(\d+)"(?: h="(\d+)")?/', $page, $positions, PREG_SET_ORDER);
+                foreach ($positions as $position) {
+                    $x = (int) $position[1];
+                    $y = (int) $position[2];
+                    $heightDots = isset($position[3]) ? (int) $position[3] : 0;
+                    if ($x > $width * 8 || $y + $heightDots > $height * 8) {
+                        throw new \InvalidArgumentException('Label element coordinates exceed the configured label size.');
+                    }
+                }
+            }
         }
         $content = $kind === 'label' ? implode('', array_map(static fn (string $page): string => sprintf('<PAGE><SIZE>%s,%s</SIZE>%s</PAGE>', $width, $height, $page), $pages)) : implode('', $pages);
         if (strlen($content) > 100_000) {
@@ -56,8 +73,31 @@ final class PrintDocumentRenderer
                 $out = $this->combine($out, $expanded);
                 continue;
             }
+            if ($node['type'] === 'repeat') {
+                $count = $this->value($scope, $node['countPath'] ?? '');
+                if (!is_int($count) || $count < 0 || $count > 100) {
+                    throw new \InvalidArgumentException('Repeat count must be an integer between 0 and 100.');
+                }
+                $expanded = [];
+                for ($index = 0; $index < $count; ++$index) {
+                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['repeatIndex' => $index]), $depth + 1)];
+                    if (count($expanded) > 200) { throw new \InvalidArgumentException('Template expands to too many pages.'); }
+                }
+                $out = $this->combine($out, $expanded);
+                continue;
+            }
+            if ($node['type'] === 'if') {
+                $condition = $this->value($scope, $node['path'] ?? '');
+                $matches = array_key_exists('equals', $node)
+                    ? $condition === $node['equals']
+                    : !in_array($condition, ['', null, false, 0], true);
+                if ($matches) {
+                    $out = $this->combine($out, $this->nodes($node['children'] ?? [], $scope, $depth + 1));
+                }
+                continue;
+            }
             $piece = match ($node['type']) {
-                'text' => $this->escape($this->stringValue($scope, $node['value'] ?? '')),
+                'text' => $this->escape($this->literal($node['value'] ?? '')),
                 'field' => $this->escape($this->stringValue($scope, $node['path'] ?? '')),
                 'line' => '<BR>',
                 'separator' => '--------------------------------<BR>',
@@ -96,6 +136,12 @@ final class PrintDocumentRenderer
         $value = $this->value($scope, $path);
         if (is_scalar($value) || $value === null) { return (string) $value; }
         throw new \InvalidArgumentException('Template fields must resolve to scalar values.');
+    }
+
+    private function literal(mixed $value): string
+    {
+        if (is_scalar($value) || $value === null) { return (string) $value; }
+        throw new \InvalidArgumentException('Text template values must be scalar.');
     }
 
     /** @param array<string, mixed> $scope */

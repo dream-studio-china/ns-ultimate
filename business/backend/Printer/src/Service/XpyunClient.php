@@ -10,23 +10,24 @@ final class XpyunClient
 {
     public function __construct(
         private readonly HttpClientInterface $httpClient,
-        private readonly string $user,
-        private readonly string $userKey,
     ) {
     }
 
     /** @param array<string, mixed> $payload
      * @return array<string, mixed> */
-    public function request(string $endpoint, array $payload): array
+    public function request(string $developerId, string $userKey, string $endpoint, array $payload): array
     {
-        if ($this->user === '' || $this->userKey === '') {
-            throw new \LogicException('芯烨云账号配置不完整，请设置 XPYUN_USER 和 XPYUN_USER_KEY。');
+        if ($developerId === '' || $userKey === '') {
+            throw new \LogicException('芯烨云账号配置不完整。');
+        }
+        if (!in_array($endpoint, ['addPrinters', 'print', 'printLabel', 'queryOrderState', 'queryPrinterStatus'], true)) {
+            throw new \InvalidArgumentException('Unsupported Xpyun API endpoint.');
         }
         $timestamp = (string) time();
         $payload += [
-            'user' => $this->user,
+            'user' => $developerId,
             'timestamp' => $timestamp,
-            'sign' => sha1($this->user.$this->userKey.$timestamp),
+            'sign' => sha1($developerId.$userKey.$timestamp),
         ];
 
         $response = $this->httpClient->request('POST', 'https://open.xpyun.net/api/openapi/xprinter/'.$endpoint, [
@@ -36,14 +37,14 @@ final class XpyunClient
         $data = $response->toArray(false);
         if (!is_array($data) || !isset($data['code']) || (int) $data['code'] !== 0) {
             $code = is_array($data) ? ($data['code'] ?? 'invalid_response') : 'invalid_response';
-            throw new \RuntimeException(sprintf('芯烨云请求失败（%s）。', (string) $code));
+            throw new XpyunApiException((string) $code);
         }
 
         return $data;
     }
 
     /** @return array<string, mixed> */
-    public function print(string $kind, string $serialNumber, string $content, int $copies = 1, ?string $idempotent = null): array
+    public function print(string $developerId, string $userKey, string $kind, string $serialNumber, string $content, int $copies = 1, ?string $idempotent = null): array
     {
         if (!in_array($kind, ['receipt', 'label'], true)) {
             throw new \InvalidArgumentException('Unsupported printer kind.');
@@ -58,6 +59,24 @@ final class XpyunClient
         if ($idempotent !== null) {
             $payload['idempotent'] = substr($idempotent, 0, 50);
         }
-        return $this->request($kind === 'receipt' ? 'print' : 'printLabel', $payload);
+        return $this->request($developerId, $userKey, $kind === 'receipt' ? 'print' : 'printLabel', $payload);
+    }
+
+    /** @return array<string, mixed> */
+    public function register(string $developerId, string $userKey, string $serialNumber, string $name): array
+    {
+        return $this->request($developerId, $userKey, 'addPrinters', ['items' => [['sn' => $serialNumber, 'name' => $name]]]);
+    }
+
+    /** @return array<string, mixed> */
+    public function printerStatus(string $developerId, string $userKey, string $serialNumber): array
+    {
+        return $this->request($developerId, $userKey, 'queryPrinterStatus', ['sn' => $serialNumber]);
+    }
+
+    /** @return array<string, mixed> */
+    public function orderStatus(string $developerId, string $userKey, string $orderId): array
+    {
+        return $this->request($developerId, $userKey, 'queryOrderState', ['orderId' => $orderId]);
     }
 }

@@ -20,7 +20,7 @@ final class PrintDocumentRendererTest extends TestCase
             ],
         ], ['order' => ['items' => [['name' => 'Tea'], ['name' => 'Cake']]]]);
 
-        self::assertSame(['Tea<BR>', 'Cake<BR>'], $document['pages']);
+        self::assertSame(['Tea<BR>Cake<BR>'], $document['pages']);
         self::assertSame('Tea<BR>Cake<BR>', $document['content']);
     }
 
@@ -54,5 +54,44 @@ final class PrintDocumentRendererTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         (new PrintDocumentRenderer())->render(['kind' => 'receipt', 'nodes' => [['type' => 'php', 'value' => 'echo']]], []);
+    }
+
+    public function testRepeatExpandsLabelCountWithinEachItem(): void
+    {
+        $document = (new PrintDocumentRenderer())->render([
+            'kind' => 'label', 'widthMm' => 40, 'heightMm' => 30,
+            'nodes' => [['type' => 'each', 'path' => 'items', 'children' => [
+                ['type' => 'repeat', 'countPath' => 'item.quantity', 'children' => [
+                    ['type' => 'labelText', 'x' => 8, 'y' => 8, 'path' => 'item.name'],
+                ]],
+            ]]],
+        ], ['items' => [['name' => 'Tea', 'quantity' => 2], ['name' => 'Cake', 'quantity' => 1]]]);
+
+        self::assertCount(3, $document['pages']);
+        self::assertStringContainsString('Tea', $document['pages'][0]);
+        self::assertStringContainsString('Cake', $document['pages'][2]);
+    }
+
+    public function testIfNodeIncludesOptionalContentOnlyWhenConditionMatches(): void
+    {
+        $document = (new PrintDocumentRenderer())->render([
+            'kind' => 'receipt',
+            'nodes' => [
+                ['type' => 'if', 'path' => 'order.note', 'children' => [
+                    ['type' => 'text', 'value' => 'Note: '], ['type' => 'field', 'path' => 'order.note'], ['type' => 'line'],
+                ]],
+            ],
+        ], ['order' => ['note' => 'No onion']]);
+
+        self::assertSame(['Note: No onion<BR>'], $document['pages']);
+    }
+
+    public function testRejectsElementsOutsideConfiguredLabel(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        (new PrintDocumentRenderer())->render([
+            'kind' => 'label', 'widthMm' => 30, 'heightMm' => 20,
+            'nodes' => [['type' => 'labelText', 'x' => 300, 'y' => 8, 'path' => 'name']],
+        ], ['name' => 'Out of bounds']);
     }
 }

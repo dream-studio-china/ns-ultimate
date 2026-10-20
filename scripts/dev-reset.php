@@ -109,7 +109,7 @@ try {
         if (!is_string($contents)) {
             fail('Cannot read integration/backend/.env.dev.local.');
         }
-        foreach (['APP_SECRET', 'REFRESH_TOKEN_SECRET'] as $name) {
+        foreach (['APP_SECRET', 'REFRESH_TOKEN_SECRET', 'PRINTER_CONFIG_KEY'] as $name) {
             $line = $name.'='.bin2hex(random_bytes(32));
             if (preg_match('/^'.preg_quote($name, '/').'\s*=.*$/m', $contents) === 1) {
                 $contents = preg_replace('/^'.preg_quote($name, '/').'\s*=.*$/m', $line, $contents, 1) ?? $contents;
