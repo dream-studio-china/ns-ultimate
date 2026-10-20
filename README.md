@@ -9,7 +9,8 @@ Integrated application built from two upstream cores and project-owned business 
 - `integration/` — project-owned application wiring and adapters between core and business modules.
 - `business/` — all project-specific frontend and backend business functionality.
 - `apps/` — placeholder for independent applications with separate runtime/deployment boundaries; not currently wired into project workflows.
-- `docs/` — architecture, development boundaries, and upstream synchronization guidance.
+- `docs/` — architecture, contracts, operations, and work records.
+- `infra/` — project-owned deployment assets (Docker Compose, PHP-FPM/Nginx, MySQL/Redis topology).
 
 Keep upstream code intact where possible. Put product behavior in `business/`, and keep `integration/` focused on registration and adaptation. If a reusable extension point is missing, make the smallest generic change in the relevant core and submit it upstream via a branch and PR.
 
@@ -22,7 +23,7 @@ make install
 make dev
 ```
 
-On first run, `make dev` configures local MySQL, runs migrations, and creates an initial admin; later runs start the apps directly. Use `make dev-reset` to reset the local development database and start over. For Docker PHP/MySQL, run `make docker-dev`; see [the development guide](docs/operations/development.md) for setup, reset, debugging, and checks.
+On first run, `make dev` prompts for a loopback MySQL connection and admin identity, applies migrations, and creates the admin if absent; later runs start the backend and Vite without repeating setup. Use `make dev-reset` to reset the local development database and start over. For Docker PHP/MySQL, run `make docker-dev`; see [the development guide](docs/operations/development.md) for setup, reset, debugging, and checks.
 
 ## Quickstart and deployment
 
@@ -34,7 +35,7 @@ On first run, `make dev` configures local MySQL, runs migrations, and creates an
 - [Docker Compose/Nginx foundation](infra/docker/README.md) — project-owned container build and service topology.
 - [Docker Compose/Nginx 基础设施（简体中文）](infra/docker/README.zh-cn.md)
 - [Local development and debugging](docs/operations/development.md) — env precedence, debugging, and validation reference.
-- [CI workflow](.github/workflows/ci.yaml) — project composition checks; upstream core test suites are intentionally excluded.
+- [CI workflow](.github/workflows/ci.yaml) — workflow/composition tests, backend integration tests, PHPStan, and the composed admin build; upstream core test suites are intentionally excluded.
 
 ## Architecture
 
@@ -60,16 +61,21 @@ flowchart LR
     end
 
     Apps["apps/ — independent applications (reserved)"]
+    Browser["Browser"]
 
     BA --> IA --> CA
     BB --> IB --> CB
-    CA -->|"HTTP /api requests"| ID
-    ID --> IB
-    ID -.->|Static admin build: dist/admin/| Browser["Browser"]
+    Browser -->|"HTTP: /admin/ and API"| ID
+    ID -.->|"static admin build: dist/admin/"| Browser
+    ID -->|"backend requests"| IB
     CB --> DB[("Database")]
 ```
 
-Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. `apps/` is reserved for independent projects, excluded from the main Docker build context, and not currently discovered or run by existing workflows. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
+Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. In deployment, Nginx serves the composed admin build at `/admin/` and routes backend requests to the integration front controller. `apps/` is reserved for independent projects, excluded from the main Docker build context, and not currently discovered or run by existing workflows. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
+
+## Store Product fields
+
+The Store Product admin form exposes `sortOrder`, `recommendationLevel`, and `isSoldout` as dedicated fields, plus a `settings` JSON object for `kitchenPrinterEnable`, `startSaleTime`, and `endSaleTime`. Display-only `subtitle` and the `cover` URL remain under `metadata`. Sale times are stored and validated as `HH:mm`; this does not implement sale-window behavior. The system metadata endpoint (`/system/entities/App/Store/Entity/Product`) includes the business extension fields and their backend translations while keeping the core Product entity name stable for Admin. See the [backend entity extension contract](docs/contracts/backend-entity-extension.md) for the integration and migration details.
 
 ## Project-owned code and upstream licenses
 
