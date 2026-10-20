@@ -12,8 +12,8 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 final class ManageProductController extends CoreProductController
 {
     /** @var list<string> */
-    protected array $acceptedCreateProperties = ['name', 'description', 'status', 'metadata', 'store', 'category', 'sortOrder'];
+    protected array $acceptedCreateProperties = ['name', 'description', 'status', 'metadata', 'settings', 'store', 'category', 'sortOrder', 'recommendationLevel', 'isSoldout'];
 
     /** @var list<string> */
-    protected array $acceptedUpdateProperties = ['name', 'description', 'status', 'metadata', 'store', 'category', 'sortOrder'];
+    protected array $acceptedUpdateProperties = ['name', 'description', 'status', 'metadata', 'settings', 'store', 'category', 'sortOrder', 'recommendationLevel', 'isSoldout'];
 }

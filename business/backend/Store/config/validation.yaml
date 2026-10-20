@@ -1,0 +1,11 @@
+App\Store\Entity\Product:
+    properties:
+        metadata:
+            - NsUltimate\Integration\Backend\Validator\JsonSchema:
+                  schema: Store/ProductMetadata
+
+NsUltimate\Business\Store\Entity\Product:
+    properties:
+        settings:
+            - NsUltimate\Integration\Backend\Validator\JsonSchema:
+                  schema: Store/ProductSettings
