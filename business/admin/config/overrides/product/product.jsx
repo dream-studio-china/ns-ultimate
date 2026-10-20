@@ -1,6 +1,6 @@
 // Business override of the core Product entity (declared explicitly in
 // business/admin/config/index.js `replace`). Adds category binding and
-// metadata-backed display fields (sold out / recommendation 1-10 / cover).
+// Product display fields, settings, and metadata-backed cover/subtitle.
 // List and specifications behavior mirror the core configuration.
 import { defineAsyncComponent } from 'vue'
 import { t } from '@/i18n'
@@ -17,6 +17,7 @@ const ListAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/ListAdmi
 const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmin'))
 import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
 import ProductMetadataSchema from './ProductMetadata.json'
+import ProductSettingsSchema from './ProductSettings.json'
 
 const ProductNameWithCover = {
   props: ['data', 'record'],
@@ -184,6 +185,9 @@ export default {
         { property: 'description', type: 'text', required: false },
         { property: 'category', required: false, help: t('Product category help') },
         { property: 'store', required: false, help: t('Product store help') },
+        { property: 'sortOrder', type: 'number', required: false, default_value: 0 },
+        { property: 'recommendationLevel', type: 'number', required: false, default_value: 0 },
+        { property: 'isSoldout', type: 'boolean', required: false, default_value: false },
         { property: 'status', type: 'select', default_value: 'active', help: t('Product status help'), type_options: {
           options: [
             { value: 'active', label: t('Active') },
@@ -197,10 +201,18 @@ export default {
           type_options: {
             schema: ProductMetadataSchema,
             fields: [
-              { property: 'cover', type: 'image', type_options: { storage: 'qiniu' }, help: t('Product cover help') }
+              { property: 'cover', type: 'image', type_options: { storage: 'qiniu' }, help: t('Product cover help') },
+              { property: 'subtitle', type: 'input' }
             ]
           },
           help: t('Product metadata help')
+        },
+        {
+          property: 'settings',
+          type: 'json_schema',
+          required: false,
+          type_options: { schema: ProductSettingsSchema },
+          help: t('Product settings help')
         },
         {
           property: 'specifications',
@@ -228,7 +240,7 @@ export default {
       list_display: [
         'id',
         { property: 'name', component: ProductNameWithCover },
-        'category', 'store', 'status', 'isDeleted', 'createdAt', 'updatedAt'
+        'category', 'store', 'status', 'sortOrder', 'recommendationLevel', 'isSoldout', 'isDeleted', 'createdAt', 'updatedAt'
       ]
     },
     detail: {
@@ -239,6 +251,9 @@ export default {
         'category',
         { property: 'description', type: 'text', span: 2, full_width: true },
         'status',
+        'sortOrder',
+        'recommendationLevel',
+        'isSoldout',
         'createdAt',
         'updatedAt',
         {
@@ -253,7 +268,14 @@ export default {
             ]
           }
         },
-        { property: 'metadata.cover', label: t('Product cover'), type: 'image', span: 2, full_width: true }
+        { property: 'metadata.cover', label: t('Product cover'), type: 'image', span: 2, full_width: true },
+        {
+          property: 'settings',
+          type: 'json_schema',
+          span: 2,
+          full_width: true,
+          type_options: { schema: ProductSettingsSchema }
+        }
       ]
     }
 }
