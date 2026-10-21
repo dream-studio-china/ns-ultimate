@@ -133,6 +133,40 @@ beforeEach(() => {
 })
 
 describe('FormAdmin.vue', () => {
+  it('uses compact top-aligned labels and hides a single tab for embedded forms', async() => {
+    const { wrapper } = mountForm({ props: { embedded: true } })
+    await settled(wrapper)
+
+    expect(wrapper.classes()).toContain('form-admin--embedded')
+    expect(wrapper.find('.form-admin__tabs--single').exists()).toBe(true)
+    expect(wrapper.findComponent({ ref: 'form' }).attributes('label-position')).toBe('top')
+    expect(wrapper.findComponent({ ref: 'form' }).attributes('label-width')).toBe('auto')
+    wrapper.unmount()
+  })
+
+  it('keeps navigation visible when an embedded form has multiple tabs', async() => {
+    const { wrapper } = mountForm({ props: { embedded: true, fields: [{ property: 'name', tab: 'Details' }] } })
+    await settled(wrapper)
+
+    expect(wrapper.vm.tabs.size).toBeGreaterThan(1)
+    expect(wrapper.find('.form-admin__tabs--single').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('renders schema fields as full-width sections without changing ordinary fields', async() => {
+    const { wrapper } = mountForm({
+      props: { fields: [{ property: 'name' }, { property: 'settings', type: 'json_schema', component: PluginStub }] },
+      structure: { ...baseStructure(), settings: { metadata: { type: 'json', nullable: true }, translation: 'Settings' } }
+    })
+    await settled(wrapper)
+
+    expect(wrapper.find('[data-field="settings"]').classes()).toContain('form-admin__group')
+    expect(wrapper.find('[data-field="name"]').classes()).not.toContain('form-admin__group')
+    expect(wrapper.classes()).not.toContain('form-admin--embedded')
+    expect(wrapper.findComponent({ ref: 'form' }).attributes('label-width')).toBe('120px')
+    wrapper.unmount()
+  })
+
   describe('props and data init', () => {
     it('has expected prop defaults', () => {
       const { wrapper } = mountForm()
