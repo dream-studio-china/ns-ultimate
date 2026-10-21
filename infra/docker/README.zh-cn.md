@@ -13,7 +13,7 @@ docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml config 
 docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml up --build -d
 ```
 
-生成专用的 `APP_SECRET` 和 `REFRESH_TOKEN_SECRET`，两者必须不同。按照示例使用十六进制 MySQL 密码，避免自动生成的 `DATABASE_URL` 需要额外 URL 编码。生成该部署专用的 RSA JWT 密钥对，在 `.env` 中填写绝对路径，并限制宿主机文件权限，确保私钥仅管理员和 Docker 可读取。不要使用 `make env-init` 生成的密钥，也不要提交本地 `.env`。
+生成专用的 `APP_SECRET`、`REFRESH_TOKEN_SECRET` 和 `PRINTER_CONFIG_KEY`。打印配置密钥必须保密并长期稳定；更换或丢失后，已保存的芯烨云密钥将无法解密。按照示例使用十六进制 MySQL 密码，避免自动生成的 `DATABASE_URL` 需要额外 URL 编码。生成该部署专用的 RSA JWT 密钥对，在 `.env` 中填写绝对路径，并限制宿主机文件权限，确保私钥仅管理员和 Docker 可读取。不要使用 `make env-init` 生成的密钥，也不要提交本地 `.env`。
 
 Nginx 默认绑定 `127.0.0.1:8080`；应在其前方配置宿主机反向代理或负载均衡器并提供 TLS。管理前端通过 `/admin/` 提供，后端路由由 integration front controller 处理。MySQL 和 Redis 端口不映射到宿主机。数据库、应用运行数据和上传文件保存在持久化命名卷中。
 

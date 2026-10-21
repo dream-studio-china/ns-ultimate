@@ -13,7 +13,7 @@ docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml config 
 docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml up --build -d
 ```
 
-Create production-specific `APP_SECRET` and `REFRESH_TOKEN_SECRET` values, distinct from one another. Use hexadecimal MySQL passwords as noted in the sample so that the generated `DATABASE_URL` remains valid without additional URL escaping. Generate a deployment-specific RSA JWT pair, set absolute paths in `.env`, and restrict host file permissions so only administrators and Docker can read the private key. Do not use `make env-init` keys or commit the local `.env`.
+Create production-specific `APP_SECRET`, `REFRESH_TOKEN_SECRET`, and `PRINTER_CONFIG_KEY` values. Keep the printer key private and stable: changing or losing it makes stored Xpyun credentials unreadable. Use hexadecimal MySQL passwords as noted in the sample so that the generated `DATABASE_URL` remains valid without additional URL escaping. Generate a deployment-specific RSA JWT pair, set absolute paths in `.env`, and restrict host file permissions so only administrators and Docker can read the private key. Do not use `make env-init` keys or commit the local `.env`.
 
 Nginx binds to `127.0.0.1:8080` by default; place a host reverse proxy/load balancer in front to provide TLS. The admin is served at `/admin/`; backend routes are handled by the integration front controller. MySQL and Redis ports are not published to the host. Persistent named volumes hold database data, application runtime data, and uploaded files.
 

@@ -36,7 +36,7 @@ The setup runs only once, after it succeeds. Stop the running apps before resett
 
 The admin is at `http://127.0.0.1:9528`; the backend is at `http://127.0.0.1:8000`. API requests are proxied by Vite. Ctrl-C stops both services, and a failed service stops the other. Run `make admin` and `make backend` in separate terminals if desired. Both bind to loopback by default; PHP's built-in server is for local development only.
 
-`make env-init` can still be used separately to create generic local env files, random application/refresh-token secrets, and an unencrypted development-only RSA JWT key pair under `var/keys/`. The automatic `make dev` flow uses isolated files under `var/local-dev/` and `.env.dev.local`; Docker uses `var/docker-dev/`. Files have private permissions and existing files are never overwritten. An incomplete key pair fails rather than rotating keys silently. These paths are ignored by Git. Do not use development keys or configuration in production.
+`make env-init` can still be used separately to create generic local env files, random application/refresh-token/printer-config secrets, and an unencrypted development-only RSA JWT key pair under `var/keys/`. The automatic `make dev` flow uses isolated files under `var/local-dev/` and `.env.dev.local`; Docker uses `var/docker-dev/`. Files have private permissions and existing files are never overwritten. An incomplete key pair fails rather than rotating keys silently. These paths are ignored by Git. Do not use development keys or configuration in production.
 
 ## Environment ownership and precedence
 

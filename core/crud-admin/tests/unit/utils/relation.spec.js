@@ -16,6 +16,38 @@ describe('utils/relation', () => {
       .toMatchObject({ name: 'User', valueKey: 'uuid', multiple: false })
   })
 
+  it.each(['string', 'text'])('preserves UUID inference with metadata type %s', (type) => {
+    expect(resolveRelation({ property: 'storeUuid' }, { metadata: { type }}, entities))
+      .toMatchObject({ name: 'Store', valueKey: 'uuid', multiple: false })
+    expect(resolveRelation({ property: 'storeUuids' }, { metadata: { type }}, entities))
+      .toMatchObject({ name: 'Store', valueKey: 'uuid', multiple: true })
+  })
+
+  it.each(['text', 'string'])('does not infer UUID relations with explicit scalar type %s', (type) => {
+    expect(resolveRelation({ property: 'storeUuid', type }, { metadata: { type: 'text' }}, entities)).toBeNull()
+    expect(resolveRelation({ property: 'storeUuids', type }, { metadata: { type: 'text' }}, entities)).toBeNull()
+  })
+
+  it.each(['text', 'string'])('uses explicit relation targets ahead of scalar type %s', (type) => {
+    expect(resolveRelation({
+      property: 'userUuid',
+      type,
+      relation: { target: 'Store', valueKey: 'uuid' }
+    }, { metadata: { targetEntity: 'App\\Entity\\User' }}, entities))
+      .toMatchObject({ name: 'Store', valueKey: 'uuid', multiple: false })
+  })
+
+  it.each(['text', 'string'])('uses conventional relation targets ahead of scalar type %s', (type) => {
+    expect(resolveRelation({ property: 'userUuid', type }, {
+      metadata: { type: 'ManyToOne', targetEntity: 'App\\Entity\\Store' }
+    }, entities)).toMatchObject({ name: 'Store', valueKey: 'id', multiple: false })
+    expect(resolveRelation({
+      property: 'userUuid',
+      type,
+      type_options: { entity_name: 'Store' }
+    }, {}, entities)).toMatchObject({ name: 'Store', valueKey: 'id', multiple: false })
+  })
+
   it('infers registered multi-value UUID relation fields', () => {
     expect(resolveRelation({ property: 'userUuids' }, {}, entities))
       .toMatchObject({ name: 'User', valueKey: 'uuid', multiple: true })

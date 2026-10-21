@@ -1,0 +1,18 @@
+services:
+    NsUltimate\Business\Printer\Service\DelicloudPrintProtocol:
+        autowire: true
+
+    NsUltimate\Business\Printer\Service\XpyunClient:
+        autowire: true
+
+    NsUltimate\Business\Printer\Service\XpyunPrinterProvider:
+        autowire: true
+        tags: ['app.printer_provider']
+
+    NsUltimate\Business\Printer\Service\PrinterProviderRegistry:
+        arguments:
+            $providers: !tagged_iterator app.printer_provider
+
+    NsUltimate\Business\Printer\Service\PrinterCredentialCipher:
+        arguments:
+            $key: '%env(PRINTER_CONFIG_KEY)%'

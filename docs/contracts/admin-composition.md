@@ -20,5 +20,6 @@ The composed Vite config reads environment defaults and overrides from `integrat
 - Core configuration is not mutated. Authentication, permission filtering, layout, and generic CRUD behavior remain owned by core.
 - Product's business form explicitly configures its Store relation with `valueKey: 'uuid'`. Both option values and edit hydration must use the Store UUID, matching the Product management API; Doctrine's numeric association ID is not the write identifier for this field.
 - Custom business pages must be imported explicitly from business routes; core view auto-discovery does not scan the business directory.
+- The composed Vite configuration resolves `qrcode` from the admin core's existing dependency installation for business paper previews. QR generation is local; this adds no core source changes or new dependency.
 
 Run the dependency-free composition tests with `node --test integration/admin/*.test.mjs`. Build the composed application with `make build`; interactive business flows require separate runtime validation.

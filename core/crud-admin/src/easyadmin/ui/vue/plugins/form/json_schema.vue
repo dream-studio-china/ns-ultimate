@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="json-schema-form">
     <admin-skeleton v-if="loading" :rows="3" />
     <form-admin
       v-else-if="definition"
@@ -118,3 +118,10 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.json-schema-form {
+  width: 100%;
+  min-width: 0;
+}
+</style>

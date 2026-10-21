@@ -1,0 +1,48 @@
+{
+  "demoTitle": "OFFLINE DEMO",
+  "store": { "name": "Demo tea shop" },
+  "order": {
+    "id": "1001",
+    "number": "DE0001",
+    "counterName": "A01",
+    "counterLabel": "A01(#9)",
+    "labelHeader": "A01",
+    "createdTime": "2026/10/21 18:30:00",
+    "isAdd": false,
+    "laterPay": true,
+    "staffName": "Alex",
+    "bookingName": "Sam",
+    "waiterName": "Lee",
+    "staffLabel": "Alex(#1)",
+    "bookingLabel": "Sam(#2)",
+    "waiterLabel": "Lee(#3)",
+    "totalPrice": "\uffe548.00",
+    "discount": "\uffe55.00",
+    "amountDue": "\uffe543.00",
+    "paymentUrl": "https://example.invalid/payment?order=1001",
+    "items": [
+      {
+        "name": "Jasmine tea",
+        "product": "Jasmine tea",
+        "spec": "Jasmine tea (large)",
+        "subTitle": "Less ice",
+        "quantity": 2,
+        "quantityLabel": "x2",
+        "tags": "No sugar",
+        "unitPrice": "\uffe515.00",
+        "price": "\uffe530.00"
+      },
+      {
+        "name": "Original cake",
+        "product": "Original cake",
+        "spec": "Original cake (slice)",
+        "subTitle": "Original",
+        "quantity": 1,
+        "quantityLabel": "x1",
+        "tags": "",
+        "unitPrice": "\uffe518.00",
+        "price": "\uffe518.00"
+      }
+    ]
+  }
+}

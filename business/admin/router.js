@@ -5,6 +5,18 @@ import Layout from '@/layout'
 export default {
   add: [
     {
+      path: '/printer',
+      name: 'PrinterManage',
+      component: Layout,
+      meta: { title: t('Printer management'), icon: 'el-icon-printer', roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN'] },
+      children: [
+        ...r('PrinterAccount', t('Printer accounts')),
+        ...r('PrinterDevice', t('Printer devices')),
+        ...r('PrinterTemplate', t('Printer templates')),
+        ...r('PrinterJob', t('Printer jobs'))
+      ]
+    },
+    {
       path: '/business',
       name: 'BusinessManage',
       hidden: true,

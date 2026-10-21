@@ -16,6 +16,7 @@ services:
       APP_DEBUG: "0"
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET in infra/docker/.env}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?Set REFRESH_TOKEN_SECRET in infra/docker/.env}
+      PRINTER_CONFIG_KEY: ${PRINTER_CONFIG_KEY:?Set PRINTER_CONFIG_KEY in infra/docker/.env}
       DATABASE_URL: "mysql://${MYSQL_USER:?Set MYSQL_USER}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}@database:3306/${MYSQL_DATABASE:?Set MYSQL_DATABASE}?serverVersion=8.4&charset=utf8mb4"
       DEFAULT_URI: ${DEFAULT_URI:?Set DEFAULT_URI in infra/docker/.env}
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private.pem

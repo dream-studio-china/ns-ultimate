@@ -4,6 +4,29 @@ import StoreContactSchema from '../../../../../core/crud-admin/src/configs/colle
 import StoreAddressSchema from './StoreAddress.json'
 import StoreSettingsSchema from './StoreSettings.json'
 
+const printerRelationFields = [
+  {
+    property: 'deviceUuid',
+    type: 'RelationToOne',
+    relation: { target: 'PrinterDevice', plural: 'devices', prefix: '/api/v1/manage/printer', valueKey: 'uuid' }
+  },
+  {
+    property: 'templateUuid',
+    type: 'RelationToOne',
+    relation: { target: 'PrinterTemplate', plural: 'templates', prefix: '/api/v1/manage/printer', valueKey: 'uuid' }
+  }
+]
+
+const printingCaseFields = ['order', 'perItem', 'filteredList', 'fullList', 'settlement'].map(property => ({
+  property,
+  type_options: { fields: printerRelationFields }
+}))
+
+const storeSettingsFields = [{
+  property: 'printing',
+  type_options: { fields: printingCaseFields }
+}]
+
 // Business override of the core Store entity (declared explicitly in
 // business/admin/config/index.js `replace`). Only code, name and status are
 // required; timezone defaults to Asia/Shanghai; contact/address/settings stay
@@ -30,7 +53,7 @@ export default {
       { property: 'timezone', type: 'string', default_value: 'Asia/Shanghai', required: false },
       { property: 'contact', type: 'json_schema', required: false, type_options: { schema: StoreContactSchema }, help: t('Store contact help') },
       { property: 'address', type: 'json_schema', required: false, type_options: { schema: StoreAddressSchema }, help: t('Store address help') },
-      { property: 'settings', type: 'json_schema', required: false, type_options: { schema: StoreSettingsSchema }, help: t('Store settings help') },
+      { property: 'settings', type: 'json_schema', required: false, type_options: { schema: StoreSettingsSchema, fields: storeSettingsFields }, help: t('Store settings help') },
       { property: 'paymentSetting', required: false, help: t('Payment setting help') }
     ]
   },

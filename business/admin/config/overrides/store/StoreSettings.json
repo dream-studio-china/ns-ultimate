@@ -42,6 +42,63 @@
         }
       },
       "required": []
+    },
+    "printing": {
+      "type": "object",
+      "additionalProperties": false,
+      "title": "Automatic printing",
+      "description": "Enable and configure each legacy order-printing case independently.",
+      "properties": {
+        "order": {
+          "type": "object", "title": "Standard order receipt", "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "title": "Enabled", "default": false },
+            "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+            "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+            "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 }
+          },
+          "required": []
+        },
+        "perItem": {
+          "type": "object", "title": "Per-item ticket", "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "title": "Enabled", "default": false },
+            "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+            "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+            "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 }
+          },
+          "required": []
+        },
+        "filteredList": {
+          "type": "object", "title": "Filtered item list", "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "title": "Enabled", "default": false },
+            "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+            "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+            "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 }
+          },
+          "required": []
+        },
+        "fullList": {
+          "type": "object", "title": "Full item list", "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "title": "Enabled", "default": false },
+            "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+            "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+            "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 }
+          },
+          "required": []
+        },
+        "settlement": {
+          "type": "object", "title": "Settlement receipt", "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "title": "Enabled", "default": false },
+            "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+            "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+            "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 }
+          }
+        }
+      }
     }
   },
   "required": []

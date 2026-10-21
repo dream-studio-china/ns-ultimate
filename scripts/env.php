@@ -53,7 +53,8 @@ if ($command === 'env-init') {
     if (getenv('NS_SKIP_BACKEND_SECRET_FILE') !== '1') {
         $backendEnvFile = $resolvePath(getenv('NS_DEV_BACKEND_ENV_FILE') ?: 'integration/backend/.env.local');
         $backendSecrets = sprintf(
-            "# Generated development secrets. Do not commit this file.\nAPP_SECRET=%s\nREFRESH_TOKEN_SECRET=%s\n",
+            "# Generated development secrets. Do not commit this file.\nAPP_SECRET=%s\nREFRESH_TOKEN_SECRET=%s\nPRINTER_CONFIG_KEY=%s\n",
+            bin2hex(random_bytes(32)),
             bin2hex(random_bytes(32)),
             bin2hex(random_bytes(32)),
         );
@@ -98,7 +99,7 @@ if ($command === 'env-check') {
     }
     if (!$failed) {
         require $root.'/integration/backend/bootstrap.php';
-        foreach (['APP_SECRET', 'REFRESH_TOKEN_SECRET', 'DATABASE_URL'] as $name) {
+        foreach (['APP_SECRET', 'REFRESH_TOKEN_SECRET', 'PRINTER_CONFIG_KEY', 'DATABASE_URL'] as $name) {
             $value = $_SERVER[$name] ?? $_ENV[$name] ?? '';
             $valid = is_string($value) && $value !== '' && !str_starts_with($value, 'replace-with-');
             echo ($valid ? 'Configured: ' : 'Unset or placeholder: ').$name.PHP_EOL;

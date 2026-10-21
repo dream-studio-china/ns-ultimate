@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container">
+  <div class="app-container form-admin" :class="{ 'form-admin--embedded': embedded }">
     <el-row v-if="!embedded">
       <el-col :span="4">
         <slot name="formTitle">
@@ -37,10 +37,13 @@
       ref="form"
       :model="form"
       :rules="rules"
-      label-width="120px"
+      :label-width="embedded ? 'auto' : '120px'"
+      :label-position="embedded ? 'top' : 'right'"
     >
       <el-tabs
         v-model="activeTab"
+        class="form-admin__tabs"
+        :class="{ 'form-admin__tabs--single': embedded && tabs.size === 1 }"
       >
         <el-tab-pane
           v-for="(tab, tabIndex) in tabs"
@@ -60,6 +63,7 @@
             >
               <el-form-item
                 v-if="field.property !== 'id' && !isHidden(field)"
+                :class="{ 'form-admin__group': resolvePluginType(field, structure[field.property]) === 'json_schema' }"
                 :label="
                   (Object.keys(field).includes('field_options') &&
                     Object.keys(field.field_options).includes('label'))
@@ -729,6 +733,59 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.form-admin--embedded {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+
+  :deep(.el-select) {
+    width: 100%;
+  }
+}
+
+.form-admin__tabs {
+  width: 100%;
+  min-width: 0;
+}
+
+.form-admin__tabs--single > :deep(.el-tabs__header) {
+  display: none;
+}
+
+// Object fields are sections, not inputs: a side label would indent every
+// descendant form again and eventually leave no space for its controls.
+.form-admin__group {
+  display: block;
+  width: 100%;
+  margin-bottom: 24px;
+
+  > :deep(.el-form-item__label) {
+    display: block;
+    float: none;
+    width: 100% !important;
+    height: auto;
+    padding: 0 0 10px;
+    margin: 0 0 16px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+    color: var(--el-text-color-primary);
+    font-weight: 600;
+    line-height: 1.5;
+    text-align: left;
+
+    &::before {
+      content: '🗂️';
+      margin-inline-end: 8px;
+      font-weight: normal;
+    }
+  }
+
+  > :deep(.el-form-item__content) {
+    display: block;
+    min-width: 0;
+    margin-left: 0 !important;
+  }
+}
+
 .form-nesting-guard {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
