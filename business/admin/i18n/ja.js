@@ -1,5 +1,10 @@
 export default {
   'Paper preview': '用紙プレビュー',
+  'Automatic printing': '自動印刷', 'Production trigger': '調理伝票の印刷タイミング', 'Printer routes': 'プリンタールート',
+  'Kitchen route': 'キッチン伝票', 'Label route': 'ラベル', 'Receipt route': 'レシート', 'Settlement route': '決済レシート',
+  Scene: '印刷シーン', 'Printer device UUID': 'プリンター端末 UUID', 'Printer template UUID': '印刷テンプレート UUID',
+  accepted: '店舗の注文受付後', paid: '支払い完了後', per_item: '商品数量ごとに印刷',
+  filtered_list: 'キッチン印刷有効の商品', full_list: 'すべての注文商品', settlement: '決済レシート',
   'Code preview placeholder help': '破線の枠はバーコードの配置のみを示し、読み取りはできません。',
   'QR preview unavailable': 'この内容のQRコードをプレビューできません。',
   'No enabled printers. Preview is still available.': '有効なプリンターがありません。プレビューは利用できます。',

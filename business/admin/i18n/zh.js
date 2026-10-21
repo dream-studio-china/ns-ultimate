@@ -1,5 +1,10 @@
 export default {
   'Paper preview': '纸张预览',
+  'Automatic printing': '自动打印', 'Production trigger': '生产单触发时机', 'Printer routes': '打印路由',
+  'Kitchen route': '厨房单', 'Label route': '标签单', 'Receipt route': '收银小票', 'Settlement route': '结算小票',
+  Scene: '打印场景', 'Printer device UUID': '打印设备 UUID', 'Printer template UUID': '打印模板 UUID',
+  accepted: '门店接单后', paid: '付款完成后', per_item: '按商品数量逐件打印',
+  filtered_list: '仅打印启用厨房打印的商品', full_list: '打印全部订单商品', settlement: '结算小票',
   'Code preview placeholder help': '虚线框仅表示条码的位置，不是可扫描的条码。',
   'QR preview unavailable': '无法生成此内容的二维码预览。',
   'No enabled printers. Preview is still available.': '暂无启用的打印机，仍可预览模板。',

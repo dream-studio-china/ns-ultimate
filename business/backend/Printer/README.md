@@ -34,6 +34,48 @@ register devices, save templates, submit print jobs with a unique
 snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 `unknown` and are never automatically resubmitted.
 
+## Automatic Trade order printing
+
+The Printer module can enqueue order print requests for store-scoped Trade orders.
+Configure `Store.settings.printing` with `productionTrigger` (`accepted` or
+`paid`) and a `routes` object. Configure the fixed `kitchen`, `labels`,
+`receipt`, and `settlement` route fields as needed. Each enabled route selects a
+device and template; the kitchen route chooses between `filtered_list` and
+`full_list`, while the other routes infer their fixed scene from the route key.
+Optional `copies` defaults to `1`; `enabled` defaults to `true`. Settlement
+routes run only after payment; the selected production trigger applies to the
+other scenes. For example:
+
+```json
+{
+  "printing": {
+    "productionTrigger": "accepted",
+    "routes": {
+      "kitchen": {
+        "scene": "filtered_list",
+        "deviceUuid": "<store printer device UUID>",
+        "templateUuid": "<receipt template UUID>"
+      },
+      "settlement": {
+        "deviceUuid": "<store printer device UUID>",
+        "templateUuid": "<receipt template UUID>"
+      }
+    }
+  }
+}
+```
+
+The `filtered_list` scene includes only products with
+`settings.kitchenPrinterEnable: true`; `full_list` includes all order lines;
+`per_item` creates one request per item unit; `settlement` includes the order
+lines and payment context. Templates are independently selectable per store
+route. Requests are persisted with order/product data snapshots before being
+dispatched, so event handlers never call printer providers. Run
+`app:printer:dispatch-orders` periodically (or as a supervised worker command)
+to submit pending requests. Request keys are stable across redelivery and an
+ambiguous provider result is not automatically resubmitted. Failed requests are
+left visible in `printer_order_request` for operator investigation.
+
 `GET /api/v1/manage/printer/jobs/{id}/preview` returns the stored job's
 `document` and `copies` in the standard success envelope, without re-rendering
 or contacting a provider. Document pages come from the saved print content;

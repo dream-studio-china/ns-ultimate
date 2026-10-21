@@ -1,5 +1,10 @@
 export default {
   'Paper preview': 'Paper preview',
+  'Automatic printing': 'Automatic printing', 'Production trigger': 'Production trigger', 'Printer routes': 'Printer routes',
+  'Kitchen route': 'Kitchen route', 'Label route': 'Label route', 'Receipt route': 'Receipt route', 'Settlement route': 'Settlement route',
+  Scene: 'Print scene', 'Printer device UUID': 'Printer device UUID', 'Printer template UUID': 'Printer template UUID',
+  accepted: 'Store accepted', paid: 'Payment completed', per_item: 'One ticket per item unit',
+  filtered_list: 'Kitchen-enabled items', full_list: 'All order items', settlement: 'Settlement receipt',
   'Code preview placeholder help': 'Dashed boxes indicate barcode placement only, not scannable barcodes.',
   'QR preview unavailable': 'QR preview is unavailable for this content.',
   'No enabled printers. Preview is still available.': 'No enabled printers. Preview is still available.',

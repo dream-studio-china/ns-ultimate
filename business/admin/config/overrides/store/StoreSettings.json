@@ -42,6 +42,146 @@
         }
       },
       "required": []
+    },
+    "printing": {
+      "type": "object",
+      "additionalProperties": false,
+      "title": "Automatic printing",
+      "description": "Automatic Trade order printer routing.",
+      "properties": {
+        "productionTrigger": {
+          "type": "string",
+          "enum": ["accepted", "paid"],
+          "default": "accepted",
+          "title": "Production trigger",
+          "description": "Trigger for per-item and production list scenes. Settlement scenes always trigger on payment."
+        },
+        "routes": {
+          "type": "object",
+          "title": "Printer routes",
+          "properties": {
+            "kitchen": {
+              "type": "object",
+              "title": "Kitchen route",
+              "additionalProperties": false,
+              "properties": {
+                "scene": {
+                  "type": "string",
+                  "title": "Scene",
+                  "enum": ["filtered_list", "full_list"],
+                  "default": "filtered_list"
+                },
+                "deviceUuid": {
+                  "type": "string",
+                  "title": "Printer device UUID",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "templateUuid": {
+                  "type": "string",
+                  "title": "Printer template UUID",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "copies": {
+                  "type": "integer",
+                  "title": "Copies",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "default": 1
+                },
+                "enabled": { "type": "boolean", "title": "Enabled", "default": true }
+              },
+              "required": []
+            },
+            "labels": {
+              "type": "object",
+              "title": "Label route",
+              "additionalProperties": false,
+              "properties": {
+                "deviceUuid": {
+                  "type": "string",
+                  "title": "Printer device UUID",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "templateUuid": {
+                  "type": "string",
+                  "title": "Printer template UUID",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "copies": {
+                  "type": "integer",
+                  "title": "Copies",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "default": 1
+                },
+                "enabled": { "type": "boolean", "title": "Enabled", "default": true }
+              },
+              "required": []
+            },
+            "receipt": {
+              "type": "object",
+              "title": "Receipt route",
+              "additionalProperties": false,
+              "properties": {
+                "deviceUuid": {
+                  "type": "string",
+                  "title": "Printer device UUID",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "templateUuid": {
+                  "type": "string",
+                  "title": "Printer template UUID",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "copies": {
+                  "type": "integer",
+                  "title": "Copies",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "default": 1
+                },
+                "enabled": { "type": "boolean", "title": "Enabled", "default": true }
+              },
+              "required": []
+            },
+            "settlement": {
+              "type": "object",
+              "title": "Settlement route",
+              "additionalProperties": false,
+              "properties": {
+                "deviceUuid": {
+                  "type": "string",
+                  "title": "Printer device UUID",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "templateUuid": {
+                  "type": "string",
+                  "title": "Printer template UUID",
+                  "minLength": 36,
+                  "maxLength": 36
+                },
+                "copies": {
+                  "type": "integer",
+                  "title": "Copies",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "default": 1
+                },
+                "enabled": { "type": "boolean", "title": "Enabled", "default": true }
+              },
+              "required": []
+            }
+          }
+        }
+      },
+      "required": ["productionTrigger", "routes"]
     }
   },
   "required": []

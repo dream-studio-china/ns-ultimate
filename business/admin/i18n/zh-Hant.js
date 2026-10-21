@@ -1,5 +1,10 @@
 export default {
   'Paper preview': '紙張預覽',
+  'Automatic printing': '自動列印', 'Production trigger': '生產單觸發時機', 'Printer routes': '列印路由',
+  'Kitchen route': '廚房單', 'Label route': '標籤單', 'Receipt route': '收銀收據', 'Settlement route': '結算收據',
+  Scene: '列印場景', 'Printer device UUID': '列印裝置 UUID', 'Printer template UUID': '列印範本 UUID',
+  accepted: '門市接單後', paid: '付款完成後', per_item: '按商品數量逐件列印',
+  filtered_list: '僅列印已啟用廚房列印的商品', full_list: '列印全部訂單商品', settlement: '結算收據',
   'Code preview placeholder help': '虛線框僅表示條碼的位置，不是可掃描的條碼。',
   'QR preview unavailable': '無法產生此內容的 QR 碼預覽。',
   'No enabled printers. Preview is still available.': '暫無啟用的印表機，仍可預覽範本。',
