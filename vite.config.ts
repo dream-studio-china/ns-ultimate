@@ -60,7 +60,15 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       vue(),
-      vueJsx({ include: [/\.[jt]sx?$/] })
+      {
+        ...vueJsx({
+          include: /\.[jt]sx?$/,
+          exclude: /node_modules/,
+          babelPlugins: [['@babel/plugin-syntax-typescript', { isTSX: true }]]
+        }),
+        // Compile JSX in .ts files before Vite's standard TypeScript transform.
+        enforce: 'pre'
+      }
     ],
     resolve: {
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.vue'],
