@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mergeEntities, mergeRoutes } from './merge-config.mjs'
+import { mergeEntities, mergeRoutes, moveRouteAfter } from './merge-config.mjs'
+
+test('positions printer management after content and before WeChat configuration', () => {
+  let routes = [
+    { name: 'ContentManage' },
+    { name: 'WechatConfiguration' },
+    { name: 'PrinterManage' }
+  ]
+  routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
+  routes = moveRouteAfter(routes, 'PrinterManage', 'ContentManage')
+
+  assert.deepEqual(routes.map(route => route.name), ['ContentManage', 'PrinterManage', 'WechatConfiguration'])
+})
 
 test('adds business routes while preserving core route objects', () => {
   const core = [{ path: '/system', name: 'System', children: [{ path: 'health', name: 'Health' }] }]

@@ -10,6 +10,7 @@ installMenuIcons()
 let routes = mergeRoutes(coreConfig.routes, businessRoutes)
 routes = moveRouteAfter(routes, 'CounterManagement', 'ProductManage')
 routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
+routes = moveRouteAfter(routes, 'PrinterManage', 'ContentManage')
 
 export default {
   routes,
