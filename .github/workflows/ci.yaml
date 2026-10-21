@@ -39,8 +39,8 @@ jobs:
       - name: Install integration backend dependencies
         run: composer install --working-dir=integration/backend --no-interaction --prefer-dist --no-progress --no-scripts
 
-      - name: Run project workflow and admin composition tests
-        run: node --test scripts/*.test.mjs integration/admin/*.test.mjs
+      - name: Run project workflow, assistant, and admin composition tests
+        run: node --test scripts/*.test.mjs agent/tests/*.test.mjs integration/admin/*.test.mjs
 
       - name: Run backend composition and business integration tests
         run: php core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml

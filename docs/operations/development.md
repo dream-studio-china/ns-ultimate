@@ -80,6 +80,10 @@ make preview
 
 `backend-debug` checks that Xdebug is installed, enables `debug,develop`, and connects for each request. Configure your IDE to listen on port 9003. Override `XDEBUG_CLIENT_HOST` and `XDEBUG_CLIENT_PORT` as needed. Browser debugging uses Vite's development source maps; build source maps should remain local unless publishing them is intentional.
 
+### Admin AI assistant prototype
+
+The independent prototype under `agent/` is loaded by the admin integration and is enabled by default. Set `VITE_ADMIN_AGENT_ENABLED=false` in the integration admin environment to disable it. It currently supports same-origin API-documentation Q&A through a configured OpenAI Chat Completions-compatible provider; it does not query business records or perform admin operations. Its provider key is memory-only and is cleared when the admin session changes. See the [prototype guide](../../agent/README.md) and [assistant design](../design/admin-ai-assistant.md).
+
 ### Admin build resource use
 
 Prefer building deployment images in CI or on a separate build host, then pulling the images on the application server. Docker multi-stage builds keep build dependencies out of the runtime image but do not isolate build-time CPU or memory from other services on the host.
