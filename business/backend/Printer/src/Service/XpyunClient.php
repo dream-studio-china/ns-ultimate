@@ -35,8 +35,8 @@ final class XpyunClient
             'timeout' => 10,
         ]);
         $data = $response->toArray(false);
-        if (!is_array($data) || !isset($data['code']) || (int) $data['code'] !== 0) {
-            $code = is_array($data) ? ($data['code'] ?? 'invalid_response') : 'invalid_response';
+        if (!isset($data['code']) || (int) $data['code'] !== 0) {
+            $code = $data['code'] ?? 'invalid_response';
             throw new XpyunApiException((string) $code);
         }
 

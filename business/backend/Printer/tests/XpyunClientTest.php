@@ -55,4 +55,16 @@ final class XpyunClientTest extends TestCase
             self::assertStringNotContainsString('private-key', $exception->getMessage());
         }
     }
+
+    public function testResponseWithoutProviderCodeIsRejected(): void
+    {
+        $http = new MockHttpClient(new MockResponse('{"data":"unexpected-response"}'));
+
+        try {
+            (new XpyunClient($http))->print('developer', 'key', 'receipt', 'XPY123', 'receipt');
+            self::fail('Expected invalid response rejection.');
+        } catch (XpyunApiException $exception) {
+            self::assertSame('invalid_response', $exception->providerCode);
+        }
+    }
 }

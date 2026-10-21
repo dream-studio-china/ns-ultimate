@@ -13,25 +13,38 @@ final class DelicloudPrintProtocol
     public const ACTION_DEVICE_TO_APP = 300;
     public const ACTION_APP_TO_DEVICE = 301;
 
-    /** Request that the device reports its current information. */
+    /**
+     * Request that the device reports its current information.
+     * @return array<string, mixed>
+     */
     public function queryDeviceInfo(string $messageId, string $applicationId, string $deviceId, ?int $time = null): array
     {
         return $this->message($messageId, $applicationId, $deviceId, self::ACTION_APP_TO_DEVICE, 'server_push_report_info', null, $time);
     }
 
-    /** Notify a device that a converted task is available for it to pull. */
+    /**
+     * Notify a device that a converted task is available for it to pull.
+     * @return array<string, mixed>
+     */
     public function notifyPrintTask(string $messageId, string $applicationId, string $deviceId, ?int $time = null): array
     {
         return $this->message($messageId, $applicationId, $deviceId, self::ACTION_APP_TO_DEVICE, 'server_push_task_add', ['task_type' => 'print'], $time);
     }
 
-    /** Ask the device to pull pending work using the required HTTPS V2 protocol. */
+    /**
+     * Ask the device to pull pending work using the required HTTPS V2 protocol.
+     * @return array<string, mixed>
+     */
     public function requestTaskExecutionV2(string $messageId, string $deviceId, string $applicationId, ?int $time = null): array
     {
         return $this->message($messageId, $deviceId, $applicationId, self::ACTION_DEVICE_TO_APP, 'printer_push_task_execute_v2', null, $time);
     }
 
-    /** Acknowledge a received device message in the same message context. */
+    /**
+     * Acknowledge a received device message in the same message context.
+     * @param array<string, mixed> $message
+     * @return array<string, mixed>
+     */
     public function acknowledge(array $message, string $applicationId): array
     {
         $messageId = $message['mid'] ?? null;
@@ -51,7 +64,10 @@ final class DelicloudPrintProtocol
         ];
     }
 
-    /** @return array{deviceId: string, payload: array<string, mixed>} */
+    /**
+     * @param array<string, mixed> $message
+     * @return array{deviceId: string, payload: array<string, mixed>}
+     */
     public function parseDeviceInfoReport(array $message): array
     {
         $this->assertCommand($message, 'printer_push_report_info', self::ACTION_DEVICE_TO_APP);
@@ -72,7 +88,10 @@ final class DelicloudPrintProtocol
         return ['deviceId' => $deviceId, 'payload' => $payload];
     }
 
-    /** @return array{deviceId: string, taskId: string, status: string, payload: array<string, mixed>} */
+    /**
+     * @param array<string, mixed> $message
+     * @return array{deviceId: string, taskId: string, status: string, payload: array<string, mixed>}
+     */
     public function parsePrintProgress(array $message): array
     {
         $this->assertCommand($message, 'printer_push_print_progress', self::ACTION_DEVICE_TO_APP);
@@ -93,7 +112,10 @@ final class DelicloudPrintProtocol
         return ['deviceId' => $deviceId, 'taskId' => $payload['task_id'], 'status' => $payload['print_status'], 'payload' => $payload];
     }
 
-    /** @param array<string, mixed>|null $payload @return array<string, mixed> */
+    /**
+     * @param array<string, mixed>|null $payload
+     * @return array<string, mixed>
+     */
     private function message(string $messageId, string $from, string $to, int $action, string $command, ?array $payload, ?int $time): array
     {
         foreach (['mid' => $messageId, 'from' => $from, 'to' => $to] as $field => $value) {
@@ -105,6 +127,7 @@ final class DelicloudPrintProtocol
         return ['mid' => $messageId, 'from' => $from, 'to' => $to, 'time' => $time ?? time(), 'action' => $action, 'data' => $data];
     }
 
+    /** @param array<string, mixed> $message */
     private function assertCommand(array $message, string $command, int $action): void
     {
         if (($message['action'] ?? null) !== $action || ($message['data']['cmd'] ?? null) !== $command) {

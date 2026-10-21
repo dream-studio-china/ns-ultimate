@@ -35,7 +35,10 @@ final class PrinterTemplateController extends RestController
         private readonly PrintDocumentRenderer $renderer,
     ) {}
 
-    /** @param array<string, mixed> $content @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     protected function processCreateContent(array $content, object $entity): array
     {
         if (!$entity instanceof PrinterTemplate || !is_array($content['definition'] ?? null) || !is_array($content['sampleData'] ?? null)) {
@@ -53,7 +56,10 @@ final class PrinterTemplateController extends RestController
         return $content;
     }
 
-    /** @param array<string, mixed> $content @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         if (!$entity instanceof PrinterTemplate) { throw new \LogicException('Unexpected printer template entity.'); }
