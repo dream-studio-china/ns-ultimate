@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import test from 'node:test'
 
+const printerSampleData = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer-sample-data.json', import.meta.url), 'utf8'))
+
 function mount(name, request, confirm = () => true, record = {}) {
   const source = readFileSync(new URL(`../../business/admin/config/components/${name}.js`, import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.component =')
@@ -10,7 +12,7 @@ function mount(name, request, confirm = () => true, record = {}) {
     defineComponent: value => value, ref: value => ({ value }), resolveComponent: name => name,
     h: (type, props, children) => Array.isArray(props) || typeof props === 'string'
       ? ({ type, props: {}, children: props }) : ({ type, props: props || {}, children }),
-    t: key => key, request, PrinterPaper: 'PrinterPaper', window: { confirm }, globalThis: { crypto: { randomUUID: () => 'test-key' } }
+    t: key => key, request, printerSampleData, PrinterPaper: 'PrinterPaper', window: { confirm }, globalThis: { crypto: { randomUUID: () => 'test-key' } }
   }
   runInNewContext(source, context)
   const render = context.globalThis.component.setup({ refresh() {}, record })
@@ -45,6 +47,7 @@ test('print dialog unwraps preview and submission responses and matches template
   await ui.button('Create print job').props.onClick()
   assert.equal(ui.nodes().find(node => node.type === 'ElDialog').props.alignCenter, true)
   await ui.button('Update preview').props.onClick()
+  assert.deepEqual(JSON.parse(JSON.stringify(posts[0][1].data)), printerSampleData)
   assert.ok(ui.nodes().some(node => node.type === 'PrinterPaper' && node.props.document.content === 'Rendered receipt'))
   await ui.button('Submit print job').props.onClick()
   assert.equal(posts[1][1].templateUuid, 't')
@@ -108,6 +111,25 @@ test('each template previews its definition with editable sample data', async() 
   await ui.button('Paper preview').props.onClick()
   assert.equal(posts[0][0], '/api/v1/manage/printer/preview')
   assert.equal(posts[0][1].template.kind, 'label')
-  assert.equal(posts[0][1].data.order.number, 'DEMO-001')
+  assert.deepEqual(JSON.parse(JSON.stringify(posts[0][1].data)), printerSampleData)
+  assert.equal(posts[0][1].data.store.name, 'Demo tea shop')
+  assert.equal(posts[0][1].data.order.items[0].product, 'Jasmine tea')
+  assert.equal(posts[0][1].data.order.amountDue, '\uffe543.00')
+  assert.equal(new URL(posts[0][1].data.order.paymentUrl).hostname, 'example.invalid')
   assert.ok(ui.nodes().some(node => node.type === 'PrinterPaper'))
+})
+
+test('editing template demo data sends the edited values rather than replacing them with defaults', async() => {
+  const posts = []
+  const ui = mount('PrinterPaperAction', {
+    post: async(url, body) => { posts.push(body); return { data: { document: { kind: 'receipt', pages: ['Receipt'] } } } }
+  }, () => true, { definition: { kind: 'receipt', nodes: [] } })
+  await ui.button('Paper preview').props.onClick()
+  const input = ui.nodes().find(node => node.type === 'ElInput')
+  const edited = JSON.parse(input.props.modelValue)
+  edited.store.name = 'Edited store'
+  input.props['onUpdate:modelValue'](JSON.stringify(edited))
+  await ui.button('Update preview').props.onClick()
+  assert.equal(posts[1].data.store.name, 'Edited store')
+  assert.equal(printerSampleData.store.name, 'Demo tea shop')
 })

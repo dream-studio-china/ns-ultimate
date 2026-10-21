@@ -68,6 +68,83 @@ preview and submit handlers unwrap the shared request helper's `data` envelope.
 Disabled devices/accounts cannot be queried for provider status, and toolbar
 refresh skips disabled demo devices. Live submission requires confirmation.
 
+## Receipt and label layout
+
+Layout nodes are compiled to the allowlisted commands documented in the
+[Xpyun receipt and label API](https://www.xpyun.net/open/index.html). Existing
+templates keep their previous output, except that `qr` on a receipt now emits
+the documented `QRCODE` command instead of the label-only `QRC` command, and
+receipt loops now append their item lines within one ticket instead of
+duplicating a surrounding header and footer for every item. Label loops retain
+their individual-page behavior. Existing saved job content is never rewritten.
+
+- `style` (receipt only): `align` is `left`, `center`, or `right`; `width` and
+  `height` are independent integer multipliers from 1 to 2; `bold` is boolean.
+  `children` contain regular nodes. A terminating line break is inserted inside
+  the paired alignment/size commands, as required by the provider. Size and
+  emphasis are distinct: `B` enlarges text, while `BOLD` makes it bold.
+- `receiptCommand` (receipt only): `value` is one allowlisted formatting tag
+  (`L/C/R/N/HB/WB/B/BOLD/CB`, opening or closing, or `BR`). This preserves
+  legacy stateful/unpaired commands without adding closing tags or line breaks.
+  Compose literal LF characters using `text`, and dynamic content using escaped
+  `field` nodes. This is not arbitrary printer markup or executable code.
+- `columns` (receipt only): `columns` contains 1-8 cells, each with `width`
+  (display cells), `align`, and either `path` or `value`. Text is truncated and
+  padded by Unicode display width before escaping. CJK characters occupy two
+  cells. Total widths are capped at 96; choose widths that fit the physical
+  printer (normally 32 cells for 58 mm or 48 for 80 mm before width scaling).
+  Format amounts upstream; templates do not perform monetary calculations.
+- `labelText`: accepts either `path` or literal `value`, font 1-9, `w`/`h`
+  multipliers 1-10, and `r` rotation 0/90/180/270. Optional `align` computes the
+  x coordinate for unrotated font 9: ASCII cells are 12 dots, CJK cells 24 dots,
+  multiplied by `w`. Center/right alignment uses the configured label width
+  at 8 dots/mm and clamps overlong text to x=0, matching the legacy behavior.
+  Long text can still clip; physical fitting is not guaranteed.
+  Set `widthMode: "legacy"` with `align` to reproduce `OrderService::labelCenterX`:
+  trim only for measurement and count every multibyte code point as two
+  half-cells, including accented letters. The emitted text remains unchanged.
+  The default `display` mode retains Unicode display-width measurement.
+- `qr`: accepts `path`, `size`, `errorCorrection` (`L/M/Q/H`). Receipts use
+  `size` 0-16 (default 6) and `align` (default `center`); whitespace in receipt
+  QR payloads is rejected as required by Xpyun. Labels use `size` 1-10 (default
+  2), `x`/`y` and UTF-8 `QRC`. Both kinds cap content at 256 characters. Payment
+  URLs must come from trusted application data, never from hardcoded live links.
+
+The paper preview interprets these commands without injecting HTML and renders
+QR matrices locally. Fonts, line wrapping and QR sizing are approximations;
+verify the target model, paper width and actual output before production use.
+Preview receipt wrapping uses 32 display cells for widths up to 58 mm and 48
+for wider receipts, with fixed 12-dot ASCII/24-dot CJK character pitch rather
+than scaling fonts with paper width. Receipt glyph height is estimated at 24
+dots with a 6-dot interline gap; line spacing and feed margins still require
+model-specific physical calibration. Label fonts 1-9 use their documented dot
+cell dimensions. Browser glyph shapes are not printer bitmap fonts. Receipt QR
+size 0 (provider auto-sizing) is estimated using size 6 in the preview.
+Mixed receipt sizes share a bottom-aligned row whose height follows the tallest
+glyph box, with the interline gap added once. Enlarged cells cannot shrink to
+fit: excess text wraps at the printable column boundary. Preview-only support
+for `HB2`/`WB2`/`B2` uses three native cells on the enlarged axes; these tags
+do not imply bold. This does not change the legacy templates or their commands.
+Category filtering, promotion selection, amount calculation, payment status and
+per-unit receipt dispatch remain caller responsibilities, not template rules.
+
+### Legacy template fidelity
+
+The local `Legacy -` templates follow `MainBundle\Service\OrderService`'s
+`sendToPrinter`, `renderScene1Ticket`, `renderScene1LabelTicket`,
+`renderSceneListTicket`, and `renderSettleTicket` output. Preserve their command
+order, literal line breaks, punctuation and size tags; do not substitute
+`BOLD` for `B`, add automatic `BR` nodes, or rewrite unpaired commands as
+`style` blocks. Labels opt into `labelEnvelope: "legacy"` to preserve the
+original `PAGE` envelope, indentation and absence of `SIZE`; the three `TEXT`
+commands use the legacy coordinates and centering algorithm. Other labels keep
+the default `sized` envelope. Omitting `SIZE` intentionally follows the old
+code, not the current provider recommendation; verify label feeding on hardware.
+Fields must carry legacy-formatted data (including currency, short uppercase
+order numbers, and the correct names rather than annotated scene labels).
+Payment URLs remain supplied data rather than a hardcoded production host.
+These local template records do not migrate or rewrite existing saved jobs.
+
 ## DeliCloud protocol support
 
 `DelicloudPrintProtocol` implements message construction and validation for the

@@ -1,6 +1,7 @@
 export default {
   'Paper preview': '用紙プレビュー',
-  'Code preview placeholder help': '破線の枠はバーコードやQRコードの配置のみを示し、読み取りはできません。',
+  'Code preview placeholder help': '破線の枠はバーコードの配置のみを示し、読み取りはできません。',
+  'QR preview unavailable': 'この内容のQRコードをプレビューできません。',
   'No enabled printers. Preview is still available.': '有効なプリンターがありません。プレビューは利用できます。',
   'Create an enabled printer account first.': '先に有効なプリンターアカウントを作成してください。',
   'Printer name, serial number and account are required.': '端末名、シリアル番号、アカウントは必須です。',

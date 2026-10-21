@@ -2,8 +2,9 @@ import { defineComponent, h, ref, resolveComponent } from 'vue'
 import { t } from '@/i18n'
 import request from '@/utils/request'
 import PrinterPaper from './PrinterPaper.js'
+import printerSampleData from './printer-sample-data.json'
 
-const sampleData = JSON.stringify({ demoTitle: 'OFFLINE DEMO', order: { number: 'DEMO-001', items: [{ name: 'Demo tea', quantity: 2 }, { name: 'Demo cake', quantity: 1 }] } }, null, 2)
+const sampleData = JSON.stringify(printerSampleData, null, 2)
 
 export default defineComponent({
   name: 'PrinterJobAction',

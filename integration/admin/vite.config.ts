@@ -1,11 +1,13 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import coreViteConfig from '../../core/crud-admin/vite.config'
 import { watchBusinessAdmin } from './watch-business.mjs'
 
 const integrationDir = path.dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = path.resolve(integrationDir, '../..')
 const coreRoot = path.join(repositoryRoot, 'core/crud-admin')
+const coreRequire = createRequire(path.join(coreRoot, 'package.json'))
 const coreSource = path.join(coreRoot, 'src')
 const injectedConfig = path.join(integrationDir, 'config.ts')
 const businessAdmin = path.join(repositoryRoot, 'business/admin')
@@ -38,6 +40,7 @@ export default (configEnv: { mode: string; command: string }) => {
     resolve: {
       ...coreConfig.resolve,
       alias: [
+        { find: /^qrcode$/, replacement: coreRequire.resolve('qrcode/lib/browser.js') },
         { find: /^@\/i18n$/, replacement: path.join(integrationDir, 'i18n.js') },
         { find: /^@\/config$/, replacement: injectedConfig },
         ...aliases,

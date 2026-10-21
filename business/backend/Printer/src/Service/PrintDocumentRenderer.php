@@ -18,7 +18,7 @@ final class PrintDocumentRenderer
         }
         $width = $this->dimension($template['widthMm'] ?? ($kind === 'receipt' ? 80 : 40), 'widthMm');
         $height = $this->dimension($template['heightMm'] ?? 30, 'heightMm');
-        $pages = $this->nodes($template['nodes'] ?? [], $data, 0);
+        $pages = $this->nodes($template['nodes'] ?? [], $data, 0, ['kind' => $kind, 'width' => $width]);
         if ($kind === 'receipt') {
             $pages = [implode('', $pages)];
         }
@@ -39,7 +39,13 @@ final class PrintDocumentRenderer
                 }
             }
         }
-        $content = $kind === 'label' ? implode('', array_map(static fn (string $page): string => sprintf('<PAGE><SIZE>%s,%s</SIZE>%s</PAGE>', $width, $height, $page), $pages)) : implode('', $pages);
+        $envelope = $template['labelEnvelope'] ?? 'sized';
+        if (!in_array($envelope, ['sized', 'legacy'], true) || ($envelope === 'legacy' && $kind !== 'label')) {
+            throw new \InvalidArgumentException('Label envelope must be sized or legacy and only applies to labels.');
+        }
+        $content = $kind === 'label' ? implode('', array_map(static fn (string $page): string => $envelope === 'legacy'
+            ? '<PAGE>'.$page.'</PAGE>'
+            : sprintf('<PAGE><SIZE>%s,%s</SIZE>%s</PAGE>', $width, $height, $page), $pages)) : implode('', $pages);
         if (strlen($content) > 100_000) {
             throw new \InvalidArgumentException('Expanded print document is too large.');
         }
@@ -48,8 +54,9 @@ final class PrintDocumentRenderer
 
     /** @param mixed $nodes
      * @param array<string, mixed> $scope
+     * @param array{kind: string, width: int} $layout
      * @return list<string> */
-    private function nodes(mixed $nodes, array $scope, int $depth): array
+    private function nodes(mixed $nodes, array $scope, int $depth, array $layout): array
     {
         if (!is_array($nodes) || $depth > 5) {
             throw new \InvalidArgumentException('Invalid template structure or excessive loop depth.');
@@ -67,10 +74,10 @@ final class PrintDocumentRenderer
                 $expanded = [];
                 foreach (array_values($items) as $index => $item) {
                     if (!is_array($item)) { throw new \InvalidArgumentException('Loop items must be objects.'); }
-                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['item' => $item, 'index' => $index]), $depth + 1)];
+                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['item' => $item, 'index' => $index]), $depth + 1, $layout)];
                     if (count($expanded) > 200) { throw new \InvalidArgumentException('Template expands to too many pages.'); }
                 }
-                $out = $this->combine($out, $expanded);
+                $out = $this->combine($out, $layout['kind'] === 'receipt' ? [implode('', $expanded)] : $expanded);
                 continue;
             }
             if ($node['type'] === 'repeat') {
@@ -80,10 +87,10 @@ final class PrintDocumentRenderer
                 }
                 $expanded = [];
                 for ($index = 0; $index < $count; ++$index) {
-                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['repeatIndex' => $index]), $depth + 1)];
+                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['repeatIndex' => $index]), $depth + 1, $layout)];
                     if (count($expanded) > 200) { throw new \InvalidArgumentException('Template expands to too many pages.'); }
                 }
-                $out = $this->combine($out, $expanded);
+                $out = $this->combine($out, $layout['kind'] === 'receipt' ? [implode('', $expanded)] : $expanded);
                 continue;
             }
             if ($node['type'] === 'if') {
@@ -92,7 +99,7 @@ final class PrintDocumentRenderer
                     ? $condition === $node['equals']
                     : !in_array($condition, ['', null, false, 0], true);
                 if ($matches) {
-                    $out = $this->combine($out, $this->nodes($node['children'] ?? [], $scope, $depth + 1));
+                    $out = $this->combine($out, $this->nodes($node['children'] ?? [], $scope, $depth + 1, $layout));
                 }
                 continue;
             }
@@ -101,10 +108,13 @@ final class PrintDocumentRenderer
                 'field' => $this->escape($this->stringValue($scope, $node['path'] ?? '')),
                 'line' => '<BR>',
                 'separator' => '--------------------------------<BR>',
-                'bold' => '<BOLD>'.$this->plainChildren($node['children'] ?? [], $scope, $depth + 1).'</BOLD>',
-                'labelText' => $this->labelText($node, $scope),
+                'bold' => '<BOLD>'.$this->plainChildren($node['children'] ?? [], $scope, $depth + 1, $layout).'</BOLD>',
+                'style' => $this->receiptStyle($node, $scope, $depth, $layout),
+                'receiptCommand' => $this->receiptCommand($node, $layout),
+                'columns' => $this->columns($node, $scope, $layout),
+                'labelText' => $this->labelText($node, $scope, $layout),
                 'barcode' => $this->barcode($node, $scope),
-                'qr' => $this->qr($node, $scope),
+                'qr' => $this->qr($node, $scope, $layout),
                 'page' => "\n",
                 default => throw new \InvalidArgumentException('Unsupported print template node type.'),
             };
@@ -114,7 +124,11 @@ final class PrintDocumentRenderer
         return $out;
     }
 
-    /** @param list<string> $left @param list<string> $right @return list<string> */
+    /**
+     * @param list<string> $left
+     * @param list<string> $right
+     * @return list<string>
+     */
     private function combine(array $left, array $right): array
     {
         if ($right === []) { return $left; }
@@ -124,10 +138,14 @@ final class PrintDocumentRenderer
         return $result;
     }
 
-    /** @param mixed $nodes @param array<string, mixed> $scope */
-    private function plainChildren(mixed $nodes, array $scope, int $depth): string
+    /**
+     * @param mixed $nodes
+     * @param array<string, mixed> $scope
+     * @param array{kind: string, width: int} $layout
+     */
+    private function plainChildren(mixed $nodes, array $scope, int $depth, array $layout): string
     {
-        return implode('', $this->nodes($nodes, $scope, $depth));
+        return implode('', $this->nodes($nodes, $scope, $depth, $layout));
     }
 
     /** @param array<string, mixed> $scope */
@@ -163,17 +181,50 @@ final class PrintDocumentRenderer
         return str_replace(['<', '>'], ['&lt', '&gt'], $value);
     }
 
-    /** @param array<string, mixed> $node @param array<string, mixed> $scope */
-    private function labelText(array $node, array $scope): string
+    /**
+     * @param array<string, mixed> $node
+     * @param array<string, mixed> $scope
+     * @param array{kind: string, width: int} $layout
+     */
+    private function labelText(array $node, array $scope, array $layout): string
     {
         $x = $this->coordinate($node['x'] ?? 0, 'x');
         $y = $this->coordinate($node['y'] ?? 0, 'y');
         $font = $this->coordinate($node['font'] ?? 9, 'font', 1, 9);
-        $value = $this->escape($this->stringValue($scope, $node['path'] ?? ''));
-        return sprintf('<TEXT x="%d" y="%d" font="%d">%s</TEXT>', $x, $y, $font, $value);
+        $value = array_key_exists('value', $node) ? $this->literal($node['value']) : $this->stringValue($scope, $node['path'] ?? '');
+        $w = $this->coordinate($node['w'] ?? 1, 'w', 1, 10);
+        $h = $this->coordinate($node['h'] ?? 1, 'h', 1, 10);
+        $rotation = $node['r'] ?? 0;
+        if (!in_array($rotation, [0, 90, 180, 270], true)) { throw new \InvalidArgumentException('Label rotation must be 0, 90, 180 or 270.'); }
+        if (isset($node['align'])) {
+            if ($layout['kind'] !== 'label' || $font !== 9 || $rotation !== 0 || !in_array($node['align'], ['left', 'center', 'right'], true)) {
+                throw new \InvalidArgumentException('Automatic label alignment requires unrotated font 9 text.');
+            }
+            $widthMode = $node['widthMode'] ?? 'display';
+            if (!in_array($widthMode, ['display', 'legacy'], true)) {
+                throw new \InvalidArgumentException('Label width mode must be display or legacy.');
+            }
+            // The legacy algorithm counts every non-ASCII code point as two
+            // half-cells, including accented letters and combining marks.
+            $cells = $widthMode === 'legacy' ? $this->legacyLabelCells($value) : $this->displayWidth($value);
+            $textWidth = $cells * 12 * $w;
+            $available = $layout['width'] * 8;
+            $x = match ($node['align']) {
+                'center' => max(0, intdiv($available - $textWidth, 2)),
+                'right' => max(0, $available - $textWidth),
+                default => $x,
+            };
+        }
+        // Preserve the exact command shape of existing templates unless scaling/rotation is requested.
+        $attributes = array_intersect(['w', 'h', 'r', 'align'], array_keys($node)) !== []
+            ? sprintf(' w="%d" h="%d" r="%d"', $w, $h, $rotation) : '';
+        return sprintf('<TEXT x="%d" y="%d" font="%d"%s>%s</TEXT>', $x, $y, $font, $attributes, $this->escape($value));
     }
 
-    /** @param array<string, mixed> $node @param array<string, mixed> $scope */
+    /**
+     * @param array<string, mixed> $node
+     * @param array<string, mixed> $scope
+     */
     private function barcode(array $node, array $scope): string
     {
         $type = $node['format'] ?? 'BC128';
@@ -186,16 +237,118 @@ final class PrintDocumentRenderer
         return sprintf('<%s x="%d" y="%d" h="%d">%s</%s>', $type, $x, $y, $height, $value, $type);
     }
 
-    /** @param array<string, mixed> $node @param array<string, mixed> $scope */
-    private function qr(array $node, array $scope): string
+    /**
+     * @param array<string, mixed> $node
+     * @param array<string, mixed> $scope
+     * @param array{kind: string, width: int} $layout
+     */
+    private function qr(array $node, array $scope, array $layout): string
     {
         $x = $this->coordinate($node['x'] ?? 0, 'x');
         $y = $this->coordinate($node['y'] ?? 0, 'y');
         $value = $this->stringValue($scope, $node['path'] ?? '');
         $characters = preg_match_all('/./us', $value);
         if ($value === '' || $characters === false || $characters > 256) { throw new \InvalidArgumentException('QR content must contain 1 to 256 characters.'); }
-        $value = $this->escape($value);
-        return sprintf('<QRC x="%d" y="%d" s="2" e="L" c="1">%s</QRC>', $x, $y, $value);
+        $errorCorrection = $node['errorCorrection'] ?? 'L';
+        if (!in_array($errorCorrection, ['L', 'M', 'Q', 'H'], true)) { throw new \InvalidArgumentException('Invalid QR error correction level.'); }
+        if ($layout['kind'] === 'receipt') {
+            $size = $this->coordinate($node['size'] ?? 6, 'size', 0, 16);
+            $align = $node['align'] ?? 'center';
+            if (!in_array($align, ['left', 'center', 'right'], true) || preg_match('/\s/u', $value)) {
+                throw new \InvalidArgumentException('Receipt QR requires a valid alignment and content without whitespace.');
+            }
+            return sprintf('<QRCODE s=%d e=%s l=%s>%s</QRCODE>', $size, $errorCorrection, $align, $this->escape($value));
+        }
+        $size = $this->coordinate($node['size'] ?? 2, 'size', 1, 10);
+        return sprintf('<QRC x="%d" y="%d" s="%d" e="%s" c="1">%s</QRC>', $x, $y, $size, $errorCorrection, $this->escape($value));
+    }
+
+    /**
+     * @param array<string, mixed> $node
+     * @param array<string, mixed> $scope
+     * @param array{kind: string, width: int} $layout
+     */
+    private function receiptStyle(array $node, array $scope, int $depth, array $layout): string
+    {
+        if ($layout['kind'] !== 'receipt') { throw new \InvalidArgumentException('Style blocks are only supported on receipts.'); }
+        $align = $node['align'] ?? 'left';
+        if (!in_array($align, ['left', 'center', 'right'], true)) { throw new \InvalidArgumentException('Invalid receipt alignment.'); }
+        $width = $this->coordinate($node['width'] ?? 1, 'width', 1, 2);
+        $height = $this->coordinate($node['height'] ?? 1, 'height', 1, 2);
+        if (isset($node['bold']) && !is_bool($node['bold'])) { throw new \InvalidArgumentException('Receipt bold must be boolean.'); }
+        $tag = ['left' => 'L', 'center' => 'C', 'right' => 'R'][$align];
+        $size = $width === 2 ? ($height === 2 ? 'B' : 'WB') : ($height === 2 ? 'HB' : 'N');
+        $content = $this->plainChildren($node['children'] ?? [], $scope, $depth + 1, $layout);
+        // Vendor alignment is line-based: the terminating break must be inside the alignment tag.
+        if (!str_ends_with($content, '<BR>')) { $content .= '<BR>'; }
+        if ($node['bold'] ?? false) { $content = '<BOLD>'.$content.'</BOLD>'; }
+        return '<'.$tag.'><'.$size.'>'.$content.'</'.$size.'></'.$tag.'>';
+    }
+
+    /**
+     * @param array<string, mixed> $node
+     * @param array<string, mixed> $scope
+     * @param array{kind: string, width: int} $layout
+     */
+    private function columns(array $node, array $scope, array $layout): string
+    {
+        $columns = $node['columns'] ?? null;
+        if ($layout['kind'] !== 'receipt' || !is_array($columns) || $columns === [] || count($columns) > 8) {
+            throw new \InvalidArgumentException('Receipt columns require between 1 and 8 column definitions.');
+        }
+        $out = '';
+        $totalWidth = 0;
+        foreach ($columns as $column) {
+            if (!is_array($column)) { throw new \InvalidArgumentException('Invalid receipt column.'); }
+            $width = $this->coordinate($column['width'] ?? null, 'column width', 1, 96);
+            $totalWidth += $width;
+            if ($totalWidth > 96) { throw new \InvalidArgumentException('Receipt column widths may total at most 96 display cells.'); }
+            $align = $column['align'] ?? 'left';
+            if (!in_array($align, ['left', 'right', 'center'], true)) { throw new \InvalidArgumentException('Invalid column alignment.'); }
+            $value = array_key_exists('value', $column) ? $this->literal($column['value']) : $this->stringValue($scope, $column['path'] ?? '');
+            // Fixed cells must not contain line breaks or printer controls.
+            if (preg_match('/[\x00-\x1f\x7f]/', $value)) { throw new \InvalidArgumentException('Receipt columns cannot contain control characters.'); }
+            $value = $this->truncateDisplay($value, $width);
+            $padding = $width - $this->displayWidth($value);
+            $left = $align === 'right' ? $padding : ($align === 'center' ? intdiv($padding, 2) : 0);
+            $out .= str_repeat(' ', $left).$value.str_repeat(' ', $padding - $left);
+        }
+        return $this->escape($out);
+    }
+
+    private function displayWidth(string $value): int
+    {
+        return mb_strwidth($value, 'UTF-8');
+    }
+
+    private function legacyLabelCells(string $value): int
+    {
+        $characters = preg_split('//u', trim($value), -1, PREG_SPLIT_NO_EMPTY);
+        if ($characters === false) { throw new \InvalidArgumentException('Label text must be valid UTF-8.'); }
+        $cells = 0;
+        foreach ($characters as $character) { $cells += strlen($character) > 1 ? 2 : 1; }
+        return $cells;
+    }
+
+    /**
+     * @param array<string, mixed> $node
+     * @param array{kind: string, width: int} $layout
+     */
+    private function receiptCommand(array $node, array $layout): string
+    {
+        $command = $node['value'] ?? null;
+        if ($layout['kind'] !== 'receipt' || !is_string($command)
+            || preg_match('/^<(?:BR|\/?(?:L|C|R|N|HB|WB|B|BOLD|CB))>$/D', $command) !== 1) {
+            throw new \InvalidArgumentException('Receipt commands must be a single allowlisted formatting tag.');
+        }
+        // Unlike style blocks, legacy commands are stateful and must not gain
+        // implicit closing tags or line breaks. Data still passes through field escaping.
+        return $command;
+    }
+
+    private function truncateDisplay(string $value, int $width): string
+    {
+        return mb_strimwidth($value, 0, $width, '', 'UTF-8');
     }
 
     private function coordinate(mixed $value, string $name, int $min = 0, int $max = 2048): int

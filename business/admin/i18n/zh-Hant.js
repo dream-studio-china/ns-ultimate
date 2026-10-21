@@ -1,6 +1,7 @@
 export default {
   'Paper preview': '紙張預覽',
-  'Code preview placeholder help': '虛線框僅表示條碼或 QR 碼的位置，不是可掃描的碼。',
+  'Code preview placeholder help': '虛線框僅表示條碼的位置，不是可掃描的條碼。',
+  'QR preview unavailable': '無法產生此內容的 QR 碼預覽。',
   'No enabled printers. Preview is still available.': '暫無啟用的印表機，仍可預覽範本。',
   'Create an enabled printer account first.': '請先建立並啟用列印帳號。',
   'Printer name, serial number and account are required.': '請填寫裝置名稱、序號並選擇帳號。',

@@ -1,6 +1,7 @@
 export default {
   'Paper preview': '纸张预览',
-  'Code preview placeholder help': '虚线框仅表示条码或二维码的位置，不是可扫描的码。',
+  'Code preview placeholder help': '虚线框仅表示条码的位置，不是可扫描的条码。',
+  'QR preview unavailable': '无法生成此内容的二维码预览。',
   'No enabled printers. Preview is still available.': '暂无启用的打印机，仍可预览模板。',
   'Create an enabled printer account first.': '请先创建并启用打印账号。',
   'Printer name, serial number and account are required.': '请填写设备名称、序列号并选择账号。',

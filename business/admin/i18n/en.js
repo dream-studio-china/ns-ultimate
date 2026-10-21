@@ -1,6 +1,7 @@
 export default {
   'Paper preview': 'Paper preview',
-  'Code preview placeholder help': 'Dashed boxes indicate barcode/QR placement only, not scannable codes.',
+  'Code preview placeholder help': 'Dashed boxes indicate barcode placement only, not scannable barcodes.',
+  'QR preview unavailable': 'QR preview is unavailable for this content.',
   'No enabled printers. Preview is still available.': 'No enabled printers. Preview is still available.',
   'Create an enabled printer account first.': 'Create an enabled printer account first.',
   'Printer name, serial number and account are required.': 'Printer name, serial number and account are required.',
