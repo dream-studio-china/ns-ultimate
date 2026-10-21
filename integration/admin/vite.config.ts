@@ -45,6 +45,7 @@ export default (configEnv: { mode: string; command: string }) => {
     resolve: {
       ...coreConfig.resolve,
       alias: [
+        { find: /^i$/, replacement: coreRequire.resolve('i') },
         { find: /^qrcode$/, replacement: coreRequire.resolve('qrcode/lib/browser.js') },
         { find: /^@\/i18n$/, replacement: path.join(integrationDir, 'i18n.js') },
         { find: /^@\/config$/, replacement: injectedConfig },

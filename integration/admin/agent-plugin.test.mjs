@@ -9,6 +9,7 @@ test('injects the optional independent agent loader without editing the admin en
   const output = plugin.transformIndexHtml.handler(html)
   assert.match(output, /virtual:ns-ultimate-agent-config/)
   assert.match(output, /agent-session\.js/)
+  assert.match(output, /agent-host\.js/)
   assert.match(output, /agent\/src\/entry\.js/)
   assert.match(output, /<div id="app"><\/div>/)
 })

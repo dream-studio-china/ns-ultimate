@@ -82,7 +82,7 @@ make preview
 
 ### Admin AI assistant prototype
 
-The independent prototype under `agent/` is loaded by the admin integration and is enabled by default. Set `VITE_ADMIN_AGENT_ENABLED=false` in the integration admin environment to disable it. It currently supports same-origin API-documentation Q&A through a configured OpenAI Chat Completions-compatible provider; it does not query business records or perform admin operations. Its provider key is memory-only and is cleared when the admin session changes. See the [prototype guide](../../agent/README.md) and [assistant design](../design/admin-ai-assistant.md).
+The independent prototype under `agent/` is loaded by the admin integration and is enabled by default. Set `VITE_ADMIN_AGENT_ENABLED=false` in the integration admin environment to disable it. It supports same-origin API-documentation Q&A and config-backed, bounded read-only queries through a configured OpenAI Chat Completions-compatible provider. Each record query requires explicit confirmation before up to 20 projected rows are sent to that provider. It does not perform admin operations. Provider settings and its optional API key persist in browser local storage; leave the key blank for providers that do not require one. HTTPS is required except for localhost and private LAN provider addresses; LAN HTTP is unencrypted and should only be used on a trusted network. See the [prototype guide](../../agent/README.md) and [assistant design](../design/admin-ai-assistant.md).
 
 ### Admin build resource use
 

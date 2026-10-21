@@ -27,7 +27,8 @@ export function adminAgentPlugin(entryFile) {
         }
 
         const sessionAdapter = path.join(integrationDir, 'agent-session.js')
-        const source = `import { enabled } from 'virtual:ns-ultimate-agent-config';\nif (enabled) import(${JSON.stringify(sessionAdapter)}).then(({ monitorAdminSession }) => monitorAdminSession(async () => { const { mountAdminAgent } = await import(${JSON.stringify(resolvedEntry)}); return mountAdminAgent(); }, () => {})).catch(error => console.warn('[admin agent] Failed to initialize.', error));`
+        const hostAdapter = path.join(integrationDir, 'agent-host.js')
+        const source = `import { enabled } from 'virtual:ns-ultimate-agent-config';\nif (enabled) import(${JSON.stringify(sessionAdapter)}).then(({ monitorAdminSession }) => monitorAdminSession(async () => { const [{ mountAdminAgent }, { createAdminAgentHost }] = await Promise.all([import(${JSON.stringify(resolvedEntry)}), import(${JSON.stringify(hostAdapter)})]); return mountAdminAgent(createAdminAgentHost()); }, () => {})).catch(error => console.warn('[admin agent] Failed to initialize.', error));`
         return html.replace('</body>', `<script type="module">${source}</script>\n</body>`)
       }
     },

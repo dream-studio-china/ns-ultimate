@@ -41,10 +41,15 @@ test('loads same-origin API documentation and rejects cross-origin URLs', async(
   }
 })
 
-test('provider endpoint is not allowed to use insecure non-local HTTP', async() => {
+test('provider endpoint allows HTTP only for localhost and private LAN addresses', async() => {
   const { normalizeChatEndpoint } = await import('../src/provider.js')
   assert.throws(() => normalizeChatEndpoint('http://api.example.test/v1'), /HTTPS/)
   assert.equal(normalizeChatEndpoint('http://localhost:1234/v1'), 'http://localhost:1234/v1/chat/completions')
+  assert.equal(normalizeChatEndpoint('http://100.78.52.73:11434/'), 'http://100.78.52.73:11434/v1/chat/completions')
+  assert.equal(normalizeChatEndpoint('http://192.168.1.20:11434/v1'), 'http://192.168.1.20:11434/v1/chat/completions')
+  assert.equal(normalizeChatEndpoint('http://[::1]:11434/v1'), 'http://[::1]:11434/v1/chat/completions')
+  assert.equal(normalizeChatEndpoint('http://[fd12::20]:11434/v1'), 'http://[fd12::20]:11434/v1/chat/completions')
+  assert.equal(normalizeChatEndpoint('http://ollama.lan:11434/v1'), 'http://ollama.lan:11434/v1/chat/completions')
   assert.equal(normalizeChatEndpoint('https://provider.example/v1/chat/completions'), 'https://provider.example/v1/chat/completions')
   assert.throws(() => normalizeChatEndpoint('https://provider.example/v1?key=secret'), /query parameters/)
 })
