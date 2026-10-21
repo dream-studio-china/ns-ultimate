@@ -143,7 +143,7 @@ describe('DetailAdmin.vue', () => {
       expect(wrapper.vm.getLabel({ property: 'other' })).toBe('other')
     })
 
-    it('getListPluginType resolves relations, scalar and json types', () => {
+    it('getListPluginType resolves relations, scalar, json and code types', () => {
       const { wrapper } = mountDetail()
       expect(
         wrapper.vm.getListPluginType({ property: 'author', relation: { target: 'User' }}, {}, {})
@@ -154,6 +154,7 @@ describe('DetailAdmin.vue', () => {
       expect(wrapper.vm.getListPluginType({ property: 'a', type: 'boolean' }, {}, null)).toBe('boolean')
       expect(wrapper.vm.getListPluginType({ property: 'a', type: 'json' }, {}, null)).toBe('json')
       expect(wrapper.vm.getListPluginType({ property: 'a', type: 'json_schema' }, {}, null)).toBe('json_schema')
+      expect(wrapper.vm.getListPluginType({ property: 'a', type: 'code' }, {}, null)).toBe('code')
       expect(wrapper.vm.getListPluginType({ property: 'a', type: 'ManyToOne' }, {}, null)).toBe('RelationToOne')
       expect(wrapper.vm.getListPluginType({ property: 'a', type: 'OneToMany' }, {}, null)).toBe('RelationToMany')
       expect(wrapper.vm.getListPluginType({ property: 'a', type: 'weird' }, {}, null)).toBeNull()
@@ -166,6 +167,7 @@ describe('DetailAdmin.vue', () => {
       expect(wrapper.vm.loadPlugin('image')).toBeDefined()
       expect(wrapper.vm.loadPlugin('json')).toBeDefined()
       expect(wrapper.vm.loadPlugin('json_schema')).toBeDefined()
+      expect(wrapper.vm.loadPlugin('code')).toBeDefined()
       expect(wrapper.vm.loadPlugin('boolean')).toBeDefined()
       expect(wrapper.vm.loadPlugin('datetime_immutable')).toBeDefined()
       expect(wrapper.vm.loadPlugin('ManyToOne')).toBeDefined()
