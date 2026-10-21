@@ -49,12 +49,42 @@ final class PrinterJobService
         }
 
         $job = new PrinterJob($device, $copies, $definition, $data, $document['content'], $idempotencyKey);
+        return $this->dispatch($job, $account->getDeveloperId(), $credentials['userKey']);
+    }
+
+    /** Create a deliberate, separately identifiable reprint from an immutable job snapshot. */
+    public function reprint(PrinterJob $source): PrinterJob
+    {
+        if (in_array($source->getStatus(), [PrinterJob::STATUS_SUBMITTING, PrinterJob::STATUS_UNKNOWN], true)) {
+            throw new \DomainException('This job has an unresolved outcome and cannot be safely reprinted.');
+        }
+        $device = $source->getDevice();
+        $account = $device->getAccount();
+        if (!$device->isEnabled() || !$account->isEnabled()) {
+            throw new \DomainException('Enable the source printer device and account before reprinting.');
+        }
+        $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
+        $idempotencyKey = bin2hex(random_bytes(16));
+        $job = new PrinterJob(
+            $device,
+            $source->getCopies(),
+            $source->getTemplateSnapshot(),
+            $source->getDataSnapshot(),
+            $source->getRenderedContent(),
+            $idempotencyKey,
+        );
+        return $this->dispatch($job, $account->getDeveloperId(), $credentials['userKey']);
+    }
+
+    /** @return PrinterJob */
+    private function dispatch(PrinterJob $job, string $developerId, string $userKey): PrinterJob
+    {
         $this->entityManager->persist($job);
         $this->entityManager->flush();
 
         try {
-            $providerKey = substr(hash('sha256', $idempotencyKey), 0, 20);
-            $response = $this->xpyun->print($account->getDeveloperId(), $credentials['userKey'], $device->getKind(), $device->getSerialNumber(), $document['content'], $copies, $providerKey);
+            $providerKey = substr(hash('sha256', $job->getIdempotencyKey()), 0, 20);
+            $response = $this->xpyun->print($developerId, $userKey, $job->getKind(), $job->getDevice()->getSerialNumber(), $job->getRenderedContent(), $job->getCopies(), $providerKey);
             $orderId = $response['data'] ?? null;
             if (!is_string($orderId) || $orderId === '') {
                 $job->unknown();

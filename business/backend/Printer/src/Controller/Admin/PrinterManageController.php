@@ -128,6 +128,21 @@ final class PrinterManageController extends RestController
         }
     }
 
+    #[Route('/jobs/{uuid}/reprint', name: 'job-reprint', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}'])]
+    public function reprintJob(string $uuid): JsonResponse
+    {
+        try {
+            $source = $this->entityManager->getRepository(PrinterJob::class)->findOneBy(['uuid' => $uuid]);
+            if (!$source instanceof PrinterJob) { return new JsonResponse(['error' => 'Print job not found.'], 404); }
+            $job = $this->jobs->reprint($source);
+            return new JsonResponse($this->jobJson($job), $job->getStatus() === PrinterJob::STATUS_FAILED ? 422 : 201);
+        } catch (\DomainException $exception) {
+            return new JsonResponse(['error' => $exception->getMessage()], 409);
+        } catch (\Throwable) {
+            return new JsonResponse(['error' => 'Unable to reprint job.'], 502);
+        }
+    }
+
     private function account(string $uuid): PrinterAccount
     {
         $account = $this->entityManager->getRepository(PrinterAccount::class)->findOneBy(['uuid' => $uuid]);

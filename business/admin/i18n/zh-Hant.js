@@ -37,6 +37,7 @@ export default {
   'Unknown previous job warning': '先前有一筆任務結果不明，可能已經列印。再次傳送可能造成重複，仍要繼續嗎？',
   'Job status': '任務狀態', 'Provider order ID': '平台訂單編號', 'Failed to submit print job': '提交列印任務失敗',
   'Failed to refresh device status': '重新整理裝置狀態失敗', 'Failed to refresh job status': '重新整理任務狀態失敗',
+  Reprint: '重新列印', 'Confirm reprint job': '要依據此工作的已儲存快照建立新的列印工作嗎？這會再次向印表機傳送真實工作。',
   Offline: '離線', Online: '連線正常', 'Online with error': '連線異常', 'Not checked': '未查詢',
   Business: '業務管理',
   'Payment rate': '支付費率',

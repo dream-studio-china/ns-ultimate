@@ -38,6 +38,7 @@ export default {
   'Unknown previous job warning': '前のジョブは結果不明で、すでに印刷された可能性があります。再送信すると重複するおそれがあります。続行しますか？',
   'Job status': 'ジョブ状態', 'Provider order ID': 'プロバイダー注文 ID', 'Failed to submit print job': '印刷ジョブを送信できませんでした',
   'Failed to refresh device status': '端末状態を更新できませんでした', 'Failed to refresh job status': 'ジョブ状態を更新できませんでした',
+  Reprint: '再印刷', 'Confirm reprint job': '保存済みスナップショットから新しい印刷ジョブを作成しますか？プリンターへ実際に再送信します。',
   Offline: 'オフライン', Online: 'オンライン', 'Online with error': 'オンライン・エラーあり', 'Not checked': '未確認',
   Business: '業務管理',
   'Product metadata help': '商品固有の表示情報は metadata のトップレベル項目として保存されます。',

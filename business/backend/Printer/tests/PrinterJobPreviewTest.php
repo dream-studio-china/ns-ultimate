@@ -41,6 +41,21 @@ final class PrinterJobPreviewTest extends TestCase
         ], $job->previewDocument());
     }
 
+    public function testLegacyLabelPreviewExtractsPagesWithoutSizeTags(): void
+    {
+        $pages = ["\n    <TEXT x=\"24\" y=\"24\" font=\"9\" w=\"2\" h=\"2\" r=\"0\">A01</TEXT>\n", "\n    <TEXT x=\"72\" y=\"96\" font=\"9\" w=\"2\" h=\"2\" r=\"0\">Tea</TEXT>\n"];
+        $content = '<PAGE>'.$pages[0].'</PAGE><PAGE>'.$pages[1].'</PAGE>';
+        $job = new PrinterJob(
+            new PrinterDevice(new PrinterAccount(), 'Legacy label', 'legacy-label-preview', 'label', widthMm: 40, heightMm: 30),
+            1,
+            ['kind' => 'label', 'widthMm' => 40, 'heightMm' => 30, 'labelEnvelope' => 'legacy', 'nodes' => []],
+            [],
+            $content,
+            'legacy-label-preview',
+        );
+        self::assertSame($pages, $job->previewDocument()['pages']);
+    }
+
     public function testStoredPreviewDimensionDefaults(): void
     {
         $account = new PrinterAccount();

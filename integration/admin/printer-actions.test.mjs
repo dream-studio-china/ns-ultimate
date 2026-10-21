@@ -103,6 +103,24 @@ test('each task opens its stored snapshot paper preview without a print submissi
   assert.ok(ui.nodes().some(node => node.type === 'PrinterPaper' && node.props.document.pages[0] === 'Saved receipt'))
 })
 
+test('reprint requires confirmation and posts the source job UUID as a new print request', async() => {
+  const calls = []
+  const ui = mount('PrinterJobReprintAction', {
+    post: async(url, body) => { calls.push([url, body]); return { data: { uuid: 'new-job', status: 'submitted' } } }
+  }, () => true, { uuid: 'original-job' })
+  const button = ui.nodes().find(node => node.type === 'ElButton' && node.children() === 'Reprint')
+  assert.equal(button.props.type, 'warning')
+  await button.props.onClick()
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['/api/v1/manage/printer/jobs/original-job/reprint', {}]])
+})
+
+test('cancelling reprint confirmation does not submit another live job', async() => {
+  let submitted = false
+  const ui = mount('PrinterJobReprintAction', { post: async() => { submitted = true } }, () => false, { uuid: 'original-job' })
+  await ui.nodes().find(node => node.type === 'ElButton' && node.children() === 'Reprint').props.onClick()
+  assert.equal(submitted, false)
+})
+
 test('each template previews its definition with editable sample data', async() => {
   const posts = []
   const ui = mount('PrinterPaperAction', {

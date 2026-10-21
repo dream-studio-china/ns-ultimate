@@ -40,6 +40,7 @@ export default {
   'Unknown previous job warning': 'A previous job has an unknown outcome and may already have printed. Sending another job can create duplicates. Continue anyway?',
   'Job status': 'Job status', 'Provider order ID': 'Provider order ID', 'Failed to submit print job': 'Failed to submit print job',
   'Failed to refresh device status': 'Failed to refresh device status', 'Failed to refresh job status': 'Failed to refresh job status',
+  Reprint: 'Reprint', 'Confirm reprint job': 'Create a new live print job from this saved snapshot? This sends it to the printer again.',
   Offline: 'Offline', Online: 'Online', 'Online with error': 'Online with error', 'Not checked': 'Not checked',
   Business: 'Business',
   'Product metadata help': 'Product-specific display values are stored as top-level metadata fields.',

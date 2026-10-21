@@ -57,6 +57,7 @@ export default {
   'Unknown previous job warning': '此前有一个任务结果未知，可能已经打印。再次发送可能造成重复，仍要继续吗？',
   'Job status': '任务状态', 'Provider order ID': '平台订单号', 'Failed to submit print job': '提交打印任务失败',
   'Failed to refresh device status': '刷新设备状态失败', 'Failed to refresh job status': '刷新任务状态失败',
+  Reprint: '重新打印', 'Confirm reprint job': '是否根据此任务的已保存快照创建新的打印任务？这会再次向打印机发送真实任务。',
   Offline: '离线', Online: '在线正常', 'Online with error': '在线异常', 'Not checked': '未查询',
   'Counter number': '台号',
   'Counter numbers failed to load': '台号加载失败',

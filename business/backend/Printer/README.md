@@ -162,5 +162,10 @@ those integration details are available.
 The Xpyun adapter exposes receipt (`print`) and label (`printLabel`) separately.
 Xpyun currently documents label support for XP-T271U and XP-320B; verify the
 physical model before sending label jobs. Management is currently admin-only;
-store-scoped permissions, template editing beyond the workbench's create flow,
-retries/reprints, and live printer rendering remain follow-up work.
+store-scoped permissions and live printer render calibration remain follow-up
+work. Templates can be edited through the configured CRUD lifecycle. Reprints
+create a new job from the immutable stored snapshot after explicit frontend
+confirmation; `unknown` and `submitting` jobs are rejected to prevent
+accidental duplicate output. A reprint uses a fresh provider idempotency key
+and the source copy count, and requires the source device and account to be
+enabled.

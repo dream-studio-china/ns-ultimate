@@ -62,7 +62,10 @@ class PrinterJob
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
 
-    /** @param array<string, mixed> $templateSnapshot @param array<string, mixed> $dataSnapshot */
+    /**
+     * @param array<string, mixed> $templateSnapshot
+     * @param array<string, mixed> $dataSnapshot
+     */
     public function __construct(PrinterDevice $device, int $copies, array $templateSnapshot, array $dataSnapshot, string $renderedContent, string $idempotencyKey)
     {
         if ($copies < 1 || $copies > 100) { throw new \InvalidArgumentException('Copies must be between 1 and 100.'); }
@@ -92,6 +95,10 @@ class PrinterJob
     public function getProviderOrderId(): ?string { return $this->providerOrderId; }
     public function getErrorCode(): ?string { return $this->errorCode; }
     public function getRenderedContent(): string { return $this->renderedContent; }
+    /** @return array<string, mixed> */
+    public function getTemplateSnapshot(): array { return $this->templateSnapshot; }
+    /** @return array<string, mixed> */
+    public function getDataSnapshot(): array { return $this->dataSnapshot; }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
     public function getIdempotencyKey(): string { return $this->idempotencyKey; }
 
@@ -100,7 +107,7 @@ class PrinterJob
     {
         $pages = [$this->renderedContent];
         if ($this->kind === PrinterDevice::KIND_LABEL) {
-            preg_match_all('/<PAGE><SIZE>\d+,\d+<\/SIZE>(.*?)<\/PAGE>/s', $this->renderedContent, $matches);
+            preg_match_all('/<PAGE>(?:<SIZE>\d+,\d+<\/SIZE>)?(.*?)<\/PAGE>/s', $this->renderedContent, $matches);
             $pages = $matches[1];
         }
 
