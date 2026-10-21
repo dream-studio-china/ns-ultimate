@@ -25,6 +25,7 @@ export default {
   'Label width mm': 'Label width (mm)', 'Label height mm': 'Label height (mm)', 'Printer model optional': 'Printer model (optional)',
   'Store UUID optional': 'Store UUID (optional)', 'Register device': 'Register device', 'Configured devices': 'Configured devices',
   storeUuid: 'Store UUID', widthMm: 'Width (mm)', heightMm: 'Height (mm)', model: 'Model', enabled: 'Enabled',
+  'Printer provider': 'Printer provider', Xpyun: 'Xpyun', DeliCloud: 'DeliCloud',
   'Refresh status': 'Refresh status', 'Save template': 'Save template', 'Template name': 'Template name',
   'Save current template': 'Save current template', 'Select print template': 'Select print template',
   'Live print jobs': 'Live print jobs', 'Select device': 'Select device', Copies: 'Copies',

@@ -98,7 +98,11 @@ class PrinterDevice
     public function setEnabled(bool $enabled): self { $this->enabled = $enabled; return $this; }
     public function getProviderStatus(): ?int { return $this->providerStatus; }
     public function getStatusCheckedAt(): ?\DateTimeImmutable { return $this->statusCheckedAt; }
-    public function __toString(): string { return $this->name !== '' ? $this->name : $this->serialNumber; }
+    public function __toString(): string
+    {
+        $label = $this->name !== '' ? $this->name : $this->serialNumber;
+        return sprintf('%s · %s', strtoupper($this->account->getProvider()), $label);
+    }
     public function updateProviderStatus(int $status): self
     {
         if (!in_array($status, [0, 1, 2], true)) { throw new \InvalidArgumentException('Unknown Xpyun printer status.'); }

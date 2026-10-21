@@ -10,10 +10,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterJob;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
-use NsUltimate\Business\Printer\Service\PrinterCredentialCipher;
 use NsUltimate\Business\Printer\Service\PrinterJobService;
-use NsUltimate\Business\Printer\Service\XpyunApiException;
-use NsUltimate\Business\Printer\Service\XpyunClient;
+use NsUltimate\Business\Printer\Service\PrinterProviderException;
+use NsUltimate\Business\Printer\Service\PrinterProviderRegistry;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
@@ -27,8 +26,7 @@ final class PrinterManageController extends RestController
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
-        private readonly PrinterCredentialCipher $cipher,
-        private readonly XpyunClient $xpyun,
+        private readonly PrinterProviderRegistry $providers,
         private readonly PrinterJobService $jobs,
     ) {
     }
@@ -40,15 +38,12 @@ final class PrinterManageController extends RestController
             $device = $this->device($uuid);
             $account = $device->getAccount();
             if (!$device->isEnabled() || !$account->isEnabled()) { return new JsonResponse(['error' => 'Printer device or account is disabled.'], 409); }
-            $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
-            $response = $this->xpyun->printerStatus($account->getDeveloperId(), $credentials['userKey'], $device->getSerialNumber());
-            $status = $response['data'] ?? null;
-            if (!is_int($status) || !in_array($status, [0, 1, 2], true)) { throw new \RuntimeException('Invalid printer status response.'); }
-            $device->updateProviderStatus($status);
+            $response = $this->providers->get($account->getProvider())->queryDeviceStatus($device);
+            $device->updateProviderStatus($response['status']);
             $this->entityManager->flush();
             return new JsonResponse($this->deviceJson($device));
-        } catch (XpyunApiException $exception) {
-            return new JsonResponse(['error' => 'Xpyun status query failed.', 'providerCode' => $exception->providerCode], 502);
+        } catch (PrinterProviderException $exception) {
+            return new JsonResponse(['error' => 'Printer provider status query failed.', 'providerCode' => $exception->providerCode], 502);
         } catch (\Throwable) {
             return new JsonResponse(['error' => 'Unable to refresh printer status.'], 502);
         }

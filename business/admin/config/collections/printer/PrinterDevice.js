@@ -29,7 +29,7 @@ export default {
       actions: [{ name: 'printer-device-refresh-status', position: 'top', component: PrinterDeviceStatusAction }],
       list_filter: { name: t('Name'), serialNumber: t('Serial number'), kind: { __label: t('Kind'), receipt: t('Receipt'), label: t('Label') } },
       list_display: [
-        'name', 'serialNumber', 'kind', 'model',
+        'account', 'name', 'serialNumber', 'kind', 'model',
         { property: 'storeUuid', relation: { target: 'Store', plural: 'stores', prefix: '/api/v1/manage', valueKey: 'uuid' } },
         'enabled', 'providerStatus', 'statusCheckedAt'
       ]

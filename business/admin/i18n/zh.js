@@ -44,6 +44,7 @@ export default {
   'Label width mm': '标签宽度（毫米）', 'Label height mm': '标签高度（毫米）', 'Printer model optional': '打印机型号（可选）',
   'Store UUID optional': '门店 UUID（可选）', 'Register device': '注册设备', 'Configured devices': '已配置设备',
   storeUuid: '门店 UUID', widthMm: '宽度（毫米）', heightMm: '高度（毫米）', model: '型号', enabled: '启用',
+  'Printer provider': '打印服务商', Xpyun: '芯烨云', DeliCloud: '得力云',
   'Refresh status': '刷新状态', 'Save template': '保存模板', 'Template name': '模板名称',
   'Save current template': '保存当前模板', 'Select print template': '选择打印模板', 'Live print jobs': '真实打印任务',
   'Select device': '选择设备', Copies: '打印份数', 'Confirm and print': '确认并打印', 'Refresh lists': '刷新列表',

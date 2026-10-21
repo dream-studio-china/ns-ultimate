@@ -11,12 +11,21 @@ combining page expansion with the requested copy count.
 
 ## Configuration
 
-Create the Xpyun developer account through the admin API. Its developer key is
+Create an Xpyun provider account through the admin API. Its developer key is
 encrypted at rest with `PRINTER_CONFIG_KEY`. Configure a
 private, stable encryption key before creating accounts and do not commit it.
 Losing or changing the key makes saved account credentials unreadable. The
 client uses the platform's fixed HTTPS API host and JSON requests. No credentials
 are returned to the frontend.
+
+Provider identity is stored on each printer account and is immutable after
+creation. Device registration/status and print-job submit/status go through the
+`PrinterProviderInterface` registry; provider implementations translate their
+protocol into the shared registration, status, and job result shapes. Xpyun is
+the only registered live adapter currently. The existing DeliCloud protocol
+codec only builds/parses protocol messages; it is not a transport or a usable
+printer adapter, so DeliCloud accounts cannot be activated yet. Add its adapter
+after the API/transport documentation and credentials are available.
 
 Apply the `Printer` module migration after configuring the database. Management
 routes under `/api/v1/manage/printer` require `ROLE_ADMIN`. Create an account,

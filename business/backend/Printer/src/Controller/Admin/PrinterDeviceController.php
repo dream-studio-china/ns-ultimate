@@ -16,9 +16,8 @@ use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterJob;
 use NsUltimate\Business\Printer\Entity\PrinterAccount;
 use NsUltimate\Business\Printer\Service\PrinterDeviceService;
-use NsUltimate\Business\Printer\Service\PrinterCredentialCipher;
-use NsUltimate\Business\Printer\Service\XpyunApiException;
-use NsUltimate\Business\Printer\Service\XpyunClient;
+use NsUltimate\Business\Printer\Service\PrinterProviderException;
+use NsUltimate\Business\Printer\Service\PrinterProviderRegistry;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
@@ -41,8 +40,7 @@ final class PrinterDeviceController extends RestController
     public function __construct(
         protected readonly PrinterDeviceService $service,
         private readonly EntityManagerInterface $entityManager,
-        private readonly PrinterCredentialCipher $cipher,
-        private readonly XpyunClient $xpyun,
+        private readonly PrinterProviderRegistry $providers,
     ) {}
 
     /**
@@ -88,15 +86,15 @@ final class PrinterDeviceController extends RestController
             $content['widthMm'] ?? null,
             $content['heightMm'] ?? null,
         );
-        $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
         try {
-            $response = $this->xpyun->register($account->getDeveloperId(), $credentials['userKey'], $device->getSerialNumber(), $device->getName());
-        } catch (XpyunApiException $exception) {
-            throw new \InvalidArgumentException('Xpyun rejected printer registration ('.$exception->providerCode.').');
+            $response = $this->providers->get($account->getProvider())->registerDevice($account, $device);
+        } catch (PrinterProviderException $exception) {
+            throw new \InvalidArgumentException(sprintf('Printer provider registration failed (%s).', $exception->providerCode));
+        } catch (\DomainException $exception) {
+            throw new \InvalidArgumentException($exception->getMessage());
         }
-        $success = $response['data']['success'] ?? [];
-        if (!is_array($success) || !in_array($device->getSerialNumber(), $success, true)) {
-            throw new \InvalidArgumentException('Xpyun did not confirm device registration.');
+        if (!in_array($device->getSerialNumber(), $response['registeredSerialNumbers'], true)) {
+            throw new \InvalidArgumentException('Printer provider did not confirm device registration.');
         }
         return $device;
     }

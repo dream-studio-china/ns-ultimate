@@ -24,6 +24,7 @@ export default {
   'Label width mm': 'ラベル幅（mm）', 'Label height mm': 'ラベル高さ（mm）', 'Printer model optional': 'プリンターモデル（任意）',
   'Store UUID optional': '店舗 UUID（任意）', 'Register device': '端末を登録', 'Configured devices': '登録済み端末',
   storeUuid: '店舗 UUID', widthMm: '幅（mm）', heightMm: '高さ（mm）', model: 'モデル', enabled: '有効',
+  'Printer provider': 'プリンタープロバイダー', Xpyun: 'Xpyun', DeliCloud: 'DeliCloud',
   'Refresh status': '状態を更新', 'Save template': 'テンプレートを保存', 'Template name': 'テンプレート名',
   'Save current template': '現在のテンプレートを保存', 'Select print template': '印刷テンプレートを選択', 'Live print jobs': '実印刷ジョブ',
   'Select device': '端末を選択', Copies: '部数', 'Confirm and print': '確認して印刷', 'Refresh lists': '一覧を更新',

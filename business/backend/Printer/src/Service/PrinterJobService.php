@@ -14,8 +14,7 @@ final class PrinterJobService
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly PrintDocumentRenderer $renderer,
-        private readonly PrinterCredentialCipher $cipher,
-        private readonly XpyunClient $xpyun,
+        private readonly PrinterProviderRegistry $providers,
     ) {
     }
 
@@ -35,9 +34,6 @@ final class PrinterJobService
         if (count($document['pages']) * $copies > 500) {
             throw new \InvalidArgumentException('A print job may generate at most 500 physical copies/pages.');
         }
-        $account = $device->getAccount();
-        $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
-
         $existing = $this->entityManager->getRepository(PrinterJob::class)->findOneBy(['idempotencyKey' => $idempotencyKey]);
         if ($existing instanceof PrinterJob) {
             if ($existing->getDevice()->getUuid() !== $device->getUuid()
@@ -49,7 +45,7 @@ final class PrinterJobService
         }
 
         $job = new PrinterJob($device, $copies, $definition, $data, $document['content'], $idempotencyKey);
-        return $this->dispatch($job, $account->getDeveloperId(), $credentials['userKey']);
+        return $this->dispatch($job);
     }
 
     /** Create a deliberate, separately identifiable reprint from an immutable job snapshot. */
@@ -63,7 +59,6 @@ final class PrinterJobService
         if (!$device->isEnabled() || !$account->isEnabled()) {
             throw new \DomainException('Enable the source printer device and account before reprinting.');
         }
-        $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
         $idempotencyKey = bin2hex(random_bytes(16));
         $job = new PrinterJob(
             $device,
@@ -73,25 +68,25 @@ final class PrinterJobService
             $source->getRenderedContent(),
             $idempotencyKey,
         );
-        return $this->dispatch($job, $account->getDeveloperId(), $credentials['userKey']);
+        return $this->dispatch($job);
     }
 
     /** @return PrinterJob */
-    private function dispatch(PrinterJob $job, string $developerId, string $userKey): PrinterJob
+    private function dispatch(PrinterJob $job): PrinterJob
     {
+        $provider = $this->providers->get($job->getDevice()->getAccount()->getProvider());
         $this->entityManager->persist($job);
         $this->entityManager->flush();
 
         try {
-            $providerKey = substr(hash('sha256', $job->getIdempotencyKey()), 0, 20);
-            $response = $this->xpyun->print($developerId, $userKey, $job->getKind(), $job->getDevice()->getSerialNumber(), $job->getRenderedContent(), $job->getCopies(), $providerKey);
-            $orderId = $response['data'] ?? null;
+            $response = $provider->submitJob($job);
+            $orderId = $response['providerOrderId'];
             if (!is_string($orderId) || $orderId === '') {
                 $job->unknown();
             } else {
                 $job->submitted($orderId);
             }
-        } catch (XpyunApiException $exception) {
+        } catch (PrinterProviderException $exception) {
             $job->failed($exception->providerCode);
         } catch (\Throwable) {
             // A transport failure may occur after the provider accepted the job; never auto-submit again.
@@ -112,9 +107,9 @@ final class PrinterJobService
             throw new \DomainException('This job has no provider order ID; it cannot be safely retried or queried.');
         }
         $account = $job->getDevice()->getAccount();
-        $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
-        $response = $this->xpyun->orderStatus($account->getDeveloperId(), $credentials['userKey'], $orderId);
-        if (($response['data'] ?? null) === true) { $job->markPrinted(); }
+        $this->providers->get($account->getProvider());
+        $response = $this->providers->get($account->getProvider())->queryJobStatus($job);
+        if ($response['printed']) { $job->markPrinted(); }
         $this->entityManager->flush();
         return $job;
     }

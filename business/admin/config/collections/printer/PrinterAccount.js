@@ -9,9 +9,12 @@ export default {
     ] },
     list: {
       disabled_actions: ['edit', 'delete', 'batch_edit', 'batch_delete'],
-      list_filter: { name: t('Name'), developerId: t('Developer ID') },
-      list_display: ['uuid', 'name', 'developerId', 'enabled', 'createdAt']
+      list_filter: {
+        name: t('Name'), developerId: t('Developer ID'),
+        provider: { __label: t('Printer provider'), xpyun: t('Xpyun'), delicloud: t('DeliCloud') }
+      },
+      list_display: ['uuid', 'provider', 'name', 'developerId', 'enabled', 'createdAt']
     },
-    detail: { detail_display: ['uuid', 'name', 'developerId', 'enabled', 'createdAt'] }
+    detail: { detail_display: ['uuid', 'provider', 'name', 'developerId', 'enabled', 'createdAt'] }
   }
 }

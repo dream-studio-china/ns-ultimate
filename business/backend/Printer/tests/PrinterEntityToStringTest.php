@@ -19,8 +19,8 @@ final class PrinterEntityToStringTest extends TestCase
         $template = new PrinterTemplate('Kitchen receipt', PrinterDevice::KIND_RECEIPT);
         $job = new PrinterJob($device, 1, ['kind' => 'receipt'], [], 'private rendered content', 'job-key');
 
-        self::assertSame('Kitchen account', (string) $account);
-        self::assertSame('Kitchen receipt printer', (string) $device);
+        self::assertSame('XPYUN · Kitchen account', (string) $account);
+        self::assertSame('XPYUN · Kitchen receipt printer', (string) $device);
         self::assertSame('Kitchen receipt', (string) $template);
         self::assertStringContainsString('Receipt job submitting', (string) $job);
         self::assertStringNotContainsString('secret-ciphertext', (string) $account);

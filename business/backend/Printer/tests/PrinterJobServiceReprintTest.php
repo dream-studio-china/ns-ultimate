@@ -11,6 +11,8 @@ use NsUltimate\Business\Printer\Entity\PrinterJob;
 use NsUltimate\Business\Printer\Service\PrintDocumentRenderer;
 use NsUltimate\Business\Printer\Service\PrinterCredentialCipher;
 use NsUltimate\Business\Printer\Service\PrinterJobService;
+use NsUltimate\Business\Printer\Service\PrinterProviderRegistry;
+use NsUltimate\Business\Printer\Service\XpyunPrinterProvider;
 use NsUltimate\Business\Printer\Service\XpyunClient;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -45,8 +47,7 @@ final class PrinterJobServiceReprintTest extends TestCase
         $service = new PrinterJobService(
             $entityManager,
             new PrintDocumentRenderer(),
-            $cipher,
-            new XpyunClient($http),
+            new PrinterProviderRegistry([new XpyunPrinterProvider($cipher, new XpyunClient($http))]),
         );
         $reprint = $service->reprint($source);
 
@@ -75,7 +76,8 @@ final class PrinterJobServiceReprintTest extends TestCase
         $entityManager->expects(self::never())->method('persist');
         $entityManager->expects(self::never())->method('flush');
         $http = new MockHttpClient(static function (): never { self::fail('Unresolved reprint must not call the provider.'); });
-        $service = new PrinterJobService($entityManager, new PrintDocumentRenderer(), new PrinterCredentialCipher(''), new XpyunClient($http));
+        $cipher = new PrinterCredentialCipher('');
+        $service = new PrinterJobService($entityManager, new PrintDocumentRenderer(), new PrinterProviderRegistry([new XpyunPrinterProvider($cipher, new XpyunClient($http))]));
 
         foreach ([PrinterJob::STATUS_UNKNOWN, PrinterJob::STATUS_SUBMITTING] as $status) {
             $source = new PrinterJob($device, 1, ['kind' => 'receipt', 'nodes' => []], [], 'stored', 'source-'.$status);
@@ -99,7 +101,7 @@ final class PrinterJobServiceReprintTest extends TestCase
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->expects(self::never())->method('persist');
         $http = new MockHttpClient(static function (): never { self::fail('Disabled hardware must not call the provider.'); });
-        $service = new PrinterJobService($entityManager, new PrintDocumentRenderer(), $cipher, new XpyunClient($http));
+        $service = new PrinterJobService($entityManager, new PrintDocumentRenderer(), new PrinterProviderRegistry([new XpyunPrinterProvider($cipher, new XpyunClient($http))]));
 
         $this->expectException(\DomainException::class);
         $this->expectExceptionMessage('Enable the source printer device and account');
