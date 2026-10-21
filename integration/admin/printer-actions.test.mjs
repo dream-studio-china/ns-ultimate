@@ -86,8 +86,8 @@ test('printer account admin shows provider identity but only enables configured 
   const providerField = config.form.fields.find(field => field.property === 'provider')
   assert.equal(providerField.default_value, 'xpyun')
   assert.deepEqual(JSON.parse(JSON.stringify(providerField.type_options.options)), [{ value: 'xpyun', label: 'Xpyun' }])
-  assert.ok(config.list.list_display.includes('provider'))
-  assert.ok(config.detail.detail_display.includes('provider'))
+  assert.ok(config.list.list_display.some(field => field.property === 'provider'))
+  assert.ok(config.detail.detail_display.some(field => field.property === 'provider'))
 })
 
 test('cancelling print confirmation never submits a job', async() => {
