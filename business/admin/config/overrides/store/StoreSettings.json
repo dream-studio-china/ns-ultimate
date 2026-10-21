@@ -61,119 +61,45 @@
           "title": "Printer routes",
           "properties": {
             "kitchen": {
-              "type": "object",
-              "title": "Kitchen route",
-              "additionalProperties": false,
+              "type": "object", "title": "Kitchen route", "additionalProperties": false,
               "properties": {
-                "scene": {
-                  "type": "string",
-                  "title": "Scene",
-                  "enum": ["filtered_list", "full_list"],
-                  "default": "filtered_list"
-                },
-                "deviceUuid": {
-                  "type": "string",
-                  "title": "Printer device UUID",
-                  "minLength": 36,
-                  "maxLength": 36
-                },
-                "templateUuid": {
-                  "type": "string",
-                  "title": "Printer template UUID",
-                  "minLength": 36,
-                  "maxLength": 36
-                },
-                "copies": {
-                  "type": "integer",
-                  "title": "Copies",
-                  "minimum": 1,
-                  "maximum": 100,
-                  "default": 1
-                },
+                "scene": { "type": "string", "title": "Scene", "enum": ["filtered_list", "full_list"] },
+                "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+                "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+                "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 },
                 "enabled": { "type": "boolean", "title": "Enabled", "default": true }
               },
               "required": []
             },
             "labels": {
-              "type": "object",
-              "title": "Label route",
-              "additionalProperties": false,
+              "type": "object", "title": "Label route", "additionalProperties": false,
               "properties": {
-                "deviceUuid": {
-                  "type": "string",
-                  "title": "Printer device UUID",
-                  "minLength": 36,
-                  "maxLength": 36
-                },
-                "templateUuid": {
-                  "type": "string",
-                  "title": "Printer template UUID",
-                  "minLength": 36,
-                  "maxLength": 36
-                },
-                "copies": {
-                  "type": "integer",
-                  "title": "Copies",
-                  "minimum": 1,
-                  "maximum": 100,
-                  "default": 1
-                },
+                "scene": { "type": "string", "title": "Scene", "enum": ["per_item"] },
+                "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+                "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+                "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 },
                 "enabled": { "type": "boolean", "title": "Enabled", "default": true }
               },
               "required": []
             },
             "receipt": {
-              "type": "object",
-              "title": "Receipt route",
-              "additionalProperties": false,
+              "type": "object", "title": "Receipt route", "additionalProperties": false,
               "properties": {
-                "deviceUuid": {
-                  "type": "string",
-                  "title": "Printer device UUID",
-                  "minLength": 36,
-                  "maxLength": 36
-                },
-                "templateUuid": {
-                  "type": "string",
-                  "title": "Printer template UUID",
-                  "minLength": 36,
-                  "maxLength": 36
-                },
-                "copies": {
-                  "type": "integer",
-                  "title": "Copies",
-                  "minimum": 1,
-                  "maximum": 100,
-                  "default": 1
-                },
+                "scene": { "type": "string", "title": "Scene", "enum": ["full_list"] },
+                "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+                "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+                "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 },
                 "enabled": { "type": "boolean", "title": "Enabled", "default": true }
               },
               "required": []
             },
             "settlement": {
-              "type": "object",
-              "title": "Settlement route",
-              "additionalProperties": false,
+              "type": "object", "title": "Settlement route", "additionalProperties": false,
               "properties": {
-                "deviceUuid": {
-                  "type": "string",
-                  "title": "Printer device UUID",
-                  "minLength": 36,
-                  "maxLength": 36
-                },
-                "templateUuid": {
-                  "type": "string",
-                  "title": "Printer template UUID",
-                  "minLength": 36,
-                  "maxLength": 36
-                },
-                "copies": {
-                  "type": "integer",
-                  "title": "Copies",
-                  "minimum": 1,
-                  "maximum": 100,
-                  "default": 1
-                },
+                "scene": { "type": "string", "title": "Scene", "enum": ["settlement"] },
+                "deviceUuid": { "type": "string", "title": "Printer device UUID", "minLength": 36, "maxLength": 36 },
+                "templateUuid": { "type": "string", "title": "Printer template UUID", "minLength": 36, "maxLength": 36 },
+                "copies": { "type": "integer", "title": "Copies", "minimum": 1, "maximum": 100, "default": 1 },
                 "enabled": { "type": "boolean", "title": "Enabled", "default": true }
               },
               "required": []

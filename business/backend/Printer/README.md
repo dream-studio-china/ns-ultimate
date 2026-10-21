@@ -38,13 +38,12 @@ snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 
 The Printer module can enqueue order print requests for store-scoped Trade orders.
 Configure `Store.settings.printing` with `productionTrigger` (`accepted` or
-`paid`) and a `routes` object. Configure the fixed `kitchen`, `labels`,
-`receipt`, and `settlement` route fields as needed. Each enabled route selects a
-device and template; the kitchen route chooses between `filtered_list` and
-`full_list`, while the other routes infer their fixed scene from the route key.
-Optional `copies` defaults to `1`; `enabled` defaults to `true`. Settlement
-routes run only after payment; the selected production trigger applies to the
-other scenes. For example:
+`paid`) and configure the fixed `kitchen`, `labels`, `receipt`, and `settlement`
+routes as needed. Kitchen routes select `filtered_list` or `full_list`; labels
+use `per_item`; receipt uses `full_list`; settlement uses `settlement`. Each
+route selects its device and template, with optional `copies` (default `1`) and
+`enabled` (default `true`). Settlement routes run only after payment; the
+selected production trigger applies to the other scenes. For example:
 
 ```json
 {
@@ -57,6 +56,7 @@ other scenes. For example:
         "templateUuid": "<receipt template UUID>"
       },
       "settlement": {
+        "scene": "settlement",
         "deviceUuid": "<store printer device UUID>",
         "templateUuid": "<receipt template UUID>"
       }

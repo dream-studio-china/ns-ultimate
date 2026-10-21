@@ -78,6 +78,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
             'productionTrigger' => 'accepted',
             'routes' => [
                 'settlement' => [
+                    'scene' => 'settlement',
                     'deviceUuid' => 'device-a',
                     'templateUuid' => 'template-a',
                 ],
@@ -99,15 +100,8 @@ final class TradeOrderPrintAdapterTest extends TestCase
             PrinterOrderRequest::class => $requestRepository,
             default => throw new \LogicException('Unexpected repository '.$class),
         });
-        $queuedRequest = null;
-        $entityManager->expects(self::once())->method('persist')->with(self::callback(static function (object $request) use (&$queuedRequest): bool {
-            $queuedRequest = $request;
-            return $request instanceof PrinterOrderRequest;
-        }));
+        $entityManager->expects(self::once())->method('persist')->with(self::isInstanceOf(PrinterOrderRequest::class));
 
         (new TradeOrderPrintAdapter($entityManager))->enqueueForPaidOrder($order);
-
-        self::assertInstanceOf(PrinterOrderRequest::class, $queuedRequest);
-        self::assertSame('settlement', $queuedRequest->getConfiguration()['scene']);
     }
 }

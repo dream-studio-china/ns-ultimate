@@ -75,12 +75,7 @@ final class TradeOrderPrintAdapter
             if (!is_string($routeKey) || !is_array($route) || ($route['enabled'] ?? true) !== true) {
                 continue;
             }
-            $scene = $route['scene'] ?? match ($routeKey) {
-                'labels' => self::SCENE_PER_ITEM,
-                'receipt' => self::SCENE_FULL_LIST,
-                'settlement' => self::SCENE_SETTLEMENT,
-                default => null,
-            };
+            $scene = $route['scene'] ?? null;
             if (!in_array($scene, [self::SCENE_PER_ITEM, self::SCENE_FILTERED_LIST, self::SCENE_FULL_LIST, self::SCENE_SETTLEMENT], true)) {
                 continue;
             }
