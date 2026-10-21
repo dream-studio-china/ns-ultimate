@@ -20,7 +20,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/manage/printer/operations', name: 'manage-printer-operations-')]
+#[Route('/manage/printer', name: 'manage-printer-')]
 #[IsGranted('ROLE_ADMIN')]
 final class PrinterManageController extends RestController
 {
@@ -75,6 +75,7 @@ final class PrinterManageController extends RestController
         try {
             $device = $this->device($uuid);
             $account = $device->getAccount();
+            if (!$device->isEnabled() || !$account->isEnabled()) { return new JsonResponse(['error' => 'Printer device or account is disabled.'], 409); }
             $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
             $response = $this->xpyun->printerStatus($account->getDeveloperId(), $credentials['userKey'], $device->getSerialNumber());
             $status = $response['data'] ?? null;

@@ -9,14 +9,14 @@ final class PrintDocumentRenderer
 {
     /** @param array<string, mixed> $template
      * @param array<string, mixed> $data
-     * @return array{kind: string, pages: list<string>, content: string} */
+     * @return array{kind: string, pages: list<string>, content: string, widthMm: int, heightMm: ?int} */
     public function render(array $template, array $data): array
     {
         $kind = $template['kind'] ?? null;
         if (!in_array($kind, ['receipt', 'label'], true)) {
             throw new \InvalidArgumentException('Template kind must be receipt or label.');
         }
-        $width = $this->dimension($template['widthMm'] ?? 40, 'widthMm');
+        $width = $this->dimension($template['widthMm'] ?? ($kind === 'receipt' ? 80 : 40), 'widthMm');
         $height = $this->dimension($template['heightMm'] ?? 30, 'heightMm');
         $pages = $this->nodes($template['nodes'] ?? [], $data, 0);
         if ($kind === 'receipt') {
@@ -43,7 +43,7 @@ final class PrintDocumentRenderer
         if (strlen($content) > 100_000) {
             throw new \InvalidArgumentException('Expanded print document is too large.');
         }
-        return ['kind' => $kind, 'pages' => $pages, 'content' => $content];
+        return ['kind' => $kind, 'pages' => $pages, 'content' => $content, 'widthMm' => $width, 'heightMm' => $kind === 'label' ? $height : null];
     }
 
     /** @param mixed $nodes

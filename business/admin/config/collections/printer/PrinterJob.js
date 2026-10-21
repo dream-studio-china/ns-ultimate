@@ -1,5 +1,6 @@
 import { t } from '@/i18n'
-import PrinterOperations from '../../components/PrinterOperations.js'
+import PrinterJobAction from '../../components/PrinterJobAction.js'
+import PrinterPaperAction from '../../components/PrinterPaperAction.js'
 
 export default {
   PrinterJob: {
@@ -7,10 +8,13 @@ export default {
     form: { fields: [] },
     list: {
       disabled_actions: ['new', 'edit', 'delete', 'detail', 'batch_edit', 'batch_delete'],
-      actions: [{ name: 'printer-job-operations', position: 'top', component: PrinterOperations }],
+      actions: [
+        { name: 'printer-job-create', position: 'top', component: PrinterJobAction },
+        { name: 'printer-job-preview', position: 'list', component: PrinterPaperAction }
+      ],
       list_filter: { kind: { __label: t('Kind'), receipt: t('Receipt'), label: t('Label') }, status: t('Status') },
-      list_display: ['uuid', 'deviceUuid', 'kind', 'copies', 'status', 'providerOrderId', 'errorCode', 'createdAt']
+      list_display: ['uuid', 'device', 'kind', 'copies', 'status', 'providerOrderId', 'errorCode', 'createdAt']
     },
-    detail: { detail_display: ['uuid', 'deviceUuid', 'storeUuid', 'kind', 'copies', 'status', 'providerOrderId', 'errorCode', 'createdAt'] }
+    detail: { detail_display: ['uuid', 'device', 'storeUuid', 'kind', 'copies', 'status', 'providerOrderId', 'errorCode', 'createdAt'] }
   }
 }

@@ -1,5 +1,12 @@
 export default {
+  'Paper preview': '用紙プレビュー',
+  'Code preview placeholder help': '破線の枠はバーコードやQRコードの配置のみを示し、読み取りはできません。',
+  'No enabled printers. Preview is still available.': '有効なプリンターがありません。プレビューは利用できます。',
+  'Create an enabled printer account first.': '先に有効なプリンターアカウントを作成してください。',
+  'Printer name, serial number and account are required.': '端末名、シリアル番号、アカウントは必須です。',
   'Printer workbench': 'プリンター調整台',
+  'Create print job': '印刷ジョブを作成', 'Submit print job': '印刷ジョブを送信',
+  'Printer developer key is encrypted at rest.': 'プリンター開発者キーは暗号化して保存されます。',
   'Printer management': 'プリンター管理', 'Printer accounts': 'プリンターアカウント', 'Printer devices': 'プリンター端末',
   'Printer templates': '印刷テンプレート', 'Printer jobs': '印刷ジョブ', 'Printer operations': '印刷操作',
   'Printer operation failed': '印刷操作に失敗しました', 'Invalid JSON': 'JSON 形式が正しくありません',

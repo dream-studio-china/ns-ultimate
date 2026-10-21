@@ -1,5 +1,12 @@
 export default {
+  'Paper preview': '紙張預覽',
+  'Code preview placeholder help': '虛線框僅表示條碼或 QR 碼的位置，不是可掃描的碼。',
+  'No enabled printers. Preview is still available.': '暫無啟用的印表機，仍可預覽範本。',
+  'Create an enabled printer account first.': '請先建立並啟用列印帳號。',
+  'Printer name, serial number and account are required.': '請填寫裝置名稱、序號並選擇帳號。',
   'Printer workbench': '列印調試台',
+  'Create print job': '建立列印任務', 'Submit print job': '提交列印任務',
+  'Printer developer key is encrypted at rest.': '印表機開發者金鑰將加密儲存。',
   'Printer management': '列印管理', 'Printer accounts': '列印帳號', 'Printer devices': '列印裝置',
   'Printer templates': '列印範本', 'Printer jobs': '列印任務', 'Printer operations': '列印操作',
   'Printer operation failed': '列印操作失敗', 'Invalid JSON': 'JSON 格式無效',

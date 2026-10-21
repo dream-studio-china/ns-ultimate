@@ -1,4 +1,9 @@
 export default {
+  'Paper preview': '纸张预览',
+  'Code preview placeholder help': '虚线框仅表示条码或二维码的位置，不是可扫描的码。',
+  'No enabled printers. Preview is still available.': '暂无启用的打印机，仍可预览模板。',
+  'Create an enabled printer account first.': '请先创建并启用打印账号。',
+  'Printer name, serial number and account are required.': '请填写设备名称、序列号并选择账号。',
   Business: '业务管理',
   'Payment rate': '支付费率',
   'Payment settings': '支付设置',
@@ -20,6 +25,8 @@ export default {
   Counters: '台位',
   'Counter management': '台位管理',
   'Printer workbench': '打印调试台',
+  'Create print job': '创建打印任务', 'Submit print job': '提交打印任务',
+  'Printer developer key is encrypted at rest.': '打印机开发者密钥将加密存储。',
   'Printer management': '打印管理', 'Printer accounts': '打印账号', 'Printer devices': '打印设备',
   'Printer templates': '打印模板', 'Printer jobs': '打印任务', 'Printer operations': '打印操作',
   'Printer operation failed': '打印操作失败', 'Invalid JSON': 'JSON 格式无效',

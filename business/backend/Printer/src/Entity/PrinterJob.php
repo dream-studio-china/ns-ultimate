@@ -94,6 +94,25 @@ class PrinterJob
     public function getRenderedContent(): string { return $this->renderedContent; }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
     public function getIdempotencyKey(): string { return $this->idempotencyKey; }
+
+    /** @return array{kind: string, pages: list<string>, content: string, widthMm: int, heightMm: ?int} */
+    public function previewDocument(): array
+    {
+        $pages = [$this->renderedContent];
+        if ($this->kind === PrinterDevice::KIND_LABEL) {
+            preg_match_all('/<PAGE><SIZE>\d+,\d+<\/SIZE>(.*?)<\/PAGE>/s', $this->renderedContent, $matches);
+            $pages = $matches[1];
+        }
+
+        return [
+            'kind' => $this->kind,
+            'pages' => $pages,
+            'content' => $this->renderedContent,
+            'widthMm' => $this->templateSnapshot['widthMm'] ?? ($this->kind === PrinterDevice::KIND_RECEIPT ? 80 : 40),
+            'heightMm' => $this->kind === PrinterDevice::KIND_LABEL ? ($this->templateSnapshot['heightMm'] ?? 30) : null,
+        ];
+    }
+
     public function submitted(string $providerOrderId): self { $this->status = self::STATUS_SUBMITTED; $this->providerOrderId = $providerOrderId; $this->errorCode = null; return $this; }
     public function failed(string $errorCode): self { $this->status = self::STATUS_FAILED; $this->errorCode = substr($errorCode, 0, 80); return $this; }
     public function unknown(): self { $this->status = self::STATUS_UNKNOWN; $this->errorCode = 'transport_outcome_unknown'; return $this; }

@@ -1,6 +1,5 @@
 import { t } from '@/i18n'
-import PrinterOperations from '../../components/PrinterOperations.js'
-
+import PrinterPaperAction from '../../components/PrinterPaperAction.js'
 export default {
   PrinterTemplate: {
     entity: { name: 'PrinterTemplate', prefix: '/api/v1/manage/printer', plural: 'templates' },
@@ -13,8 +12,8 @@ export default {
       { property: 'sampleData', type: 'json', required: true, help: t('Template validation data help') }
     ] },
     list: {
+      actions: [{ name: 'printer-template-preview', position: 'list', component: PrinterPaperAction }],
       disabled_actions: ['delete', 'detail', 'batch_edit', 'batch_delete'],
-      actions: [{ name: 'printer-template-operations', position: 'top', component: PrinterOperations }],
       list_filter: { name: t('Name'), kind: { __label: t('Kind'), receipt: t('Receipt'), label: t('Label') } },
       list_display: ['uuid', 'name', 'kind', 'enabled', 'createdAt']
     },

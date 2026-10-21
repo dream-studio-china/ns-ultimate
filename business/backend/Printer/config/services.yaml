@@ -1,4 +1,7 @@
 services:
+    NsUltimate\Business\Printer\Service\DelicloudPrintProtocol:
+        autowire: true
+
     NsUltimate\Business\Printer\Service\XpyunClient:
         autowire: true
 

@@ -1,5 +1,12 @@
 export default {
+  'Paper preview': 'Paper preview',
+  'Code preview placeholder help': 'Dashed boxes indicate barcode/QR placement only, not scannable codes.',
+  'No enabled printers. Preview is still available.': 'No enabled printers. Preview is still available.',
+  'Create an enabled printer account first.': 'Create an enabled printer account first.',
+  'Printer name, serial number and account are required.': 'Printer name, serial number and account are required.',
   'Printer workbench': 'Printer workbench',
+  'Create print job': 'Create print job', 'Submit print job': 'Submit print job',
+  'Printer developer key is encrypted at rest.': 'The printer developer key is encrypted at rest.',
   'Printer management': 'Printer management', 'Printer accounts': 'Printer accounts', 'Printer devices': 'Printer devices',
   'Printer templates': 'Printer templates', 'Printer jobs': 'Printer jobs', 'Printer operations': 'Printer operations',
   'Printer operation failed': 'Printer operation failed', 'Invalid JSON': 'Invalid JSON',
