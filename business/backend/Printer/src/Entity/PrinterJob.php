@@ -101,6 +101,10 @@ class PrinterJob
     public function getDataSnapshot(): array { return $this->dataSnapshot; }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
     public function getIdempotencyKey(): string { return $this->idempotencyKey; }
+    public function __toString(): string
+    {
+        return sprintf('%s job %s (%s)', ucfirst($this->kind), $this->status, $this->uuid);
+    }
 
     /** @return array{kind: string, pages: list<string>, content: string, widthMm: int, heightMm: ?int} */
     public function previewDocument(): array

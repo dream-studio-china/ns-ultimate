@@ -55,6 +55,7 @@ class PrinterAccount
     public function isEnabled(): bool { return $this->enabled; }
     public function setEnabled(bool $enabled): self { $this->enabled = $enabled; return $this; }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
+    public function __toString(): string { return $this->name !== '' ? $this->name : $this->uuid; }
 
     private static function required(string $value, string $field): string
     {

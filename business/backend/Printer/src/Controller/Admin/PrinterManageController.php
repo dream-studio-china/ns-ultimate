@@ -7,7 +7,6 @@ namespace NsUltimate\Business\Printer\Controller\Admin;
 use App\Core\Controller\RestController;
 use App\Core\View\ApiView;
 use Doctrine\ORM\EntityManagerInterface;
-use NsUltimate\Business\Printer\Entity\PrinterAccount;
 use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterJob;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
@@ -32,41 +31,6 @@ final class PrinterManageController extends RestController
         private readonly XpyunClient $xpyun,
         private readonly PrinterJobService $jobs,
     ) {
-    }
-
-    #[Route('/devices', name: 'devices-create', methods: ['POST'])]
-    public function createDevice(Request $request): JsonResponse
-    {
-        try {
-            $body = $request->toArray();
-            $account = $this->account($this->string($body, 'accountUuid'));
-            if (!$account->isEnabled()) { return new JsonResponse(['error' => 'Printer account is disabled.'], 409); }
-            $device = new PrinterDevice(
-                $account,
-                $this->string($body, 'name'),
-                $this->string($body, 'serialNumber'),
-                $this->string($body, 'kind'),
-                isset($body['storeUuid']) && is_string($body['storeUuid']) && $body['storeUuid'] !== '' ? $body['storeUuid'] : null,
-                isset($body['model']) && is_string($body['model']) ? $body['model'] : null,
-                $this->optionalInteger($body, 'widthMm'),
-                $this->optionalInteger($body, 'heightMm'),
-            );
-            $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
-            $response = $this->xpyun->register($account->getDeveloperId(), $credentials['userKey'], $device->getSerialNumber(), $device->getName());
-            $success = $response['data']['success'] ?? [];
-            if (!is_array($success) || !in_array($device->getSerialNumber(), $success, true)) {
-                return new JsonResponse(['error' => 'Xpyun did not confirm device registration.', 'provider' => $response['data'] ?? null], 422);
-            }
-            $this->entityManager->persist($device);
-            $this->entityManager->flush();
-            return new JsonResponse($this->deviceJson($device), 201);
-        } catch (XpyunApiException $exception) {
-            return new JsonResponse(['error' => 'Xpyun rejected device registration.', 'providerCode' => $exception->providerCode], 422);
-        } catch (\InvalidArgumentException $exception) {
-            return new JsonResponse(['error' => $exception->getMessage()], 400);
-        } catch (\Throwable) {
-            return new JsonResponse(['error' => 'Unable to register printer device.'], 502);
-        }
     }
 
     #[Route('/devices/{uuid}/status', name: 'device-status', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}'])]
@@ -143,12 +107,6 @@ final class PrinterManageController extends RestController
         }
     }
 
-    private function account(string $uuid): PrinterAccount
-    {
-        $account = $this->entityManager->getRepository(PrinterAccount::class)->findOneBy(['uuid' => $uuid]);
-        return $account instanceof PrinterAccount ? $account : throw new \InvalidArgumentException('Printer account not found.');
-    }
-
     private function device(string $uuid): PrinterDevice
     {
         $device = $this->entityManager->getRepository(PrinterDevice::class)->findOneBy(['uuid' => $uuid]);
@@ -167,15 +125,6 @@ final class PrinterManageController extends RestController
         $value = $body[$field] ?? null;
         if (!is_string($value) || trim($value) === '') { throw new \InvalidArgumentException(sprintf('%s is required.', $field)); }
         return trim($value);
-    }
-
-    /** @param array<string, mixed> $body */
-    private function optionalInteger(array $body, string $field): ?int
-    {
-        $value = $body[$field] ?? null;
-        if ($value === null) { return null; }
-        if (!is_int($value)) { throw new \InvalidArgumentException(sprintf('%s must be an integer.', $field)); }
-        return $value;
     }
 
     /** @return array<string, mixed> */

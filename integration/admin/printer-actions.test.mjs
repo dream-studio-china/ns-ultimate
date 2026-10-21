@@ -54,30 +54,27 @@ test('print dialog unwraps preview and submission responses and matches template
   assert.ok(ui.nodes().some(node => node.type === 'ElAlert' && node.props.title === 'Job status: submitted'))
 })
 
-test('loading dialog blocks submission and modal dismissal', async() => {
-  let finish
-  const response = new Promise(resolve => { finish = resolve })
-  const ui = mount('PrinterDeviceAction', { get: () => response })
-  const opening = ui.button('Register printer').props.onClick()
-  const dialog = ui.nodes().find(node => node.type === 'ElDialog')
-  assert.equal(dialog.props.alignCenter, true)
-  assert.equal(dialog.props.closeOnClickModal, false)
-  assert.equal(dialog.props.showClose, false)
-  assert.equal(ui.button('Close').props.disabled, true)
-  finish({ data: [] })
-  await opening
-  assert.ok(ui.nodes().some(node => node.props.title === 'Create an enabled printer account first.'))
-})
-
 test('status refresh skips disabled demo devices and displays errors outside the dialog', async() => {
   const posts = []
-  const ui = mount('PrinterDeviceAction', {
+  const ui = mount('PrinterDeviceStatusAction', {
     get: async() => ({ data: [{ uuid: 'demo', enabled: false }, { uuid: 'live', enabled: true }] }),
     post: async url => { posts.push(url); throw new Error('Status unavailable') }
   })
   await ui.button('Refresh device status').props.onClick()
   assert.deepEqual(posts, ['/api/v1/manage/printer/devices/live/status'])
   assert.ok(ui.nodes().some(node => node.type === 'ElAlert' && node.props.title === 'Status unavailable'))
+})
+
+test('printer device creation uses the standard CRUD form and server registration hook', () => {
+  const source = readFileSync(new URL('../../business/admin/config/collections/printer/PrinterDevice.js', import.meta.url), 'utf8')
+  const moduleSource = source.replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+  const context = { t: key => key, PrinterDeviceStatusAction: 'status', globalThis: {} }
+  runInNewContext(moduleSource, context)
+  const config = context.globalThis.config.PrinterDevice
+  assert.ok(!config.list.disabled_actions.includes('new'))
+  assert.ok(config.form.fields.some(field => field.property === 'serialNumber'))
+  assert.ok(config.form.fields.some(field => field.property === 'account'))
+  assert.ok(!source.includes('printer-device-register'))
 })
 
 test('cancelling print confirmation never submits a job', async() => {

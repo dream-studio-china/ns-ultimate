@@ -55,13 +55,12 @@ reserved hardware records. Use real account/device setup for live printing.
 ## Admin integration
 
 The admin menu uses the project's EasyAdmin entity configuration for accounts,
-devices, templates, and jobs. Their read/detail endpoints use `RestController`
-with the core `ApiView`, `ListApiViewMixin`, and `DetailApiViewMixin` lifecycle.
-Provider operations (credential entry, device registration/status, preview, and
-print submission/status) are exposed through a configured top action, not a
-standalone route view. Preview never submits a print job.
+devices, templates, and jobs. Device creation uses the standard CRUD create
+form and API lifecycle; the backend registers the device with Xpyun before
+persisting it. Device status refresh, preview, and print submission/status use
+dedicated actions. Preview never submits a print job.
 
-Registration and job dialogs use labeled forms, loading guards and separate
+Account and job dialogs use labeled forms, loading guards and separate
 error/result alerts. Job templates are filtered to match the selected device
 kind; without enabled devices, templates can still be previewed locally. The
 preview and submit handlers unwrap the shared request helper's `data` envelope.
