@@ -25,6 +25,7 @@ export default {
   'Store UUID optional': '門市 UUID（選填）', 'Register device': '註冊裝置', 'Configured devices': '已設定裝置',
   storeUuid: '門市 UUID', widthMm: '寬度（毫米）', heightMm: '高度（毫米）', model: '型號', enabled: '啟用',
   'Printer provider': '列印服務商', Xpyun: '芯燁雲', DeliCloud: '得力雲',
+  'DeliCloud provider is not yet available.': '得力雲已預留擴充，待介面整合完成後才能設定。',
   'Refresh status': '重新整理狀態', 'Save template': '儲存範本', 'Template name': '範本名稱',
   'Save current template': '儲存目前範本', 'Select print template': '選擇列印範本', 'Live print jobs': '實際列印任務',
   'Select device': '選擇裝置', Copies: '列印份數', 'Confirm and print': '確認並列印', 'Refresh lists': '重新整理清單',

@@ -3,6 +3,11 @@ export default {
   PrinterAccount: {
     entity: { name: 'PrinterAccount', prefix: '/api/v1/manage/printer', plural: 'accounts' },
     form: { fields: [
+      {
+        property: 'provider', type: 'select', required: true, default_value: 'xpyun',
+        type_options: { options: [{ value: 'xpyun', label: t('Xpyun') }] },
+        help: t('DeliCloud provider is not yet available.')
+      },
       { property: 'name', required: true },
       { property: 'developerId', required: true },
       { property: 'userKey', type: 'password', required: true, help: t('Printer developer key is encrypted at rest.') }

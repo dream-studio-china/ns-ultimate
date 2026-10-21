@@ -26,6 +26,7 @@ export default {
   'Store UUID optional': 'Store UUID (optional)', 'Register device': 'Register device', 'Configured devices': 'Configured devices',
   storeUuid: 'Store UUID', widthMm: 'Width (mm)', heightMm: 'Height (mm)', model: 'Model', enabled: 'Enabled',
   'Printer provider': 'Printer provider', Xpyun: 'Xpyun', DeliCloud: 'DeliCloud',
+  'DeliCloud provider is not yet available.': 'DeliCloud is listed for future support but cannot be configured until its API integration is implemented.',
   'Refresh status': 'Refresh status', 'Save template': 'Save template', 'Template name': 'Template name',
   'Save current template': 'Save current template', 'Select print template': 'Select print template',
   'Live print jobs': 'Live print jobs', 'Select device': 'Select device', Copies: 'Copies',

@@ -77,6 +77,19 @@ test('printer device creation uses the standard CRUD form and server registratio
   assert.ok(!source.includes('printer-device-register'))
 })
 
+test('printer account admin shows provider identity but only enables configured providers', () => {
+  const source = readFileSync(new URL('../../business/admin/config/collections/printer/PrinterAccount.js', import.meta.url), 'utf8')
+  const moduleSource = source.replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+  const context = { t: key => key, globalThis: {} }
+  runInNewContext(moduleSource, context)
+  const config = context.globalThis.config.PrinterAccount
+  const providerField = config.form.fields.find(field => field.property === 'provider')
+  assert.equal(providerField.default_value, 'xpyun')
+  assert.deepEqual(JSON.parse(JSON.stringify(providerField.type_options.options)), [{ value: 'xpyun', label: 'Xpyun' }])
+  assert.ok(config.list.list_display.includes('provider'))
+  assert.ok(config.detail.detail_display.includes('provider'))
+})
+
 test('cancelling print confirmation never submits a job', async() => {
   let posted = false
   const ui = mount('PrinterJobAction', {
