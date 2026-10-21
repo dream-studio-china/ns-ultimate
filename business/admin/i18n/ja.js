@@ -1,5 +1,10 @@
 export default {
   'Printer workbench': 'プリンター調整台',
+  'Printer management': 'プリンター管理', 'Printer accounts': 'プリンターアカウント', 'Printer devices': 'プリンター端末',
+  'Printer templates': '印刷テンプレート', 'Printer jobs': '印刷ジョブ', 'Printer operations': '印刷操作',
+  'Printer operation failed': '印刷操作に失敗しました', 'Invalid JSON': 'JSON 形式が正しくありません',
+  'Template validation data help': '保存前にこのサンプルデータでテンプレートを検証します。',
+  'Print simulation and submission': '印刷プレビューと送信', 'Refresh provider statuses': 'プロバイダー状態を更新', Close: '閉じる',
   'Printer type': 'プリンターの種類', Receipt: 'レシート', Label: 'ラベル', Sample: 'サンプル',
   'Order with multiple items': '複数明細の注文', 'Batch product labels': '商品ラベルの一括印刷',
   'Update preview': 'プレビューを更新', 'Template JSON': 'テンプレート JSON', 'Sample data JSON': 'サンプルデータ JSON',

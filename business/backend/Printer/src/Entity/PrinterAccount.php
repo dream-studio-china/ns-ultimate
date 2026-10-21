@@ -6,6 +6,7 @@ namespace NsUltimate\Business\Printer\Entity;
 
 use App\Core\Utils\UUID;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Attribute\Ignore;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'printer_account')]
@@ -25,6 +26,7 @@ class PrinterAccount
     private string $developerId;
 
     #[ORM\Column(name: 'credentials_cipher', type: 'text')]
+    #[Ignore]
     private string $credentialsCipher;
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
@@ -33,11 +35,11 @@ class PrinterAccount
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
 
-    public function __construct(string $name, string $developerId, string $credentialsCipher)
+    public function __construct(string $name = '', string $developerId = '', string $credentialsCipher = '')
     {
         $this->uuid = UUID::v4();
-        $this->name = self::required($name, 'name');
-        $this->developerId = self::required($developerId, 'developerId');
+        $this->name = $name === '' ? '' : self::required($name, 'name');
+        $this->developerId = $developerId === '' ? '' : self::required($developerId, 'developerId');
         $this->credentialsCipher = $credentialsCipher;
         $this->createdAt = new \DateTimeImmutable();
     }
@@ -47,6 +49,7 @@ class PrinterAccount
     public function getName(): string { return $this->name; }
     public function setName(string $name): self { $this->name = self::required($name, 'name'); return $this; }
     public function getDeveloperId(): string { return $this->developerId; }
+    public function setDeveloperId(string $developerId): self { $this->developerId = self::required($developerId, 'developerId'); return $this; }
     public function getCredentialsCipher(): string { return $this->credentialsCipher; }
     public function setCredentialsCipher(string $cipher): self { $this->credentialsCipher = $cipher; return $this; }
     public function isEnabled(): bool { return $this->enabled; }

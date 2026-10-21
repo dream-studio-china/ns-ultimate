@@ -1,5 +1,10 @@
 export default {
   'Printer workbench': 'Printer workbench',
+  'Printer management': 'Printer management', 'Printer accounts': 'Printer accounts', 'Printer devices': 'Printer devices',
+  'Printer templates': 'Printer templates', 'Printer jobs': 'Printer jobs', 'Printer operations': 'Printer operations',
+  'Printer operation failed': 'Printer operation failed', 'Invalid JSON': 'Invalid JSON',
+  'Template validation data help': 'Sample data is used to validate the template before saving.',
+  'Print simulation and submission': 'Print preview and submission', 'Refresh provider statuses': 'Refresh provider statuses', Close: 'Close',
   'Printer type': 'Printer type', Receipt: 'Receipt', Label: 'Label', Sample: 'Sample',
   'Order with multiple items': 'Order with multiple items', 'Batch product labels': 'Batch product labels',
   'Update preview': 'Update preview', 'Template JSON': 'Template JSON', 'Sample data JSON': 'Sample data JSON',

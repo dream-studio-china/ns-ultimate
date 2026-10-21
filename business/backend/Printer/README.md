@@ -25,13 +25,14 @@ register devices, save templates, submit print jobs with a unique
 snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 `unknown` and are never automatically resubmitted.
 
-## Preview workbench
+## Admin integration
 
-Administrators can open **Printer workbench** to try a receipt with repeated
-order items or batch label data. The preview API is
-`POST /api/v1/manage/printer/preview`; it returns rendered pages, provider
-command text, JavaScript/cURL examples, and a warning that physical output can
-differ. Preview never submits a print job.
+The admin menu uses the project's EasyAdmin entity configuration for accounts,
+devices, templates, and jobs. Their read/detail endpoints use `RestController`
+with the core `ApiView`, `ListApiViewMixin`, and `DetailApiViewMixin` lifecycle.
+Provider operations (credential entry, device registration/status, preview, and
+print submission/status) are exposed through a configured top action, not a
+standalone route view. Preview never submits a print job.
 
 The Xpyun adapter exposes receipt (`print`) and label (`printLabel`) separately.
 Xpyun currently documents label support for XP-T271U and XP-320B; verify the

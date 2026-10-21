@@ -35,13 +35,12 @@ class PrinterTemplate
     private \DateTimeImmutable $createdAt;
 
     /** @param array<string, mixed> $definition */
-    public function __construct(string $name, string $kind, array $definition)
+    public function __construct(string $name = '', string $kind = PrinterDevice::KIND_RECEIPT, array $definition = ['kind' => 'receipt', 'nodes' => []])
     {
         if (!in_array($kind, [PrinterDevice::KIND_RECEIPT, PrinterDevice::KIND_LABEL], true)) { throw new \InvalidArgumentException('Template kind must be receipt or label.'); }
         if (($definition['kind'] ?? null) !== $kind || !is_array($definition['nodes'] ?? null)) { throw new \InvalidArgumentException('Template definition kind and node list are required.'); }
         $this->uuid = UUID::v4();
         $this->name = trim($name);
-        if ($this->name === '') { throw new \InvalidArgumentException('Template name cannot be empty.'); }
         $this->kind = $kind;
         $this->definition = $definition;
         $this->createdAt = new \DateTimeImmutable();
@@ -50,8 +49,28 @@ class PrinterTemplate
     public function getId(): ?int { return $this->id; }
     public function getUuid(): string { return $this->uuid; }
     public function getName(): string { return $this->name; }
+    public function setName(string $name): self
+    {
+        $name = trim($name);
+        if ($name === '') { throw new \InvalidArgumentException('Template name cannot be empty.'); }
+        $this->name = $name;
+        return $this;
+    }
     public function getKind(): string { return $this->kind; }
+    public function setKind(string $kind): self
+    {
+        if (!in_array($kind, [PrinterDevice::KIND_RECEIPT, PrinterDevice::KIND_LABEL], true)) { throw new \InvalidArgumentException('Template kind must be receipt or label.'); }
+        $this->kind = $kind;
+        return $this;
+    }
     /** @return array<string, mixed> */ public function getDefinition(): array { return $this->definition; }
+    /** @param array<string, mixed> $definition */
+    public function setDefinition(array $definition): self
+    {
+        if (($definition['kind'] ?? null) !== $this->kind || !is_array($definition['nodes'] ?? null)) { throw new \InvalidArgumentException('Template definition kind and node list are required.'); }
+        $this->definition = $definition;
+        return $this;
+    }
     public function isEnabled(): bool { return $this->enabled; }
     public function setEnabled(bool $enabled): self { $this->enabled = $enabled; return $this; }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }

@@ -1,5 +1,10 @@
 export default {
   'Printer workbench': '列印調試台',
+  'Printer management': '列印管理', 'Printer accounts': '列印帳號', 'Printer devices': '列印裝置',
+  'Printer templates': '列印範本', 'Printer jobs': '列印任務', 'Printer operations': '列印操作',
+  'Printer operation failed': '列印操作失敗', 'Invalid JSON': 'JSON 格式無效',
+  'Template validation data help': '儲存前使用此範例資料驗證範本。',
+  'Print simulation and submission': '列印預覽與提交', 'Refresh provider statuses': '重新整理服務商狀態', Close: '關閉',
   'Printer type': '印表機類型', Receipt: '收據', Label: '標籤', Sample: '範例',
   'Order with multiple items': '含多筆明細的訂單', 'Batch product labels': '批次商品標籤',
   'Update preview': '更新預覽', 'Template JSON': '範本 JSON', 'Sample data JSON': '範例資料 JSON',

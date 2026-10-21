@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace NsUltimate\Business\Printer\Controller\Admin;
 
+use App\Core\Controller\RestController;
+use App\Core\View\ApiView;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Printer\Entity\PrinterAccount;
 use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterJob;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
-use NsUltimate\Business\Printer\Service\PrintDocumentRenderer;
 use NsUltimate\Business\Printer\Service\PrinterCredentialCipher;
 use NsUltimate\Business\Printer\Service\PrinterJobService;
 use NsUltimate\Business\Printer\Service\XpyunApiException;
@@ -19,47 +20,18 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/manage/printer', name: 'manage-printer-')]
+#[Route('/manage/printer/operations', name: 'manage-printer-operations-')]
 #[IsGranted('ROLE_ADMIN')]
-final class PrinterManageController
+final class PrinterManageController extends RestController
 {
+    use ApiView;
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly PrinterCredentialCipher $cipher,
         private readonly XpyunClient $xpyun,
         private readonly PrinterJobService $jobs,
-        private readonly PrintDocumentRenderer $renderer,
     ) {
-    }
-
-    #[Route('/accounts', name: 'accounts-list', methods: ['GET'])]
-    public function accounts(): JsonResponse
-    {
-        $items = array_map(fn (PrinterAccount $account): array => $this->accountJson($account), $this->entityManager->getRepository(PrinterAccount::class)->findBy([], ['id' => 'DESC']));
-        return new JsonResponse(['items' => $items]);
-    }
-
-    #[Route('/accounts', name: 'accounts-create', methods: ['POST'])]
-    public function createAccount(Request $request): JsonResponse
-    {
-        try {
-            $body = $request->toArray();
-            $account = new PrinterAccount($this->string($body, 'name'), $this->string($body, 'developerId'), $this->cipher->encrypt($this->string($body, 'userKey')));
-            $this->entityManager->persist($account);
-            $this->entityManager->flush();
-            return new JsonResponse($this->accountJson($account), 201);
-        } catch (\InvalidArgumentException $exception) {
-            return new JsonResponse(['error' => $exception->getMessage()], 400);
-        } catch (\Throwable) {
-            return new JsonResponse(['error' => 'Unable to save printer account.'], 400);
-        }
-    }
-
-    #[Route('/devices', name: 'devices-list', methods: ['GET'])]
-    public function devices(): JsonResponse
-    {
-        $items = array_map(fn (PrinterDevice $device): array => $this->deviceJson($device), $this->entityManager->getRepository(PrinterDevice::class)->findBy([], ['id' => 'DESC']));
-        return new JsonResponse(['items' => $items]);
     }
 
     #[Route('/devices', name: 'devices-create', methods: ['POST'])]
@@ -115,41 +87,6 @@ final class PrinterManageController
         } catch (\Throwable) {
             return new JsonResponse(['error' => 'Unable to refresh printer status.'], 502);
         }
-    }
-
-    #[Route('/templates', name: 'templates-list', methods: ['GET'])]
-    public function templates(): JsonResponse
-    {
-        $items = array_map(fn (PrinterTemplate $template): array => $this->templateJson($template), $this->entityManager->getRepository(PrinterTemplate::class)->findBy([], ['id' => 'DESC']));
-        return new JsonResponse(['items' => $items]);
-    }
-
-    #[Route('/templates', name: 'templates-create', methods: ['POST'])]
-    public function createTemplate(Request $request): JsonResponse
-    {
-        try {
-            $body = $request->toArray();
-            $definition = $body['definition'] ?? null;
-            if (!is_array($definition)) { throw new \InvalidArgumentException('definition must be an object.'); }
-            $sampleData = $body['sampleData'] ?? null;
-            if (!is_array($sampleData)) { throw new \InvalidArgumentException('sampleData must be an object used to validate this template.'); }
-            $template = new PrinterTemplate($this->string($body, 'name'), $this->string($body, 'kind'), $definition);
-            $this->renderer->render($definition, $sampleData);
-            $this->entityManager->persist($template);
-            $this->entityManager->flush();
-            return new JsonResponse($this->templateJson($template), 201);
-        } catch (\InvalidArgumentException $exception) {
-            return new JsonResponse(['error' => $exception->getMessage()], 400);
-        } catch (\Throwable) {
-            return new JsonResponse(['error' => 'Unable to save printer template.'], 400);
-        }
-    }
-
-    #[Route('/jobs', name: 'jobs-list', methods: ['GET'])]
-    public function jobs(): JsonResponse
-    {
-        $items = array_map(fn (PrinterJob $job): array => $this->jobJson($job), $this->entityManager->getRepository(PrinterJob::class)->findBy([], ['id' => 'DESC'], 100));
-        return new JsonResponse(['items' => $items]);
     }
 
     #[Route('/jobs', name: 'jobs-create', methods: ['POST'])]
@@ -226,21 +163,9 @@ final class PrinterManageController
     }
 
     /** @return array<string, mixed> */
-    private function accountJson(PrinterAccount $account): array
-    {
-        return ['uuid' => $account->getUuid(), 'name' => $account->getName(), 'developerId' => $account->getDeveloperId(), 'enabled' => $account->isEnabled(), 'createdAt' => $account->getCreatedAt()->format(DATE_ATOM), 'hasCredential' => true];
-    }
-
-    /** @return array<string, mixed> */
     private function deviceJson(PrinterDevice $device): array
     {
         return ['uuid' => $device->getUuid(), 'accountUuid' => $device->getAccount()->getUuid(), 'accountName' => $device->getAccount()->getName(), 'storeUuid' => $device->getStoreUuid(), 'name' => $device->getName(), 'serialNumber' => $device->getSerialNumber(), 'kind' => $device->getKind(), 'model' => $device->getModel(), 'widthMm' => $device->getWidthMm(), 'heightMm' => $device->getHeightMm(), 'enabled' => $device->isEnabled(), 'status' => $device->getProviderStatus(), 'statusCheckedAt' => $device->getStatusCheckedAt()?->format(DATE_ATOM)];
-    }
-
-    /** @return array<string, mixed> */
-    private function templateJson(PrinterTemplate $template): array
-    {
-        return ['uuid' => $template->getUuid(), 'name' => $template->getName(), 'kind' => $template->getKind(), 'definition' => $template->getDefinition(), 'enabled' => $template->isEnabled()];
     }
 
     /** @return array<string, mixed> */
