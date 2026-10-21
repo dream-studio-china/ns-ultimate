@@ -32,7 +32,7 @@
 "Idempotency key": "Idempotency key"
 "Request key": "Request key"
 "Order uuid": "Order UUID"
-"Route key": "Print route"
+"Case key": "Print case"
 "Trigger": "Print trigger"
 "Configuration": "Print configuration"
 "Print data": "Print data snapshot"

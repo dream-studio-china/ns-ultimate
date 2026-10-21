@@ -37,40 +37,41 @@ snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 ## Automatic Trade order printing
 
 The Printer module can enqueue order print requests for store-scoped Trade orders.
-Configure `Store.settings.printing` with `productionTrigger` (`accepted` or
-`paid`) and configure the fixed `kitchen`, `labels`, `receipt`, and `settlement`
-routes as needed. Kitchen routes select `filtered_list` or `full_list`; labels
-use `per_item`; receipt uses `full_list`; settlement uses `settlement`. Each
-route selects its device and template, with optional `copies` (default `1`) and
-`enabled` (default `true`). Settlement routes run only after payment; the
-selected production trigger applies to the other scenes. For example:
+Configure the five fixed legacy cases in `Store.settings.printing`: `order`,
+`perItem`, `filteredList`, `fullList`, and `settlement`. Each case has its own
+`enabled` flag, printer `deviceUuid`, `templateUuid`, and optional `copies`
+(default `1`). The adapter selects the print behavior and timing; the store only
+enables a case and chooses its device/template. Production cases run after
+store acceptance when `Store.settings.order.requireAcceptance` is true, and
+otherwise after payment. Settlement runs only after payment. For example:
 
 ```json
 {
   "printing": {
-    "productionTrigger": "accepted",
-    "routes": {
-      "kitchen": {
-        "scene": "filtered_list",
-        "deviceUuid": "<store printer device UUID>",
-        "templateUuid": "<receipt template UUID>"
-      },
-      "settlement": {
-        "scene": "settlement",
-        "deviceUuid": "<store printer device UUID>",
-        "templateUuid": "<receipt template UUID>"
-      }
+    "order": {
+      "enabled": true,
+      "deviceUuid": "<store printer device UUID>",
+      "templateUuid": "<standard order template UUID>"
+    },
+    "filteredList": {
+      "enabled": true,
+      "deviceUuid": "<store printer device UUID>",
+      "templateUuid": "<kitchen template UUID>"
+    },
+    "settlement": {
+      "enabled": true,
+      "deviceUuid": "<store printer device UUID>",
+      "templateUuid": "<settlement template UUID>"
     }
   }
 }
 ```
 
-The `filtered_list` scene includes only products with
-`settings.kitchenPrinterEnable: true`; `full_list` includes all order lines;
-`per_item` creates one request per item unit; `settlement` includes the order
-lines and payment context. Templates are independently selectable per store
-route. Requests are persisted with order/product data snapshots before being
-dispatched, so event handlers never call printer providers. Run
+The adapter maps the cases to the legacy normal order receipt, per-item ticket,
+kitchen-filtered list (`settings.kitchenPrinterEnable`), full item list, and
+settlement receipt behaviors. Requests are persisted with order/product data
+snapshots before being dispatched, so event handlers never call printer
+providers. Run
 `app:printer:dispatch-orders` periodically (or as a supervised worker command)
 to submit pending requests. Request keys are stable across redelivery and an
 ambiguous provider result is not automatically resubmitted. Failed requests are

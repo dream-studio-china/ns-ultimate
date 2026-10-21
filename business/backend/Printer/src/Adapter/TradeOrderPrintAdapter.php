@@ -16,6 +16,12 @@ final class TradeOrderPrintAdapter
 {
     public const TRIGGER_PAID = 'paid';
     public const TRIGGER_ACCEPTED = 'accepted';
+    public const CASE_ORDER = 'order';
+    public const CASE_PER_ITEM = 'perItem';
+    public const CASE_FILTERED_LIST = 'filteredList';
+    public const CASE_FULL_LIST = 'fullList';
+    public const CASE_SETTLEMENT = 'settlement';
+    public const SCENE_ORDER = 'order';
     public const SCENE_PER_ITEM = 'per_item';
     public const SCENE_FILTERED_LIST = 'filtered_list';
     public const SCENE_FULL_LIST = 'full_list';
@@ -49,7 +55,7 @@ final class TradeOrderPrintAdapter
         }
         $order = $this->entityManager->getRepository(Order::class)->findOneBy(['uuid' => $orderUuid]);
         $store = $this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $storeUuid]);
-        if ($order instanceof Order && $store instanceof Store) {
+        if ($order instanceof Order && $store instanceof Store && $this->requiresAcceptance($store)) {
             $this->enqueue($order, $store, self::TRIGGER_ACCEPTED);
             $this->entityManager->flush();
         }
@@ -62,41 +68,36 @@ final class TradeOrderPrintAdapter
         if (!is_array($printing)) {
             return;
         }
-        $productionTrigger = $printing['productionTrigger'] ?? 'accepted';
-        if (!in_array($productionTrigger, [self::TRIGGER_ACCEPTED, self::TRIGGER_PAID], true)) {
-            return;
-        }
-        $routes = $printing['routes'] ?? [];
-        if (!is_array($routes)) {
-            return;
-        }
-
-        foreach ($routes as $routeKey => $route) {
-            if (!is_string($routeKey) || !is_array($route) || ($route['enabled'] ?? true) !== true) {
+        $productionTrigger = $this->requiresAcceptance($store) ? self::TRIGGER_ACCEPTED : self::TRIGGER_PAID;
+        $cases = [
+            self::CASE_ORDER => self::SCENE_ORDER,
+            self::CASE_PER_ITEM => self::SCENE_PER_ITEM,
+            self::CASE_FILTERED_LIST => self::SCENE_FILTERED_LIST,
+            self::CASE_FULL_LIST => self::SCENE_FULL_LIST,
+            self::CASE_SETTLEMENT => self::SCENE_SETTLEMENT,
+        ];
+        foreach ($cases as $caseKey => $scene) {
+            $case = $printing[$caseKey] ?? null;
+            if ($trigger !== ($scene === self::SCENE_SETTLEMENT ? self::TRIGGER_PAID : $productionTrigger)
+                || !is_array($case)
+                || ($case['enabled'] ?? false) !== true) {
                 continue;
             }
-            $scene = $route['scene'] ?? null;
-            if (!in_array($scene, [self::SCENE_PER_ITEM, self::SCENE_FILTERED_LIST, self::SCENE_FULL_LIST, self::SCENE_SETTLEMENT], true)) {
+            if (!is_string($case['deviceUuid'] ?? null) || !is_string($case['templateUuid'] ?? null)) {
                 continue;
             }
-            $routeTrigger = $scene === self::SCENE_SETTLEMENT ? self::TRIGGER_PAID : $productionTrigger;
-            if ($routeTrigger !== $trigger
-                || !is_string($route['deviceUuid'] ?? null)
-                || !is_string($route['templateUuid'] ?? null)) {
-                continue;
-            }
-            $copies = $route['copies'] ?? 1;
+            $copies = $case['copies'] ?? 1;
             if (!is_int($copies) || $copies < 1 || $copies > 100) {
                 continue;
             }
 
             $configuration = [
                 'scene' => $scene,
-                'deviceUuid' => $route['deviceUuid'],
-                'templateUuid' => $route['templateUuid'],
+                'deviceUuid' => $case['deviceUuid'],
+                'templateUuid' => $case['templateUuid'],
                 'copies' => $copies,
             ];
-            $requestKey = hash('sha256', implode(':', [$order->getUuid(), $trigger, $routeKey]));
+            $requestKey = hash('sha256', implode(':', [$order->getUuid(), $trigger, $caseKey]));
             foreach ($this->buildPrintData($order, $store, $scene) as $ticketIndex => $printData) {
                 $ticketKey = $scene === self::SCENE_PER_ITEM ? ':'.$ticketIndex : '';
                 $key = hash('sha256', $requestKey.$ticketKey);
@@ -108,13 +109,18 @@ final class TradeOrderPrintAdapter
                     $key,
                     $order->getUuid(),
                     $store->getUuid(),
-                    $routeKey,
+                    $caseKey,
                     $trigger,
                     $configuration,
                     $printData,
                 ));
             }
         }
+    }
+
+    private function requiresAcceptance(Store $store): bool
+    {
+        return ($store->getSettings()['order']['requireAcceptance'] ?? false) === true;
     }
 
     /** @return list<array<string, mixed>> */

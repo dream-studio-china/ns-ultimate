@@ -32,7 +32,7 @@
 "Idempotency key": "冪等キー"
 "Request key": "リクエストキー"
 "Order uuid": "注文 UUID"
-"Route key": "印刷ルート"
+"Case key": "印刷ケース"
 "Trigger": "印刷トリガー"
 "Configuration": "印刷設定"
 "Print data": "印刷データのスナップショット"

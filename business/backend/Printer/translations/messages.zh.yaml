@@ -32,7 +32,7 @@
 "Idempotency key": "幂等键"
 "Request key": "请求键"
 "Order uuid": "订单 UUID"
-"Route key": "打印路由"
+"Case key": "打印场景"
 "Trigger": "打印触发时机"
 "Configuration": "打印配置"
 "Print data": "打印数据快照"

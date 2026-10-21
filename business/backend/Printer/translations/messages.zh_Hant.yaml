@@ -32,7 +32,7 @@
 "Idempotency key": "冪等鍵"
 "Request key": "請求鍵"
 "Order uuid": "訂單 UUID"
-"Route key": "列印路由"
+"Case key": "列印場景"
 "Trigger": "列印觸發時機"
 "Configuration": "列印設定"
 "Print data": "列印資料快照"

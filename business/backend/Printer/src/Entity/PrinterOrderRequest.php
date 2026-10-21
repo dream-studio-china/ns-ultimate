@@ -32,8 +32,8 @@ class PrinterOrderRequest
     #[ORM\Column(name: 'store_uuid', type: 'string', length: 36)]
     private string $storeUuid;
 
-    #[ORM\Column(name: 'route_key', type: 'string', length: 64)]
-    private string $routeKey;
+    #[ORM\Column(name: 'case_key', type: 'string', length: 64)]
+    private string $caseKey;
 
     #[ORM\Column(name: 'event_trigger', type: 'string', length: 20)]
     private string $trigger;
@@ -59,13 +59,13 @@ class PrinterOrderRequest
      * @param array<string, mixed> $configuration
      * @param array<string, mixed> $printData
      */
-    public function __construct(string $requestKey, string $orderUuid, string $storeUuid, string $routeKey, string $trigger, array $configuration, array $printData)
+    public function __construct(string $requestKey, string $orderUuid, string $storeUuid, string $caseKey, string $trigger, array $configuration, array $printData)
     {
         $this->uuid = UUID::v4();
         $this->requestKey = $requestKey;
         $this->orderUuid = $orderUuid;
         $this->storeUuid = $storeUuid;
-        $this->routeKey = $routeKey;
+        $this->caseKey = $caseKey;
         $this->trigger = $trigger;
         $this->configuration = $configuration;
         $this->printData = $printData;
@@ -77,7 +77,7 @@ class PrinterOrderRequest
     public function getRequestKey(): string { return $this->requestKey; }
     public function getOrderUuid(): string { return $this->orderUuid; }
     public function getStoreUuid(): string { return $this->storeUuid; }
-    public function getRouteKey(): string { return $this->routeKey; }
+    public function getCaseKey(): string { return $this->caseKey; }
     public function getTrigger(): string { return $this->trigger; }
     /** @return array<string, mixed> */ public function getConfiguration(): array { return $this->configuration; }
     /** @return array<string, mixed> */ public function getPrintData(): array { return $this->printData; }

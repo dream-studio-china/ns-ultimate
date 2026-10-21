@@ -19,13 +19,10 @@ final class TradeOrderPrintAdapterTest extends TestCase
     {
         $store = new Store('shop-a', 'Shop A');
         $store->setSettings(['printing' => [
-            'productionTrigger' => 'paid',
-            'routes' => [
-                'receipt' => [
-                    'scene' => 'full_list',
-                    'deviceUuid' => 'device-a',
-                    'templateUuid' => 'template-a',
-                ],
+            'order' => [
+                'enabled' => true,
+                'deviceUuid' => 'device-a',
+                'templateUuid' => 'template-a',
             ],
         ]]);
         $order = new Order();
@@ -65,9 +62,9 @@ final class TradeOrderPrintAdapterTest extends TestCase
         $request = array_values($knownRequests)[0];
         self::assertSame($order->getUuid(), $request->getOrderUuid());
         self::assertSame($store->getUuid(), $request->getStoreUuid());
-        self::assertSame('receipt', $request->getRouteKey());
+        self::assertSame('order', $request->getCaseKey());
         self::assertSame('paid', $request->getTrigger());
-        self::assertSame('full_list', $request->getConfiguration()['scene']);
+        self::assertSame('order', $request->getConfiguration()['scene']);
         self::assertSame([], $request->getPrintData()['order']['items']);
     }
 
@@ -75,13 +72,10 @@ final class TradeOrderPrintAdapterTest extends TestCase
     {
         $store = new Store('shop-a', 'Shop A');
         $store->setSettings(['printing' => [
-            'productionTrigger' => 'accepted',
-            'routes' => [
-                'settlement' => [
-                    'scene' => 'settlement',
-                    'deviceUuid' => 'device-a',
-                    'templateUuid' => 'template-a',
-                ],
+            'settlement' => [
+                'enabled' => true,
+                'deviceUuid' => 'device-a',
+                'templateUuid' => 'template-a',
             ],
         ]]);
         $order = new Order();
@@ -103,5 +97,50 @@ final class TradeOrderPrintAdapterTest extends TestCase
         $entityManager->expects(self::once())->method('persist')->with(self::isInstanceOf(PrinterOrderRequest::class));
 
         (new TradeOrderPrintAdapter($entityManager))->enqueueForPaidOrder($order);
+    }
+
+    public function testProductionCaseUsesAcceptedEventWhenStoreRequiresAcceptance(): void
+    {
+        $store = new Store('shop-a', 'Shop A');
+        $store->setSettings([
+            'order' => ['requireAcceptance' => true],
+            'printing' => [
+                'fullList' => [
+                    'enabled' => true,
+                    'deviceUuid' => 'device-a',
+                    'templateUuid' => 'template-a',
+                ],
+            ],
+        ]);
+        $order = new Order();
+        $lifecycle = new OrderStoreLifecycle($order->getUuid(), $store->getUuid());
+        $lifecycleRepository = $this->createStub(EntityRepository::class);
+        $lifecycleRepository->method('findOneBy')->willReturn($lifecycle);
+        $orderRepository = $this->createStub(EntityRepository::class);
+        $orderRepository->method('findOneBy')->willReturn($order);
+        $storeRepository = $this->createStub(EntityRepository::class);
+        $storeRepository->method('findOneBy')->willReturn($store);
+        $requestRepository = $this->createStub(EntityRepository::class);
+        $requestRepository->method('findOneBy')->willReturn(null);
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('getRepository')->willReturnCallback(static fn (string $class): EntityRepository => match ($class) {
+            OrderStoreLifecycle::class => $lifecycleRepository,
+            Order::class => $orderRepository,
+            Store::class => $storeRepository,
+            PrinterOrderRequest::class => $requestRepository,
+            default => throw new \LogicException('Unexpected repository '.$class),
+        });
+        $queuedRequest = null;
+        $entityManager->expects(self::once())->method('persist')->with(self::callback(static function (object $request) use (&$queuedRequest): bool {
+            $queuedRequest = $request;
+            return $request instanceof PrinterOrderRequest;
+        }));
+        $entityManager->expects(self::once())->method('flush');
+
+        (new TradeOrderPrintAdapter($entityManager))->enqueueForAcceptedOrder($order->getUuid(), $store->getUuid());
+
+        self::assertInstanceOf(PrinterOrderRequest::class, $queuedRequest);
+        self::assertSame('accepted', $queuedRequest->getTrigger());
+        self::assertSame('fullList', $queuedRequest->getCaseKey());
     }
 }
