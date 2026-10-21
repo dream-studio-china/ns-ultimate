@@ -88,6 +88,11 @@ class PrinterDevice
     public function getModel(): ?string { return $this->model; }
     public function getWidthMm(): ?int { return $this->widthMm; }
     public function getHeightMm(): ?int { return $this->heightMm; }
+    public function setName(string $name): self { $this->name = self::required($name, 'name'); return $this; }
+    public function setModel(?string $model): self { $this->model = $model === null || trim($model) === '' ? null : trim($model); return $this; }
+    public function setStoreUuid(?string $storeUuid): self { $this->storeUuid = $storeUuid === null || trim($storeUuid) === '' ? null : trim($storeUuid); return $this; }
+    public function setWidthMm(?int $widthMm): self { $this->assertDimension($widthMm, 'widthMm'); $this->widthMm = $widthMm; return $this; }
+    public function setHeightMm(?int $heightMm): self { $this->assertDimension($heightMm, 'heightMm'); $this->heightMm = $heightMm; return $this; }
     public function isEnabled(): bool { return $this->enabled; }
     public function setEnabled(bool $enabled): self { $this->enabled = $enabled; return $this; }
     public function getProviderStatus(): ?int { return $this->providerStatus; }
@@ -105,5 +110,15 @@ class PrinterDevice
         $value = trim($value);
         if ($value === '') { throw new \InvalidArgumentException(sprintf('%s cannot be empty.', $field)); }
         return $value;
+    }
+
+    private function assertDimension(?int $dimension, string $field): void
+    {
+        if ($this->kind === self::KIND_LABEL && ($dimension === null || $dimension < 10 || $dimension > 200)) {
+            throw new \InvalidArgumentException(sprintf('%s must be between 10 and 200 mm for label printers.', $field));
+        }
+        if ($dimension !== null && ($dimension < 10 || $dimension > 200)) {
+            throw new \InvalidArgumentException(sprintf('%s must be between 10 and 200 mm.', $field));
+        }
     }
 }

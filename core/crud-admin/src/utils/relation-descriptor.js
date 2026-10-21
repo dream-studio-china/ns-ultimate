@@ -23,7 +23,12 @@ export const resolveRelation = (field = {}, struct = {}, entities = {}) => {
   const metadataType = struct?.metadata?.type
   const explicitTarget = relation.target || relation.entity || relation.entity_name
   const conventionalTarget = field.type_options?.entity_name || struct?.metadata?.targetEntity
-  const target = explicitTarget || conventionalTarget || inferredEntity(field.property, entities)
+  const scalarTypes = new Set(['array', 'boolean', 'code', 'date', 'datetime', 'datetime_immutable', 'float', 'integer', 'json', 'string', 'text'])
+  const declaredType = field.type || metadataType
+  const inferred = scalarTypes.has(String(declaredType || '').toLowerCase())
+    ? ''
+    : inferredEntity(field.property, entities)
+  const target = explicitTarget || conventionalTarget || inferred
   const name = entityName(target)
 
   if (!name) return null

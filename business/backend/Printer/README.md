@@ -67,6 +67,18 @@ kind; without enabled devices, templates can still be previewed locally. The
 preview and submit handlers unwrap the shared request helper's `data` envelope.
 Disabled devices/accounts cannot be queried for provider status, and toolbar
 refresh skips disabled demo devices. Live submission requires confirmation.
+Job detail displays the saved template/data/rendered-content snapshots, while
+the preview action renders the stored paper document. Jobs are immutable after
+creation; deletion is allowed only for definitively failed jobs without a
+provider order ID. Submitted, printed, submitting and unknown jobs remain
+protected from deletion. Orders use the Trade admin lifecycle: draft orders can
+be viewed, have notes/metadata edited, or be deleted; other order states are
+protected from those mutations.
+Printer devices can be viewed and updated in the admin (name, model, store,
+label dimensions and enabled state). Their account, serial number and kind are
+identity/registration data and are not editable. Devices with print-job history
+cannot be deleted; deleting an unused device removes only the local record and
+does not unregister it from Xpyun.
 
 ## Receipt and label layout
 

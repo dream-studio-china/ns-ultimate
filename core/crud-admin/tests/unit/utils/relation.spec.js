@@ -16,6 +16,11 @@ describe('utils/relation', () => {
       .toMatchObject({ name: 'User', valueKey: 'uuid', multiple: false })
   })
 
+  it('does not infer a relation for explicitly scalar UUID fields', () => {
+    expect(resolveRelation({ property: 'storeUuid', type: 'text' }, {}, entities)).toBeNull()
+    expect(resolveRelation({ property: 'storeUuid' }, { metadata: { type: 'string' }}, entities)).toBeNull()
+  })
+
   it('infers registered multi-value UUID relation fields', () => {
     expect(resolveRelation({ property: 'userUuids' }, {}, entities))
       .toMatchObject({ name: 'User', valueKey: 'uuid', multiple: true })

@@ -121,6 +121,20 @@ test('cancelling reprint confirmation does not submit another live job', async()
   assert.equal(submitted, false)
 })
 
+test('printer job admin exposes detail and single delete but preserves immutable snapshots', () => {
+  const source = readFileSync(new URL('../../business/admin/config/collections/printer/PrinterJob.js', import.meta.url), 'utf8')
+  const moduleSource = source.replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+  const context = { t: key => key, PrinterJobAction: 'create', PrinterPaperAction: 'preview', PrinterJobReprintAction: 'reprint', globalThis: {} }
+  runInNewContext(moduleSource, context)
+  const config = context.globalThis.config.PrinterJob
+  assert.deepEqual(JSON.parse(JSON.stringify(config.list.disabled_actions)), ['new', 'edit', 'batch_edit', 'batch_delete'])
+  assert.ok(!config.list.disabled_actions.includes('detail'))
+  assert.ok(!config.list.disabled_actions.includes('delete'))
+  assert.deepEqual(JSON.parse(JSON.stringify(config.detail.disabled_actions)), ['edit'])
+  assert.ok(config.detail.detail_display.some(field => typeof field === 'object' && field.property === 'dataSnapshot'))
+  assert.ok(config.detail.detail_display.some(field => typeof field === 'object' && field.property === 'renderedContent'))
+})
+
 test('each template previews its definition with editable sample data', async() => {
   const posts = []
   const ui = mount('PrinterPaperAction', {
