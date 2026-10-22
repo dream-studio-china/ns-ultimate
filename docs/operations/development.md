@@ -57,6 +57,17 @@ make migrate
 
 Manual migrations retain Symfony's interactive confirmation. Migrations do not run during installation, restarts after successful setup, `make env-init`, or tests; first-time `make dev`/`make docker-dev` and each reset followed by startup are explicit setup flows. Do not point routine development setup or validation at production databases.
 
+## Optional MySQL verification for the admin agent
+
+The backend test suite always runs against a temporary SQLite file. SQLite does not reproduce MySQL JSON key ordering or InnoDB row-lock contention, so the admin-agent operation protocol has portability risks that only a MySQL run exposes. Verify them against a **dedicated disposable schema**, never the development or production database: the shared integration test bootstrap calls `doctrine:schema:drop --full-database` before creating the schema.
+
+1. Create a dedicated schema and confirm the target name.
+2. Point `DATABASE_URL` for the test process at that schema and run the app backend tests, for example `apps/admin-agent/backend/tests`.
+3. Optionally exercise concurrent commits against a temporary loopback server using the same schema, then confirm one target record and one succeeded receipt.
+4. Drop the disposable schema and confirm the development database was untouched.
+
+This verification is manual and outside CI. Do not commit credentials, generated schema names, or test tokens. Record results as dated evidence for the environment actually tested, not as a production concurrency guarantee.
+
 ## Debugging and validation
 
 ```sh

@@ -1,6 +1,6 @@
 # Admin AI assistant app
 
-The assistant is an independent, optional frontend module. It provides a floating panel, locally persisted provider preferences and API key, automatic same-origin OpenAPI documentation loading on mount, config-first entity discovery, bounded authenticated read-only collection queries, allowlisted navigation to registered admin lists and record detail views, Markdown-rendered assistant replies (including GFM-style tables), and streamed documentation-grounded chat with an OpenAI Chat Completions-compatible endpoint.
+The assistant is an independent, optional frontend module. It provides a floating panel, locally persisted provider preferences and API key, automatic same-origin OpenAPI documentation loading on mount, config-first entity discovery, bounded authenticated read-only collection queries, allowlisted navigation to registered admin lists and record detail views, Markdown-rendered assistant replies (including GFM-style tables), and streamed chat with an OpenAI Chat Completions-compatible endpoint. In the ns-ultimate host, explicitly curated business guides are bundled with the frontend, searched locally, and only relevant bounded excerpts are sent as untrusted reference data; selected references and their repository source paths are shown separately from API sources.
 
 Record queries run without per-query confirmation or assistant-level query-count/total-row quotas. Queries are limited to documented GET collection endpoints that also match the composed admin entity config; text filters use substring matching, configured select filters use exact equality, relation filters require statically configured options and validated identifiers, and configured numeric/date fields support validated comparisons. Dynamic relation option callbacks are not executed. Each request remains capped at 60 rows and 60 seconds; pagination is capped at page 100. Users can cancel an active task. A loop guard stops a task after 100 tool calls or repeated identical calls. Arbitrary URLs, filter expressions, and write methods are unavailable. Returned fields are projected from configured list columns, sensitive property names/types are excluded, and the result payload is capped before it is sent to the model provider. The user's question and matching API-documentation excerpts are also sent to that provider.
 
@@ -11,6 +11,17 @@ The UI shows query conditions, configured sort order, browser retrieval time and
 Navigation is available only when explicitly requested by the user and only to registered list pages or read-only record detail routes. It does not open create/edit routes or arbitrary URLs.
 
 The model does **not** submit writes. Registered host adapters can enable user-confirmed single-record create/update/delete operations. Review the full diff and confirm in the UI; deletion requires typing the exact confirmation phrase. Proposals expire after five minutes. Network cancellation after submission may leave the outcome unknown; use the status check instead of creating another operation. The app backend owns one generic `AgentOperation` entity/table for all adapters, not one operation entity per business resource. See the [operation contract](../../docs/contracts/admin-agent.md) for endpoints, migration and retention requirements. Real authenticated browser verification remains outstanding.
+
+## Verification status
+
+Date: 2026-10-22. Environment: local MySQL 8.0.41 (InnoDB, `REPEATABLE-READ`) through the composed dev backend, using a disposable schema that was dropped afterwards.
+
+- The generic operation migration was already applied; the table mapping matched the schema and the app backend tests passed against MySQL after the field-order fix below.
+- Eight simultaneous commits of one prepared Content create, served by four loopback worker processes, all returned `succeeded` with the same target and produced exactly one record.
+- That run exposed one portability defect: MySQL's `JSON` type reorders stored object keys, so a restored preview listed differences in a different order than the original preview. The Content adapter now emits differences in its declared field order. SQLite-only tests did not detect this.
+- Still unverified: real browser sessions, real agents with a live model provider, production MySQL topologies, multi-writer optimistic locking outside the adapter, and prune timing under long-running operations.
+
+The procedure and its destructive-schema warning are documented in [local development](../../docs/operations/development.md). Do not repeat it against a development or production database.
 
 ## Operation recovery
 
@@ -29,6 +40,7 @@ Use **Operations** to retrieve the current account's server-owned receipts after
 - `src/`, `tests/`, `package.json`: generic browser UI, tools, provider integration and tests.
 - `backend/src/` outside `Adapter/`: generic operation lifecycle, registry, actor-provider interface, routes, entity and pruning command.
 - `adapters/ns-ultimate/admin/`: host-specific frontend capability descriptions and Counter.name local-preview policy.
+- `adapters/ns-ultimate/admin/knowledge/`: explicitly selected, frontend-bundled ns-ultimate task and support guides. These are user-visible reference material, not confidential documents or permissions; changes ship with the frontend build.
 - `backend/src/Adapter/NsUltimate/`: host-specific Content mutation adapter, reusing existing business entities and validation without modifying business modules.
 - `backend/tests/Integration/Adapter/NsUltimate/`: composition tests for that binding, separate from generic lifecycle tests.
 - `backend/migrations/`, `backend/config/`, `backend/translations/`: app-owned schema and Symfony configuration.
@@ -56,7 +68,7 @@ Open the assistant settings and enter:
 - The same-origin API document URL, defaulting to `/api/doc.json`.
 - Optional API key. Leave blank for providers such as Ollama that do not require one.
 
-Provider URL compatibility depends on the provider's CORS and Chat Completions implementation. Provider settings and the API key are stored in browser local storage and persist across page reloads. The API key is sent only to the configured provider; leave it blank for providers that do not require one. Clear it with the settings action when no longer needed. Local storage is accessible to scripts running on this origin, so only use this on a trusted browser/device. The assistant sends the user's question and matching API-documentation excerpts to the configured provider. Bounded read query results are also sent to the provider without an additional confirmation. The admin token is never sent to the provider. Chinese UI text follows the admin's `app_locale`; English is the fallback for other locales.
+Provider URL compatibility depends on the provider's CORS and Chat Completions implementation. Provider settings and the API key are stored in browser local storage and persist across page reloads. The API key is sent only to the configured provider; leave it blank for providers that do not require one. Clear it with the settings action when no longer needed. Local storage is accessible to scripts running on this origin, so only use this on a trusted browser/device. The assistant sends the user's question, matching API-documentation excerpts, and any matching excerpts from the bundled host knowledge articles to the configured provider. Bounded read query results are also sent to the provider without an additional confirmation. The admin token is never sent to the provider. Chinese UI text follows the admin's `app_locale`; English is the fallback for other locales.
 
 ## Development checks
 
