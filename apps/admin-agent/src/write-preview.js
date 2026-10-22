@@ -19,8 +19,12 @@ export function createWritePreview(input, policy, snapshots) {
   const differences = Object.entries(changes).map(([property, after]) => {
     if (!Object.hasOwn(fields, property)) throw new TypeError('This field is not enabled for write previews.')
     const rule = fields[property]
-    if (rule.type !== 'string' || typeof after !== 'string' || after.length > rule.maxLength
-      || /[\u0000-\u001f\u007f]/.test(after) || (rule.required && !after.trim())) {
+    const validationValue = typeof after === 'string' && rule.trimForValidation ? after.trim() : after
+    const length = typeof validationValue === 'string' && rule.lengthUnit === 'codePoints'
+      ? [...validationValue].length
+      : validationValue?.length
+    if (rule.type !== 'string' || typeof after !== 'string' || length > rule.maxLength
+      || /[\u0000-\u001f\u007f]/.test(after) || (rule.required && !validationValue.trim())) {
       throw new TypeError(`The proposed value for ${property} is invalid.`)
     }
     if (!Object.hasOwn(record, property) || typeof record[property] !== 'string' || record[property].length >= 300) {

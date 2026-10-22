@@ -117,7 +117,7 @@ test('pending outcome revalidates the original preview and never re-enables a st
         if (conflict) throw { response: { status: 409, data: { error: 'proposal_conflict' } } }
         return { data: preview }
       }
-    }, '/operations')
+    }, '/operations', [{ entity: 'Content', actions: ['create'] }])
     const change = createPreparedChange(preview, host)
     await change.submit(true)
     assert.equal((await change.recover()).state, conflict ? 'conflicted' : 'ready')

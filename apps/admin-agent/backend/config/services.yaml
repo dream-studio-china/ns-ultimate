@@ -8,3 +8,6 @@ services:
         exclude:
             - '../src/Entity/'
             - '../src/Adapter/'
+
+    # Explicitly select this host's restricted Counter.name capability.
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\CounterMutationAdapter: ~

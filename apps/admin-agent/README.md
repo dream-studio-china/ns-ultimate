@@ -10,7 +10,7 @@ The UI shows query conditions, configured sort order, browser retrieval time and
 
 Navigation is available only when explicitly requested by the user and only to registered list pages or read-only record detail routes. It does not open create/edit routes or arbitrary URLs.
 
-The model does **not** submit writes. Registered host adapters can enable user-confirmed single-record create/update/delete operations. Review the full diff and confirm in the UI; deletion requires typing the exact confirmation phrase. Proposals expire after five minutes. Network cancellation after submission may leave the outcome unknown; use the status check instead of creating another operation. The app backend owns one generic `AgentOperation` entity/table for all adapters, not one operation entity per business resource. See the [operation contract](../../docs/contracts/admin-agent.md) for endpoints, migration and retention requirements. Real authenticated browser verification remains outstanding.
+The model does **not** submit writes. Registered host adapters can enable user-confirmed single-record create/update/delete operations. Review the full diff and confirm in the UI; deletion requires typing the exact confirmation phrase. Proposals expire after five minutes. Network cancellation after submission may leave the outcome unknown; use the status check instead of creating another operation. The app backend owns one generic `AgentOperation` entity/table for all adapters, not one operation entity per business resource. The ns-ultimate host enables Content create/update/delete and Counter update of `name` only; Counter creation/deletion and all other Counter fields remain unavailable. These are host capability limits, not proof of backend authorization or domain safety. No agent mutation triggers receipt printing, payment, or other external actions. See the [operation contract](../../docs/contracts/admin-agent.md) for endpoints, migration and retention requirements, and the bounded local acceptance below for verified behavior and remaining gaps.
 
 ## Verification status
 
@@ -19,7 +19,11 @@ Date: 2026-10-22. Environment: local MySQL 8.0.41 (InnoDB, `REPEATABLE-READ`) th
 - The generic operation migration was already applied; the table mapping matched the schema and the app backend tests passed against MySQL after the field-order fix below.
 - Eight simultaneous commits of one prepared Content create, served by four loopback worker processes, all returned `succeeded` with the same target and produced exactly one record.
 - That run exposed one portability defect: MySQL's `JSON` type reorders stored object keys, so a restored preview listed differences in a different order than the original preview. The Content adapter now emits differences in its declared field order. SQLite-only tests did not detect this.
-- Still unverified: real browser sessions, real agents with a live model provider, production MySQL topologies, multi-writer optimistic locking outside the adapter, and prune timing under long-running operations.
+- This isolated run did not verify browser sessions or live model behavior; see the later Counter acceptance below. Production MySQL topologies, multi-writer optimistic locking outside the adapter, and prune timing under long-running operations remain unverified.
+
+### Counter browser acceptance
+
+On 2026-10-22, the local authenticated admin and configured live model completed a Counter name-only update, followed by a fresh query confirming the changed name. A second proposal restored the original name; reloading the page, retrieving Operations, restoring that same pending preview, and explicitly confirming it succeeded. A fresh query confirmed the original name was restored. Both successful receipts remained available, and no Counter creation/deletion, other business-field changes, or external actions were performed. The setter also updates `updatedAt` as part of normal domain behavior. The model initially attempted an unsupported ID list filter, which was rejected; a subsequent unfiltered query succeeded. Counter-specific MySQL concurrency/lock contention remains unverified.
 
 The procedure and its destructive-schema warning are documented in [local development](../../docs/operations/development.md). Do not repeat it against a development or production database.
 
@@ -45,14 +49,14 @@ The ns-ultimate host policy (`adapters/ns-ultimate/admin/inspection-policy.mjs`)
 
 - `src/`, `tests/`, `package.json`: generic browser UI, tools, provider integration and tests.
 - `backend/src/` outside `Adapter/`: generic operation lifecycle, registry, actor-provider interface, routes, entity and pruning command.
-- `adapters/ns-ultimate/admin/`: host-specific frontend capability descriptions and Counter.name local-preview policy.
+- `adapters/ns-ultimate/admin/`: host-specific frontend capability descriptions, Counter.name update capability and local preview policy.
 - `adapters/ns-ultimate/admin/knowledge/`: explicitly selected, frontend-bundled ns-ultimate task and support guides. These are user-visible reference material, not confidential documents or permissions; changes ship with the frontend build.
 - `backend/src/Adapter/NsUltimate/`: host-specific Content mutation adapter, reusing existing business entities and validation without modifying business modules.
 - `backend/tests/Integration/Adapter/NsUltimate/`: composition tests for that binding, separate from generic lifecycle tests.
 - `backend/migrations/`, `backend/config/`, `backend/translations/`: app-owned schema and Symfony configuration.
 - `backend/composer.json`: embeddable backend package manifest. This repository deliberately reuses the locked core dependencies; it does not install a second backend runtime.
-- `integration/`: explicitly supplies app autoloading, service/route/mapping registration, stable actor identity, admin authentication and frontend build wiring. It explicitly enables the app-owned Content adapter; host adapters are excluded from generic service discovery. There is no automatic discovery of arbitrary apps.
-- `business/` and `core/`: existing host domain models and validation, consumed but not modified for agent features. Agent-specific extensions stay in the app. Currently only Content create/update/delete and Counter.name local-only preview are enabled.
+- `integration/`: explicitly supplies app autoloading, service/route/mapping registration, stable actor identity, admin authentication and frontend build wiring. It explicitly enables app-owned Content and Counter adapters; host adapters are excluded from generic service discovery. There is no automatic discovery of arbitrary apps.
+- `business/` and `core/`: existing host domain models and validation, consumed but not modified for agent features. Agent-specific extensions stay in the app. Currently Content create/update/delete and Counter name-only update are enabled.
 
 To add a writable resource, implement `MutationAdapter` in an app-owned host adapter directory and supply its capability descriptor. Explicitly enable the adapter through integration; do not add agent code to business modules or core. The adapter authorizes access and owns lookup, canonical snapshots, agent-specific field restrictions, row locking and read-back verification while reusing existing domain validation. The generic registry rejects unknown or duplicate keys; caller input never resolves PHP classes or arbitrary URLs. The app can be embedded in another compatible Symfony host by importing its service configuration, mapping, migrations and routes, and providing `ActorIdentityProvider` plus explicitly selected host adapters. It is an application package, not an independently running service in this deployment. Removing its registration must not require business-module edits; ordinary business CRUD remains independent of the agent.
 

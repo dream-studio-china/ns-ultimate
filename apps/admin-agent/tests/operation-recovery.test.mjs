@@ -109,7 +109,10 @@ test('reset clears receipts and invalidates old responses while allowing a fresh
 
 test('history transport uses fixed read-only routes and rejects invalid pages and operation identifiers', async() => {
   const calls = []
-  const host = createMutationHost({ get: async(...args) => { calls.push(args); return { data: { ok: true } } } }, '/manage/agent/operations')
+  const host = createMutationHost({ get: async(...args) => {
+    calls.push(args)
+    return { data: { entity: 'Content', action: 'create', saved: false, differences: [] } }
+  } }, '/manage/agent/operations', [{ entity: 'Content', actions: ['create'] }])
   await host.listRecordChanges(2)
   assert.equal(calls[0][0], '/manage/agent/operations')
   assert.deepEqual(calls[0][1].params, { page: 2 })
@@ -118,4 +121,28 @@ test('history transport uses fixed read-only routes and rejects invalid pages an
   await assert.rejects(host.listRecordChanges(101), /Invalid operation page/)
   await assert.rejects(host.restoreRecordChange('../other'), /Invalid operation identifier/)
   assert.equal(calls.length, 2)
+})
+
+test('Content-only transport blocks restored Counter values before recovery can invoke confirmation', async() => {
+  const calls = []
+  let onRestoredPreviewCalled = false
+  const counterPreview = {
+    operationId: id, entity: 'Counter', action: 'update', saved: false,
+    differences: [{ property: 'name', before: 'Private counter name', after: 'Another private name' }]
+  }
+  const transport = createMutationHost({
+    get: async(...args) => { calls.push(args); return { data: counterPreview } }
+  }, '/manage/agent/operations', [{ entity: 'Content', actions: ['create', 'update', 'delete'] }])
+  const recovery = createOperationRecovery(transport, {
+    onRestore: () => { onRestoredPreviewCalled = true }
+  })
+
+  await recovery.restore(id)
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0][0], `/manage/agent/operations/${id}/preview`)
+  assert.equal(onRestoredPreviewCalled, false)
+  assert.equal(JSON.stringify(recovery.state).includes('Private counter name'), false)
+  assert.equal(JSON.stringify(recovery.state).includes('Another private name'), false)
+  assert.match(recovery.state.error, /Could not restore this preview/)
 })

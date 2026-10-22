@@ -12,4 +12,25 @@ export const contentAgentCapabilities = {
   }
 }
 
-export default [contentAgentCapabilities]
+export const counterAgentCapabilities = {
+  entity: 'Counter',
+  actions: ['update'],
+  fields: {
+    name: 'Non-empty string, at most 120 characters.'
+  },
+  validateChanges(changes) {
+    return Object.keys(changes).length === 1
+      && typeof changes.name === 'string'
+      && changes.name.trim().length > 0
+      && [...changes.name.trim()].length <= 120
+  },
+  validatePreview(preview) {
+    return preview.action === 'update'
+      && Array.isArray(preview.differences)
+      && preview.differences.every(item => item && item.property === 'name'
+        && typeof item.after === 'string' && item.after.trim().length > 0
+        && [...item.after.trim()].length <= 120)
+  }
+}
+
+export default [contentAgentCapabilities, counterAgentCapabilities]
