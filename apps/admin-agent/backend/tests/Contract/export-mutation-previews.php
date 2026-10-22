@@ -24,13 +24,21 @@ use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ContentMutationAdapter
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\CounterMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductCategoryMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductMutationAdapter;
+use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductPrintingMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\SpecificationMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StoreMutationAdapter;
+use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StorePrintingMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Service\AgentOperationService;
 use NsUltimate\Apps\AdminAgent\Backend\Service\MutationAdapterRegistry;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Common\Entity\Content;
+use NsUltimate\Business\Printer\Entity\PrinterAccount;
+use NsUltimate\Business\Printer\Entity\PrinterDevice;
+use NsUltimate\Business\Printer\Entity\PrinterJob;
+use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
+use NsUltimate\Business\Printer\Entity\PrinterTemplate;
+use NsUltimate\Business\Store\Entity\Product as BusinessProduct;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Authorization\AccessDecision;
@@ -65,6 +73,8 @@ try {
             new ProductCategoryMutationAdapter($manager, $auth),
             new ProductMutationAdapter($manager, $validator, $auth),
             new SpecificationMutationAdapter($manager, $auth),
+            new StorePrintingMutationAdapter($manager, $auth),
+            new ProductPrintingMutationAdapter($manager, $validator, $auth),
         ]));
     };
     $service = $buildService($em);
@@ -152,7 +162,129 @@ try {
     $updatedLongTitle = 'Product #5 size '.str_repeat('界', 255 - mb_strlen('Product #5 size ') - 1).'更';
     $complete($prepare('Specification', 'update', (string) $spec['identifier'], ['productId' => $specProduct->getId(), 'name' => $updatedLongTitle]));
 
+    // Printing configuration uses the real app-owned adapters and only the
+    // disposable SQLite database. No provider service is wired, and the
+    // synthetic account cipher is never decrypted or used for a provider call.
+    $printingStore = new Store('contract-printing-store', 'Contract Printing Store');
+    $printingAccount = (new PrinterAccount(
+        'Contract synthetic account',
+        'contract-synthetic-developer',
+        'contract-synthetic-cipher-not-a-credential',
+    ))->setEnabled(true);
+    $printingDevice = (new PrinterDevice(
+        $printingAccount,
+        'Contract receipt device',
+        'contract-synthetic-serial',
+        PrinterDevice::KIND_RECEIPT,
+        $printingStore->getUuid(),
+    ))->setEnabled(true);
+    $printingTemplate = (new PrinterTemplate('Contract receipt template', PrinterDevice::KIND_RECEIPT))->setEnabled(true);
+    $printingStore->setSettings([
+        'paymentRate' => 'contract-private-payment-rate',
+        'order' => ['requireAcceptance' => true, 'requireInventory' => false],
+        'fulfillment' => ['requireVerification' => true],
+        'customRoot' => ['secret' => 'contract-private-custom-root'],
+        'printing' => [
+            'order' => ['enabled' => false, 'deviceUuid' => $printingDevice->getUuid(), 'templateUuid' => $printingTemplate->getUuid(), 'copies' => 2, 'legacyNote' => 'contract-private-printing-note'],
+            'perItem' => ['enabled' => true, 'deviceUuid' => $printingDevice->getUuid(), 'templateUuid' => $printingTemplate->getUuid(), 'copies' => 2],
+            'filteredList' => ['enabled' => true, 'deviceUuid' => $printingDevice->getUuid(), 'templateUuid' => $printingTemplate->getUuid(), 'copies' => 3],
+            'unknownCase' => ['note' => 'contract-private-unknown-case'],
+        ],
+    ]);
+    $printingProduct = (new BusinessProduct($printingStore))
+        ->setName('Contract printing product')
+        ->setSettings([
+            'kitchenPrinterEnable' => false,
+            'startSaleTime' => '08:15',
+            'endSaleTime' => '21:45',
+            'customProductNote' => 'contract-private-product-note',
+        ]);
+    $em->persist($printingStore);
+    $em->persist($printingAccount);
+    $em->persist($printingDevice);
+    $em->persist($printingTemplate);
+    $em->persist($printingProduct);
+    $em->flush();
+
+    $printingStoreId = (string) $printingStore->getId();
+    $printingProductId = (string) $printingProduct->getId();
+    $printingDeviceUuid = $printingDevice->getUuid();
+    $printingTemplateUuid = $printingTemplate->getUuid();
+    $jobBaseline = $em->getRepository(PrinterJob::class)->count([]);
+    $requestBaseline = $em->getRepository(PrinterOrderRequest::class)->count([]);
+
+    // Enabled-only partial patch on an existing case with valid stored refs,
+    // plus two new enabled cases. Every difference is a real state change.
+    $storePrintingPartial = $prepare('StorePrinting', 'update', $printingStoreId, [
+        'order' => ['enabled' => true],
+        'fullList' => ['enabled' => true, 'deviceUuid' => $printingDeviceUuid, 'templateUuid' => $printingTemplateUuid, 'copies' => 4],
+        'settlement' => ['enabled' => true, 'deviceUuid' => $printingDeviceUuid, 'templateUuid' => $printingTemplateUuid, 'copies' => 5],
+    ]);
+    $complete($storePrintingPartial);
+
+    // Copies-only patch on an already enabled case, then an explicit
+    // disable-and-clear patch for another enabled case.
+    $storePrintingVariations = $prepare('StorePrinting', 'update', $printingStoreId, [
+        'perItem' => ['copies' => 3],
+        'filteredList' => ['enabled' => false, 'deviceUuid' => null, 'templateUuid' => null],
+    ]);
+    $complete($storePrintingVariations);
+
+    $productPrinting = $prepare('ProductPrinting', 'update', $printingProductId, ['kitchenPrinterEnable' => true]);
+    $complete($productPrinting);
+
+    $fixtureAssert = static function (bool $condition, string $message): void {
+        if (!$condition) throw new RuntimeException($message);
+    };
+
+    $em->clear();
+    $storedPrintingStore = $em->find(Store::class, (int) $printingStoreId);
+    if (!$storedPrintingStore instanceof Store) throw new RuntimeException('Printing Store fixture disappeared.');
+    $storedSettings = $storedPrintingStore->getSettings() ?? [];
+    $fixtureAssert(($storedSettings['paymentRate'] ?? null) === 'contract-private-payment-rate', 'Store printing update did not preserve paymentRate.');
+    $fixtureAssert(($storedSettings['order'] ?? null) == ['requireAcceptance' => true, 'requireInventory' => false], 'Store printing update did not preserve order settings.');
+    $fixtureAssert(($storedSettings['fulfillment'] ?? null) == ['requireVerification' => true], 'Store printing update did not preserve fulfillment settings.');
+    $fixtureAssert(($storedSettings['customRoot']['secret'] ?? null) === 'contract-private-custom-root', 'Store printing update did not preserve customRoot.');
+    $fixtureAssert(($storedSettings['printing']['unknownCase']['note'] ?? null) === 'contract-private-unknown-case', 'Store printing update did not preserve an unknown printing case.');
+    $fixtureAssert(($storedSettings['printing']['order']['legacyNote'] ?? null) === 'contract-private-printing-note', 'Store printing update did not preserve an unknown stored case key.');
+    $fixtureAssert(($storedSettings['printing']['order']['enabled'] ?? null) === true, 'Store printing order case was not enabled.');
+    $fixtureAssert(($storedSettings['printing']['order']['deviceUuid'] ?? null) === $printingDeviceUuid, 'Store printing order device reference changed unexpectedly.');
+    $fixtureAssert(($storedSettings['printing']['order']['templateUuid'] ?? null) === $printingTemplateUuid, 'Store printing order template reference changed unexpectedly.');
+    $fixtureAssert(($storedSettings['printing']['order']['copies'] ?? null) === 2, 'Store printing order copies changed unexpectedly.');
+    $fixtureAssert(($storedSettings['printing']['perItem']['copies'] ?? null) === 3, 'Store printing perItem copies were not updated.');
+    $fixtureAssert(($storedSettings['printing']['perItem']['enabled'] ?? null) === true, 'Store printing perItem case lost its enabled state.');
+    $fixtureAssert(($storedSettings['printing']['filteredList']['enabled'] ?? null) === false, 'Store printing filteredList case was not disabled.');
+    $fixtureAssert(array_key_exists('deviceUuid', $storedSettings['printing']['filteredList']) && $storedSettings['printing']['filteredList']['deviceUuid'] === null, 'Store printing filteredList device reference was not cleared.');
+    $fixtureAssert(array_key_exists('templateUuid', $storedSettings['printing']['filteredList']) && $storedSettings['printing']['filteredList']['templateUuid'] === null, 'Store printing filteredList template reference was not cleared.');
+    $fixtureAssert(($storedSettings['printing']['filteredList']['copies'] ?? null) === 3, 'Store printing filteredList copies changed unexpectedly.');
+    foreach (['fullList' => 4, 'settlement' => 5] as $caseKey => $copies) {
+        $fixtureAssert(($storedSettings['printing'][$caseKey]['enabled'] ?? null) === true, 'Store printing '.$caseKey.' case was not enabled.');
+        $fixtureAssert(($storedSettings['printing'][$caseKey]['deviceUuid'] ?? null) === $printingDeviceUuid, 'Store printing '.$caseKey.' device reference missing.');
+        $fixtureAssert(($storedSettings['printing'][$caseKey]['templateUuid'] ?? null) === $printingTemplateUuid, 'Store printing '.$caseKey.' template reference missing.');
+        $fixtureAssert(($storedSettings['printing'][$caseKey]['copies'] ?? null) === $copies, 'Store printing '.$caseKey.' copies mismatch.');
+    }
+
+    $storedPrintingProduct = $em->find(BusinessProduct::class, (int) $printingProductId);
+    if (!$storedPrintingProduct instanceof BusinessProduct) throw new RuntimeException('Printing Product fixture disappeared.');
+    $storedProductSettings = $storedPrintingProduct->getSettings() ?? [];
+    $fixtureAssert(($storedProductSettings['kitchenPrinterEnable'] ?? null) === true, 'Product kitchenPrinterEnable was not enabled.');
+    $fixtureAssert(($storedProductSettings['startSaleTime'] ?? null) === '08:15', 'Product startSaleTime was not preserved.');
+    $fixtureAssert(($storedProductSettings['endSaleTime'] ?? null) === '21:45', 'Product endSaleTime was not preserved.');
+    $fixtureAssert(($storedProductSettings['customProductNote'] ?? null) === 'contract-private-product-note', 'Product custom setting was not preserved.');
+    $fixtureAssert($em->getRepository(PrinterJob::class)->count([]) === $jobBaseline, 'Printing configuration created a PrinterJob row.');
+    $fixtureAssert($em->getRepository(PrinterOrderRequest::class)->count([]) === $requestBaseline, 'Printing configuration created a PrinterOrderRequest row.');
+
     $json = json_encode($cases, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+    foreach ([
+        'contract-private-payment-rate',
+        'contract-private-custom-root',
+        'contract-private-printing-note',
+        'contract-private-unknown-case',
+        'contract-private-product-note',
+        'contract-synthetic-cipher-not-a-credential',
+    ] as $privateValue) {
+        $fixtureAssert(!str_contains($json, $privateValue), 'Preview fixture leaked private value: '.$privateValue);
+    }
     if (strlen($json) > 4 * 1024 * 1024) throw new RuntimeException('Preview fixture output exceeded its 4 MiB bound.');
     fwrite(STDOUT, $json);
 } catch (Throwable $error) {

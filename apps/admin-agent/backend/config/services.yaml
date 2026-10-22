@@ -17,3 +17,5 @@ services:
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductCategoryMutationAdapter: ~
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductMutationAdapter: ~
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\SpecificationMutationAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StorePrintingMutationAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductPrintingMutationAdapter: ~

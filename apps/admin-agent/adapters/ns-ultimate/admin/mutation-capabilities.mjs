@@ -7,6 +7,28 @@ const integer = (minimum = 0, maximum = 2147483647, extra = {}) => ({ type: 'int
 const bool = { type: 'boolean' }
 const nullableString = (maxBytes, extra = {}) => ({ type: 'utf8-string', maxBytes, nullable: true, ...extra })
 const uuidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+const printingCaseKeys = ['order', 'perItem', 'filteredList', 'fullList', 'settlement']
+const printingCaseFieldKeys = ['enabled', 'deviceUuid', 'templateUuid', 'copies']
+// Stored printing references are canonical RFC 4122 UUID text, not arbitrary
+// device codes or numeric IDs. Case-insensitivity matches the host identifier
+// convention; values are still bounded to the version/variant shape above.
+const printingCaseRules = {
+  enabled: {
+    type: 'boolean',
+    description: 'Whether this fixed automatic order-printing case is enabled for FUTURE orders only.'
+  },
+  deviceUuid: {
+    type: 'uuid', pattern: uuidPattern, patternFlags: 'i', nullable: true,
+    description: 'Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true.'
+  },
+  templateUuid: {
+    type: 'uuid', pattern: uuidPattern, patternFlags: 'i', nullable: true,
+    description: 'Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true.'
+  },
+  copies: integer(1, 100, {
+    description: 'Copies for this case from 1 through 100; the backend effective configuration defaults to 1.'
+  })
+}
 const recordReference = (extra = {}) => ({
   type: 'union', nullable: true,
   anyOf: [
@@ -142,7 +164,8 @@ function validateValue(rule, value) {
     case 'relation-id': return Number.isSafeInteger(value) && value > 0
     case 'numeric-id-string': return typeof value === 'string' && /^[1-9]\d{0,9}$/.test(value) && Number(value) >= rule.minimum && Number(value) <= rule.maximum
     case 'union': return rule.anyOf.some(alternative => validateValue(alternative, value))
-    case 'uuid': return typeof value === 'string' && new RegExp(rule.pattern, rule.patternFlags).test(value)
+    case 'uuid': return typeof value === 'string' && !/[\u0000-\u001f\u007f]/.test(value)
+      && new RegExp(rule.pattern, rule.patternFlags).test(value)
     case 'boolean': return typeof value === 'boolean'
     case 'enum': return rule.values.includes(value)
     case 'color': return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
@@ -174,13 +197,76 @@ function safeBefore(rule, value) {
   return value === null && rule.type === 'object' && rule.nullable || validateValue(rule, value)
 }
 
-function validateRestoredPreview(preview, capability) {
+const previewKeys = ['operationId', 'entity', 'action', 'identifier', 'title', 'affectedRecords', 'expiresAt', 'differences', 'saved']
+const previewDifferenceKeys = ['property', 'before', 'after', 'changed', 'label']
+const exactTargetPattern = /^(?:[1-9]\d{0,14}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
+
+function isExactTargetIdentifier(value) {
+  return typeof value === 'string' && !/[\u0000-\u001f\u007f]/.test(value) && exactTargetPattern.test(value)
+}
+
+function validatePreviewEnvelope(preview, capability) {
   if (!plain(preview) || preview.entity !== capability.entity || !['create', 'update', 'delete'].includes(preview.action) || !Array.isArray(preview.differences) || preview.differences.length === 0) return false
   if (new TextEncoder().encode(JSON.stringify(preview)).length > 60000) return false
-  if (Object.keys(preview).some(key => !['operationId', 'entity', 'action', 'identifier', 'title', 'affectedRecords', 'expiresAt', 'differences', 'saved'].includes(key))) return false
+  if (Object.keys(preview).some(key => !previewKeys.includes(key))) return false
   if (preview.saved !== undefined && preview.saved !== false) return false
   if (preview.affectedRecords !== undefined && preview.affectedRecords !== 1) return false
   if (preview.title !== undefined && (typeof preview.title !== 'string' || [...preview.title].length > 1024)) return false
+  return true
+}
+
+function validateStoredPrintingCase(value) {
+  if (!plain(value) || Object.keys(value).some(key => !printingCaseFieldKeys.includes(key))) return false
+  return Object.entries(value).every(([key, item]) => validateValue(printingCaseRules[key], item))
+}
+
+function validateEffectivePrintingCase(value) {
+  if (!plain(value) || Object.keys(value).some(key => !printingCaseFieldKeys.includes(key))) return false
+  if (Object.keys(value).length !== printingCaseFieldKeys.length) return false
+  if (!printingCaseFieldKeys.every(key => Object.hasOwn(value, key))) return false
+  if (typeof value.enabled !== 'boolean') return false
+  if (!Object.entries(value).every(([key, item]) => validateValue(printingCaseRules[key], item))) return false
+  if (value.enabled === true) {
+    return value.deviceUuid !== null && value.templateUuid !== null
+  }
+  return true
+}
+
+function validateStorePrintingPreview(preview, capability) {
+  if (!validatePreviewEnvelope(preview, capability) || preview.action !== 'update' || !isExactTargetIdentifier(preview.identifier)) return false
+  const seen = new Set()
+  for (const difference of preview.differences) {
+    if (!plain(difference) || Object.keys(difference).some(key => !previewDifferenceKeys.includes(key))) return false
+    const { property } = difference
+    if (typeof property !== 'string' || !printingCaseKeys.includes(property) || seen.has(property)) return false
+    seen.add(property)
+    if (!Object.hasOwn(difference, 'before') || !Object.hasOwn(difference, 'after')) return false
+    if (difference.before !== null && !validateStoredPrintingCase(difference.before)) return false
+    if (!validateEffectivePrintingCase(difference.after)) return false
+    if (difference.changed !== undefined && typeof difference.changed !== 'boolean') return false
+    if (difference.label !== undefined && (typeof difference.label !== 'string' || difference.label.length > 120)) return false
+  }
+  return true
+}
+
+function validateProductPrintingPreview(preview, capability) {
+  if (!validatePreviewEnvelope(preview, capability) || preview.action !== 'update' || !isExactTargetIdentifier(preview.identifier)) return false
+  const seen = new Set()
+  for (const difference of preview.differences) {
+    if (!plain(difference) || Object.keys(difference).some(key => !previewDifferenceKeys.includes(key))) return false
+    if (difference.property !== 'kitchenPrinterEnable' || seen.has(difference.property)) return false
+    seen.add(difference.property)
+    if (!Object.hasOwn(difference, 'before') || !Object.hasOwn(difference, 'after')) return false
+    if (difference.before !== null && typeof difference.before !== 'boolean') return false
+    if (typeof difference.after !== 'boolean') return false
+    if (difference.changed !== undefined && typeof difference.changed !== 'boolean') return false
+    if (difference.label !== undefined && (typeof difference.label !== 'string' || difference.label.length > 120)) return false
+  }
+  return true
+}
+
+function validateRestoredPreview(preview, capability) {
+  if (!validatePreviewEnvelope(preview, capability)) return false
   if ((preview.action === 'create' || preview.action === 'delete') && (typeof preview.title !== 'string' || !preview.title.trim())) return false
   if (capability.entity === 'Product' || capability.entity === 'Specification') {
     const productPrefix = /^\[Product #(new|[1-9]\d{0,9}); Store (global|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\] /i
@@ -259,5 +345,61 @@ for (const capability of definitions) {
   capability.validatePreview = preview => validateRestoredPreview(preview, capability)
 }
 
+const printingCapabilityDescription = 'FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider.'
+const printingCaseFields = Object.fromEntries(printingCaseKeys.map(caseKey => [caseKey, {
+  type: 'object',
+  nullable: false,
+  additionalProperties: false,
+  properties: printingCaseRules,
+  description: `${printingCapabilityDescription} Case: ${caseKey} for the exact stored Store.`
+}]))
+const productPrintingFields = {
+  kitchenPrinterEnable: {
+    type: 'boolean',
+    description: `FUTURE automatic kitchen-list printing for this exact stored Product only. ${printingCapabilityDescription}`
+  }
+}
+
+function validatePrintingCasePatch(value) {
+  // An initial patch is merged with the stored case by the backend, so omitted
+  // references are valid: the backend revalidates the resulting effective case.
+  // Still reject an explicit contradictory clear such as enabled:true + null.
+  if (!plain(value) || Object.keys(value).length === 0) return false
+  if (Object.keys(value).some(key => !printingCaseFieldKeys.includes(key))) return false
+  if (!Object.entries(value).every(([key, item]) => validateValue(printingCaseRules[key], item))) return false
+  return !(value.enabled === true && (value.deviceUuid === null || value.templateUuid === null))
+}
+
+function validateStorePrintingChanges(changes) {
+  if (!plain(changes)) return false
+  const cases = Object.keys(changes)
+  if (cases.length === 0 || cases.some(key => !printingCaseKeys.includes(key))) return false
+  return cases.every(key => validatePrintingCasePatch(changes[key]))
+}
+
+function validateProductPrintingChanges(changes) {
+  return plain(changes) && Object.keys(changes).length === 1
+    && Object.hasOwn(changes, 'kitchenPrinterEnable')
+    && typeof changes.kitchenPrinterEnable === 'boolean'
+}
+
+const printingCapabilities = [{
+  entity: 'StorePrinting',
+  description: 'Update the five fixed automatic order-printing cases on the exact stored Store identified by numeric ID or UUID. Only update is supported; settings roots and unrelated settings fields are not accepted.',
+  actions: ['update'],
+  actionFields: { update: printingCaseFields },
+  fields: printingCaseFields,
+  validateChanges: (changes, action) => action === 'update' && validateStorePrintingChanges(changes),
+  validatePreview: validateStorePrintingPreview
+}, {
+  entity: 'ProductPrinting',
+  description: 'Update only kitchenPrinterEnable on the exact stored Product identified by numeric ID or UUID. Only update is supported; arbitrary settings, metadata, and other fields are not accepted.',
+  actions: ['update'],
+  actionFields: { update: productPrintingFields },
+  fields: productPrintingFields,
+  validateChanges: (changes, action) => action === 'update' && validateProductPrintingChanges(changes),
+  validatePreview: validateProductPrintingPreview
+}]
+
 // Product and Specification deletion remain disabled pending final backend safety review.
-export default [contentAgentCapabilities, ...definitions]
+export default [contentAgentCapabilities, ...definitions, ...printingCapabilities]

@@ -22,6 +22,19 @@ test('real backend mutation previews round-trip through frontend capabilities', 
   const serializedCases = JSON.stringify(cases)
   assert.equal(serializedCases.includes('private@example.com'), false, 'Store contact data must not be serialized into previews')
   assert.equal(serializedCases.includes('Private City'), false, 'Store address data must not be serialized into previews')
+  for (const privateValue of [
+    'contract-private-payment-rate',
+    'contract-private-custom-root',
+    'contract-private-printing-note',
+    'contract-private-unknown-case',
+    'contract-private-product-note',
+    'contract-synthetic-cipher-not-a-credential'
+  ]) {
+    assert.equal(serializedCases.includes(privateValue), false, `Private fixture value must not be serialized into previews: ${privateValue}`)
+  }
+  for (const privateKey of ['paymentRate', 'customRoot', 'legacyNote', 'unknownCase', 'customProductNote']) {
+    assert.equal(serializedCases.includes(privateKey), false, `Unrelated settings field must not be serialized into previews: ${privateKey}`)
+  }
   for (const entry of cases) {
     const { preview, input } = entry
     const key = `${preview.entity}:${preview.action}`
@@ -44,11 +57,14 @@ test('real backend mutation previews round-trip through frontend capabilities', 
     'Content:create','Content:update','Content:delete', 'Counter:create','Counter:update','Counter:delete',
     'Store:update','Category:create','Category:update','Category:delete','Tag:create','Tag:update','Tag:delete',
     'ProductCategory:create','ProductCategory:update','ProductCategory:delete','Product:create','Product:update',
-    'Specification:create','Specification:update',
+    'Specification:create','Specification:update','StorePrinting:update','ProductPrinting:update',
   ]) {
     assert.ok(coverage.has(expected), `Missing backend preview coverage: ${expected}`)
     assert.ok(counts.get(expected) >= 2, `Expected prepared and restored previews for ${expected}`)
   }
+  const entities = new Set(cases.map(({ preview }) => preview.entity))
+  assert.ok(coverage.size >= 22, `Expected at least 22 entity/action combinations, got ${coverage.size}`)
+  assert.ok(entities.size >= 10, `Expected at least 10 entities, got ${entities.size}`)
   const allDifferences = cases.flatMap(({ preview }) => preview.differences)
   const assertLongName = (entity, action) => {
     const matching = cases.filter(({ preview }) => preview.entity === entity && preview.action === action
@@ -78,6 +94,69 @@ test('real backend mutation previews round-trip through frontend capabilities', 
   const productScopes = cases.filter(({ preview }) => preview.entity === 'Product' && preview.action === 'create')
     .flatMap(({ preview }) => preview.differences).filter(({ property }) => property === 'store').map(({ after }) => after)
   assert.ok(productScopes.includes(null) && productScopes.some(value => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value)), 'Product previews must cover global and store-scoped creation')
+
+  const printingCaseFields = ['enabled', 'deviceUuid', 'templateUuid', 'copies']
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  const storePrintingCases = cases.filter(({ preview }) => preview.entity === 'StorePrinting' && preview.action === 'update')
+  assert.ok(storePrintingCases.length >= 4, `Expected prepared and restored StorePrinting:update previews, got ${storePrintingCases.length}`)
+  const storePrintingDifferences = storePrintingCases.flatMap(({ preview }) => preview.differences)
+  for (const difference of storePrintingDifferences) {
+    assert.deepEqual(Object.keys(difference.after), printingCaseFields, 'StorePrinting after must expose the stable four-field effective case')
+    if (difference.before !== null) {
+      assert.deepEqual(Object.keys(difference.before), printingCaseFields, 'StorePrinting before must be null or a bounded stored case')
+    }
+    assert.notDeepEqual(difference.before, difference.after, `StorePrinting ${difference.property} must be an effective change`)
+    assert.equal(typeof difference.after.enabled, 'boolean')
+    assert.ok(Number.isInteger(difference.after.copies) && difference.after.copies >= 1 && difference.after.copies <= 100)
+    if (difference.after.enabled) {
+      assert.equal(typeof difference.after.deviceUuid, 'string', 'An enabled StorePrinting case requires a device UUID')
+      assert.equal(typeof difference.after.templateUuid, 'string', 'An enabled StorePrinting case requires a template UUID')
+      assert.match(difference.after.deviceUuid, uuidPattern)
+      assert.match(difference.after.templateUuid, uuidPattern)
+    } else {
+      assert.equal(difference.after.deviceUuid, null, 'A disabled StorePrinting case may clear its device reference')
+      assert.equal(difference.after.templateUuid, null, 'A disabled StorePrinting case may clear its template reference')
+    }
+  }
+  assert.deepEqual(
+    [...new Set(storePrintingDifferences.map(({ property }) => property))].sort(),
+    ['filteredList', 'fullList', 'order', 'perItem', 'settlement'].sort(),
+    'StorePrinting fixture must cover all five fixed cases'
+  )
+  const storePrintingInputs = storePrintingCases.map(({ input }) => input.changes)
+  assert.ok(storePrintingInputs.some(changes => JSON.stringify(changes.order) === JSON.stringify({ enabled: true })), 'StorePrinting must cover enabled-only partial patching on existing references')
+  assert.ok(storePrintingInputs.some(changes => JSON.stringify(changes.perItem) === JSON.stringify({ copies: 3 })), 'StorePrinting must cover copies-only partial patching on an enabled case')
+  assert.ok(storePrintingInputs.some(changes => changes.filteredList?.enabled === false
+    && changes.filteredList?.deviceUuid === null && changes.filteredList?.templateUuid === null), 'StorePrinting must cover explicit disable-and-clear')
+  const orderDifference = storePrintingDifferences.find(({ property }) => property === 'order')
+  assert.equal(orderDifference.before.enabled, false)
+  assert.equal(orderDifference.after.enabled, true)
+  assert.equal(orderDifference.before.deviceUuid, orderDifference.after.deviceUuid)
+  assert.equal(orderDifference.before.templateUuid, orderDifference.after.templateUuid)
+  const perItemDifference = storePrintingDifferences.find(({ property }) => property === 'perItem')
+  assert.equal(perItemDifference.before.copies, 2)
+  assert.equal(perItemDifference.after.copies, 3)
+  assert.equal(perItemDifference.after.enabled, true)
+  const filteredDifference = storePrintingDifferences.find(({ property }) => property === 'filteredList')
+  assert.equal(filteredDifference.before.enabled, true)
+  assert.equal(filteredDifference.after.enabled, false)
+  assert.equal(filteredDifference.after.deviceUuid, null)
+  assert.equal(filteredDifference.after.templateUuid, null)
+  for (const property of ['fullList', 'settlement']) {
+    const difference = storePrintingDifferences.find(item => item.property === property)
+    assert.ok(difference, `StorePrinting fixture must cover ${property}`)
+    assert.equal(difference.before, null)
+    assert.equal(difference.after.enabled, true)
+    assert.equal(typeof difference.after.deviceUuid, 'string')
+    assert.equal(typeof difference.after.templateUuid, 'string')
+  }
+
+  const productPrintingCases = cases.filter(({ preview }) => preview.entity === 'ProductPrinting' && preview.action === 'update')
+  assert.ok(productPrintingCases.length >= 2, `Expected prepared and restored ProductPrinting:update previews, got ${productPrintingCases.length}`)
+  for (const { preview, input } of productPrintingCases) {
+    assert.deepEqual(preview.differences, [{ property: 'kitchenPrinterEnable', before: false, after: true }], 'ProductPrinting must expose only the boolean kitchen flag change')
+    assert.deepEqual(input.changes, { kitchenPrinterEnable: true }, 'ProductPrinting must transport only the boolean kitchen flag')
+  }
 })
 
 async function returnHostCases(host, restoreHost, preview, input, operationId, requests) {
