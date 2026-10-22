@@ -1,25 +1,41 @@
-# Documentation
+# Documentation hub
 
-- [`../LICENSE`](../LICENSE) — MIT license for project-owned code outside `core/`.
-- [`../apps/README.md`](../apps/README.md) — application packages and their explicit integration boundaries.
-- [`../README.zh-cn.md`](../README.zh-cn.md) — project overview in Simplified Chinese.
-- [`../QUICKSTART.md`](../QUICKSTART.md) — local prerequisites, setup, development, and tests.
-- [`../QUICKSTART.zh-cn.md`](../QUICKSTART.zh-cn.md) — Quickstart in Simplified Chinese.
-- [`../DEPLOY.md`](../DEPLOY.md) — non-containerized production deployment.
-- [`../DEPLOY.zh-cn.md`](../DEPLOY.zh-cn.md) — deployment guide in Simplified Chinese.
-- [`../infra/docker/README.md`](../infra/docker/README.md) — project-owned Docker Compose/Nginx foundation.
-- [`../infra/docker/README.zh-cn.md`](../infra/docker/README.zh-cn.md) — Docker infrastructure guide in Simplified Chinese.
-- [`.github/workflows/ci.yaml`](../.github/workflows/ci.yaml) — CI scope and project composition checks.
-- [`design/architecture.md`](design/architecture.md) — project layers and deployment infrastructure ownership.
-- [`design/admin-ai-assistant.md`](design/admin-ai-assistant.md) — config-first assistant design, current implementation status, security boundaries, storage, and future core migration.
-- [`../apps/admin-agent/README.md`](../apps/admin-agent/README.md) — assistant app status, setup, and validation commands.
-- [`design/`](design/) — architecture and design decisions.
-- [`contracts/`](contracts/) — cross-layer interface specifications and their validation status.
-- [`operations/`](operations/) — repository workflows, including subtree synchronization.
-- [`operations/development.md`](operations/development.md) — startup, env management, debugging, and checks.
-- [`runbooks/`](runbooks/) — step-by-step production deployment, release/rollback, and incident procedures.
-- [`sessions/`](sessions/) — concise records of implementation sessions and their outcomes.
-- [`tasks/core-business-integration.md`](tasks/core-business-integration.md) — integration implementation scope and completion checklist.
-- [`reviews/`](reviews/) — code review findings and follow-up status.
+Start with the task below. This page is a stable map, not a second copy of configuration, API contracts, capability lists, or validation results. Update it when an entry point moves, is added, or is retired—not for routine implementation changes.
 
-Keep durable design guidance in `design/`, interface guarantees in `contracts/`, and dated progress notes in `sessions/`. Session notes should link to durable docs rather than duplicate them.
+## Find the right guide
+
+| I want to… | Start here | Continue with |
+| --- | --- | --- |
+| Set up and run the project | [Quickstart](../QUICKSTART.md) ([Simplified Chinese](../QUICKSTART.zh-cn.md)) | [Development and debugging](operations/development.md) |
+| Deploy the composed application | [Deployment](../DEPLOY.md) ([Simplified Chinese](../DEPLOY.zh-cn.md)) | [Docker deployment](../infra/docker/README.md) ([Simplified Chinese](../infra/docker/README.zh-cn.md)) or [production runbooks](runbooks/README.md) |
+| Release, roll back, or investigate an incident | [Production runbooks](runbooks/README.md) | Follow the procedure for your actual deployment topology |
+| Understand ownership and architecture | [Architecture](design/architecture.md) | [App package boundaries](../apps/README.md) and [cross-layer contracts](contracts/README.md) |
+| Use, configure, or extend the assistant | [Assistant app guide](../apps/admin-agent/README.md) | [Operation contract](contracts/admin-agent.md); [design and proposals](design/admin-ai-assistant.md) |
+| Understand an upstream module | [Backend manual](../core/crud-skeleton/docs/manual/index.md) and [module runbooks](../core/crud-skeleton/docs/runbooks/) | [Frontend configuration manual](../core/crud-admin/docs/manual/config-reference.md) |
+| Update an upstream core | [Core synchronization workflow](operations/core-sync.md) | Review composition contracts and the repository's core-edit authorization gate |
+| Find checks and automation | [Development checks](operations/development.md) | [CI workflow](../.github/workflows/ci.yaml) |
+| Maintain documentation | [Documentation ownership and checks](operations/documentation.md) | Change the authoritative source, not every page that links to it |
+
+## Which source applies?
+
+- **This repository's deployment guides and runbooks** describe the composed application. Upstream deployment examples describe a standalone core and are not interchangeable with them.
+- **App/module guides** explain that package's use and maintenance. **Contracts** specify cross-layer guarantees; implementation and tests establish current behavior.
+- **Core manuals and runbooks** explain upstream modules. Check their implementation status and project overrides before using them. Do not assume upstream console paths, environment defaults, scheduler services, or permissions apply unchanged here.
+- **Design documents** explain decisions and may include explicitly labeled proposals. A proposal is not an enabled capability.
+- **[Session records](sessions/)** and **[reviews](reviews/)** are dated evidence, not continuously maintained specifications or production-readiness guarantees. The [integration checklist](tasks/core-business-integration.md) tracks that workstream, not every feature in the repository.
+
+## Additional references
+
+- [Project overview in Simplified Chinese](../README.zh-cn.md).
+- [Project license](../LICENSE); upstream licenses remain with their respective cores.
+
+## Check documentation links
+
+From the repository root:
+
+```sh
+node scripts/check-doc-links.mjs
+node --test scripts/check-doc-links.test.mjs
+```
+
+CI runs the same local-target check. See the [scope and limitations](operations/documentation.md) before interpreting a passing result as proof of documentation correctness.
