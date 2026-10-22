@@ -32,8 +32,11 @@ final class AgentOperationController extends AbstractController
     {
         $query = $request->query->all();
         $page = $query['page'] ?? '1';
-        if (array_diff(array_keys($query), ['page']) !== [] || !is_string($page) || !preg_match('/^(?:[1-9][0-9]?|100)$/D', $page)) {
-            throw new BadRequestHttpException('Only a page number between 1 and 100 is accepted.');
+        $locale = $query['_locale'] ?? null;
+        // The authenticated admin client adds _locale to every request.
+        if (array_diff(array_keys($query), ['page', '_locale']) !== [] || !is_string($page) || !preg_match('/^(?:[1-9][0-9]?|100)$/D', $page)
+            || ($locale !== null && (!is_string($locale) || !preg_match('/^[A-Za-z][A-Za-z0-9_-]{0,34}$/D', $locale)))) {
+            throw new BadRequestHttpException('Only a page number between 1 and 100 and an optional locale are accepted.');
         }
         return $this->json($this->operations->recent($this->actor(), (int) $page), headers: ['Cache-Control' => 'no-store']);
     }

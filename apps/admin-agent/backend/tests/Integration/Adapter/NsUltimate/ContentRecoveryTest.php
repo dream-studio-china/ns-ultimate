@@ -124,7 +124,9 @@ final class ContentRecoveryTest extends IntegrationWebTestCase
         self::assertCount(3, $second['items']);
         self::assertFalse($second['hasMore']);
         self::assertSame([], array_intersect(array_column($first['items'], 'operationId'), array_column($second['items'], 'operationId')));
-        foreach (['page=0', 'page=101', 'page=x', 'page[]=1', 'actor=another-account', 'status=pending'] as $query) {
+        $localized = $this->request($client, 'GET', self::URL.'?page=1&_locale=en');
+        self::assertSame($first['items'], $localized['items']);
+        foreach (['page=0', 'page=101', 'page=x', 'page[]=1', '_locale[]=en', '_locale=', '_locale=en%2FUS', '_locale='.str_repeat('a', 36), 'actor=another-account', 'status=pending'] as $query) {
             $client->request('GET', self::URL.'?'.$query);
             self::assertResponseStatusCodeSame(400);
         }

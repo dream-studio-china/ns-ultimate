@@ -15,7 +15,7 @@ The generic controller requires full authentication. This host mounts it under t
 | Method and path under `/api/v1/manage/agent/operations` | Behavior |
 | --- | --- |
 | `POST /` (no trailing slash required) | Prepare `{entity, action, identifier?, changes?}` through a registered adapter. Persists a proposal, not target data. |
-| `GET /?page=1` | Current actor receipts only, 20 candidates per page, pages 1–100, newest first by creation time and ID. Returns `{items, page, hasMore}`; inaccessible adapters are omitted, so a page can be short or empty. Rejects other query parameters. |
+| `GET /?page=1` | Current actor receipts only, 20 candidates per page, pages 1–100, newest first by creation time and ID. Returns `{items, page, hasMore}`; inaccessible adapters are omitted, so a page can be short or empty. Also accepts the admin request client transport parameter `_locale` (a bounded locale string), not arbitrary filters or actor overrides. |
 | `GET /{operationId}/preview` | Restore the same pending proposal after permission, expiry, canonical payload and snapshot checks; returns a full preview without extending expiry or writing target data. |
 | `POST /{operationId}/commit` | Accepts exactly `{confirmed: true}`. Executes only the stored proposal; replacement values are rejected. |
 | `GET /{operationId}` | Minimal status/receipt without field values, for recovery after an ambiguous outcome. |

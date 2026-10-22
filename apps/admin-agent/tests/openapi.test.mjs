@@ -45,6 +45,7 @@ test('provider endpoint allows HTTP only for localhost and private LAN addresses
   const { normalizeChatEndpoint } = await import('../src/provider.js')
   assert.throws(() => normalizeChatEndpoint('http://api.example.test/v1'), /HTTPS/)
   assert.equal(normalizeChatEndpoint('http://localhost:1234/v1'), 'http://localhost:1234/v1/chat/completions')
+  assert.equal(normalizeChatEndpoint('http://127.0.0.1:1234/v1'), 'http://127.0.0.1:1234/v1/chat/completions')
   assert.equal(normalizeChatEndpoint('http://100.78.52.73:11434/'), 'http://100.78.52.73:11434/v1/chat/completions')
   assert.equal(normalizeChatEndpoint('http://192.168.1.20:11434/v1'), 'http://192.168.1.20:11434/v1/chat/completions')
   assert.equal(normalizeChatEndpoint('http://[::1]:11434/v1'), 'http://[::1]:11434/v1/chat/completions')

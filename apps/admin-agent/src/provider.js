@@ -23,7 +23,7 @@ function isAllowedHttpHost(hostname) {
   const octets = host.split('.').map(part => /^\d{1,3}$/.test(part) ? Number(part) : NaN)
   if (octets.length !== 4 || octets.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false
   const [first, second] = octets
-  return first === 10
+  return first === 127 || first === 10
     || first === 192 && second === 168
     || first === 172 && second >= 16 && second <= 31
     // Carrier-grade NAT/shared address space is commonly used by private overlays.
