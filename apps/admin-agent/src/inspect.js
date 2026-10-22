@@ -9,6 +9,8 @@ import { formatAdminReadError } from './capabilities.js'
 export const INSPECTION_TIMEOUT_MS = 30000
 export const MAX_INSPECTION_CHARACTERS = 2000
 export const MAX_INSPECTION_DEPTH = 5
+export const MAX_INSPECTION_DIAGNOSTICS = 40
+export const MAX_INSPECTION_DIAGNOSTIC_CHARACTERS = 2000
 const MAX_LEAF_STRING = 120
 
 const NUMERIC_ID = /^[1-9]\d{0,17}$/
@@ -62,11 +64,14 @@ function hasOwn(value, key) {
 
 function readPath(record, segments) {
   let node = record
-  for (const segment of segments) {
-    if (!isRecordObject(node) || !hasOwn(node, segment)) return { present: false }
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]
+    if (node === null && index > 0) return { reason: 'null-ancestor' }
+    if (!isRecordObject(node)) return { reason: 'invalid' }
+    if (!hasOwn(node, segment)) return { reason: 'missing' }
     node = node[segment]
   }
-  return { present: true, value: node }
+  return { value: node }
 }
 
 function safeLeaf(value) {
@@ -82,26 +87,25 @@ function safeLeaf(value) {
   return { ok: false }
 }
 
-// Project only the policy's scalar leaves into a nested result. Missing,
-// null-container, or non-scalar leaves are omitted and counted; the full
-// record, unlisted keys, and nested blobs never leave this function.
+// Project only the policy's scalar leaves into a nested result. Diagnostics
+// contain only validated policy paths and fixed reason codes, never values.
 export function projectInspectedConfiguration(record, allowedPaths) {
   if (!isRecordObject(record)) throw new TypeError('The detail endpoint returned an unsupported record response.')
   if (!Array.isArray(allowedPaths) || allowedPaths.length === 0) {
     throw new TypeError('The inspection policy defines no readable configuration paths.')
   }
   const configuration = {}
-  let omitted = 0
+  const omissions = []
   for (const path of allowedPaths) {
     const segments = safeSegments(path)
-    const { present, value } = readPath(record, segments)
-    if (!present) {
-      omitted += 1
+    const result = readPath(record, segments)
+    if (result.reason) {
+      omissions.push({ path, reason: result.reason })
       continue
     }
-    const leaf = safeLeaf(value)
+    const leaf = safeLeaf(result.value)
     if (!leaf.ok) {
-      omitted += 1
+      omissions.push({ path, reason: typeof result.value === 'string' ? 'oversized' : 'invalid' })
       continue
     }
     let node = configuration
@@ -114,7 +118,9 @@ export function projectInspectedConfiguration(record, allowedPaths) {
   if (JSON.stringify(configuration).length > MAX_INSPECTION_CHARACTERS) {
     throw new RangeError('The inspected configuration exceeded the size limit.')
   }
-  return { configuration, omitted }
+  const boundedOmissions = omissions.slice(0, MAX_INSPECTION_DIAGNOSTICS)
+  while (boundedOmissions.length && JSON.stringify(boundedOmissions).length > MAX_INSPECTION_DIAGNOSTIC_CHARACTERS) boundedOmissions.pop()
+  return { configuration, omitted: omissions.length, omissions: boundedOmissions, omissionsTruncated: boundedOmissions.length < omissions.length }
 }
 
 // Unwrap the admin client's `{ data: record, code: 0 }` envelope. A payload

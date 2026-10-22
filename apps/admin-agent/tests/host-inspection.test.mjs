@@ -138,6 +138,16 @@ test('inspects only the Product kitchen-print flag, not sibling settings', async
   assert.ok(!JSON.stringify(result).includes('09:30'))
 })
 
+test('host omission diagnostics use only policy paths and preserve successful response semantics', async() => {
+  const { inspect } = makeHost({ id: 7, name: 'Noodles', status: false, settings: null, contact: { phone: 'private' } })
+  const result = await inspect({ entity: 'Product', identifier: '7' }, operations)
+  assert.equal(result.omitted, 1)
+  assert.deepEqual(result.omissions, [{ path: 'settings.kitchenPrinterEnable', reason: 'null-ancestor' }])
+  assert.equal(result.configuration.status, false)
+  assert.ok(!JSON.stringify(result).includes('private'))
+  assert.equal(result.query.entity, 'Product')
+})
+
 test('adapter rejects unknown entities, bad ids, unavailable pages, and malformed data before widening access', async() => {
   const { inspect, calls } = makeHost(storeRecord())
   await assert.rejects(inspect({ entity: 'PrinterDevice', identifier: '1' }, operations), /no approved configuration inspection/)

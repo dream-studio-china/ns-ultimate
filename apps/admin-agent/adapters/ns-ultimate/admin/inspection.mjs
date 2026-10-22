@@ -31,12 +31,14 @@ export function createRecordInspection({ request, getCatalog, isRecordPageAvaila
     if (signal?.aborted) throw new Error('The configuration inspection was cancelled.')
     const record = unwrapDetailPayload(body)
     assertDetailIdentity(record, target.identifier)
-    const { configuration, omitted } = projectInspectedConfiguration(record, recordInspectionPolicy[target.key].paths)
+    const { configuration, omitted, omissions, omissionsTruncated } = projectInspectedConfiguration(record, recordInspectionPolicy[target.key].paths)
     return {
       entity: target.name,
       identifier: target.identifier,
       configuration,
       omitted,
+      omissions,
+      omissionsTruncated,
       truncated: false,
       query: {
         entity: target.key,

@@ -102,10 +102,29 @@ test('omits missing, null-container, and non-scalar leaves without failing the r
   const { configuration, omitted } = projectInspectedConfiguration(record, ['code', 'settings.printing.order.enabled', 'name'])
   assert.deepEqual(configuration, { code: null })
   assert.equal(omitted, 2)
+  assert.deepEqual(projectInspectedConfiguration(record, ['absent', 'settings.printing.order.enabled', 'name']).omissions, [
+    { path: 'absent', reason: 'missing' },
+    { path: 'settings.printing.order.enabled', reason: 'null-ancestor' },
+    { path: 'name', reason: 'invalid' }
+  ])
 
   const blob = { settings: { printing: { order: { enabled: { nested: true } } } } }
   const projected = projectInspectedConfiguration(blob, ['settings.printing.order.enabled'])
-  assert.deepEqual(projected, { configuration: {}, omitted: 1 })
+  assert.deepEqual(projected, { configuration: {}, omitted: 1, omissions: [{ path: 'settings.printing.order.enabled', reason: 'invalid' }], omissionsTruncated: false })
+})
+
+test('distinguishes invalid scalar and container ancestors from absent own properties', () => {
+  for (const ancestor of [[], false, 'text', 0]) {
+    assert.deepEqual(projectInspectedConfiguration({ settings: ancestor }, ['settings.enabled']).omissions,
+      [{ path: 'settings.enabled', reason: 'invalid' }])
+  }
+  assert.deepEqual(projectInspectedConfiguration({ settings: null }, ['settings.enabled']).omissions,
+    [{ path: 'settings.enabled', reason: 'null-ancestor' }])
+  assert.deepEqual(projectInspectedConfiguration({}, ['settings.enabled']).omissions,
+    [{ path: 'settings.enabled', reason: 'missing' }])
+  assert.deepEqual(projectInspectedConfiguration({ settings: { enabled: false, count: 0, optional: null } },
+    ['settings.enabled', 'settings.count', 'settings.optional']).configuration,
+  { settings: { enabled: false, count: 0, optional: null } })
 })
 
 test('rejects prototype-polluting policy paths and never pollutes from record data', () => {
@@ -131,6 +150,7 @@ test('omits oversized strings instead of silently truncating them', () => {
   )
   assert.deepEqual(configuration, { name: atLimit })
   assert.equal(omitted, 1)
+  assert.deepEqual(projectInspectedConfiguration({ code: oversized }, ['code']).omissions, [{ path: 'code', reason: 'oversized' }])
   assert.ok(!JSON.stringify(configuration).includes('x'))
 })
 
@@ -156,7 +176,7 @@ test('rejects obviously sensitive paths even when erroneously configured', () =>
   // The approved non-sensitive leaves still project.
   assert.deepEqual(
     projectInspectedConfiguration(record, ['code']),
-    { configuration: { code: 'ok' }, omitted: 0 }
+    { configuration: { code: 'ok' }, omitted: 0, omissions: [], omissionsTruncated: false }
   )
 })
 
@@ -184,6 +204,21 @@ test('fails closed on oversized projections', () => {
   const paths = Array.from({ length: 20 }, (_, index) => `field${index}`)
   const record = Object.fromEntries(paths.map(path => [path, 'x'.repeat(120)]))
   assert.throws(() => projectInspectedConfiguration(record, paths), /size limit/)
+})
+
+test('diagnostics contain policy paths only, no values, and have bounded output', () => {
+  const paths = Array.from({ length: 80 }, (_, index) => `field${index}`)
+  const secret = 'private-value-' + 'z'.repeat(500)
+  const result = projectInspectedConfiguration({ field0: secret, field1: { secret } }, paths)
+  assert.equal(result.omitted, 80)
+  assert.equal(result.omissions.length, 40)
+  assert.equal(result.omissionsTruncated, true)
+  assert.ok(JSON.stringify(result.omissions).length <= 2000)
+  assert.ok(paths.includes(result.omissions[0].path))
+  assert.ok(!JSON.stringify(result).includes(secret))
+  assert.deepEqual(projectInspectedConfiguration({ field0: false, field1: 0, field2: null }, ['field0', 'field1', 'field2']), {
+    configuration: { field0: false, field1: 0, field2: null }, omitted: 0, omissions: [], omissionsTruncated: false
+  })
 })
 
 test('unwraps the admin detail envelope but never a collection or a record data key', () => {
