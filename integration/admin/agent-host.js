@@ -4,6 +4,7 @@ import request from '@/utils/request'
 import router from '@/router'
 import previewPolicy from '../../apps/admin-agent/adapters/ns-ultimate/admin/preview-policy.mjs'
 import mutationCapabilities from '../../apps/admin-agent/adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/inspection.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createMutationHost } from '../../apps/admin-agent/src/mutation-host.js'
 import { API_PREFIX, apiPath } from '@/api/prefix'
@@ -30,11 +31,18 @@ const parameterize = name => inflect.dasherize(inflect.underscore(inflect.plural
 
 export function createAdminAgentHost() {
   const getCatalog = operations => buildCapabilityCatalog(adminConfig.entities, operations, { parameterize, defaultPrefix })
+  const inspectRecordConfiguration = createRecordInspection({
+    request,
+    getCatalog,
+    isRecordPageAvailable: entity => accessibleNavigation().some(page => page.entity === entity)
+  })
 
   return {
     ...createMutationHost(request, `${defaultPrefix}/agent/operations`, mutationCapabilities),
     getWritePreviewPolicy() { return previewPolicy },
     getCatalog,
+    getInspectionPolicy() { return recordInspectionPolicy },
+    inspectRecordConfiguration,
     getKnowledgeArticles() { return knowledgeArticles },
     getNavigationCatalog() { return accessibleNavigation() },
     async navigateAdminPage(pageKey, identifier) {

@@ -2,8 +2,9 @@ import { prepareRecordQuery } from './capabilities.js'
 import { resolveAdminNavigation } from './navigation.js'
 import { createWritePreview } from './write-preview.js'
 
-export function createAssistantTools(catalog, navigation = [], previewPolicy = {}, writeCapabilities = []) {
+export function createAssistantTools(catalog, navigation = [], previewPolicy = {}, writeCapabilities = [], inspectionPolicy = {}) {
   const readable = catalog.filter(item => item.readable)
+  const inspectable = Object.keys(inspectionPolicy || {}).filter(key => readable.some(item => item.key === key))
   const tools = [{
     type: 'function',
     function: {
@@ -70,6 +71,24 @@ export function createAssistantTools(catalog, navigation = [], previewPolicy = {
       }
     })
   }
+  if (inspectable.length) {
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'inspect_record_configuration',
+        description: 'Read one record\'s allowlisted configuration scalars through its documented GET detail endpoint. Use only when the user asks about current configuration for a record you can identify with an exact numeric ID/UUID. Returns only fixed non-sensitive nested values with their retrieval time; never invent fields or paths. The result is cached backend data, not live device or scheduler state: never infer that a scheduler or worker is running, and never claim a complete root cause from it.',
+        parameters: {
+          type: 'object',
+          properties: {
+            entity: { type: 'string', enum: inspectable },
+            identifier: { type: 'string', description: 'Exact record numeric ID or UUID.' }
+          },
+          required: ['entity', 'identifier'],
+          additionalProperties: false
+        }
+      }
+    })
+  }
   if (Object.keys(previewPolicy).length) tools.push({
     type: 'function',
     function: {
@@ -124,6 +143,28 @@ export async function executeAssistantTool({ call, catalog, navigation = [], pre
         affectedRecords: 1, message: 'Awaiting explicit UI confirmation. No target data has been changed.' }
     } catch {
       return { error: 'Change preparation failed. Check the displayed server error, permissions and field values. Nothing was submitted for execution.' }
+    }
+  }
+  if (call.function.name === 'inspect_record_configuration') {
+    assertActive()
+    if (signal?.aborted) return { error: 'The configuration inspection was cancelled.', failureType: 'cancelled' }
+    if (typeof host?.inspectRecordConfiguration !== 'function') return { error: 'Configuration inspection is unavailable.' }
+    let input
+    try { input = JSON.parse(call.function.arguments || '') } catch { return { error: 'Invalid inspection arguments.' } }
+    try {
+      const result = await host.inspectRecordConfiguration(input, operations, signal)
+      assertActive()
+      if (signal?.aborted) return { error: 'The configuration inspection was cancelled.', failureType: 'cancelled' }
+      if (!result || typeof result.configuration !== 'object' || result.configuration === null || Array.isArray(result.configuration)) {
+        return { error: 'The configuration inspection returned an unsupported response.', failureType: 'invalid-response' }
+      }
+      return result
+    } catch (error) {
+      const message = error.message || ''
+      const failureType = /timed out/i.test(message) ? 'timeout'
+        : /\b(401|403)\b|unauthori[sz]ed|forbidden|not available to the current account/i.test(message) ? 'authorization'
+          : /cancelled/i.test(message) || error.name === 'AbortError' || signal?.aborted ? 'cancelled' : 'request-failed'
+      return { error: failureType === 'timeout' ? 'The configuration inspection timed out.' : failureType === 'authorization' ? 'The current account is not authorized to inspect this record.' : failureType === 'cancelled' ? 'The configuration inspection was cancelled.' : 'The configuration inspection failed.', failureType }
     }
   }
   if (call.function.name === 'preview_record_update') {
