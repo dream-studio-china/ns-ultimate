@@ -22,7 +22,7 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 12
+const EXPECTED_CASE_COUNT = 13
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
@@ -990,6 +990,16 @@ function selectFiles(agent, files) {
   agent.assertActive()
 }
 
+function pasteImages(agent, files) {
+  agent.assertActive()
+  const transfer = new DataTransfer()
+  for (const file of files) transfer.items.add(file)
+  const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer })
+  agent.controls.input.dispatchEvent(event)
+  agent.assertActive()
+  return event.defaultPrevented
+}
+
 function makeFile(name, content, type = 'text/plain') {
   return new File([content], name, { type, lastModified: 1700000000000 })
 }
@@ -1202,6 +1212,30 @@ const CASES = [
       ok(!agent.shadow.querySelector('.message-image'), 'Selection must not render a sent message image.')
       includes(agent.shadow.textContent, png.name, 'The selected filename should be visible locally')
       return { providerRequests: provider.requests.length, previewThumbnail: true }
+    }
+  },
+  {
+    name: 'pasted images attach locally while plain-text paste stays untouched',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const agent = await ctx.mount({ provider })
+      const png = await makePngFile(ctx, 'pasted-image-sentinel.png')
+      const prevented = pasteImages(agent, [png])
+      equal(prevented, true, 'A pasted image should be handled by the attachment pipeline')
+      await waitForAttachment(agent, png.name)
+      equal(provider.requests.length, 0, 'Pasting an image must not contact the provider')
+      const item = agent.shadow.querySelector('.attachment')
+      ok(item, 'The pasted attachment item was not rendered.')
+      ok(item.querySelector('img.thumb'), 'The pasted image should render a local thumbnail.')
+      includes(agent.shadow.textContent, png.name, 'The pasted filename should be visible locally')
+
+      const textTransfer = new DataTransfer()
+      textTransfer.setData('text/plain', 'plain paste stays in the textarea')
+      const textEvent = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: textTransfer })
+      agent.controls.input.dispatchEvent(textEvent)
+      equal(textEvent.defaultPrevented, false, 'Plain-text paste must not be intercepted')
+      equal(agent.shadow.querySelectorAll('.attachment').length, 1, 'Plain-text paste must not add another attachment')
+      return { providerRequests: provider.requests.length, pastedThumbnail: true, textPasteUntouched: true }
     }
   },
   {
@@ -1833,7 +1867,7 @@ async function executeAcceptance({
 let mainExecution = null
 
 /**
- * Run the main 12-case browser acceptance suite once per fixture page.
+ * Run the main 13-case browser acceptance suite once per fixture page.
  */
 export function runBrowserAcceptance(options = {}) {
   let execution

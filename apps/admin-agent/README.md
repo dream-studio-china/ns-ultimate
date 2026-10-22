@@ -47,7 +47,7 @@ The authenticated local browser and configured live model also completed one syn
 
 ## Images and file input
 
-The composer accepts file selection and drag/drop, shows local raster-image thumbnails, and lets users remove attachments before sending. Selecting or previewing a file does not upload it. **Send** discloses the selected content to the configured model provider, not to an application file-storage endpoint. Cancellation cannot retract content already transmitted. Chat attachments do not upload a Content cover or grant additional tools, record permissions or write approval.
+The composer accepts file selection, drag/drop and pasted images, shows local raster-image thumbnails, and lets users remove attachments before sending. Pasting text or non-image files is left to the browser and does not create an attachment. Selecting or previewing a file does not upload it. **Send** discloses the selected content to the configured model provider, not to an application file-storage endpoint. Cancellation cannot retract content already transmitted. Chat attachments do not upload a Content cover or grant additional tools, record permissions or write approval.
 
 Supported inputs are static PNG, JPEG, static WebP/GIF, and strict UTF-8 text/code/CSV/JSON/Markdown files. PDF, SVG, HTML/XML, animated PNG/WebP/GIF, archives and arbitrary binaries are not supported; they fail explicitly rather than being silently truncated or converted. Limits are four files, 5 MiB each, 10 MiB combined; text additionally has 128 KiB per-file and 256 KiB combined limits. Images are bounded to 4,096 pixels per side and 16 megapixels. Every serialized provider request, including tool rounds, is limited to 16 MiB.
 
@@ -127,7 +127,7 @@ await page.waitForFunction(() => Boolean(window.__NS_ADMIN_AGENT_ACCEPTANCE__?.p
 const result = await page.evaluate(() => window.__NS_ADMIN_AGENT_ACCEPTANCE__.promise)
 ```
 
-Require `ok === true`, all 12 cases passed, no failures/skips, empty setup/cleanup/blocked-request errors, `descriptorsRestored === true` and `isolationRetained === false`. Do not interpret successful loading alone as a passing run. Module syntax can be checked with `node --check apps/admin-agent/tests/browser/browser-acceptance.mjs`, but that does not execute browser tests.
+Require `ok === true`, all 13 cases passed, no failures/skips, empty setup/cleanup/blocked-request errors, `descriptorsRestored === true` and `isolationRetained === false`. Do not interpret successful loading alone as a passing run. Module syntax can be checked with `node --check apps/admin-agent/tests/browser/browser-acceptance.mjs`, but that does not execute browser tests.
 
 Negative safety checks use the fixture URL with `?autorun=0`. In a separate fresh context for **each** check, import `browser-acceptance.mjs` relative to the fixture and call `runBrowserAcceptanceProductionGuardSelfCheck()`, `runBrowserAcceptancePatchabilitySelfCheck()` or `runBrowserAcceptanceTimeoutSelfCheck({ caseTimeoutMs: 300 })`. Each outer self-check must return `ok: true`; its inner acceptance run is expected to reject setup or fail on timeout, not pass the 12-case suite. Close every test context afterward. If any run reports retained isolation or cleanup failure, discard the context instead of navigating it to an application page.
 

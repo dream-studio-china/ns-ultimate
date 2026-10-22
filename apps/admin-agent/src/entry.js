@@ -96,6 +96,31 @@ export function handleComposerFileDrop(event, { busy = false, onFiles } = {}) {
   return true
 }
 
+export function pastedImageFiles(event) {
+  const data = event?.clipboardData
+  if (!data) return []
+  const files = []
+  const items = data.items ? Array.from(data.items) : []
+  for (const item of items) {
+    if (item?.kind !== 'file') continue
+    if (typeof item.type === 'string' && !item.type.toLowerCase().startsWith('image/')) continue
+    const file = item.getAsFile?.()
+    if (file) files.push(file)
+  }
+  if (files.length) return files
+  const fallback = data.files ? Array.from(data.files) : []
+  return fallback.filter(file => typeof file?.type === 'string' && file.type.toLowerCase().startsWith('image/'))
+}
+
+export function handleComposerImagePaste(event, { busy = false, onFiles } = {}) {
+  const files = pastedImageFiles(event)
+  if (!files.length) return false
+  event.preventDefault?.()
+  if (busy) return false
+  onFiles?.(files)
+  return true
+}
+
 export function planChatCancel({ preprocessingGeneration, taskGeneration, writing = false, recovering = false }) {
   const clearBusy = Number.isInteger(preprocessingGeneration)
     && preprocessingGeneration === taskGeneration
@@ -162,6 +187,12 @@ export function mountAdminAgent(host = {}) {
       onFiles: files => readSelectedFiles(files)
     })
     if (accepted || fileDragHasFiles(event)) composer.classList.remove('drop-active')
+  })
+  input.addEventListener('paste', event => {
+    handleComposerImagePaste(event, {
+      busy: loading || attachmentBusy || disposed || unresolvedWrite,
+      onFiles: files => readSelectedFiles(files)
+    })
   })
   const settings = element('form', { class: 'settings hidden' })
   settings.append(element('div', { class: 'notice' }, t('Provider settings and API key are stored in this browser. The API key is sent only to the configured provider. Leave it empty for providers that do not require a key. HTTP is allowed for private LAN providers, but is unencrypted; use only on a trusted network. Read queries use the current admin session; the backend remains the authority for access control. Only configured, non-sensitive fields are sent to the provider.')))
