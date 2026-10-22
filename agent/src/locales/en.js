@@ -1,4 +1,11 @@
 export default {
+  'Update preview failed': 'Update preview failed',
+  'Update preview — not saved': 'Update preview — not saved',
+  'One record only': 'One record only',
+  'Field': 'Field',
+  'Current snapshot': 'Current snapshot',
+  'Proposed value': 'Proposed value',
+  'Preview only. Nothing was saved. Backend permissions and business rules have not been validated; current values may have changed since the query.': 'Preview only. Nothing was saved. Backend permissions and business rules have not been validated; current values may have changed since the query.',
   'API documentation Q&A and bounded read-only queries; admin actions are unavailable': 'API documentation Q&A and bounded read-only queries; admin actions are unavailable',
   'Configure a compatible OpenAI Chat Completions provider to ask about API docs and bounded read-only queries.': 'Configure a compatible OpenAI Chat Completions provider to ask about API docs and bounded read-only queries.',
   'API key (stored in this browser)': 'API key (stored in this browser)',

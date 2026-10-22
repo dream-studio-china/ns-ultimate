@@ -2,6 +2,7 @@ import inflectFactory from 'i'
 import adminConfig from './config'
 import request from '@/utils/request'
 import router from '@/router'
+import previewPolicy from '../../business/admin/agent-preview-policy.mjs'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import { buildCapabilityCatalog, formatAdminReadError, prepareRecordQuery, sanitizeRecordResults } from '../../agent/src/capabilities.js'
 import { buildAdminPageCatalog, resolveAdminNavigation } from '../../agent/src/navigation.js'
@@ -28,6 +29,7 @@ export function createAdminAgentHost() {
   const getCatalog = operations => buildCapabilityCatalog(adminConfig.entities, operations, { parameterize, defaultPrefix })
 
   return {
+    getWritePreviewPolicy() { return previewPolicy },
     getCatalog,
     getNavigationCatalog() { return accessibleNavigation() },
     async navigateAdminPage(pageKey, identifier) {

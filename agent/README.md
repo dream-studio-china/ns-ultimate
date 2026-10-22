@@ -12,6 +12,10 @@ Navigation is available only when explicitly requested by the user and only to r
 
 It does **not** execute admin actions. It has no write API client. Do not treat this assistant as an agent for modifying production data.
 
+## Update previews (phase one)
+
+`preview_record_update` creates an unsaved, single-record diff only. The business-owned policy in `business/admin/agent-preview-policy.mjs` currently permits only `Counter.name` (non-empty string, at most 120 characters as a local preview constraint). No other entity, field, creation, deletion, or batch operation is enabled. The model must query the target in the same task, then provide an exact ID/UUID from the latest returned page. Missing, ambiguous, or potentially truncated current values are rejected; the model cannot supply the old value. Proposed values receive only local type/length/required checks, not backend authorization or business validation. There is no execution/confirmation button or write endpoint. Preview content is shown in a diff card and sent to the configured provider; an assistant summary may retain it within bounded conversation memory. Query snapshots are task-local and may already be stale. Example: ask to preview changing counter ID 7's name to a new name; no data will be saved.
+
 The backend remains the authority for record and field authorization. Frontend route checks and sensitive-name filtering are defense-in-depth, not a replacement for server-side field-level grants. The activity view is not a tamper-resistant audit log and is cleared with the page/session; no backend audit endpoint is added by this module. Response size is bounded after the authenticated admin client receives the response, so server-side response-byte and query-cost limits remain deployment responsibilities.
 
 ## Enable or disable

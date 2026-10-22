@@ -1,7 +1,8 @@
 import { prepareRecordQuery } from './capabilities.js'
 import { resolveAdminNavigation } from './navigation.js'
+import { createWritePreview } from './write-preview.js'
 
-export function createAssistantTools(catalog, navigation = []) {
+export function createAssistantTools(catalog, navigation = [], previewPolicy = {}) {
   const readable = catalog.filter(item => item.readable)
   const tools = [{
     type: 'function',
@@ -69,12 +70,34 @@ export function createAssistantTools(catalog, navigation = []) {
       }
     })
   }
+  if (Object.keys(previewPolicy).length) tools.push({
+    type: 'function',
+    function: {
+      name: 'preview_record_update',
+      description: `Produce an unsaved single-record update preview only when the user asks to change a record. No write is performed. First query the target and use its exact ID/UUID. Allowed fields: ${JSON.stringify(previewPolicy)}. Never invent old values or claim a change was saved.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          entity: { type: 'string', enum: Object.keys(previewPolicy) },
+          identifier: { type: 'string' },
+          changes: { type: 'object', description: 'Explicit proposed values for allowlisted fields only.' }
+        },
+        required: ['entity', 'identifier', 'changes'], additionalProperties: false
+      }
+    }
+  })
   return tools
 }
 
-export async function executeAssistantTool({ call, catalog, navigation = [], host, operations, onReadAudit = () => {}, signal, assertActive = () => {} }) {
+export async function executeAssistantTool({ call, catalog, navigation = [], previewPolicy = {}, snapshots = new Map(), host, operations, onReadAudit = () => {}, signal, assertActive = () => {} }) {
   if (!call || call.type !== 'function' || !call.function || typeof call.function.name !== 'string') {
     return { error: 'Unsupported tool call.' }
+  }
+  if (call.function.name === 'preview_record_update') {
+    assertActive()
+    if (signal?.aborted) return { error: 'The preview was cancelled.' }
+    try { return createWritePreview(JSON.parse(call.function.arguments || ''), previewPolicy, snapshots) }
+    catch (error) { return { error: error.message || 'The update preview was rejected.' } }
   }
   if (call.function.name === 'list_entities') {
     let args

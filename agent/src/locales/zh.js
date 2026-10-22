@@ -1,4 +1,11 @@
 export default {
+  'Update preview failed': '修改预览失败',
+  'Update preview — not saved': '修改预览 — 尚未保存',
+  'One record only': '仅影响一条记录',
+  'Field': '字段',
+  'Current snapshot': '查询时的值',
+  'Proposed value': '拟修改为',
+  'Preview only. Nothing was saved. Backend permissions and business rules have not been validated; current values may have changed since the query.': '仅供预览，未保存任何修改。尚未验证后端权限和业务规则；当前值可能已在查询后发生变化。',
   'Open admin assistant': '打开后台 AI 助手',
   'Admin AI assistant': '后台 AI 助手',
   'API documentation Q&A and bounded read-only queries; admin actions are unavailable': '接口文档问答与受限的只读查询；当前版本不执行后台操作',

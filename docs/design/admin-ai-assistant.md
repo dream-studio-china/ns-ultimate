@@ -191,6 +191,8 @@ Cancellation prevents future work. Once submission has started, cancelling the c
 
 ## 8. Risk policy, preview, and submission
 
+**Implemented phase-one exception:** `preview_record_update` is an unsaved, single-record preview, currently enabled only for `Counter.name` by the business-owned preview policy. It uses the latest sanitized query page in the current task and an exact ID/UUID; missing, ambiguous or potentially truncated before-values are rejected. Only local required/type/length checks run. Backend permissions, business rules and freshness are not validated. No execution grant, confirmation transition, countdown, editor mutation or submission exists. The lifecycle and submission policies below remain design targets, not implemented behavior.
+
 ### 8.1 Deterministic classification
 
 Classify each action as `automatic`, `confirmation_required`, or `blocked` using host policy. Unknown actions and fields are never automatically classified as low-risk. The model may explain a classification but cannot lower it.
