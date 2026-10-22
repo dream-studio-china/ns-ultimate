@@ -1,6 +1,6 @@
 # Admin-agent write capability scope
 
-**Approval state: APPROVED FOR IMPLEMENTATION (2026-10-22).** The user approved the bounded, single-record business management and operational changes below, with the shared safeguards in this document. This is approval of scope, not evidence that every capability is implemented, registered, tested, or active. The implementation ledger records the observed state; verify source and deterministic tests before claiming availability. Printing remains **PAUSED** and excluded.
+**Approval state: APPROVED FOR IMPLEMENTATION (2026-10-22; printing configuration resumed 2026-10-23).** The user approved the bounded, single-record business management and operational changes below, with the shared safeguards in this document. This is approval of scope, not evidence that every capability is implemented, registered, tested, or active. The implementation ledger records the observed state; verify source and deterministic tests before claiming availability. Printing configuration is implemented separately and locally verified; assistant print submission and reprint remain blocked.
 
 ## Current boundary and implementation status
 
@@ -32,7 +32,13 @@ All writes are one record at a time and require a human-visible diff followed by
 
 ## Explicit exclusions
 
-No approval is granted for arbitrary metadata/settings/JSON blobs; secrets, credentials, authentication or authorization changes; inventory/stock; payment/refund/transaction operations; order, fulfillment, or other order-workflow states; cross-tenant/store reassignment; bulk writes; or printing/reprint/device operations. Printing remains **PAUSED**, including indirect custom actions. Product specification price is the specific approved price change; it does not authorize general payment or transaction actions. Product availability changes do not authorize order workflow changes.
+No approval is granted for arbitrary metadata/settings/JSON blobs; secrets, credentials, authentication or authorization changes; inventory/stock; payment/refund/transaction operations; order, fulfillment, or other order-workflow states; cross-tenant/store reassignment; bulk writes; or printer registration/provider operations. Product specification price is the specific approved price change; it does not authorize general payment or transaction actions. Product availability changes do not authorize order workflow changes.
+
+### Resumed printing-configuration scope
+
+The user resumed assistant printing work, then explicitly chose not to change business modules. The first package therefore covers only app-owned, database-only `StorePrinting` and `ProductPrinting` update adapters: the five fixed Store printing cases (`enabled`, `deviceUuid`, `templateUuid`, `copies`) and the Product `kitchenPrinterEnable` flag. Partial patches preserve unrelated settings, strictly validate references and types, and show the future automatic-printing impact before confirmation. Saving these settings performs no provider calls and creates no print jobs. The adapters, frontend policy and real backend-to-frontend previews passed focused Sol reviews and disposable-SQLite tests; this is not evidence of deployed availability or MySQL concurrency safety.
+
+Assistant reprint remains disabled: the existing business reprint service creates a fresh random task on each invocation and lacks a caller-stable deduplication key and durable source association. Directly invoking it inside a transactional mutation cannot make external effects rollback-safe. No generic CRUD fallback, provider dispatch, device registration, credential editing, template-definition editing or console-command execution is authorized by this bounded package. See the [follow-up record](../sessions/2026-10-23-admin-agent-printing-attachments.md).
 
 ## Implementation ledger
 
@@ -46,7 +52,8 @@ This ledger distinguishes approval from implementation. “Pending verification/
 | Product and Specification hard delete | Blocked | Cascade and non-authoritative historical/JSON references; no generic CRUD fallback. |
 | Store maintenance | Implemented | Strict name/contact/address policy, partial no-op, redaction and nullable-preview tests. |
 | Counter expanded CRUD | Implemented | Active-store locking, scoped uniqueness, reference checks and retained lifecycle/concurrency tests. |
+| Store/Product printing configuration | Implemented and locally verified | Separate app-owned update adapters, fixed host schemas, fresh dependency checks, settings preservation and real preview round-trips; no provider/job submission. |
 
-The opt-in [cross-layer test](../../apps/admin-agent/tests/backend-preview-contract.integration.mjs) checks 54 actual prepared/restored previews representing 27 mutations across all 20 enabled entity/action combinations and eight entities. It uses disposable SQLite fixtures and the real frontend host policy; it does not replace HTTP authorization or production-concurrency validation. Participating taxonomy adapters serialize their own hierarchy writes; nonparticipating legacy writers are not covered by that protocol.
+The printing extension raised the opt-in [cross-layer test](../../apps/admin-agent/tests/backend-preview-contract.integration.mjs) to 60 actual prepared/restored previews, 30 mutations, 22 entity/action combinations and 10 entities, preserving all prior business-package cases. The test uses disposable SQLite fixtures and the real frontend host policy; it does not replace HTTP authorization or production-concurrency validation. Participating taxonomy adapters serialize their own hierarchy writes; nonparticipating legacy writers are not covered by that protocol.
 
 These statements describe repository review and approved intent, not a guarantee about deployed routes, effective role grants, database state, dynamic configuration, or production readiness. Do not modify `core/` or business modules as an implementation shortcut; report a blocker if an approved action cannot be safely composed at the app-owned boundary.

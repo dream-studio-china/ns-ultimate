@@ -24,10 +24,28 @@ All packages require `ROLE_ADMIN` and retain single-record preparation, explicit
 | ProductCategory | Create, update, unreferenced delete | Category fields plus owning `store` on create only; parent hierarchy must retain store/global scope. |
 | Product | Create, update | `name`, `description`, `category`, `sortOrder`, `recommendationLevel`, `status`, `isSoldout`; owning `store` on create only, with global scope represented by null. Category must be enabled and match scope. |
 | Specification | Create, update | `productId`, `name`, `price`, `status`, `sort`; existing Product scope is immutable and must be explicit. Price is an integer minor-unit amount from 0 through 2,147,483,647, not floating-point major currency. |
+| StorePrinting | Update only | Separate configuration capability for the five fixed printing cases. Partial patches preserve omitted fields, omitted cases and unrelated Store settings; no settings-root access. |
+| ProductPrinting | Update only | Separate configuration capability for the boolean `kitchenPrinterEnable`; all other Product settings and ownership remain unchanged. |
 
-Catalog publication, recommendation, price, sold-out state, Counter availability and hierarchy changes have real customer/operational consequences. They do not grant payment, inventory, order-workflow, authorization, credential or external-provider capabilities. Printing remains paused and excluded. Arbitrary metadata/settings edits remain excluded outside Content's pre-existing validated policy.
+Catalog publication, recommendation, price, sold-out state, Counter availability, hierarchy and printing-rule changes have real customer/operational consequences. They do not grant payment, inventory, order-workflow, authorization, credential or external-provider capabilities. Printing configuration is separate from actual print submission; the latter remains unavailable. Arbitrary metadata/settings edits remain excluded outside Content's pre-existing validated policy.
 
 Product hard deletion is unavailable because its mapped Specification cascade exceeds a single-record preview. Specification hard deletion is unavailable because JSON/historical references lack authoritative shared referential-integrity and writer serialization. Other deletion adapters must reject references rather than cascade or silently detach records. Rejected or blocked operations do not justify falling back to generic CRUD requests.
+
+### Printing configuration, not print submission
+
+`StorePrinting` accepts only `order`, `perItem`, `filteredList`, `fullList` and `settlement`. Each supplied case is a non-empty partial object containing only boolean `enabled`, canonical UUID or null `deviceUuid`/`templateUuid`, and integer `copies` from 1 through 100. Omitted references in a patch are resolved from stored state, not invented by the model. Effective enabled cases require valid destination/template references; clearing references is only valid for an effective disabled case. Backend validation checks enabled resources, account availability, Store ownership and matching printer/template kind.
+
+The adapter merges into the current settings instead of replacing the JSON root. Case differences expose only curated printing fields; unrelated settings and private Store data are not included. Effective `after` cases explicitly contain all four fields, including defaults. `ProductPrinting` changes only the kitchen-print flag and preserves other settings, including sale times. The ordinary `Store` and `Product` capabilities still reject settings input.
+
+Saving these configurations creates no print job and calls no provider. It can change automatic printing for future orders, so the confirmation preview must explain that consequence. Printer registration, status refresh, job submission, reprint, template-definition editing and console dispatch are not assistant capabilities. The existing business reprint interface lacks caller-stable deduplication and a durable source association; it must not be invoked through a transactional mutation or an arbitrary endpoint fallback. Business and core modules remain unchanged by this package.
+
+## Chat attachments
+
+User-selected attachments are a separate, explicitly sent model-input channel, not repository access, server file upload, record media editing or an authorization grant. Local preview/selection never sends attachment content. Send captures the files and provider configuration for that task; image submission requires an explicit vision preference, default off. Unsupported inputs fail closed. Only validated local raster data URLs may be submitted as image parts; arbitrary remote image URLs and model-authored tracking images are not enabled.
+
+File counts, byte/pixel limits, the whole serialized provider-request budget and format support are maintained in the [app workflow](../../apps/admin-agent/README.md#images-and-file-input) and owning implementation/tests. Limits apply before provider dispatch, including subsequent tool rounds. Original attachment content is excluded from browser preferences and retained conversation context; only bounded filename summaries survive into later requests. Rendered previews have separate in-page retention bounds and are cleared on conversation/session disposal. Cancellation prevents future dispatch where possible but cannot retract already sent content.
+
+Attachment parsing, filenames and image contents are untrusted data. They cannot supply system instructions, capabilities, endpoints or write confirmation. The model still has prepare-only mutation tools and all existing backend authorization/UI confirmation checks remain in force.
 
 ## Curated host knowledge
 
