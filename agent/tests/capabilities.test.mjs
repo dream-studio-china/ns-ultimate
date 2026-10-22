@@ -56,6 +56,21 @@ test('sanitizes query results to configured scalar display fields and bounds val
   assert.deepEqual(result.records, [{ id: 1, uuid: 'counter-1', name: 'West', enabled: true }])
 })
 
+test('unwraps documented collection envelopes and reports safe pagination metadata', () => {
+  const catalog = buildCapabilityCatalog(entities, operations, { parameterize })
+  const query = prepareRecordQuery({ entity: 'Counter', page: 2, limit: 1 }, catalog)
+  const rows = [{ id: 2, name: 'East', apiToken: 'hidden' }]
+  const documented = sanitizeRecordResults({ data: rows, paginator: { total: 2, page: 2 } }, query, catalog)
+  assert.deepEqual(documented, {
+    entity: 'Counter', page: 2, count: 1, total: 2, hasMore: false, truncated: false,
+    records: [{ id: 2, name: 'East' }]
+  })
+  const doubleWrapped = sanitizeRecordResults({ data: { data: rows, paginator: { total: 4 } } }, query, catalog)
+  assert.equal(doubleWrapped.total, 4)
+  assert.equal(doubleWrapped.hasMore, true)
+  assert.throws(() => sanitizeRecordResults({ data: { unexpected: rows } }, query, catalog), /unsupported collection response/)
+})
+
 test('keeps bounded server error details so failed queries are diagnosable', () => {
   assert.equal(formatAdminReadError({
     response: { status: 500, data: { detail: '<b>Unknown field</b> uuid' } },

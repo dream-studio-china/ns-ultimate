@@ -174,9 +174,23 @@ function safeValue(value) {
 
 export function sanitizeRecordResults(records, query, catalog) {
   const capability = catalog.find(item => item.key === query.entity)
-  if (!capability || !Array.isArray(records)) throw new TypeError('The read endpoint returned an unsupported result.')
+  if (!capability) throw new TypeError('The read endpoint returned an unsupported result.')
+  let collection = records
+  let paginator = null
+  // Support both the admin client's unwrapped `data` value and the documented
+  // raw collection envelope `{ data: [...], paginator: {...} }`.
+  for (let depth = 0; depth < 3 && !Array.isArray(collection); depth += 1) {
+    if (!collection || typeof collection !== 'object' || Array.isArray(collection)) break
+    if (collection.paginator && typeof collection.paginator === 'object') paginator = collection.paginator
+    if (Array.isArray(collection.data)) {
+      collection = collection.data
+      break
+    }
+    collection = collection.data
+  }
+  if (!Array.isArray(collection)) throw new TypeError('The read endpoint returned an unsupported collection response.')
   const fields = new Set(query.fields)
-  const sanitized = records.slice(0, query.limit).map(record => {
+  const sanitized = collection.slice(0, query.limit).map(record => {
     if (!record || typeof record !== 'object' || Array.isArray(record)) return {}
     const output = {}
     for (const key of fields) {
@@ -186,12 +200,20 @@ export function sanitizeRecordResults(records, query, catalog) {
     }
     return output
   })
-  let truncated = records.length > sanitized.length
+  let truncated = collection.length > sanitized.length
   while (sanitized.length && JSON.stringify(sanitized).length > MAX_RESULT_CHARACTERS) {
     sanitized.pop()
     truncated = true
   }
-  return { entity: capability.name, page: query.page, count: sanitized.length, truncated, records: sanitized }
+  const total = Number.isSafeInteger(paginator?.total) && paginator.total >= 0 ? paginator.total : null
+  return {
+    entity: capability.name,
+    page: query.page,
+    count: sanitized.length,
+    ...(total === null ? {} : { total, hasMore: query.page * query.limit < total }),
+    truncated,
+    records: sanitized
+  }
 }
 
 export function formatAdminReadError(error) {
