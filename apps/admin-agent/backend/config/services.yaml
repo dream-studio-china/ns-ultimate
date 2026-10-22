@@ -9,5 +9,11 @@ services:
             - '../src/Entity/'
             - '../src/Adapter/'
 
-    # Explicitly select this host's restricted Counter.name capability.
+    # Explicit host selection; adapters are never enabled by discovery.
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\CounterMutationAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StoreMutationAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\CategoryMutationAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagMutationAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductCategoryMutationAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductMutationAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\SpecificationMutationAdapter: ~

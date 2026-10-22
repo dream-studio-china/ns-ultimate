@@ -6,11 +6,13 @@ namespace NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Adapter\NsUltimat
 
 use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
+use App\Store\Entity\Store;
 use App\Tests\Integration\DatabaseBootstrapTrait;
 use App\Tests\Integration\IntegrationWebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Entity\OrderCounter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 
 final class CounterMutationTest extends IntegrationWebTestCase
@@ -64,10 +66,9 @@ final class CounterMutationTest extends IntegrationWebTestCase
         $em->persist($counter);
         $em->flush();
         foreach ([
-            ['action' => 'create', 'changes' => ['name' => 'New']],
-            ['action' => 'delete', 'identifier' => (string) $counter->getId()],
-            ['action' => 'update', 'identifier' => (string) $counter->getId(), 'changes' => ['name' => 'Different', 'enabled' => false]],
-            ['action' => 'update', 'identifier' => (string) $counter->getId(), 'changes' => ['code' => 'different']],
+            ['action' => 'update', 'identifier' => (string) $counter->getId(), 'changes' => ['name' => 'Different', 'metadata' => ['secret' => 'not allowed']]],
+            ['action' => 'update', 'identifier' => (string) $counter->getId(), 'changes' => ['metadata' => ['secret' => 'not allowed']]],
+            ['action' => 'update', 'identifier' => (string) $counter->getId(), 'changes' => ['storeUuid' => '00000000-0000-4000-8000-000000000002']],
             ['action' => 'update', 'identifier' => (string) $counter->getId(), 'changes' => ['name' => '']],
             ['action' => 'update', 'identifier' => (string) $counter->getId(), 'changes' => ['name' => null]],
             ['action' => 'update', 'identifier' => (string) $counter->getId(), 'changes' => ['name' => ['array']]],
@@ -95,6 +96,120 @@ final class CounterMutationTest extends IntegrationWebTestCase
             $body = json_decode((string) $client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
             self::assertSame(str_repeat('é', 120), ($body['data'] ?? $body)['differences'][0]['after']);
         }
+    }
+
+    public function testCreateUpdateAndDeleteUseApprovedFieldsAndRejectUnsafeCases(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $store = new Store('agent-counter-store', 'Counter Store');
+        $otherStore = new Store('agent-counter-other', 'Other Store');
+        $em->persist($store); $em->persist($otherStore);
+        $em->flush();
+        $taken = (new Counter())->setStoreUuid($store->getUuid())->setCode('taken')->setName('Taken');
+        $em->persist($taken); $em->flush();
+
+        foreach ([
+            ['storeUuid'=>$store->getUuid(), 'code'=>'taken', 'name'=>'Duplicate'],
+            ['storeUuid'=>$store->getUuid(), 'code'=>'valid', 'name'=>'Invalid capacity', 'capacity'=>0],
+            ['storeUuid'=>$store->getUuid(), 'code'=>'valid', 'name'=>'Invalid sort', 'sort'=>2147483648],
+        ] as $invalid) {
+            $client->jsonRequest('POST', self::URL, ['entity'=>'Counter', 'action'=>'create', 'changes'=>$invalid]);
+            self::assertResponseStatusCodeSame(400);
+        }
+
+        $preview = $this->post($client, ['action'=>'create', 'changes'=>['storeUuid'=>$store->getUuid(), 'code'=>'new-counter', 'name'=>'New Counter', 'capacity'=>null, 'sort'=>3, 'enabled'=>true]]);
+        $receipt = $this->commit($client, $preview['operationId']);
+        self::assertTrue($receipt['verified']);
+        $counter = $em->find(Counter::class, (int)$receipt['identifier']);
+        self::assertInstanceOf(Counter::class, $counter);
+        self::assertNull($counter->getCapacity());
+
+        $update = $this->post($client, ['action'=>'update', 'identifier'=>(string)$counter->getId(), 'changes'=>['code'=>'renamed', 'capacity'=>12, 'sort'=>0, 'enabled'=>false]]);
+        self::assertSame(['code','capacity','sort','enabled'], array_column($update['differences'], 'property'));
+        $this->commit($client, $update['operationId']);
+        $em->refresh($counter);
+        self::assertSame('renamed', $em->find(Counter::class, $counter->getId())->getCode());
+        self::assertFalse($em->find(Counter::class, $counter->getId())->isEnabled());
+
+        $client->jsonRequest('POST', self::URL, ['entity'=>'Counter','action'=>'update','identifier'=>(string)$counter->getId(),'changes'=>['storeUuid'=>$otherStore->getUuid()]]);
+        self::assertResponseStatusCodeSame(400);
+        $delete = $this->post($client, ['action'=>'delete', 'identifier'=>(string)$counter->getId(), 'changes'=>[]]);
+        $deleted = $this->commit($client, $delete['operationId']);
+        self::assertTrue($deleted['verified']);
+        $em->clear();
+        self::assertNull($em->find(Counter::class, $counter->getId()));
+    }
+
+    public function testDeleteRejectsOrderBinding(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $counter = (new Counter())->setStoreUuid('00000000-0000-4000-8000-000000000001')->setCode('bound-counter')->setName('Bound');
+        $em->persist($counter); $em->flush();
+        $binding = (new OrderCounter())->setTradeOrderUuid('00000000-0000-4000-8000-000000000099')->setStoreUuid($counter->getStoreUuid())->setCounter($counter);
+        $em->persist($binding); $em->flush();
+        $client->jsonRequest('POST', self::URL, ['entity'=>'Counter','action'=>'delete','identifier'=>(string)$counter->getId(),'changes'=>[]]);
+        self::assertResponseStatusCodeSame(400);
+        self::assertInstanceOf(Counter::class, $em->find(Counter::class, $counter->getId()));
+    }
+
+    public function testDeletePreviewShowsRemovalAndCommitConflictsOnNewBinding(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $counter = (new Counter())->setStoreUuid('00000000-0000-4000-8000-000000000001')->setCode('late-binding')->setName('Delete Me');
+        $em->persist($counter); $em->flush();
+        $preview = $this->post($client, ['action'=>'delete', 'identifier'=>(string)$counter->getId(), 'changes'=>[]]);
+        self::assertStringContainsString($counter->getStoreUuid(), $preview['title']);
+        self::assertSame(['storeUuid','code','name','capacity','sort','enabled'], array_column($preview['differences'], 'property'));
+        foreach ($preview['differences'] as $difference) self::assertNull($difference['after']);
+        $binding = (new OrderCounter())->setTradeOrderUuid('00000000-0000-4000-8000-000000000098')->setStoreUuid($counter->getStoreUuid())->setCounter($counter);
+        $em->persist($binding); $em->flush();
+        $client->jsonRequest('POST', self::URL.'/'.$preview['operationId'].'/commit', ['confirmed'=>true]);
+        self::assertResponseStatusCodeSame(409);
+        self::assertInstanceOf(Counter::class, $em->find(Counter::class, $counter->getId()));
+    }
+
+    public function testCreateConflictsOnCodeClaimAndStoreLifecycleRace(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $store = new Store('late-store', 'Late Store'); $em->persist($store); $em->flush();
+        $payload = ['storeUuid'=>$store->getUuid(), 'code'=>'late-code', 'name'=>'Candidate'];
+        $duplicatePreview = $this->post($client, ['action'=>'create', 'changes'=>$payload]);
+        $em->persist((new Counter())->setStoreUuid($store->getUuid())->setCode('late-code')->setName('Concurrent')); $em->flush();
+        $client->jsonRequest('POST', self::URL.'/'.$duplicatePreview['operationId'].'/commit', ['confirmed'=>true]);
+        self::assertResponseStatusCodeSame(409);
+
+        $store2 = new Store('late-store-two', 'Late Store Two'); $em->persist($store2); $em->flush();
+        $payload['storeUuid'] = $store2->getUuid(); $payload['code'] = 'state-race';
+        $statePreview = $this->post($client, ['action'=>'create', 'changes'=>$payload]);
+        $em->getConnection()->executeStatement('UPDATE store SET status = ? WHERE id = ?', ['suspended', $store2->getId()]);
+        $client->jsonRequest('POST', self::URL.'/'.$statePreview['operationId'].'/commit', ['confirmed'=>true]);
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame(0, $em->getRepository(Counter::class)->count(['storeUuid'=>$store2->getUuid()]));
+
+        $store3 = new Store('late-store-three', 'Late Store Three'); $em->persist($store3); $em->flush();
+        $payload['storeUuid'] = $store3->getUuid(); $payload['code'] = 'deleted-store-race';
+        $deletedStorePreview = $this->post($client, ['action'=>'create', 'changes'=>$payload]);
+        $em->getConnection()->executeStatement('DELETE FROM store WHERE id = ?', [$store3->getId()]);
+        $client->jsonRequest('POST', self::URL.'/'.$deletedStorePreview['operationId'].'/commit', ['confirmed'=>true]);
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame(0, $em->getRepository(Counter::class)->count(['storeUuid'=>$store3->getUuid()]));
+    }
+
+    public function testMetadataObjectKeyOrderDoesNotMakeProposalStale(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $counter = (new Counter())->setStoreUuid('00000000-0000-4000-8000-000000000001')->setCode('metadata-order')->setName('Before')->setMetadata(['alpha'=>1,'beta'=>['x'=>1,'y'=>2]]);
+        $em->persist($counter); $em->flush();
+        $preview = $this->post($client, ['action'=>'update', 'identifier'=>(string)$counter->getId(), 'changes'=>['name'=>'After']]);
+        $em->getConnection()->executeStatement('UPDATE counter SET metadata = ? WHERE id = ?', ['{"beta":{"y":2,"x":1},"alpha":1}', $counter->getId()]);
+        $this->commit($client, $preview['operationId']);
+        $em->clear();
+        self::assertSame('After', $em->find(Counter::class, $counter->getId())->getName());
     }
 
     public function testAuthorizationIsRecheckedForEveryOperationRoute(): void
@@ -296,6 +411,14 @@ final class CounterMutationTest extends IntegrationWebTestCase
         $client->jsonRequest('POST', $url, $payload);
         self::assertResponseIsSuccessful();
         $body = json_decode((string) $client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        return $body['data'] ?? $body;
+    }
+
+    private function commit(KernelBrowser $client, string $operationId): array
+    {
+        $client->jsonRequest('POST', self::URL.'/'.$operationId.'/commit', ['confirmed'=>true]);
+        self::assertResponseIsSuccessful();
+        $body = json_decode((string)$client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
         return $body['data'] ?? $body;
     }
 }
