@@ -1,12 +1,12 @@
 export default {
   'Open admin assistant': '打开后台 AI 助手',
   'Admin AI assistant': '后台 AI 助手',
-  'API documentation Q&A and confirmed read-only queries; admin actions are unavailable': '接口文档问答与确认后的只读查询；当前版本不执行后台操作',
-  'Configure a compatible OpenAI Chat Completions provider to ask about API docs and confirmed read-only queries.': '请先配置兼容 OpenAI Chat Completions 的模型服务，再询问接口文档或执行经确认的只读查询。',
+  'API documentation Q&A and bounded read-only queries; admin actions are unavailable': '接口文档问答与受限的只读查询；当前版本不执行后台操作',
+  'Configure a compatible OpenAI Chat Completions provider to ask about API docs and bounded read-only queries.': '请先配置兼容 OpenAI Chat Completions 的模型服务，再询问接口文档或执行受限的只读查询。',
   'Example: which filters does the product list API support?': '例如：商品查询接口支持哪些筛选？',
   'Message': '消息',
   'Send': '发送',
-  'Provider settings and API key are stored in this browser. The API key is sent only to the configured provider. Leave it empty for providers that do not require a key. HTTP is allowed for private LAN providers, but is unencrypted; use only on a trusted network. Record reads require confirmation; selected fields are then sent to the provider.': '模型服务配置和 API Key 会保存在此浏览器。API Key 仅发送给配置的模型服务。无需密钥的服务（例如 Ollama）可留空。局域网地址允许使用 HTTP，但传输未加密，请仅在可信网络中使用。读取记录前会逐次确认，所选字段随后发送给模型服务。',
+  'Provider settings and API key are stored in this browser. The API key is sent only to the configured provider. Leave it empty for providers that do not require a key. HTTP is allowed for private LAN providers, but is unencrypted; use only on a trusted network. Bounded read-only queries run without confirmation; selected fields are sent to the provider.': '模型服务配置和 API Key 会保存在此浏览器。API Key 仅发送给配置的模型服务。无需密钥的服务（例如 Ollama）可留空。局域网地址允许使用 HTTP，但传输未加密，请仅在可信网络中使用。受限的只读查询无需人工确认；查询所选字段会发送给模型服务。',
   'Provider base URL': '模型服务地址',
   'Model': '模型',
   'API documentation URL (same origin)': 'API 文档地址（需同源）',
@@ -29,6 +29,5 @@ export default {
   'Loaded {count} API operations and {entities} config-backed read collections.': '已加载 {count} 个接口说明及 {entities} 个配置驱动的只读实体。',
   'Failed to load API documentation.': '读取 API 文档失败。',
   'Request failed.': '请求失败。',
-  'No filters': '无筛选条件',
-  'Allow this read-only query?': 'AI 即将读取「{entity}」，第 {page} 页，最多 {limit} 条。字段：{fields}。筛选条件：{filters}。读取结果会发送给已配置的模型服务。是否继续？'
+  'No filters': '无筛选条件'
 }

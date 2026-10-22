@@ -17,7 +17,7 @@ export function createAssistantTools(catalog) {
       type: 'function',
       function: {
         name: 'query_records',
-        description: 'Read a small page from a documented, configured admin collection. Only use simple equality filters. The application will ask the user before every record read because selected data is sent to the configured model provider.',
+        description: 'Read a small page from a documented, configured admin collection. Only use simple equality filters. Selected safe fields are sent to the configured model provider.',
         parameters: {
           type: 'object',
           properties: {
@@ -47,7 +47,7 @@ export function createAssistantTools(catalog) {
   return tools
 }
 
-export async function executeAssistantTool({ call, catalog, host, operations, confirmRead, budget, signal, assertActive = () => {} }) {
+export async function executeAssistantTool({ call, catalog, host, operations, budget, signal, assertActive = () => {} }) {
   if (!call || call.type !== 'function' || !call.function || typeof call.function.name !== 'string') {
     return { error: 'Unsupported tool call.' }
   }
@@ -65,25 +65,12 @@ export async function executeAssistantTool({ call, catalog, host, operations, co
     return { entities, truncated: catalog.length > entities.length }
   }
   if (call.function.name !== 'query_records') return { error: 'This tool is not available.' }
-  if (budget.cancelled) return { error: 'The user declined a record read; no further record queries are allowed in this task.' }
   if (budget.count >= TOOL_BUDGET) return { error: 'The read-query limit for this task has been reached.' }
 
   let input
   try { input = JSON.parse(call.function.arguments || '') } catch { return { error: 'Invalid query arguments.' } }
   let query
   try { query = prepareRecordQuery(input, catalog) } catch (error) { return { error: error.message || 'The query was rejected by policy.' } }
-  const capability = catalog.find(item => item.key === query.entity)
-  const approved = await confirmRead({
-    entity: capability.name,
-    page: query.page,
-    limit: query.limit,
-    fields: query.fields.map(property => capability.fields.find(field => field.property === property)?.label || property),
-    filters: input.filters || []
-  })
-  if (!approved) {
-    budget.cancelled = true
-    return { cancelled: true, message: 'The user declined this data read.' }
-  }
   assertActive()
   if (signal?.aborted) return { cancelled: true, message: 'The read query was cancelled.' }
   budget.count += 1

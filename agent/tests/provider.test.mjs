@@ -51,3 +51,39 @@ test('supports optional API keys and function calls while rejecting malformed re
     fetchImpl: async() => ({ ok: true, json: async() => ({ choices: [] }) })
   }), /no text response/)
 })
+
+test('requests SSE streaming, emits text deltas, and assembles split tool-call deltas', async() => {
+  const events = [
+    'data: {"choices":[{"delta":{"content":"Hello "}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"there"}}]}\n\n',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-","type":"function","function":{"name":"lookup_","arguments":"{\\\"id\\\":"}}]}}]}\n\n',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"1","function":{"name":"record","arguments":"1}"}}]}}]}\n\n',
+    'data: [DONE]\n\n'
+  ]
+  let requestBody
+  const tokens = []
+  const response = await askProvider({
+    baseUrl: 'https://provider.example/v1', model: 'm', apiKey: '', messages: [],
+    onToken: token => tokens.push(token),
+    fetchImpl: async(_url, options) => {
+      requestBody = JSON.parse(options.body)
+      const encoder = new TextEncoder()
+      return {
+        ok: true,
+        body: new ReadableStream({
+          start(controller) {
+            for (const event of events) controller.enqueue(encoder.encode(event))
+            controller.close()
+          }
+        })
+      }
+    }
+  })
+
+  assert.equal(requestBody.stream, true)
+  assert.deepEqual(tokens, ['Hello ', 'there'])
+  assert.equal(response.content, 'Hello there')
+  assert.deepEqual(response.toolCalls, [{
+    id: 'call-1', type: 'function', function: { name: 'lookup_record', arguments: '{"id":1}' }
+  }])
+})

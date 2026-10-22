@@ -1,6 +1,6 @@
 # Config-first admin AI assistant
 
-**Status: Read-only prototype implemented. It includes the independent launcher, locally persisted provider preferences and API key, same-origin OpenAPI lookup, config-first entity/field catalog, and explicitly confirmed bounded GET queries for documented admin collections. Empty API keys are supported for local providers. The admin-operation bridge, mutation policy, and full task execution remain unimplemented.**
+**Status: Read-only prototype implemented. It includes the independent launcher, locally persisted provider preferences and API key, same-origin OpenAPI lookup, config-first entity/field catalog, and bounded GET queries without per-query confirmation for documented admin collections. Safe projected query results are sent to the configured provider. Empty API keys are supported for local providers. The admin-operation bridge, mutation policy, and full task execution remain unimplemented.**
 
 ## 1. Purpose and agreed scope
 

@@ -30,7 +30,7 @@ function isAllowedHttpHost(hostname) {
     || first === 100 && second >= 64 && second <= 127
 }
 
-export async function askProvider({ baseUrl, model, apiKey, messages, tools, signal, fetchImpl = fetch }) {
+export async function askProvider({ baseUrl, model, apiKey, messages, tools, signal, onToken, fetchImpl = fetch }) {
   if (!model.trim()) throw new Error('Enter a model name.')
   const endpoint = normalizeChatEndpoint(baseUrl)
   const response = await fetchImpl(endpoint, {
@@ -45,13 +45,64 @@ export async function askProvider({ baseUrl, model, apiKey, messages, tools, sig
     body: JSON.stringify({
       model,
       messages,
-      stream: false,
+      stream: true,
       ...(Array.isArray(tools) && tools.length ? { tools, tool_choice: 'auto' } : {})
     })
   })
   if (!response.ok) throw new Error(`Provider request failed (${response.status}).`)
-  const result = await response.json()
-  const message = result?.choices?.[0]?.message
+  let message
+  if (response.body?.getReader) {
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let content = ''
+    const calls = new Map()
+    const consumeEvent = data => {
+      if (!data || data === '[DONE]') return
+      let chunk
+      try { chunk = JSON.parse(data) } catch { throw new TypeError('Provider returned an invalid streaming response.') }
+      const delta = chunk?.choices?.[0]?.delta
+      if (typeof delta?.content === 'string') {
+        content += delta.content
+        if (content.length > 16000) throw new RangeError('Provider response exceeded the size limit.')
+        onToken?.(delta.content)
+      }
+      for (const part of delta?.tool_calls || []) {
+        const index = Number.isInteger(part.index) ? part.index : calls.size
+        const call = calls.get(index) || { id: '', type: 'function', function: { name: '', arguments: '' } }
+        if (part.id) call.id += part.id
+        if (part.type) call.type = part.type
+        if (part.function?.name) call.function.name += part.function.name
+        if (part.function?.arguments) call.function.arguments += part.function.arguments
+        calls.set(index, call)
+      }
+    }
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done }).replace(/\r\n/g, '\n')
+        let boundary
+        while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+          const event = buffer.slice(0, boundary)
+          buffer = buffer.slice(boundary + 2)
+          const data = event.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+          consumeEvent(data)
+        }
+        if (done) break
+      }
+      if (buffer.trim()) {
+        const data = buffer.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+        consumeEvent(data)
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => {})
+      throw error
+    }
+    message = { content, tool_calls: [...calls.values()] }
+  } else {
+    const result = await response.json()
+    message = result?.choices?.[0]?.message
+  }
   const content = message?.content
   const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls.slice(0, 8) : []
   if ((typeof content !== 'string' || !content.trim()) && toolCalls.length === 0) throw new Error('Provider returned no text response or tools.')
