@@ -1,3 +1,5 @@
+import { MAX_FILE_BYTES, MAX_TOTAL_BYTES, validateImageDataUrl } from './attachments.js'
+
 export function normalizeChatEndpoint(baseUrl) {
   const url = new URL(baseUrl)
   if (url.protocol !== 'https:' && !isAllowedHttpHost(url.hostname)) {
@@ -30,9 +32,93 @@ function isAllowedHttpHost(hostname) {
     || first === 100 && second >= 64 && second <= 127
 }
 
+export const MAX_PROVIDER_REQUEST_BYTES = 16 * 1024 * 1024
+
+function encodeProviderRequest(payload) {
+  let body
+  try {
+    body = JSON.stringify(payload)
+  } catch {
+    throw new TypeError('Provider request could not be serialized.')
+  }
+  const bytes = new TextEncoder().encode(body).byteLength
+  if (bytes > MAX_PROVIDER_REQUEST_BYTES) {
+    throw new RangeError(`Provider request exceeded the ${MAX_PROVIDER_REQUEST_BYTES} byte limit.`)
+  }
+  return body
+}
+
+function validateUserContent(content) {
+  if (typeof content === 'string') return
+  if (!Array.isArray(content) || content.length === 0) {
+    throw new TypeError('Provider user message content must be text or multimodal parts.')
+  }
+  let imageBytes = 0
+  for (const part of content) {
+    if (!part || typeof part !== 'object' || Array.isArray(part)) {
+      throw new TypeError('Provider user message contains an invalid content part.')
+    }
+    if (part.type === 'text') {
+      if (typeof part.text !== 'string' || Object.keys(part).some(key => key !== 'type' && key !== 'text')) {
+        throw new TypeError('Provider text content part is invalid.')
+      }
+      continue
+    }
+    if (part.type === 'image_url') {
+      if (!part.image_url || typeof part.image_url !== 'object' || Array.isArray(part.image_url)
+        || typeof part.image_url.url !== 'string'
+        || Object.keys(part).some(key => key !== 'type' && key !== 'image_url')
+        || Object.keys(part.image_url).some(key => key !== 'url')) {
+        throw new TypeError('Provider image content part is invalid.')
+      }
+      const image = validateImageDataUrl(part.image_url.url)
+      if (image.byteLength > MAX_FILE_BYTES) throw new RangeError('Provider image exceeds the size limit.')
+      imageBytes += image.byteLength
+      if (imageBytes > MAX_TOTAL_BYTES) throw new RangeError('Provider images exceed the total size limit.')
+      continue
+    }
+    throw new TypeError('Provider user message contains an unsupported content part.')
+  }
+}
+
+export function assertProviderMessages(messages) {
+  if (!Array.isArray(messages)) throw new TypeError('Provider messages must be an array.')
+  for (const message of messages) {
+    if (!message || typeof message !== 'object' || Array.isArray(message)) {
+      throw new TypeError('Provider messages contain an invalid entry.')
+    }
+    if (!['system', 'user', 'assistant', 'tool'].includes(message.role)) {
+      throw new TypeError('Provider message role is invalid.')
+    }
+    if (message.role === 'user') {
+      validateUserContent(message.content)
+      continue
+    }
+    if (message.role === 'assistant') {
+      if (message.content !== null && typeof message.content !== 'string') {
+        throw new TypeError('Provider assistant content must be text or null.')
+      }
+      if (message.tool_calls !== undefined && !Array.isArray(message.tool_calls)) {
+        throw new TypeError('Provider assistant tool calls are invalid.')
+      }
+      continue
+    }
+    if (typeof message.content !== 'string') {
+      throw new TypeError('Provider system and tool content must be text.')
+    }
+  }
+}
+
 export async function askProvider({ baseUrl, model, apiKey, messages, tools, signal, onToken, fetchImpl = fetch }) {
   if (!model.trim()) throw new Error('Enter a model name.')
+  assertProviderMessages(messages)
   const endpoint = normalizeChatEndpoint(baseUrl)
+  const body = encodeProviderRequest({
+    model,
+    messages,
+    stream: true,
+    ...(Array.isArray(tools) && tools.length ? { tools, tool_choice: 'auto' } : {})
+  })
   const response = await fetchImpl(endpoint, {
     method: 'POST',
     credentials: 'omit',
@@ -42,12 +128,7 @@ export async function askProvider({ baseUrl, model, apiKey, messages, tools, sig
       'Content-Type': 'application/json',
       ...(typeof apiKey === 'string' && apiKey.length ? { Authorization: `Bearer ${apiKey}` } : {})
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: true,
-      ...(Array.isArray(tools) && tools.length ? { tools, tool_choice: 'auto' } : {})
-    })
+    body
   })
   if (!response.ok) throw new Error(`Provider request failed (${response.status}).`)
   let message
