@@ -1,0 +1,10 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    NsUltimate\Apps\AdminAgent\Backend\:
+        resource: '../src/'
+        exclude:
+            - '../src/Entity/'
+            - '../src/Adapter/'

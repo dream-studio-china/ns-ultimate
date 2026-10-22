@@ -12,7 +12,10 @@
 /core/crud-skeleton/tests
 /business/backend/**/tests
 /integration/backend/tests
-/apps
+/apps/*
+!/apps/admin-agent
+/apps/admin-agent/tests
+/apps/admin-agent/backend/tests
 /var
 /dist
 /docs
