@@ -2,7 +2,7 @@ import { prepareRecordQuery } from './capabilities.js'
 import { resolveAdminNavigation } from './navigation.js'
 import { createWritePreview } from './write-preview.js'
 
-export function createAssistantTools(catalog, navigation = [], previewPolicy = {}) {
+export function createAssistantTools(catalog, navigation = [], previewPolicy = {}, writeCapabilities = []) {
   const readable = catalog.filter(item => item.readable)
   const tools = [{
     type: 'function',
@@ -86,12 +86,45 @@ export function createAssistantTools(catalog, navigation = [], previewPolicy = {
       }
     }
   })
+  if (writeCapabilities.length) tools.push({
+    type: 'function',
+    function: {
+      name: 'prepare_record_change',
+      description: `Prepare a server-validated single-record change ONLY when the user explicitly requests a write. Nothing is saved to the target until the user clicks confirmation in the UI. Never claim success from preparation. Use an exact ID/UUID for update/delete, ask for clarification if ambiguous, and never invent relation IDs. Supported policy: ${JSON.stringify(writeCapabilities)}`,
+      parameters: {
+        type: 'object', properties: {
+          entity: { type: 'string', enum: writeCapabilities.map(item => item.entity) },
+          action: { type: 'string', enum: ['create', 'update', 'delete'] },
+          identifier: { type: 'string', description: 'Exact target numeric ID or UUID. Omit for create.' },
+          changes: { type: 'object', description: 'Explicit allowlisted field values; omit for delete.' }
+        }, required: ['entity', 'action'], additionalProperties: false
+      }
+    }
+  })
   return tools
 }
 
-export async function executeAssistantTool({ call, catalog, navigation = [], previewPolicy = {}, snapshots = new Map(), host, operations, onReadAudit = () => {}, signal, assertActive = () => {} }) {
+export async function executeAssistantTool({ call, catalog, navigation = [], previewPolicy = {}, snapshots = new Map(), host, operations, onReadAudit = () => {}, onPreparedChange = () => {}, signal, assertActive = () => {} }) {
   if (!call || call.type !== 'function' || !call.function || typeof call.function.name !== 'string') {
     return { error: 'Unsupported tool call.' }
+  }
+  if (call.function.name === 'prepare_record_change') {
+    assertActive()
+    if (signal?.aborted) return { error: 'The operation was cancelled.' }
+    if (typeof host?.prepareRecordChange !== 'function') return { error: 'Change preparation is unavailable.' }
+    try {
+      const input = JSON.parse(call.function.arguments || '')
+      const preview = await host.prepareRecordChange(input, signal)
+      assertActive()
+      if (signal?.aborted) return { error: 'The operation was cancelled.' }
+      if (!preview || preview.saved !== false || !Array.isArray(preview.differences)) return { error: 'Unsupported prepared change response.' }
+      onPreparedChange(preview)
+      // Execution identifiers and full before/after values stay in the host/UI boundary.
+      return { prepared: true, saved: false, entity: preview.entity, action: preview.action, identifier: preview.identifier,
+        affectedRecords: 1, message: 'Awaiting explicit UI confirmation. No target data has been changed.' }
+    } catch {
+      return { error: 'Change preparation failed. Check the displayed server error, permissions and field values. Nothing was submitted for execution.' }
+    }
   }
   if (call.function.name === 'preview_record_update') {
     assertActive()

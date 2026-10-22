@@ -40,7 +40,7 @@ export default (configEnv: { mode: string; command: string }) => {
     plugins: [
       ...(coreConfig.plugins ?? []),
       watchBusinessAdmin(businessAdmin),
-      adminAgentPlugin(path.join(repositoryRoot, 'agent/src/entry.js'))
+      adminAgentPlugin(path.join(repositoryRoot, 'apps/admin-agent/src/entry.js'))
     ],
     resolve: {
       ...coreConfig.resolve,
@@ -58,7 +58,7 @@ export default (configEnv: { mode: string; command: string }) => {
       open: false,
       fs: {
         ...coreConfig.server?.fs,
-        allow: [coreRoot, integrationDir, businessAdmin, path.join(repositoryRoot, 'agent')]
+        allow: [coreRoot, integrationDir, businessAdmin, path.join(repositoryRoot, 'apps/admin-agent')]
       }
     },
     build: {

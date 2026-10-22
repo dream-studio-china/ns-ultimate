@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import policy from '../../business/admin/agent-preview-policy.mjs'
+const policy = { Counter: { name: { label: 'Name', type: 'string', required: true, maxLength: 120 } } }
 import { createWritePreview } from '../src/write-preview.js'
 import { createAssistantTools, executeAssistantTool } from '../src/tools.js'
 

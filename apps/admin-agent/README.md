@@ -1,4 +1,4 @@
-# Admin AI assistant (initial prototype)
+# Admin AI assistant app
 
 The assistant is an independent, optional frontend module. It provides a floating panel, locally persisted provider preferences and API key, automatic same-origin OpenAPI documentation loading on mount, config-first entity discovery, bounded authenticated read-only collection queries, allowlisted navigation to registered admin lists and record detail views, Markdown-rendered assistant replies (including GFM-style tables), and streamed documentation-grounded chat with an OpenAI Chat Completions-compatible endpoint.
 
@@ -10,11 +10,25 @@ The UI shows query conditions, configured sort order, browser retrieval time and
 
 Navigation is available only when explicitly requested by the user and only to registered list pages or read-only record detail routes. It does not open create/edit routes or arbitrary URLs.
 
-It does **not** execute admin actions. It has no write API client. Do not treat this assistant as an agent for modifying production data.
+The model does **not** submit writes. Registered host adapters can enable user-confirmed single-record create/update/delete operations. Review the full diff and confirm in the UI; deletion requires typing the exact confirmation phrase. Proposals expire after five minutes. Network cancellation after submission may leave the outcome unknown; use the status check instead of creating another operation. The app backend owns one generic `AgentOperation` entity/table for all adapters, not one operation entity per business resource. See the [operation contract](../../docs/contracts/admin-agent.md) for endpoints, migration and retention requirements. Real authenticated browser verification remains outstanding.
 
 ## Update previews (phase one)
 
-`preview_record_update` creates an unsaved, single-record diff only. The business-owned policy in `business/admin/agent-preview-policy.mjs` currently permits only `Counter.name` (non-empty string, at most 120 characters as a local preview constraint). No other entity, field, creation, deletion, or batch operation is enabled. The model must query the target in the same task, then provide an exact ID/UUID from the latest returned page. Missing, ambiguous, or potentially truncated current values are rejected; the model cannot supply the old value. Proposed values receive only local type/length/required checks, not backend authorization or business validation. There is no execution/confirmation button or write endpoint. Preview content is shown in a diff card and sent to the configured provider; an assistant summary may retain it within bounded conversation memory. Query snapshots are task-local and may already be stale. Example: ask to preview changing counter ID 7's name to a new name; no data will be saved.
+`preview_record_update` is a separate, local-only preview tool. The model must first query the target in the same task and provide an exact ID/UUID from the latest returned page. Missing, ambiguous, or potentially truncated old values are rejected. This tool cannot submit changes and does not validate backend authorization or business rules. Its policy comes from the app's host adapter, not the generic assistant code. Preview values are sent to the configured provider and may appear in bounded conversation summaries.
+
+## Package and adapter boundaries
+
+- `src/`, `tests/`, `package.json`: generic browser UI, tools, provider integration and tests.
+- `backend/src/` outside `Adapter/`: generic operation lifecycle, registry, actor-provider interface, routes, entity and pruning command.
+- `adapters/ns-ultimate/admin/`: host-specific frontend capability descriptions and Counter.name local-preview policy.
+- `backend/src/Adapter/NsUltimate/`: host-specific Content mutation adapter, reusing existing business entities and validation without modifying business modules.
+- `backend/tests/Integration/Adapter/NsUltimate/`: composition tests for that binding, separate from generic lifecycle tests.
+- `backend/migrations/`, `backend/config/`, `backend/translations/`: app-owned schema and Symfony configuration.
+- `backend/composer.json`: embeddable backend package manifest. This repository deliberately reuses the locked core dependencies; it does not install a second backend runtime.
+- `integration/`: explicitly supplies app autoloading, service/route/mapping registration, stable actor identity, admin authentication and frontend build wiring. It explicitly enables the app-owned Content adapter; host adapters are excluded from generic service discovery. There is no automatic discovery of arbitrary apps.
+- `business/` and `core/`: existing host domain models and validation, consumed but not modified for agent features. Agent-specific extensions stay in the app. Currently only Content create/update/delete and Counter.name local-only preview are enabled.
+
+To add a writable resource, implement `MutationAdapter` in an app-owned host adapter directory and supply its capability descriptor. Explicitly enable the adapter through integration; do not add agent code to business modules or core. The adapter authorizes access and owns lookup, canonical snapshots, agent-specific field restrictions, row locking and read-back verification while reusing existing domain validation. The generic registry rejects unknown or duplicate keys; caller input never resolves PHP classes or arbitrary URLs. The app can be embedded in another compatible Symfony host by importing its service configuration, mapping, migrations and routes, and providing `ActorIdentityProvider` plus explicitly selected host adapters. It is an application package, not an independently running service in this deployment. Removing its registration must not require business-module edits; ordinary business CRUD remains independent of the agent.
 
 The backend remains the authority for record and field authorization. Frontend route checks and sensitive-name filtering are defense-in-depth, not a replacement for server-side field-level grants. The activity view is not a tamper-resistant audit log and is cleared with the page/session; no backend audit endpoint is added by this module. Response size is bounded after the authenticated admin client receives the response, so server-side response-byte and query-cost limits remain deployment responsibilities.
 
@@ -39,9 +53,12 @@ Provider URL compatibility depends on the provider's CORS and Chat Completions i
 ## Development checks
 
 ```sh
-npm test --prefix agent
+npm test --prefix apps/admin-agent
 node --test integration/admin/*.test.mjs
+php -d memory_limit=512M core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml
 npm run build --prefix core/crud-admin -- --config ../../integration/admin/vite.config.ts
 ```
 
-See [`../docs/design/admin-ai-assistant.md`](../docs/design/admin-ai-assistant.md) for the target architecture, security policy, implementation gaps, and acceptance plan.
+Before using confirmed mutations, review pending migrations and apply the app's generic operation migration through `integration/backend/bin/console`. Schedule `app:admin-agent:prune` to erase expired proposal payloads. No environment database is migrated automatically by tests or source relocation. The previous uncommitted Content-specific operation table was never applied in this development session; if an environment independently applied that draft migration, inspect it and plan a data-preserving migration instead of blindly creating or dropping tables.
+
+See the [design](../../docs/design/admin-ai-assistant.md) for security policy, implementation gaps and acceptance plans.

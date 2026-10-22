@@ -2,10 +2,12 @@ import inflectFactory from 'i'
 import adminConfig from './config'
 import request from '@/utils/request'
 import router from '@/router'
-import previewPolicy from '../../business/admin/agent-preview-policy.mjs'
+import previewPolicy from '../../apps/admin-agent/adapters/ns-ultimate/admin/preview-policy.mjs'
+import mutationCapabilities from '../../apps/admin-agent/adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { createMutationHost } from '../../apps/admin-agent/src/mutation-host.js'
 import { API_PREFIX, apiPath } from '@/api/prefix'
-import { buildCapabilityCatalog, formatAdminReadError, prepareRecordQuery, sanitizeRecordResults } from '../../agent/src/capabilities.js'
-import { buildAdminPageCatalog, resolveAdminNavigation } from '../../agent/src/navigation.js'
+import { buildCapabilityCatalog, formatAdminReadError, prepareRecordQuery, sanitizeRecordResults } from '../../apps/admin-agent/src/capabilities.js'
+import { buildAdminPageCatalog, resolveAdminNavigation } from '../../apps/admin-agent/src/navigation.js'
 
 const inflect = inflectFactory(true)
 const defaultPrefix = apiPath(API_PREFIX, 'manage')
@@ -29,6 +31,7 @@ export function createAdminAgentHost() {
   const getCatalog = operations => buildCapabilityCatalog(adminConfig.entities, operations, { parameterize, defaultPrefix })
 
   return {
+    ...createMutationHost(request, `${defaultPrefix}/agent/operations`, mutationCapabilities),
     getWritePreviewPolicy() { return previewPolicy },
     getCatalog,
     getNavigationCatalog() { return accessibleNavigation() },
@@ -60,7 +63,7 @@ export function createAdminAgentHost() {
       // locale, API base URL, and backend authorization remain authoritative.
       let response
       try {
-        response = await request.get(query.path, { params: query.params, signal: controller.signal })
+        response = await request.get(query.path, { params: query.params, signal: controller.signal, timeout: 60000 })
       } catch (error) {
         if (timedOut) throw new Error('The read query timed out after 60 seconds.')
         throw new Error(formatAdminReadError(error))
