@@ -6,7 +6,7 @@ const parameterize = name => `${name.toLowerCase()}s`
 const entities = {
   Counter: {
     entity: { name: 'Counter', plural: 'counters' },
-    form: { fields: ['name', { property: 'enabled', type: 'boolean', required: true }, { property: 'apiToken' }, { property: 'metadata', type: 'json' }] },
+    form: { fields: ['name', { property: 'enabled', type: 'boolean', required: true }, { property: 'apiToken' }, { property: 'bankAccountNumber' }, { property: 'metadata', type: 'json' }] },
     list: {
       list_display: ['id', 'uuid', 'name', { property: 'storeUuid', relation: { entity: 'Store' } }, 'enabled'],
       list_filter: { name: 'Name', enabled: { label: 'Enabled', type: 'boolean' }, status: { expression: 'entity.status == :value' } },
@@ -30,11 +30,21 @@ test('builds a serializable config-first catalog and only enables documented GET
   assert.equal(counter.readable, true)
   assert.deepEqual(counter.select, ['id', 'uuid', 'name', 'enabled'])
   assert.deepEqual(counter.filters.map(filter => filter.property), ['name', 'enabled'])
-  assert.equal(counter.fields.some(field => field.property === 'apiToken' || field.property === 'metadata'), false)
+  assert.equal(counter.fields.some(field => ['apiToken', 'bankAccountNumber', 'metadata'].includes(field.property)), false)
   assert.equal(secretSetting.readable, true)
   assert.equal(secretSetting.select.includes('value'), false)
   assert.equal(unsupported.readable, false)
   assert.equal(JSON.stringify(catalog).includes('expression'), false)
+})
+
+test('excludes personal identifiers and financial account identifiers from the query allowlist', () => {
+  const catalog = buildCapabilityCatalog({
+    Customer: {
+      entity: { name: 'Customer', plural: 'customers' },
+      list: { list_display: ['id', 'legalName', 'nickname', 'bankAccountNumber', 'name'] }
+    }
+  }, [{ method: 'GET', path: '/api/v1/manage/customers' }], { parameterize })
+  assert.deepEqual(catalog[0].select, ['id', 'uuid', 'name'])
 })
 
 test('validates query bounds and compiles only configured scalar filters', () => {
@@ -72,22 +82,26 @@ test('supports bounded numeric/date comparisons and configured relation equality
       form: { fields: [
         { property: 'amount', type: 'integer' },
         { property: 'createdAt', type: 'datetime' },
-        { property: 'storeUuid', relation: { entity: 'Store', valueKey: 'uuid' } }
+        { property: 'storeUuid', relation: { entity: 'Store', valueKey: 'uuid' } },
+        { property: 'regionUuid', relation: { entity: 'Region', valueKey: 'uuid' } }
       ] },
       list: { list_display: ['id', 'amount', 'createdAt'], list_filter: {
-        amount: 'Amount', createdAt: 'Created at', storeUuid: relationLoader
+        amount: 'Amount', createdAt: 'Created at', storeUuid: relationLoader,
+        regionUuid: { '550e8400-e29b-41d4-a716-446655440001': 'North' }
       } }
     }
   }, [{ method: 'GET', path: '/api/v1/manage/invoices' }], { parameterize })
   const invoice = typedCatalog.find(item => item.key === 'Invoice')
-  assert.equal(invoice.filters.find(filter => filter.property === 'storeUuid').dynamicOptions, true)
+  assert.equal(invoice.filters.some(filter => filter.property === 'storeUuid'), false)
   const query = prepareRecordQuery({ entity: 'Invoice', filters: [
     { field: 'amount', operator: 'gte', value: 500 },
     { field: 'createdAt', operator: 'gte', value: '2026-01-01' },
     { field: 'createdAt', operator: 'lte', value: '2026-12-31' },
-    { field: 'storeUuid', value: 'store-uuid' }
+    { field: 'regionUuid', value: '550e8400-e29b-41d4-a716-446655440001' }
   ] }, typedCatalog)
-  assert.equal(query.params['@filter'], 'entity.getAmount() >= 500 && entity.getCreatedAt() >= "2026-01-01" && entity.getCreatedAt() <= "2026-12-31" && entity.getStoreUuid() == "store-uuid"')
+  assert.equal(query.params['@filter'], 'entity.getAmount() >= 500 && entity.getCreatedAt() >= "2026-01-01" && entity.getCreatedAt() <= "2026-12-31" && entity.getRegionUuid() == "550e8400-e29b-41d4-a716-446655440001"')
+  assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'regionUuid', value: '550e8400-e29b-41d4-a716-446655440000' }] }, typedCatalog), /allowed option/)
+  assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'storeUuid', value: '550e8400-e29b-41d4-a716-446655440000' }] }, typedCatalog), /not allowed/)
   assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'amount', operator: 'gte', value: '500' }] }, typedCatalog), /finite number/)
   assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'amount', operator: 'gte', value: 1.5 }] }, typedCatalog), /integer/)
   assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'createdAt', operator: 'gte', value: 'yesterday' }] }, typedCatalog), /ISO date/)

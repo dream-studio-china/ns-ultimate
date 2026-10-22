@@ -23,12 +23,46 @@ test('runs bounded read-only queries without confirmation and validates argument
   const call = { type: 'function', function: { name: 'query_records', arguments: JSON.stringify({ entity: 'Counter', filters: [{ field: 'name', value: 'West' }] }) } }
 
   const result = await executeAssistantTool({ call, catalog, host, operations: [], budget })
-  assert.deepEqual(result, {
-    records: [{ name: 'West' }],
-    query: { entity: 'Counter', page: 1, limit: 10, filters: [{ field: 'name', operator: 'contains', value: 'West' }] }
-  })
+  assert.deepEqual(result.records, [{ name: 'West' }])
+  assert.deepEqual(result.query.filters, [{ field: 'name', operator: 'contains', value: 'West' }])
+  assert.equal(result.query.entity, 'Counter')
+  assert.equal(result.query.page, 1)
+  assert.equal(result.query.limit, 10)
+  assert.ok(Number.isFinite(result.query.durationMs))
+  assert.ok(Number.isFinite(Date.parse(result.query.completedAt)))
   assert.equal(queryCount, 1)
   assert.equal(budget.count, 1)
+})
+
+test('enforces a rolling per-session query and row budget and records only safe audit metadata', async() => {
+  const sessionBudget = { events: [] }
+  const audits = []
+  const host = { queryRecords: async() => ({ records: [{ name: 'A' }, { name: 'B' }] }) }
+  const call = { type: 'function', function: { name: 'query_records', arguments: JSON.stringify({ entity: 'Counter', limit: 2 }) } }
+  const common = { call, catalog, host, operations: [], budget: { count: 0 }, sessionBudget, onReadAudit: item => audits.push(item) }
+  const first = await executeAssistantTool(common)
+  assert.equal(first.records.length, 2)
+  assert.equal(sessionBudget.events[0].rows, 2)
+  assert.equal(audits[0].outcome, 'success')
+  assert.deepEqual(Object.keys(audits[0]).sort(), ['at', 'durationMs', 'entity', 'failureType', 'outcome', 'page', 'rows'].sort())
+
+  sessionBudget.events = Array.from({ length: 100 }, (_, index) => ({ at: Date.now() - index, rows: 0 }))
+  const limited = await executeAssistantTool({ ...common, budget: { count: 0 } })
+  assert.match(limited.error, /session read budget/)
+  assert.equal(audits.length, 1)
+})
+
+test('reduces the last page to the remaining session row allowance', async() => {
+  const sessionBudget = { events: [{ at: Date.now(), rows: 999 }] }
+  const host = { queryRecords: async input => ({ records: Array.from({ length: input.limit }, (_, index) => ({ name: `Row ${index}` })) }) }
+  const result = await executeAssistantTool({
+    call: { type: 'function', function: { name: 'query_records', arguments: JSON.stringify({ entity: 'Counter', limit: 10 }) } },
+    catalog, host, operations: [], budget: { count: 0 }, sessionBudget
+  })
+  assert.equal(result.records.length, 1)
+  assert.equal(result.query.limit, 1)
+  assert.equal(result.query.budgetLimited, true)
+  assert.equal(sessionBudget.events.reduce((total, event) => total + event.rows, 0), 1000)
 })
 
 test('rejects unapproved tool names and malformed entity lists', async() => {

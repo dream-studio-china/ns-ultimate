@@ -2,6 +2,9 @@ import { prepareRecordQuery } from './capabilities.js'
 import { resolveAdminNavigation } from './navigation.js'
 
 const TOOL_BUDGET = 4
+const SESSION_QUERY_LIMIT = 100
+const SESSION_ROW_LIMIT = 1000
+const SESSION_WINDOW_MS = 15 * 60 * 1000
 
 export function createAssistantTools(catalog, navigation = []) {
   const readable = catalog.filter(item => item.readable)
@@ -74,7 +77,7 @@ export function createAssistantTools(catalog, navigation = []) {
   return tools
 }
 
-export async function executeAssistantTool({ call, catalog, navigation = [], host, operations, budget, signal, assertActive = () => {} }) {
+export async function executeAssistantTool({ call, catalog, navigation = [], host, operations, budget, sessionBudget = { events: [] }, onReadAudit = () => {}, signal, assertActive = () => {} }) {
   if (!call || call.type !== 'function' || !call.function || typeof call.function.name !== 'string') {
     return { error: 'Unsupported tool call.' }
   }
@@ -120,18 +123,58 @@ export async function executeAssistantTool({ call, catalog, navigation = [], hos
   try { input = JSON.parse(call.function.arguments || '') } catch { return { error: 'Invalid query arguments.' } }
   let query
   try { query = prepareRecordQuery(input, catalog) } catch (error) { return { error: error.message || 'The query was rejected by policy.' } }
+  const now = Date.now()
+  if (!Array.isArray(sessionBudget.events)) sessionBudget.events = []
+  const cutoff = now - SESSION_WINDOW_MS
+  sessionBudget.events = sessionBudget.events.filter(event => Number.isFinite(event.at) && event.at > cutoff && event.at <= now)
+  const rowsUsed = sessionBudget.events.reduce((total, event) => total + (Number.isInteger(event.rows) && event.rows > 0 ? event.rows : 0), 0)
+  if (sessionBudget.events.length >= SESSION_QUERY_LIMIT || rowsUsed >= SESSION_ROW_LIMIT) {
+    return { error: 'The assistant session read budget has been reached. Try again after the 15-minute budget window resets.' }
+  }
+  const remainingRows = SESSION_ROW_LIMIT - rowsUsed
+  const requestedLimit = query.limit
+  if (query.limit > remainingRows) {
+    input.limit = remainingRows
+    query = prepareRecordQuery(input, catalog)
+  }
+  const budgetLimited = query.limit < requestedLimit
   assertActive()
   if (signal?.aborted) return { cancelled: true, message: 'The read query was cancelled.' }
   budget.count += 1
+  const budgetEvent = { at: Date.now(), rows: 0 }
+  sessionBudget.events.push(budgetEvent)
+  const startedAt = Date.now()
+  const audit = metadata => {
+    try {
+      onReadAudit({
+        at: new Date().toISOString(),
+        entity: input.entity,
+        page: query.page,
+        ...metadata
+      })
+    } catch { /* Observability must never affect query execution. */ }
+  }
   try {
     const result = await host.queryRecords(input, operations, signal)
-    if (!Array.isArray(result?.records)) return result
+    if (!Array.isArray(result?.records)) {
+      audit({ durationMs: Date.now() - startedAt, rows: 0, outcome: 'error', failureType: 'invalid-response' })
+      return { error: 'The read query returned an unsupported response.', failureType: 'invalid-response' }
+    }
+    const records = result.records.slice(0, query.limit)
+    budgetEvent.rows = records.length
+    audit({ durationMs: Date.now() - startedAt, rows: records.length, outcome: 'success', failureType: null })
     return {
       ...result,
+      records,
+      count: records.length,
+      truncated: result.truncated === true || records.length < result.records.length,
       query: {
         entity: input.entity,
         page: query.page,
         limit: query.limit,
+        durationMs: Date.now() - startedAt,
+        completedAt: new Date().toISOString(),
+        budgetLimited,
         filters: (input.filters || []).map(filter => ({
           field: filter.field,
           operator: filter.operator ?? catalog.find(item => item.key === input.entity)?.filters.find(item => item.property === filter.field)?.operator,
@@ -140,7 +183,12 @@ export async function executeAssistantTool({ call, catalog, navigation = [], hos
       }
     }
   } catch (error) {
-    return { error: error.message || 'The read query failed.' }
+    const message = error.message || ''
+    const failureType = /timeout|timed out/i.test(message) || error.name === 'TimeoutError' ? 'timeout'
+      : /\b(401|403)\b|unauthori[sz]ed|forbidden|not available to the current account/i.test(message) ? 'authorization'
+        : error.name === 'AbortError' || signal?.aborted ? 'cancelled' : 'request-failed'
+    audit({ durationMs: Date.now() - startedAt, rows: 0, outcome: 'error', failureType })
+    return { error: failureType === 'timeout' ? 'The read query timed out.' : failureType === 'authorization' ? 'The current account is not authorized to read this collection.' : failureType === 'cancelled' ? 'The read query was cancelled.' : 'The read query failed.', failureType }
   }
 }
 

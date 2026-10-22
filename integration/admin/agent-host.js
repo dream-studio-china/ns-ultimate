@@ -16,6 +16,11 @@ const adminNavigation = adminPages.map(page => {
   })
   return { key: page.key, title: page.title, ...(entity ? { entity } : {}) }
 })
+const registeredRoutes = () => new Set(router.getRoutes().map(route => route.name).filter(Boolean))
+const accessibleNavigation = () => {
+  const names = registeredRoutes()
+  return adminNavigation.filter(page => names.has(page.key))
+}
 
 const parameterize = name => inflect.dasherize(inflect.underscore(inflect.pluralize(name)))
 
@@ -24,7 +29,7 @@ export function createAdminAgentHost() {
 
   return {
     getCatalog,
-    getNavigationCatalog() { return adminNavigation },
+    getNavigationCatalog() { return accessibleNavigation() },
     async navigateAdminPage(pageKey, identifier) {
       const target = resolveAdminNavigation(adminPages, pageKey, identifier)
       const route = router.resolve(target.path)
@@ -36,14 +41,30 @@ export function createAdminAgentHost() {
     async queryRecords(input, operations, signal) {
       const catalog = getCatalog(operations)
       const query = prepareRecordQuery(input, catalog)
+      if (!accessibleNavigation().some(page => page.entity === input.entity)) {
+        throw new Error('This collection is not available to the current account.')
+      }
       if (signal?.aborted) throw new Error('The read query was cancelled.')
+      const controller = new AbortController()
+      let timedOut = false
+      const abortFromCaller = () => controller.abort(signal?.reason)
+      signal?.addEventListener('abort', abortFromCaller, { once: true })
+      const timeout = setTimeout(() => {
+        timedOut = true
+        controller.abort()
+      }, 20000)
+      if (signal?.aborted) abortFromCaller()
       // Use the admin's authenticated GET client so existing session refresh,
       // locale, API base URL, and backend authorization remain authoritative.
       let response
       try {
-        response = await request.get(query.path, { params: query.params, signal })
+        response = await request.get(query.path, { params: query.params, signal: controller.signal })
       } catch (error) {
+        if (timedOut) throw new Error('The read query timed out after 20 seconds.')
         throw new Error(formatAdminReadError(error))
+      } finally {
+        clearTimeout(timeout)
+        signal?.removeEventListener('abort', abortFromCaller)
       }
       if (signal?.aborted) throw new Error('The read query was cancelled.')
       const records = response?.data

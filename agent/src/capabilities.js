@@ -1,11 +1,11 @@
 const SAFE_PROPERTY = /^[A-Za-z][A-Za-z0-9_]*$/
-const SENSITIVE_PROPERTY = /password|secret|token|private.?key|certificate|credential|api.?key|openid|unionid|authorization|email|phone|mobile|address|birth|身份证|姓名/i
+const SENSITIVE_PROPERTY = /password|secret|token|private.?key|certificate|credential|api.?key|openid|unionid|authorization|email|phone|mobile|address|birth|legal.?name|real.?name|nick.?name|user.?name|screen.?name|display.?name|author.?name|recipient.?name|contact.?name|national.?id|identity.?number|passport|bank.?account|account.?number|身份证|姓名|护照/i
 const GENERIC_SENSITIVE_PROPERTY = /^(value|metadata|config|payload|body|content|extradata)$/i
 const MAX_FILTERS = 5
 const MAX_PAGE = 100
 const MAX_LIMIT = 20
 const MAX_SELECT_FIELDS = 30
-const MAX_RESULT_CHARACTERS = 16000
+const MAX_RESULT_CHARACTERS = 8000
 
 function safeProperty(property) {
   return typeof property === 'string'
@@ -38,7 +38,8 @@ function normalizeField(field, requiredByForm = false) {
     type,
     required: requiredByForm || field?.required === true,
     readOnly: field?.readOnly === true || field?.readonly === true || fieldOptions?.disabled === true || field?.type_options?.disabled === true,
-    relation: Boolean(field?.relation)
+    relation: Boolean(field?.relation),
+    relationValueKey: typeof field?.relation?.valueKey === 'string' ? field.relation.valueKey.slice(0, 30) : null
   }
 }
 
@@ -55,19 +56,20 @@ function normalizeFilters(filters = {}, fields = []) {
   return Object.entries(filters).flatMap(([property, definition]) => {
     if (!safeProperty(property)) return []
     const field = fields.find(item => item.property === property)
-    const dynamicRelationFilter = typeof definition === 'function' && field?.relation
-    if (typeof definition === 'function' && !dynamicRelationFilter) return []
+    if (typeof definition === 'function') return []
     if (definition && typeof definition === 'object' && definition.expression) return []
-    const optionValues = definition && typeof definition === 'object' && !dynamicRelationFilter
+    const optionValues = definition && typeof definition === 'object'
       ? Object.keys(definition).filter(key => !key.startsWith('__') && !['label', 'type', 'expression'].includes(key) && typeof definition[key] === 'string' && definition[key].length <= 200)
       : []
+    // Dynamic relation choices are intentionally not evaluated in the agent.
+    // Permit relation filtering only when configuration contains static options.
+    if (field?.relation && optionValues.length === 0) return []
     const fieldType = definition && typeof definition === 'object' && typeof definition.type === 'string' ? definition.type : field?.type || 'text'
     const normalizedType = fieldType.toLowerCase()
     const isNumeric = /integer|number|float|decimal|currency|money/.test(normalizedType)
     const isDate = /date|time/.test(normalizedType)
     const isBoolean = /bool/.test(normalizedType)
     const isRelation = Boolean(field?.relation)
-    const isChoice = Boolean(optionValues.length)
     const isInput = typeof definition === 'string' && !isRelation && !isNumeric && !isDate && !isBoolean
     const operators = isInput ? ['contains', 'equals']
       : isNumeric || isDate ? ['equals', 'gt', 'gte', 'lt', 'lte']
@@ -79,7 +81,8 @@ function normalizeFilters(filters = {}, fields = []) {
       operator: isInput ? 'contains' : 'equals',
       operators,
       options: optionValues.slice(0, 50),
-      dynamicOptions: Boolean(dynamicRelationFilter || isRelation && !isChoice)
+      dynamicOptions: false,
+      relationValueKey: field?.relationValueKey || null
     }]
   })
 }
@@ -128,7 +131,8 @@ export function buildCapabilityCatalog(entities, operations, { parameterize, def
         ...field,
         type: field.type === 'text' ? existing.type : field.type,
         required: existing.required || field.required,
-        relation: existing.relation || field.relation
+        relation: existing.relation || field.relation,
+        relationValueKey: existing.relationValueKey || field.relationValueKey
       } : field)
     }
     const fields = [...fieldMap.values()]
@@ -184,6 +188,12 @@ export function prepareRecordQuery(input, catalog) {
     const normalizedType = definition.type.toLowerCase()
     if (filterOperator === 'contains' && (typeof value !== 'string' || !value.trim())) {
       throw new TypeError(`Filter value for ${filter.field} must be a non-empty string.`)
+    }
+    if (definition.relationValueKey === 'uuid' && (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value))) {
+      throw new TypeError(`Filter value for ${filter.field} must be a UUID.`)
+    }
+    if (definition.relationValueKey === 'id' && (!Number.isSafeInteger(value) || value < 1)) {
+      throw new TypeError(`Filter value for ${filter.field} must be a positive numeric ID.`)
     }
     if (/integer|number|float|decimal|currency|money/.test(normalizedType) && (typeof value !== 'number' || !Number.isFinite(value))) {
       throw new TypeError(`Filter value for ${filter.field} must be a finite number.`)
