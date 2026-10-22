@@ -68,6 +68,15 @@ The backend test suite always runs against a temporary SQLite file. SQLite does 
 
 This verification is manual and outside CI. Do not commit credentials, generated schema names, or test tokens. Record results as dated evidence for the environment actually tested, not as a production concurrency guarantee.
 
+For an opt-in Counter operation concurrency check, use the app-owned harness:
+
+```sh
+php apps/admin-agent/backend/tools/mysql-concurrency.php --self-test
+php apps/admin-agent/backend/tools/mysql-concurrency.php
+```
+
+The self-test is connection-free. The live run loads local development connection configuration internally without printing credentials, requires an IP loopback target, and uses a newly generated disposable schema rather than the configured application schema. It rejects connection-target query overrides, verifies Doctrine's effective target and database identity before application writes, bounds worker execution, and requires verified schema cleanup for success. It runs four-worker same-proposal and stale-proposal races and counts committed adapter executions transactionally, not every attempted invocation. This is direct operation-service/Counter-adapter validation with stubbed authorization, not an HTTP authentication or production-load test. Do not run it against production. Forced termination such as SIGKILL or host failure can prevent cleanup; an unverified cleanup is a failure and requires operator inspection of the reported disposable schema.
+
 ## Debugging and validation
 
 ```sh
