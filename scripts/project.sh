@@ -35,7 +35,9 @@ case "$command" in
     bash scripts/project.sh test-backend
     ;;
   test-workflow) exec node --test scripts/*.test.mjs "$@" ;;
+  test-agent) exec node --test agent/tests/*.test.mjs "$@" ;;
   test-admin)
+    node --test agent/tests/*.test.mjs
     node --test integration/admin/*.test.mjs
     cd core/crud-admin
     npm test -- "$@"

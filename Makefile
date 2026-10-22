@@ -7,7 +7,7 @@ ADMIN_PORT ?= 9528
 BACKEND_PORT ?= 8000
 export HOST ADMIN_PORT BACKEND_PORT
 
-.PHONY: help install env-init env-check dev-reset dev admin backend backend-debug build preview test test-workflow test-admin test-backend phpstan type-check lint console routes container cache-clear logs migrate-status migrate docker-dev docker-dev-reset docker-dev-up docker-dev-down docker-dev-status docker-dev-logs docker-console docker-migrate docker-migrate-status docker-test-backend
+.PHONY: help install env-init env-check dev-reset dev admin backend backend-debug build preview test test-workflow test-admin test-agent test-backend phpstan type-check lint console routes container cache-clear logs migrate-status migrate docker-dev docker-dev-reset docker-dev-up docker-dev-down docker-dev-status docker-dev-logs docker-console docker-migrate docker-migrate-status docker-test-backend
 
 help:
 	@printf '%s\n' 'Daily use' \
@@ -32,8 +32,9 @@ help:
 	  'make backend' 'Start only the backend (HOST, BACKEND_PORT)' \
 	  'make backend-debug' 'Start backend with Xdebug (extension required)' \
 	  'make test-workflow' 'Run project workflow tests' \
-	  'make test-admin' 'Run admin composition and core frontend tests' \
+	  'make test-admin' 'Run assistant, admin composition, and core frontend tests' \
 	  'make test-backend' 'Run backend integration tests' \
+	  'make test-agent' 'Run independent admin assistant tests' \
 	  'make phpstan' 'Run PHPStan across core and business backend code' \
 	  'make console ARGS="about"' 'Run an integration console command' \
 	  'make routes ARGS="..."' 'Inspect backend routes' \
@@ -61,7 +62,7 @@ help:
 install:
 	@cd "$(ROOT)" && npm run deps:install
 
-env-init env-check dev-reset dev admin backend backend-debug build preview test test-workflow test-admin test-backend phpstan type-check lint console routes container cache-clear logs migrate-status migrate:
+env-init env-check dev-reset dev admin backend backend-debug build preview test test-workflow test-admin test-agent test-backend phpstan type-check lint console routes container cache-clear logs migrate-status migrate:
 	@bash "$(ROOT)scripts/project.sh" "$@" $(ARGS)
 
 docker-dev docker-dev-reset docker-dev-up docker-dev-down docker-dev-status docker-dev-logs docker-console docker-migrate docker-migrate-status docker-test-backend:

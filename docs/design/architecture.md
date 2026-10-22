@@ -4,6 +4,7 @@
 
 ```text
 business/admin router + config ──> integration/admin config injection ──> core admin
+agent/ optional assistant ─────────> integration/admin loader + host adapter ─> core admin
 business/backend modules ───────> integration/backend Kernel ──────────> core Symfony app
                                            ▲
                               infra/docker Nginx + PHP-FPM
@@ -23,9 +24,13 @@ Owns all application-specific behavior, including frontend pages/components, men
 
 Reserved for self-contained applications with a distinct runtime or deployment boundary. It currently contains only a placeholder and is not discovered, built, tested, or run by the main application's integration, CI, or deployment workflows; it is also excluded from the main Docker build context. Keep product capabilities of the composed admin/API application in `business/`; add an app-specific build/operations workflow or explicit integration before using an independent app.
 
+### `agent/`
+
+Contains the independent, optional admin AI assistant prototype. Its generic UI, provider integration, and documentation processing are kept separate from `business/`; `integration/admin/` owns the loader and the narrow adapter to the current admin authentication context. The assistant is not a separate runtime or deployment boundary. See the [assistant design and implementation status](admin-ai-assistant.md) and [prototype usage](../../agent/README.md).
+
 ### `integration/`
 
-Owns composition only. The admin side injects the business router and entity configuration at the core's `@/config` seam. The backend Kernel discovers modules by the `business/backend/<PascalCaseSingular>/src/` convention and automatically wires their namespaces, services, routes, Doctrine mappings, and migrations when present. It must not become a home for domain rules.
+Owns composition only. The admin side injects the business router and entity configuration at the core's `@/config` seam and optionally loads the independent agent through the integration-owned Vite plugin and session adapter. The backend Kernel discovers modules by the `business/backend/<PascalCaseSingular>/src/` convention and automatically wires their namespaces, services, routes, Doctrine mappings, and migrations when present. It must not become a home for domain rules.
 
 ### `infra/`
 
@@ -40,7 +45,7 @@ Records layer boundaries, local development decisions, core compatibility, and s
 - `crud-admin` is a Vite/Vue application whose router consumes `@/config`. `integration/admin/vite.config.ts` redirects only that exact specifier; all other `@/...` imports remain rooted in core. Business router and entity configuration are declared in `business/admin/`.
 - `crud-skeleton` is a Symfony project. `integration/backend/src/Kernel.php` extends the core Kernel and preserves the core project directory. `ModuleRegistry` discovers business modules by directory convention; module service/route overrides stay inside the module. A sibling `business/backend/<name>/` without a `src/` directory is not a module.
 
-The admin merge helpers have standalone Node tests. The backend has a `Dummy` example module and an isolated SQLite integration test configuration. The example's API is under `/api/v1/manage/dummies`; its prior Note migration identity is retained to support a forward table rename on existing databases. GitHub Actions runs project workflow/admin composition tests, integration/business PHPUnit tests, and the composed Vite build; it intentionally excludes upstream core test suites. Interactive business flows still require separate validation. Project-owned environment loading and local commands are described in [the development guide](../operations/development.md).
+The admin merge helpers and independent assistant have Node tests. The backend has a `Dummy` example module and an isolated SQLite integration test configuration. The example's API is under `/api/v1/manage/dummies`; its prior Note migration identity is retained to support a forward table rename on existing databases. GitHub Actions runs project workflow, assistant, and admin composition tests, integration/business PHPUnit tests, and the composed Vite build; it intentionally excludes upstream core test suites. Interactive business flows still require separate validation. Project-owned environment loading and local commands are described in [the development guide](../operations/development.md).
 
 ## Change policy
 
