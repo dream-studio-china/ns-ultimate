@@ -10,7 +10,7 @@ The UI shows query conditions, configured sort order, browser retrieval time and
 
 Navigation is available only when explicitly requested by the user and only to registered list pages or read-only record detail routes. It does not open create/edit routes or arbitrary URLs.
 
-The model does **not** submit writes. Registered host adapters can enable user-confirmed single-record create/update/delete operations. Review the full diff and confirm in the UI; deletion requires typing the exact confirmation phrase. Proposals expire after five minutes. Network cancellation after submission may leave the outcome unknown; use the status check instead of creating another operation. The app backend owns one generic `AgentOperation` entity/table for all adapters, not one operation entity per business resource. The ns-ultimate host enables Content create/update/delete and Counter update of `name` only; Counter creation/deletion and all other Counter fields remain unavailable. These are host capability limits, not proof of backend authorization or domain safety. No agent mutation triggers receipt printing, payment, or other external actions. See the [operation contract](../../docs/contracts/admin-agent.md) for endpoints, migration and retention requirements, and the bounded local acceptance below for verified behavior and remaining gaps.
+The model does **not** submit writes. Registered host adapters enable user-confirmed single-record operations through one generic `AgentOperation` entity/table, not one operation entity per resource. Review the full diff and confirm in the UI; deletion requires typing the exact confirmation phrase. Proposals expire after five minutes. Network cancellation after submission may leave the outcome unknown; use the status check instead of creating another operation. Host packages cover Content, Counter, Category, Tag, ProductCategory, Product, Specification and Store; see the [operation contract](../../docs/contracts/admin-agent.md#business-capability-packages) for exact actions and fields. Product and Specification hard deletion remain blocked. Capability descriptions are not proof of authorization: each backend adapter validates permissions and domain constraints independently. No agent mutation triggers printing, payment, inventory adjustment, order workflow or other external actions. The bounded local acceptance below distinguishes verified behavior from remaining gaps.
 
 ## Verification status
 
@@ -35,6 +35,14 @@ A live-model browser cancellation check prepared then discarded a Counter propos
 
 The procedure and its destructive-schema warning are documented in [local development](../../docs/operations/development.md). Do not repeat it against a development or production database.
 
+### Business-package verification
+
+The expanded packages passed the composed SQLite suite (242 tests, 4,647 assertions), frontend tests (103), admin integration tests (60), and the composed production build. Final Sol reviews found no remaining blockers after preview/default/scope fixes. The opt-in cross-layer test exercises 54 real prepared/restored backend previews for 27 mutations, all 20 enabled entity/action combinations and eight entities through the actual frontend preparation/recovery policy. It covers global/store scopes, redacted Store objects, and 255-code-point Product/Specification names; it uses disposable SQLite and no frontend commit transport.
+
+The extended MySQL 8.0.41 harness passed both original four-worker Counter races, two two-worker hierarchy races, and persisted multi-field JSON restoration with a fresh entity manager. Each hierarchy starts with `B → C` and `D → A` and races `A → B` against `C → D`: exactly one succeeds, one conflicts, and the final graph is acyclic with the winning edge persisted. Per-worker instrumentation rows avoid artificial serialization; disposable-schema cleanup was verified. This proves the participating adapters' bounded schedule, not safety against nonparticipating legacy writers, production topologies or HTTP authorization. Product/Specification hard deletion remains disabled. Broad browser coverage and real two-account switching remain outstanding.
+
+The authenticated local browser and configured live model also completed one synthetic Tag lifecycle: exact-slug absence check, create preparation and UI confirmation, read-back, name/color update preparation and UI confirmation, read-back, then deletion preparation and the exact `DELETE 1` confirmation phrase. All three cards reported success. A final exact-slug query returned zero records without truncation, confirming cleanup of the synthetic tag. No other business records were changed in this acceptance. This representative lifecycle does not establish browser coverage for every package, role or recovery path; the earlier Counter recovery/cancellation evidence remains separate.
+
 ## Operation recovery
 
 When a commit explicitly reports that the record changed or was deleted, its card explains that the proposal was not saved and disables further confirmation. Discard it and request a fresh preview; chatting is not blocked by this definitive conflict. Timeouts, disconnections and unclassified errors still require an outcome check and never trigger automatic retries. A pending outcome is revalidated against the original snapshot before the same card can be confirmed again.
@@ -57,14 +65,14 @@ The ns-ultimate host policy (`adapters/ns-ultimate/admin/inspection-policy.mjs`)
 
 - `src/`, `tests/`, `package.json`: generic browser UI, tools, provider integration and tests.
 - `backend/src/` outside `Adapter/`: generic operation lifecycle, registry, actor-provider interface, routes, entity and pruning command.
-- `adapters/ns-ultimate/admin/`: host-specific frontend capability descriptions, Counter.name update capability and local preview policy.
+- `adapters/ns-ultimate/admin/`: host-specific, per-action field/value policies and the separate local Counter.name preview policy.
 - `adapters/ns-ultimate/admin/knowledge/`: explicitly selected, frontend-bundled ns-ultimate task and support guides. These are user-visible reference material, not confidential documents or permissions; changes ship with the frontend build.
-- `backend/src/Adapter/NsUltimate/`: host-specific Content mutation adapter, reusing existing business entities and validation without modifying business modules.
+- `backend/src/Adapter/NsUltimate/`: explicitly selected business mutation adapters, reusing existing domain entities and validation without modifying business modules.
 - `backend/tests/Integration/Adapter/NsUltimate/`: composition tests for that binding, separate from generic lifecycle tests.
 - `backend/migrations/`, `backend/config/`, `backend/translations/`: app-owned schema and Symfony configuration.
 - `backend/composer.json`: embeddable backend package manifest. This repository deliberately reuses the locked core dependencies; it does not install a second backend runtime.
-- `integration/`: explicitly supplies app autoloading, service/route/mapping registration, stable actor identity, admin authentication and frontend build wiring. It explicitly enables app-owned Content and Counter adapters; host adapters are excluded from generic service discovery. There is no automatic discovery of arbitrary apps.
-- `business/` and `core/`: existing host domain models and validation, consumed but not modified for agent features. Agent-specific extensions stay in the app. Currently Content create/update/delete and Counter name-only update are enabled.
+- `integration/`: explicitly supplies app autoloading, service/route/mapping registration, stable actor identity, admin authentication and frontend build wiring. Content is selected in integration service configuration; the other business adapters are explicitly selected in app service configuration. Host adapters are excluded from generic service discovery. There is no automatic discovery of arbitrary apps.
+- `business/` and `core/`: existing host domain models and validation, consumed but not modified for agent features. Agent-specific capability restrictions stay in the app.
 
 To add a writable resource, implement `MutationAdapter` in an app-owned host adapter directory and supply its capability descriptor. Explicitly enable the adapter through integration; do not add agent code to business modules or core. The adapter authorizes access and owns lookup, canonical snapshots, agent-specific field restrictions, row locking and read-back verification while reusing existing domain validation. The generic registry rejects unknown or duplicate keys; caller input never resolves PHP classes or arbitrary URLs. The app can be embedded in another compatible Symfony host by importing its service configuration, mapping, migrations and routes, and providing `ActorIdentityProvider` plus explicitly selected host adapters. It is an application package, not an independently running service in this deployment. Removing its registration must not require business-module edits; ordinary business CRUD remains independent of the agent.
 
@@ -92,6 +100,7 @@ Provider URL compatibility depends on the provider's CORS and Chat Completions i
 
 ```sh
 npm test --prefix apps/admin-agent
+node --test apps/admin-agent/tests/backend-preview-contract.integration.mjs
 node --test integration/admin/*.test.mjs
 php -d memory_limit=512M core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml
 npm run build --prefix core/crud-admin -- --config ../../integration/admin/vite.config.ts

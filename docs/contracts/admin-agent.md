@@ -8,7 +8,26 @@ Integration explicitly wires the app namespace, services, routes, Doctrine mappi
 
 `apps/admin-agent/adapters/ns-ultimate/admin/mutation-capabilities.mjs` supplies capability descriptions through the integration host to the generic fixed-route transport. The adjacent `preview-policy.mjs` retains a local Counter.name preview policy, but the preview is not authorization and does not replace the confirmed mutation flow. The model tool `prepare_record_change` only prepares proposals; there is no commit tool. Full differences and operation IDs stay inside the host/UI boundary rather than entering tool messages. Proposed values already present in chat are still sent to the configured provider. Confirmation cards display field values as text, never rendered HTML.
 
-Content is explicitly registered by `integration/backend/config/services.yaml`; Counter is explicitly registered by `apps/admin-agent/backend/config/services.yaml`. Both are active in the composed registry; excluding adapter auto-discovery does not remove explicit registrations.
+Content is explicitly registered by `integration/backend/config/services.yaml`; the remaining business adapters are explicitly registered by `apps/admin-agent/backend/config/services.yaml`. Excluding adapter auto-discovery does not remove explicit registrations.
+
+## Business capability packages
+
+All packages require `ROLE_ADMIN` and retain single-record preparation, explicit UI confirmation, transactional execution, conflict checking and metadata-only receipts. Approval of a business package does not permit arbitrary fields, URLs or bulk operations. Registered actions and their per-action rules are declared in the host policy, not inferred from OpenAPI or knowledge text.
+
+| Entity | Actions | Field boundary |
+| --- | --- | --- |
+| Content | Create, update, delete | Existing `title`, `body`, `category`, `tags`, schema-bounded `metadata`, `sortOrder` policy remains unchanged. |
+| Counter | Create, update, unreferenced delete | `code`, `name`, `capacity`, `sort`, `enabled`; exact active `storeUuid` on create only. No metadata edits or store reassignment. |
+| Store | Update only | `name`, explicitly schema-validated partial `contact` and `address`; no arbitrary nested keys, settings, timezone, currency or lifecycle changes. Existing private contact/address values are redacted from previews. |
+| Category | Create, update, unreferenced delete | `name`, `slug`, `description`, `parent`, `sortOrder`, `enabled`; scope-safe acyclic hierarchy and unique slug. |
+| Tag | Create, update, unreferenced delete | `name`, `slug`, nullable `color` (`#RRGGBB`); unique slug. |
+| ProductCategory | Create, update, unreferenced delete | Category fields plus owning `store` on create only; parent hierarchy must retain store/global scope. |
+| Product | Create, update | `name`, `description`, `category`, `sortOrder`, `recommendationLevel`, `status`, `isSoldout`; owning `store` on create only, with global scope represented by null. Category must be enabled and match scope. |
+| Specification | Create, update | `productId`, `name`, `price`, `status`, `sort`; existing Product scope is immutable and must be explicit. Price is an integer minor-unit amount from 0 through 2,147,483,647, not floating-point major currency. |
+
+Catalog publication, recommendation, price, sold-out state, Counter availability and hierarchy changes have real customer/operational consequences. They do not grant payment, inventory, order-workflow, authorization, credential or external-provider capabilities. Printing remains paused and excluded. Arbitrary metadata/settings edits remain excluded outside Content's pre-existing validated policy.
+
+Product hard deletion is unavailable because its mapped Specification cascade exceeds a single-record preview. Specification hard deletion is unavailable because JSON/historical references lack authoritative shared referential-integrity and writer serialization. Other deletion adapters must reject references rather than cascade or silently detach records. Rejected or blocked operations do not justify falling back to generic CRUD requests.
 
 ## Curated host knowledge
 
@@ -35,7 +54,7 @@ Preparation returns `{operationId, entity, action, identifier, title, affectedRe
 
 Adapters emit `differences` in their declared field order, not in the caller's key order. MySQL's `JSON` type reorders object keys when a proposal is stored, so an order derived from incoming keys would make a restored preview differ from the original preview on MySQL while matching on SQLite. Field order is therefore part of the adapter's stable output, not a storage artifact.
 
-The current host enables Content through `apps/admin-agent/backend/src/Adapter/NsUltimate/ContentMutationAdapter.php`: fields `title`, `body`, `category`, `tags`, `metadata`, `sortOrder`, requiring ROLE_ADMIN. Title is non-empty and at most 255 characters; body is nullable and at most 20,000 UTF-8 bytes; category/tags reference existing numeric IDs (up to 50 tags); metadata follows the existing schema (`featured`, `layout`); sortOrder is a signed 32-bit integer available only on the business subtype. The host also enables Counter `update` for `name` only (non-empty, at most 120 characters); create/delete and all other Counter fields are unavailable. Category/Tag mutations and bulk changes are not enabled. These restrictions belong to explicit host adapters, not the generic operation framework; underlying domain validation stays in the existing host backend. Counter mutations use prepare, human confirmation and commit; they must not trigger receipt printing, payment or other external actions. Backend authorization and safety remain independently enforced by the Counter adapter.
+The Content adapter retains its existing restrictions: title is non-empty and at most 255 characters; body is nullable and at most 20,000 UTF-8 bytes; category/tags reference existing numeric IDs (up to 50 tags); metadata follows the existing schema (`featured`, `layout`); sortOrder is a signed 32-bit integer available only on the business subtype. Other adapters enforce the per-action fields in the business capability table and reuse the existing domain model. These restrictions belong to explicit host adapters, not the generic operation framework. No adapter may trigger receipt printing, payment or other external actions.
 
 Commit rechecks owner, adapter authorization, pending state and expiry, locks the operation row in a transaction, and delegates target locking, conflict detection, revalidation and execution to the adapter. The receipt and domain mutation commit together. Replaying a succeeded operation rechecks permissions and returns the same target without repeating the mutation. Failed read-back verification rolls back the transaction. The Content adapter rejects stale snapshots with 409. Existing unversioned CRUD writers do not participate: this is not a universal optimistic-locking guarantee across every writer. SQLite tests do not validate MySQL lock contention; see the optional MySQL verification in [local development](../operations/development.md) and the recorded result in the assistant README.
 
