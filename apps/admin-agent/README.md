@@ -31,7 +31,7 @@ On 2026-10-22, the composed SQLite suite passed 196 tests (4,316 assertions), in
 
 The hardened opt-in MySQL harness passed two four-worker races on local MySQL 8.0.41, InnoDB, `REPEATABLE-READ`: one shared proposal returned successful receipts with exactly one instrumented adapter execution; independent proposals from one snapshot produced one success and three proposal conflicts, with the persisted name matching the winning proposal. Effective connection identity was checked before application writes; the disposable schema and per-run cache were verified removed. Authorization is stubbed in this direct-service harness, which uses numeric targets; it does not establish HTTP authorization, UUID-path concurrency, production topology, or other adapters' concurrency. A prior harness version lacked effective-connection guards and is not relied on for isolation evidence. See the [safe execution workflow](../../docs/operations/development.md#optional-mysql-verification-for-the-admin-agent).
 
-A live-model browser cancellation check prepared then discarded a Counter proposal: confirmation became disabled, a fresh query retained the original name, and Operations reported cancellation. In a separate isolated browser context, the real mounted UI with fake host callbacks aborted an in-flight preview restore on disposal; resolving its old promise after a fresh mount exposed neither the sentinel value nor a confirmation control and invoked no commit. This simulates session disposal, not a real two-account switch. Rendered in-flight read-result suppression remains unverified; pure lifecycle tests are not a substitute for that scenario.
+A live-model browser cancellation check prepared then discarded a Counter proposal: confirmation became disabled, a fresh query retained the original name, and Operations reported cancellation. In a separate isolated browser context, the real mounted UI with fake host callbacks aborted an in-flight preview restore on disposal; resolving its old promise after a fresh mount exposed neither the sentinel value nor a confirmation control and invoked no commit. This simulates session disposal, not a real two-account switch. The later [repeatable browser fixture](#repeatable-mounted-browser-acceptance) exercises rendered delayed query results through a synthetic host; real delayed authenticated-read acceptance remains outstanding.
 
 The procedure and its destructive-schema warning are documented in [local development](../../docs/operations/development.md). Do not repeat it against a development or production database.
 
@@ -40,6 +40,8 @@ The procedure and its destructive-schema warning are documented in [local develo
 The prior business packages, excluding the new printing/attachment package, passed the composed SQLite suite (242 tests, 4,647 assertions), frontend tests (103), admin integration tests (60), and the composed production build. Final Sol reviews found no remaining blockers after preview/default/scope fixes. The opt-in cross-layer test exercised 54 real prepared/restored backend previews for 27 mutations, all then-enabled 20 entity/action combinations and eight entities through the actual frontend preparation/recovery policy. It covered global/store scopes, redacted Store objects, and 255-code-point Product/Specification names; it used disposable SQLite and no frontend commit transport.
 
 The extended MySQL 8.0.41 harness passed both original four-worker Counter races, two two-worker hierarchy races, and persisted multi-field JSON restoration with a fresh entity manager. Each hierarchy starts with `B → C` and `D → A` and races `A → B` against `C → D`: exactly one succeeds, one conflicts, and the final graph is acyclic with the winning edge persisted. Per-worker instrumentation rows avoid artificial serialization; disposable-schema cleanup was verified. This proves the participating adapters' bounded schedule, not safety against nonparticipating legacy writers, production topologies or HTTP authorization. Product/Specification hard deletion remains disabled. Broad browser coverage and real two-account switching remain outstanding.
+
+Subsequent StorePrinting shared/independent-proposal and account-dependency MySQL checks are recorded separately in the [follow-up acceptance record](../../docs/sessions/2026-10-23-admin-agent-follow-up-acceptance.md). They create no print jobs and do not call providers; the authorization and production-topology limitations still apply.
 
 The authenticated local browser and configured live model also completed one synthetic Tag lifecycle: exact-slug absence check, create preparation and UI confirmation, read-back, name/color update preparation and UI confirmation, read-back, then deletion preparation and the exact `DELETE 1` confirmation phrase. All three cards reported success. A final exact-slug query returned zero records without truncation, confirming cleanup of the synthetic tag. No other business records were changed in this acceptance. This representative lifecycle does not establish browser coverage for every package, role or recovery path; the earlier Counter recovery/cancellation evidence remains separate.
 
@@ -109,6 +111,27 @@ Open the assistant settings and enter:
 Provider URL compatibility depends on the provider's CORS and Chat Completions implementation. Provider settings and the API key are stored in browser local storage and persist across page reloads. The API key is sent only to the configured provider; leave it blank for providers that do not require one. Clear it with the settings action when no longer needed. Local storage is accessible to scripts running on this origin, so only use this on a trusted browser/device. The assistant sends the user's question, matching API-documentation excerpts, and any matching excerpts from the bundled host knowledge articles to the configured provider. Bounded read query results are also sent to the provider without an additional confirmation. The admin token is never sent to the provider. Chinese UI text follows the admin's `app_locale`; English is the fallback for other locales.
 
 ## Development checks
+
+### Repeatable mounted-browser acceptance
+
+The default Node suite does not mount a browser. With the composed Vite development server running, open this fixture in a **new isolated browser context/private profile**, never an authenticated admin tab:
+
+```text
+http://127.0.0.1:9528/@fs<absolute-repository-path>/apps/admin-agent/tests/browser/fixture.html
+```
+
+Replace the repository-path placeholder with the absolute checkout path, including its leading slash. The fixture automatically runs [the real-DOM acceptance harness](tests/browser/browser-acceptance.mjs) and displays a structured result. Browser automation must first wait for the asynchronous fixture boot:
+
+```js
+await page.waitForFunction(() => Boolean(window.__NS_ADMIN_AGENT_ACCEPTANCE__?.promise))
+const result = await page.evaluate(() => window.__NS_ADMIN_AGENT_ACCEPTANCE__.promise)
+```
+
+Require `ok === true`, all 12 cases passed, no failures/skips, empty setup/cleanup/blocked-request errors, `descriptorsRestored === true` and `isolationRetained === false`. Do not interpret successful loading alone as a passing run. Module syntax can be checked with `node --check apps/admin-agent/tests/browser/browser-acceptance.mjs`, but that does not execute browser tests.
+
+Negative safety checks use the fixture URL with `?autorun=0`. In a separate fresh context for **each** check, import `browser-acceptance.mjs` relative to the fixture and call `runBrowserAcceptanceProductionGuardSelfCheck()`, `runBrowserAcceptancePatchabilitySelfCheck()` or `runBrowserAcceptanceTimeoutSelfCheck({ caseTimeoutMs: 300 })`. Each outer self-check must return `ok: true`; its inner acceptance run is expected to reject setup or fail on timeout, not pass the 12-case suite. Close every test context afterward. If any run reports retained isolation or cleanup failure, discard the context instead of navigating it to an application page.
+
+The harness replaces storage with memory before mounting, intercepts network entry points, uses synthetic files/host/model responses and restores patched globals on completion. It tests real rendering and the integration session monitor, not real account authentication, backend authorization, actual delayed authenticated reads or live-provider compatibility. Its body/path safety guards are not a substitute for the required isolated context. It adds no production entry point, browser-test dependency or real upload/printing action. Dated results are in the [follow-up acceptance record](../../docs/sessions/2026-10-23-admin-agent-follow-up-acceptance.md).
 
 ```sh
 npm test --prefix apps/admin-agent
