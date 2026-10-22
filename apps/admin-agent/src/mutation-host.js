@@ -19,7 +19,7 @@ export function createMutationHost(request, path, capabilities = []) {
         if (!capability || !Array.isArray(capability.actions) || !capability.actions.includes(preview?.action)) {
           throw new TypeError('This entity/action is not enabled for assistant mutations.')
         }
-        if (capability.validatePreview && !capability.validatePreview(preview)) throw new TypeError('Invalid restored preview.')
+        if (capability.validatePreview && !capability.validatePreview(preview, capability)) throw new TypeError('Invalid restored preview.')
         return preview
       } catch (error) { throw mutationError(error) }
     },
@@ -30,13 +30,17 @@ export function createMutationHost(request, path, capabilities = []) {
         throw new TypeError('This entity/action is not enabled for assistant mutations.')
       }
       const capability = capabilities.find(item => item.entity === input.entity)
+      if ((input.action === 'create' && input.identifier !== undefined)
+        || (input.action !== 'create' && (typeof input.identifier !== 'string' || !/^(?:[1-9]\d{0,14}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(input.identifier)))) {
+        throw new TypeError('An exact target identifier is required for update/delete; create does not accept one.')
+      }
       if (input.changes !== undefined) {
         if (!isPlainRecord(input.changes) || hasUnsafeKeys(input.changes)
           || (capability.fields && Object.keys(input.changes).some(key => !Object.hasOwn(capability.fields, key)))
-          || (capability.validateChanges && !capability.validateChanges(input.changes))) {
+          || (capability.validateChanges && !capability.validateChanges(input.changes, input.action))) {
           throw new TypeError('Changes contain unsupported fields or values.')
         }
-      } else if (capability.validateChanges) {
+      } else if (capability.validateChanges && !capability.validateChanges(undefined, input.action)) {
         throw new TypeError('Changes contain unsupported fields or values.')
       }
       const response = await request.post(path, input, { signal, timeout: 60000 })
@@ -61,7 +65,8 @@ export function createMutationHost(request, path, capabilities = []) {
 function isPlainRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
+  return (prototype === Object.prototype || prototype === null)
+    && Reflect.ownKeys(value).every(key => typeof key === 'string')
 }
 
 function hasUnsafeKeys(value) {

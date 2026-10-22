@@ -109,11 +109,11 @@ export function createAssistantTools(catalog, navigation = [], previewPolicy = {
     type: 'function',
     function: {
       name: 'prepare_record_change',
-      description: `Prepare a server-validated single-record change ONLY when the user explicitly requests a write. Nothing is saved to the target until the user clicks confirmation in the UI. Never claim success from preparation. Use an exact ID/UUID for update/delete, ask for clarification if ambiguous, and never invent relation IDs. Supported policy: ${JSON.stringify(writeCapabilities)}`,
+      description: `Prepare a server-validated single-record change ONLY when the user explicitly requests a write. Nothing is saved to the target until the user clicks confirmation in the UI. Never claim success from preparation. Use an exact ID/UUID for update/delete, ask for clarification if ambiguous, and never invent relation IDs. The policy below lists each entity's supported actions and the distinct allowed fields/required fields for each action; never substitute fields between actions or assume an omitted action is allowed. Delete accepts no changes. Supported policy: ${JSON.stringify(writeCapabilities.map(item => ({ entity: item.entity, actions: item.actions, fieldsByAction: item.actionFields || {}, fields: item.fields })))}`,
       parameters: {
         type: 'object', properties: {
           entity: { type: 'string', enum: writeCapabilities.map(item => item.entity) },
-          action: { type: 'string', enum: ['create', 'update', 'delete'] },
+          action: { type: 'string', enum: [...new Set(writeCapabilities.flatMap(item => item.actions))] },
           identifier: { type: 'string', description: 'Exact target numeric ID or UUID. Omit for create.' },
           changes: { type: 'object', description: 'Explicit allowlisted field values; omit for delete.' }
         }, required: ['entity', 'action'], additionalProperties: false
