@@ -66,6 +66,8 @@ final class ContentRecoveryTest extends IntegrationWebTestCase
         $this->request($client, 'PUT', '/api/v1/manage/contents/'.$target['id'], ['title' => 'Concurrent edit']);
         $client->request('GET', self::URL.'/'.$preview['operationId'].'/preview');
         self::assertResponseStatusCodeSame(409);
+        $failure = json_decode($client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('proposal_conflict', $failure['error']);
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         self::assertSame('Concurrent edit', $em->find(Content::class, $target['id'])->getTitle());
         self::assertSame(1, $em->getRepository(AgentOperation::class)->count([]));

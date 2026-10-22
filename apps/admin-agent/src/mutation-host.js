@@ -12,8 +12,10 @@ export function createMutationHost(request, path, capabilities = []) {
       return response.data
     },
     async restoreRecordChange(operationId, signal) {
-      const response = await request.get(`${operationPath(operationId)}/preview`, { signal, timeout: 60000 })
-      return response.data
+      try {
+        const response = await request.get(`${operationPath(operationId)}/preview`, { signal, timeout: 60000 })
+        return response.data
+      } catch (error) { throw mutationError(error) }
     },
     async prepareRecordChange(input, signal) {
       if (!input || typeof input !== 'object' || Array.isArray(input)
@@ -25,8 +27,10 @@ export function createMutationHost(request, path, capabilities = []) {
       return response.data
     },
     async commitRecordChange(operationId, signal) {
-      const response = await request.post(`${operationPath(operationId)}/commit`, { confirmed: true }, { signal, timeout: 60000 })
-      return response.data
+      try {
+        const response = await request.post(`${operationPath(operationId)}/commit`, { confirmed: true }, { signal, timeout: 60000 })
+        return response.data
+      } catch (error) { throw mutationError(error) }
     },
     async getRecordChangeStatus(operationId, signal) {
       const response = await request.get(operationPath(operationId), { signal, timeout: 60000 })
@@ -36,4 +40,11 @@ export function createMutationHost(request, path, capabilities = []) {
       await request.post(`${operationPath(operationId)}/cancel`, {}, { timeout: 60000 })
     }
   }
+}
+
+function mutationError(error) {
+  if (error?.response?.status === 409 && error.response.data?.error === 'proposal_conflict') {
+    return Object.assign(new Error('The proposal conflicts with the current record.'), { code: 'proposal_conflict' })
+  }
+  return error
 }

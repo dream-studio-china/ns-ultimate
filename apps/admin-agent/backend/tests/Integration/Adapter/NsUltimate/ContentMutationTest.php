@@ -71,6 +71,12 @@ final class ContentMutationTest extends IntegrationWebTestCase
         self::assertResponseIsSuccessful();
         $client->jsonRequest('POST', self::URL.'/'.$preview['operationId'].'/commit', ['confirmed' => true]);
         self::assertResponseStatusCodeSame(409);
+        $failure = json_decode($client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('proposal_conflict', $failure['error']);
+        self::assertStringContainsString('no-store', $client->getResponse()->headers->get('Cache-Control'));
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        self::assertSame('Concurrent edit', $em->find(CoreContent::class, $created['id'])->getTitle());
+        self::assertSame('pending', $em->find(AgentOperation::class, $preview['operationId'])->getStatus());
 
         $preview = $this->post($client, self::URL, $input);
         $this->post($client, self::URL.'/'.$preview['operationId'].'/commit', ['confirmed' => true]);
@@ -84,6 +90,26 @@ final class ContentMutationTest extends IntegrationWebTestCase
         self::assertTrue($receipt['verified']);
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         self::assertNull($em->find(CoreContent::class, $created['id']));
+    }
+
+    public function testDeletedTargetReturnsAnExplicitConflictWithoutExecutingTheProposal(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $target = $this->post($client, '/api/v1/manage/contents', ['title' => 'Delete before commit']);
+        $preview = $this->post($client, self::URL, ['action' => 'update', 'identifier' => (string) $target['id'], 'changes' => ['title' => 'Never saved']]);
+        $client->request('DELETE', '/api/v1/manage/contents/'.$target['id']);
+        self::assertResponseIsSuccessful();
+        $client->jsonRequest('POST', self::URL.'/'.$preview['operationId'].'/commit', ['confirmed' => true]);
+        self::assertResponseStatusCodeSame(409);
+        $failure = json_decode($client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('proposal_conflict', $failure['error']);
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        self::assertNull($em->find(CoreContent::class, $target['id']));
+        self::assertSame('pending', $em->find(AgentOperation::class, $preview['operationId'])->getStatus());
+        $client->request('GET', self::URL.'/'.$preview['operationId'].'/preview');
+        self::assertResponseStatusCodeSame(409);
+        $failure = json_decode($client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('proposal_conflict', $failure['error']);
     }
 
     public function testInvalidFieldsRelationsAndSchemaAreRejected(): void

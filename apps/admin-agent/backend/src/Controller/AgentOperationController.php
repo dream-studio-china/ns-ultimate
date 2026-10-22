@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace NsUltimate\Apps\AdminAgent\Backend\Controller;
 
 use NsUltimate\Apps\AdminAgent\Backend\Contract\ActorIdentityProvider;
+use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
 use NsUltimate\Apps\AdminAgent\Backend\Service\AgentOperationService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -44,14 +45,23 @@ final class AgentOperationController extends AbstractController
     #[Route('/{id}/preview', name: 'restore', methods: ['GET'], requirements: ['id' => '[a-f0-9]{64}'])]
     public function restore(string $id): JsonResponse
     {
-        return $this->json($this->operations->restore($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+        try {
+            return $this->json($this->operations->restore($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+        } catch (ProposalConflictException) {
+            return $this->conflict();
+        }
     }
 
     #[Route('/{id}/commit', name: 'commit', methods: ['POST'], requirements: ['id' => '[a-f0-9]{64}'])]
     public function commit(string $id, Request $request): JsonResponse
     {
         if ($request->toArray() !== ['confirmed' => true]) throw new BadRequestHttpException('Explicit confirmation is required; replacement payloads are not accepted.');
-        return $this->json($this->operations->commit($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+        try {
+            return $this->json($this->operations->commit($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+        } catch (ProposalConflictException) {
+            // The transaction has rolled back before a definitive rejection is returned.
+            return $this->conflict();
+        }
     }
 
     #[Route('/{id}', name: 'status', methods: ['GET'], requirements: ['id' => '[a-f0-9]{64}'])]
@@ -64,6 +74,11 @@ final class AgentOperationController extends AbstractController
     public function cancel(string $id): JsonResponse
     {
         return $this->json($this->operations->cancel($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+    }
+
+    private function conflict(): JsonResponse
+    {
+        return $this->json(['error' => 'proposal_conflict', 'message' => 'The record changed or no longer exists. Discard this proposal and prepare a new preview.'], 409, ['Cache-Control' => 'no-store']);
     }
 
     private function actor(): string

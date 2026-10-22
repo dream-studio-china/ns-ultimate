@@ -25,6 +25,6 @@ Fixed two composition failures discovered during acceptance:
 
 SQLite and the single-process development HTTP server do not establish production-database locking or simultaneous-request guarantees. Sequential commit replay was tested, not concurrent double-click submission. Schema was initialized with the ORM schema tool in the disposable database; production migrations, backups and pruning schedules were not exercised.
 
-A stale commit currently follows the conservative unknown-outcome UI path; status lookup reports it pending even though the old snapshot cannot commit. The user must discard and prepare a fresh proposal. This is safe but could be made clearer in a separate UX improvement.
+At acceptance time, a stale commit followed the conservative unknown-outcome UI path; status lookup reported it pending even though the old snapshot could not commit. This UX issue was subsequently addressed in the [conflict feedback follow-up](2026-10-22-admin-agent-conflict-feedback.md).
 
 Next: validate migration/pruning and concurrent transactions in an approved staging environment using the production database engine before expanding executable capabilities.

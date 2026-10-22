@@ -10,9 +10,9 @@ use App\Common\Entity\Tag;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Apps\AdminAgent\Backend\Contract\MutationAdapter;
+use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
 use NsUltimate\Business\Common\Entity\Content;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
-use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
@@ -67,10 +67,10 @@ final class ContentMutationAdapter implements MutationAdapter
     public function execute(string $action, ?string $identifier, string $beforeHash, array $changes): array
     {
         $target = $action === 'create' ? new Content('') : $this->em->find(CoreContent::class, $identifier, LockMode::PESSIMISTIC_WRITE);
-        if (!$target instanceof CoreContent) throw new ConflictHttpException('Content no longer exists. Prepare a new preview.');
+        if (!$target instanceof CoreContent) throw new ProposalConflictException('Content no longer exists. Prepare a new preview.');
         if ($action !== 'create') {
             $this->em->refresh($target, LockMode::PESSIMISTIC_WRITE);
-            if (!hash_equals($beforeHash, $this->hash($this->snapshot($target)))) throw new ConflictHttpException('Content changed since preview. Prepare a new preview.');
+            if (!hash_equals($beforeHash, $this->hash($this->snapshot($target)))) throw new ProposalConflictException('Content changed since preview. Prepare a new preview.');
         }
         if ($action === 'delete') {
             $id = (string) $target->getId();

@@ -1,4 +1,5 @@
 export default {
+  'The record changed or was deleted. This proposal was not saved. Discard it and request a new preview.': 'The record changed or was deleted. This proposal was not saved. Discard it and request a new preview.',
   'Operations': 'Operations',
   'Operations for this account': 'Operations for this account',
   'Only your operations are shown. Restore a pending preview to review and confirm it again; writes are never retried automatically.': 'Only your operations are shown. Restore a pending preview to review and confirm it again; writes are never retried automatically.',

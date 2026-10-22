@@ -1,4 +1,5 @@
 export default {
+  'The record changed or was deleted. This proposal was not saved. Discard it and request a new preview.': '记录已变化或被删除，本次提案未保存。请丢弃此提案并重新生成预览。',
   'Operations': '操作记录',
   'Operations for this account': '当前账号的操作记录',
   'Only your operations are shown. Restore a pending preview to review and confirm it again; writes are never retried automatically.': '仅显示当前账号的操作。恢复待确认预览后需重新核对并确认，不会自动重试写入。',

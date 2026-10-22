@@ -7,6 +7,7 @@ namespace NsUltimate\Apps\AdminAgent\Backend\Service;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
+use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -105,10 +106,14 @@ final class AgentOperationService
             $adapter = $this->adapters->get($operation->getEntityKey());
             $adapter->authorize($operation->getAction(), $operation->getTargetId());
             if ($operation->receipt()['status'] !== 'pending') throw new ConflictHttpException('Only an unexpired pending operation can be restored. Check its outcome.');
-            $draft = $adapter->prepare($operation->getAction(), $operation->getTargetId(), $operation->getChanges());
+            try {
+                $draft = $adapter->prepare($operation->getAction(), $operation->getTargetId(), $operation->getChanges());
+            } catch (NotFoundHttpException $error) {
+                throw new ProposalConflictException('The target no longer exists. Prepare a new preview.', $error);
+            }
             if (!hash_equals($operation->getBeforeHash(), $draft['beforeHash']) || $operation->getChanges() !== $draft['changes']
                 || $operation->getTargetId() !== $draft['identifier']) {
-                throw new ConflictHttpException('The target or mutation policy changed. Discard this proposal and prepare a new preview.');
+                throw new ProposalConflictException('The target or mutation policy changed. Discard this proposal and prepare a new preview.');
             }
             if ($draft['differences'] === [] || strlen(json_encode($draft['differences'], JSON_THROW_ON_ERROR)) > 60000) {
                 throw new ConflictHttpException('This proposal can no longer be previewed safely. Use the standard editor.');

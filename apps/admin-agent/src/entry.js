@@ -326,8 +326,9 @@ export function mountAdminAgent(host = {}) {
       recover.classList.toggle('hidden', result.state !== 'unknown')
       note.textContent = result.state === 'succeeded' ? t('Saved successfully. The server recorded the operation.')
         : result.state === 'unknown' ? t('Outcome unknown. Cancellation does not undo a submitted write. Check the outcome before attempting another operation.')
-          : result.state === 'ready' ? t('The server still reports a pending operation. You may explicitly confirm this same proposal again.')
-            : t('Preview invalidated. Request a new preview before submitting.')
+          : result.state === 'conflicted' ? t('The record changed or was deleted. This proposal was not saved. Discard it and request a new preview.')
+            : result.state === 'ready' ? t('The server still reports a pending operation. You may explicitly confirm this same proposal again.')
+              : t('Preview invalidated. Request a new preview before submitting.')
       if (result.state === 'succeeded') discard.disabled = true
     }
     const run = async(action) => {
@@ -346,7 +347,7 @@ export function mountAdminAgent(host = {}) {
           setBusy(false)
           if (valid) {
             recover.disabled = false
-            discard.disabled = change.state !== 'ready'
+            discard.disabled = !['ready', 'conflicted'].includes(change.state)
           }
         }
       }
@@ -362,7 +363,7 @@ export function mountAdminAgent(host = {}) {
       if (valid && !loading) run(signal => change.recover(signal))
     })
     discard.addEventListener('click', () => {
-      if (!valid || loading || change.state !== 'ready') return
+      if (!valid || loading || !['ready', 'conflicted'].includes(change.state)) return
       invalidate()
       pendingChanges.delete(invalidate)
       host.cancelRecordChange?.(preview.operationId).catch(() => {})

@@ -68,7 +68,8 @@ test('a pending status permits only a new explicit confirmation and an aborted r
   let calls = 0
   const host = {
     commitRecordChange: async() => { calls += 1; throw new Error('connection lost') },
-    getRecordChangeStatus: async() => ({ status: 'pending' })
+    getRecordChangeStatus: async() => ({ status: 'pending' }),
+    restoreRecordChange: async() => preview
   }
   const change = createPreparedChange(preview, host)
   const controller = new AbortController()
@@ -80,6 +81,64 @@ test('a pending status permits only a new explicit confirmation and an aborted r
   assert.equal(calls, 1)
   assert.equal((await change.submit(false)).state, 'ready')
   assert.equal(calls, 1)
+})
+
+test('only an explicit conflict response invalidates submission without an outcome check or retry', async() => {
+  for (const error of [
+    { response: { status: 409, data: { error: 'proposal_conflict' } } },
+    { response: { status: 409, data: { message: 'Conflict' } } },
+    { response: { status: 500, data: { error: 'proposal_conflict' } } },
+    new Error('timeout'),
+    Object.assign(new Error('cancelled'), { name: 'AbortError' })
+  ]) {
+    let commits = 0
+    const host = createMutationHost({ post: async() => { commits += 1; throw error } }, '/operations')
+    const change = createPreparedChange(preview, host)
+    const expected = error.response?.status === 409 && error.response.data?.error === 'proposal_conflict' ? 'conflicted' : 'unknown'
+    assert.equal((await change.submit(true)).state, expected)
+    assert.equal((await change.submit(true)).state, expected)
+    if (expected === 'conflicted') {
+      assert.equal((await change.recover()).state, 'conflicted')
+      change.invalidate()
+      assert.equal(change.state, 'invalidated')
+    }
+    assert.equal(commits, 1)
+  }
+})
+
+test('pending outcome revalidates the original preview and never re-enables a stale proposal', async() => {
+  for (const conflict of [true, false]) {
+    const requests = []
+    const host = createMutationHost({
+      post: async() => { requests.push('commit'); throw new Error('lost response') },
+      get: async path => {
+        requests.push(path.endsWith('/preview') ? 'preview' : 'status')
+        if (!path.endsWith('/preview')) return { data: { status: 'pending' } }
+        if (conflict) throw { response: { status: 409, data: { error: 'proposal_conflict' } } }
+        return { data: preview }
+      }
+    }, '/operations')
+    const change = createPreparedChange(preview, host)
+    await change.submit(true)
+    assert.equal((await change.recover()).state, conflict ? 'conflicted' : 'ready')
+    assert.deepEqual(requests, ['commit', 'status', 'preview'])
+    assert.equal((await change.submit(false)).state, conflict ? 'conflicted' : 'ready')
+  }
+})
+
+test('failed preview revalidation remains unknown and a successful receipt needs no preview check', async() => {
+  let checks = 0
+  const host = {
+    commitRecordChange: async() => { throw new Error('lost response') },
+    getRecordChangeStatus: async() => ({ status: 'pending' }),
+    restoreRecordChange: async() => { checks += 1; throw new Error('network') }
+  }
+  const change = createPreparedChange(preview, host)
+  await change.submit(true)
+  assert.equal((await change.recover()).state, 'unknown')
+  host.getRecordChangeStatus = async() => ({ status: 'succeeded' })
+  assert.equal((await change.recover()).state, 'succeeded')
+  assert.equal(checks, 1)
 })
 
 test('generic mutation host fixes destinations/methods and rejects unregistered entities or arbitrary parameters', async() => {
