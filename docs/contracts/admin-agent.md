@@ -15,6 +15,8 @@ The generic controller requires full authentication. This host mounts it under t
 | Method and path under `/api/v1/manage/agent/operations` | Behavior |
 | --- | --- |
 | `POST /` (no trailing slash required) | Prepare `{entity, action, identifier?, changes?}` through a registered adapter. Persists a proposal, not target data. |
+| `GET /?page=1` | Current actor receipts only, 20 candidates per page, pages 1–100, newest first by creation time and ID. Returns `{items, page, hasMore}`; inaccessible adapters are omitted, so a page can be short or empty. Rejects other query parameters. |
+| `GET /{operationId}/preview` | Restore the same pending proposal after permission, expiry, canonical payload and snapshot checks; returns a full preview without extending expiry or writing target data. |
 | `POST /{operationId}/commit` | Accepts exactly `{confirmed: true}`. Executes only the stored proposal; replacement values are rejected. |
 | `GET /{operationId}` | Minimal status/receipt without field values, for recovery after an ambiguous outcome. |
 | `POST /{operationId}/cancel` | Invalidates a pending proposal; does not undo a completed mutation. |
@@ -29,7 +31,11 @@ Commit rechecks owner, adapter authorization, pending state and expiry, locks th
 
 The user reviews all differences and explicitly confirms; deletion requires typing `DELETE <identifier>`. A newer message or preview, clearing the conversation, or a session change invalidates the visible pending confirmation. Expiry is checked in UI and backend. Submission is serialized, with no automatic retry after timeout/abort. An ambiguous outcome offers a status check and blocks new tasks/clearing until resolved; only a server-pending response permits another explicit confirmation of the same proposal. Cancellation cannot guarantee reversal after submission starts.
 
-Closing/reloading the page or changing sessions loses the local recovery card; durable receipts remain in the database and must be checked before recreating an ambiguous operation. Authorized API callers and same-origin scripts can invoke the API directly: browser confirmation is an accidental-action safeguard, not proof of human presence against malicious code.
+Closing/reloading the page or changing sessions loses the local card, but **Operations** can retrieve the current account's durable receipts and refresh their outcomes without retrying writes. Receipt responses now also include `createdAt` and `expiresAt`; a pending row past expiry is reported as `expired` even before pruning, without changing or erasing its stored payload. Lists never contain proposal values, actor keys or snapshot hashes. Offset pagination is bounded but not a stable snapshot while new operations arrive; refresh page 1 to see new receipts.
+
+Restoring a preview locks and refreshes the stored operation, rechecks adapter authorization and calls its side-effect-free preparation logic with the original payload. It rejects changed snapshots or canonical changes and oversized/empty differences. Only unexpired pending operations are eligible; restoration creates no new operation and requires another explicit UI confirmation, using the original expiry. Commit revalidates independently. These routes add no new migration or adapter interface requirements. Requests are serialized with other assistant activity and aborted on session disposal; values are not stored in browser persistence or supplied to the model. This does not automatically resolve every ambiguous write across browser restarts: users must inspect the durable receipt before manually proposing a replacement.
+
+Authorized API callers and same-origin scripts can invoke the API directly: browser confirmation is an accidental-action safeguard, not proof of human presence against malicious code.
 
 ## Migration, retention and validation
 
@@ -39,4 +45,4 @@ Review pending migrations before running `php integration/backend/bin/console do
 
 Pending proposals retain values in the database. Success and explicit discard erase values, retaining actor, entity, action, field names, target, before-state hash, status and timestamps. Expiry alone does not physically erase values; the pruning command does. Receipts are not a tamper-proof audit ledger, nor are failed requests an exhaustive security audit. Backups, access controls and receipt retention remain deployment responsibilities.
 
-Tests cover multi-adapter dispatch, string IDs, unknown/duplicate keys, authenticated CRUD, conflict detection, idempotency, validation, account isolation, expiry, cancellation, migration preservation and client state transitions. Real-browser interaction and production-database concurrency verification remain required before deployment.
+Tests cover multi-adapter dispatch, string IDs, unknown/duplicate keys, authenticated CRUD, conflict detection, idempotency, validation, account isolation, expiry, cancellation, metadata-only pagination, original-proposal restoration, session disposal, migration preservation and client state transitions. Real-backend browser interaction and production-database concurrency verification remain required before deployment.

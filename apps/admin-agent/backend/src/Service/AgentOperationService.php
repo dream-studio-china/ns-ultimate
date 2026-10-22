@@ -10,6 +10,7 @@ use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
 /** Generic lifecycle only. Target lookup, permissions, field rules and domain effects belong to adapters. */
 final class AgentOperationService
@@ -73,6 +74,51 @@ final class AgentOperationService
         return $operation->receipt();
     }
 
+    /** Metadata only, with bounded pages. Inaccessible or disabled adapters are omitted.
+     * @return array{items: list<array<string, mixed>>, page: int, hasMore: bool}
+     */
+    public function recent(string $actor, int $page = 1): array
+    {
+        if ($page < 1 || $page > 100) throw new BadRequestHttpException('Page must be between 1 and 100.');
+        $operations = $this->em->getRepository(AgentOperation::class)->findBy(
+            ['actor' => $actor], ['createdAt' => 'DESC', 'id' => 'DESC'], 21, ($page - 1) * 20,
+        );
+        $items = [];
+        foreach (array_slice($operations, 0, 20) as $operation) {
+            try {
+                $this->adapters->get($operation->getEntityKey())->authorize($operation->getAction(), $operation->getTargetId());
+            } catch (AccessDeniedException|BadRequestHttpException|NotFoundHttpException) {
+                continue;
+            }
+            $items[] = $operation->receipt();
+        }
+        return ['items' => $items, 'page' => $page, 'hasMore' => count($operations) > 20 && $page < 100];
+    }
+
+    /** Rebuild a preview for the SAME proposal, without extending expiry or writing target data.
+     * @return array<string, mixed>
+     */
+    public function restore(string $actor, string $id): array
+    {
+        return $this->em->wrapInTransaction(function () use ($actor, $id): array {
+            $operation = $this->operation($actor, $id, true);
+            $adapter = $this->adapters->get($operation->getEntityKey());
+            $adapter->authorize($operation->getAction(), $operation->getTargetId());
+            if ($operation->receipt()['status'] !== 'pending') throw new ConflictHttpException('Only an unexpired pending operation can be restored. Check its outcome.');
+            $draft = $adapter->prepare($operation->getAction(), $operation->getTargetId(), $operation->getChanges());
+            if (!hash_equals($operation->getBeforeHash(), $draft['beforeHash']) || $operation->getChanges() !== $draft['changes']
+                || $operation->getTargetId() !== $draft['identifier']) {
+                throw new ConflictHttpException('The target or mutation policy changed. Discard this proposal and prepare a new preview.');
+            }
+            if ($draft['differences'] === [] || strlen(json_encode($draft['differences'], JSON_THROW_ON_ERROR)) > 60000) {
+                throw new ConflictHttpException('This proposal can no longer be previewed safely. Use the standard editor.');
+            }
+            return ['operationId' => $operation->getId(), 'entity' => $operation->getEntityKey(), 'action' => $operation->getAction(),
+                'identifier' => $operation->getTargetId(), 'title' => $draft['title'], 'affectedRecords' => 1,
+                'expiresAt' => $operation->getExpiresAt()->format(DATE_ATOM), 'differences' => $draft['differences'], 'saved' => false];
+        });
+    }
+
     /** @return array<string, mixed> */
     public function cancel(string $actor, string $id): array
     {
@@ -88,6 +134,8 @@ final class AgentOperationService
     {
         $operation = preg_match('/^[a-f0-9]{64}$/D', $id)
             ? $this->em->find(AgentOperation::class, $id, $lock ? LockMode::PESSIMISTIC_WRITE : null) : null;
+        // find() can return an already managed object; a lock alone does not refresh its fields.
+        if ($lock && $operation instanceof AgentOperation) $this->em->refresh($operation, LockMode::PESSIMISTIC_WRITE);
         if (!$operation instanceof AgentOperation || $operation->getActor() !== $actor) throw new NotFoundHttpException('Assistant operation not found.');
         return $operation;
     }

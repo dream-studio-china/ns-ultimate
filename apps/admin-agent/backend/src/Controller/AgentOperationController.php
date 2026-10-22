@@ -27,6 +27,23 @@ final class AgentOperationController extends AbstractController
         return $this->json($this->operations->prepare($this->actor(), $input), headers: ['Cache-Control' => 'no-store']);
     }
 
+    #[Route('', name: 'recent', methods: ['GET'])]
+    public function recent(Request $request): JsonResponse
+    {
+        $query = $request->query->all();
+        $page = $query['page'] ?? '1';
+        if (array_diff(array_keys($query), ['page']) !== [] || !is_string($page) || !preg_match('/^(?:[1-9][0-9]?|100)$/D', $page)) {
+            throw new BadRequestHttpException('Only a page number between 1 and 100 is accepted.');
+        }
+        return $this->json($this->operations->recent($this->actor(), (int) $page), headers: ['Cache-Control' => 'no-store']);
+    }
+
+    #[Route('/{id}/preview', name: 'restore', methods: ['GET'], requirements: ['id' => '[a-f0-9]{64}'])]
+    public function restore(string $id): JsonResponse
+    {
+        return $this->json($this->operations->restore($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+    }
+
     #[Route('/{id}/commit', name: 'commit', methods: ['POST'], requirements: ['id' => '[a-f0-9]{64}'])]
     public function commit(string $id, Request $request): JsonResponse
     {

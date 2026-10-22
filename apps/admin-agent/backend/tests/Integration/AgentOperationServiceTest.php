@@ -73,6 +73,36 @@ final class AgentOperationServiceTest extends IntegrationWebTestCase
         }
         self::assertSame('pending', $em->getConnection()->fetchOne('SELECT status FROM admin_agent_operation WHERE id = ?', [$preview['operationId']]));
     }
+
+    public function testRecoveryHidesDisabledAdaptersAndRechecksRevokedPermissions(): void
+    {
+        $adapter = new RecordingMutationAdapter('Article');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $service = new AgentOperationService($em, new MutationAdapterRegistry([$adapter]));
+        $preview = $service->prepare('recovery-account', ['entity' => 'Article', 'action' => 'create', 'changes' => ['label' => 'New']]);
+        self::assertCount(1, $service->recent('recovery-account')['items']);
+        $disabled = new AgentOperationService($em, new MutationAdapterRegistry([]));
+        self::assertSame([], $disabled->recent('recovery-account')['items']);
+        $adapter->authorized = false;
+        self::assertSame([], $service->recent('recovery-account')['items']);
+        $this->expectException(\Symfony\Component\Security\Core\Exception\AccessDeniedException::class);
+        $service->restore('recovery-account', $preview['operationId']);
+    }
+
+    public function testRecoveryRejectsChangedCanonicalPayloadWithoutExecutingIt(): void
+    {
+        $adapter = new RecordingMutationAdapter('Article');
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $service = new AgentOperationService($em, new MutationAdapterRegistry([$adapter]));
+        $preview = $service->prepare('policy-account', ['entity' => 'Article', 'action' => 'create', 'changes' => ['label' => 'New']]);
+        $adapter->policyChanged = true;
+        try {
+            $service->restore('policy-account', $preview['operationId']);
+            self::fail('Changed canonical payloads must not be restored.');
+        } catch (\Symfony\Component\HttpKernel\Exception\ConflictHttpException) {
+            self::assertSame(0, $adapter->executions);
+        }
+    }
 }
 
 /** Test fixture, not registered in production DI or enabled as a domain capability. */
@@ -80,11 +110,17 @@ final class RecordingMutationAdapter implements MutationAdapter
 {
     public int $executions = 0;
     public bool $verified = true;
+    public bool $authorized = true;
+    public bool $policyChanged = false;
     public function __construct(private readonly string $key) {}
     public function entityKey(): string { return $this->key; }
-    public function authorize(string $action, ?string $identifier): void {}
+    public function authorize(string $action, ?string $identifier): void
+    {
+        if (!$this->authorized) throw new \Symfony\Component\Security\Core\Exception\AccessDeniedException();
+    }
     public function prepare(string $action, ?string $identifier, array $changes): array
     {
+        if ($this->policyChanged) $changes['label'] = 'Changed normalization';
         return ['identifier' => $identifier, 'title' => 'Fixture', 'beforeHash' => str_repeat('a', 64),
             'changes' => $changes, 'differences' => [['property' => 'label', 'before' => 'Old', 'after' => $changes['label']]]];
     }

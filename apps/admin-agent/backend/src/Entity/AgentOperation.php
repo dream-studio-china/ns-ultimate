@@ -96,7 +96,8 @@ final class AgentOperation
     public function receipt(): array
     {
         return ['operationId' => $this->id, 'entity' => $this->entityKey, 'action' => $this->action,
-            'identifier' => $this->targetId, 'status' => $this->status, 'fields' => $this->fields,
+            'identifier' => $this->targetId, 'status' => $this->status === 'pending' && $this->expiresAt <= new \DateTimeImmutable() ? 'expired' : $this->status, 'fields' => $this->fields,
+            'createdAt' => $this->createdAt->format(DATE_ATOM), 'expiresAt' => $this->expiresAt->format(DATE_ATOM),
             'completedAt' => $this->completedAt?->format(DATE_ATOM)];
     }
 }

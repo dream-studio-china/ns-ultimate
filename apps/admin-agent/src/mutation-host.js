@@ -6,6 +6,15 @@ export function createMutationHost(request, path, capabilities = []) {
   }
   return {
     getWriteCapabilities() { return capabilities },
+    async listRecordChanges(page = 1, signal) {
+      if (!Number.isInteger(page) || page < 1 || page > 100) throw new TypeError('Invalid operation page.')
+      const response = await request.get(path, { params: { page }, signal, timeout: 60000 })
+      return response.data
+    },
+    async restoreRecordChange(operationId, signal) {
+      const response = await request.get(`${operationPath(operationId)}/preview`, { signal, timeout: 60000 })
+      return response.data
+    },
     async prepareRecordChange(input, signal) {
       if (!input || typeof input !== 'object' || Array.isArray(input)
         || !capabilities.some(item => item.entity === input.entity && item.actions.includes(input.action))
