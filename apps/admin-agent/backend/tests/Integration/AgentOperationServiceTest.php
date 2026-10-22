@@ -103,6 +103,53 @@ final class AgentOperationServiceTest extends IntegrationWebTestCase
             self::assertSame(0, $adapter->executions);
         }
     }
+
+    public function testRecoveryIgnoresNestedMapKeyOrderButPreservesListOrderAndScalarTypes(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $adapter = new RecordingMutationAdapter('Article');
+        $service = new AgentOperationService($em, new MutationAdapterRegistry([$adapter]));
+        $changes = ['settings' => ['z' => 2, 'a' => ['right' => true, 'left' => false]], 'sequence' => ['first', 'second'], 'count' => 1];
+        $preview = $service->prepare('restore-account', ['entity' => 'Article', 'action' => 'create', 'changes' => $changes]);
+
+        $adapter->preparedChanges = ['settings' => ['a' => ['left' => false, 'right' => true], 'z' => 2], 'sequence' => ['first', 'second'], 'count' => 1];
+        $em->getConnection()->executeStatement('UPDATE admin_agent_operation SET changes = ? WHERE id = ?', [
+            json_encode($changes, JSON_THROW_ON_ERROR), $preview['operationId'],
+        ]);
+        $em->clear();
+        self::assertSame($preview['operationId'], $service->restore('restore-account', $preview['operationId'])['operationId']);
+
+        $adapter->preparedChanges['sequence'] = ['second', 'first'];
+        $this->expectException(\NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException::class);
+        $service->restore('restore-account', $preview['operationId']);
+    }
+
+    public function testRecoveryRejectsScalarTypeChanges(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $adapter = new RecordingMutationAdapter('Article');
+        $service = new AgentOperationService($em, new MutationAdapterRegistry([$adapter]));
+        $preview = $service->prepare('restore-type-account', ['entity' => 'Article', 'action' => 'create', 'changes' => ['count' => 1, 'enabled' => false]]);
+
+        $adapter->preparedChanges = ['count' => '1', 'enabled' => false];
+        try {
+            $service->restore('restore-type-account', $preview['operationId']);
+            self::fail('Scalar type changes must not be restored.');
+        } catch (\NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException) {
+            self::assertSame(0, $adapter->executions);
+        }
+    }
+
+    public function testRecoveryRejectsFalseVersusZero(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $adapter = new RecordingMutationAdapter('Article');
+        $service = new AgentOperationService($em, new MutationAdapterRegistry([$adapter]));
+        $preview = $service->prepare('restore-false-account', ['entity' => 'Article', 'action' => 'create', 'changes' => ['enabled' => false]]);
+        $adapter->preparedChanges = ['enabled' => 0];
+        $this->expectException(\NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException::class);
+        $service->restore('restore-false-account', $preview['operationId']);
+    }
 }
 
 /** Test fixture, not registered in production DI or enabled as a domain capability. */
@@ -112,6 +159,8 @@ final class RecordingMutationAdapter implements MutationAdapter
     public bool $verified = true;
     public bool $authorized = true;
     public bool $policyChanged = false;
+    /** @var array<string, mixed>|null */
+    public ?array $preparedChanges = null;
     public function __construct(private readonly string $key) {}
     public function entityKey(): string { return $this->key; }
     public function authorize(string $action, ?string $identifier): void
@@ -120,9 +169,11 @@ final class RecordingMutationAdapter implements MutationAdapter
     }
     public function prepare(string $action, ?string $identifier, array $changes): array
     {
+        if ($this->preparedChanges !== null) $changes = $this->preparedChanges;
         if ($this->policyChanged) $changes['label'] = 'Changed normalization';
+        $property = array_key_first($changes) ?? 'label';
         return ['identifier' => $identifier, 'title' => 'Fixture', 'beforeHash' => str_repeat('a', 64),
-            'changes' => $changes, 'differences' => [['property' => 'label', 'before' => 'Old', 'after' => $changes['label']]]];
+            'changes' => $changes, 'differences' => [['property' => $property, 'before' => 'Old', 'after' => $changes[$property] ?? null]]];
     }
     public function execute(string $action, ?string $identifier, string $beforeHash, array $changes): array
     {

@@ -111,7 +111,7 @@ final class AgentOperationService
             } catch (NotFoundHttpException $error) {
                 throw new ProposalConflictException('The target no longer exists. Prepare a new preview.', $error);
             }
-            if (!hash_equals($operation->getBeforeHash(), $draft['beforeHash']) || $operation->getChanges() !== $draft['changes']
+            if (!hash_equals($operation->getBeforeHash(), $draft['beforeHash']) || self::canonicalizeMaps($operation->getChanges()) !== self::canonicalizeMaps($draft['changes'])
                 || $operation->getTargetId() !== $draft['identifier']) {
                 throw new ProposalConflictException('The target or mutation policy changed. Discard this proposal and prepare a new preview.');
             }
@@ -143,5 +143,17 @@ final class AgentOperationService
         if ($lock && $operation instanceof AgentOperation) $this->em->refresh($operation, LockMode::PESSIMISTIC_WRITE);
         if (!$operation instanceof AgentOperation || $operation->getActor() !== $actor) throw new NotFoundHttpException('Assistant operation not found.');
         return $operation;
+    }
+
+    /** @param array<mixed> $value
+     * @return array<mixed>
+     */
+    private static function canonicalizeMaps(array $value): array
+    {
+        if (!array_is_list($value)) ksort($value, SORT_STRING);
+        foreach ($value as $key => $item) {
+            if (is_array($item)) $value[$key] = self::canonicalizeMaps($item);
+        }
+        return $value;
     }
 }
