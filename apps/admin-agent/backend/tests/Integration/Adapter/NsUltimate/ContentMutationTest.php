@@ -40,11 +40,13 @@ final class ContentMutationTest extends IntegrationWebTestCase
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         $count = $em->getRepository(CoreContent::class)->count([]);
         $preview = $this->post($client, self::URL, ['action' => 'create', 'changes' => [
-            'title' => 'Agent content', 'body' => '<script>untrusted text</script>',
-            'metadata' => ['featured' => true, 'layout' => 'article'], 'sortOrder' => 3,
+            'sortOrder' => 3, 'metadata' => ['featured' => true, 'layout' => 'article'],
+            'body' => '<script>untrusted text</script>', 'title' => 'Agent content',
         ]]);
         self::assertFalse($preview['saved']);
         self::assertSame(1, $preview['affectedRecords']);
+        self::assertSame(['title', 'body', 'metadata', 'sortOrder'], array_column($preview['differences'], 'property'),
+            'Differences follow the declared field order, not the request key order, so MySQL JSON key reordering cannot change a restored preview.');
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         self::assertSame($count, $em->getRepository(CoreContent::class)->count([]));
 
