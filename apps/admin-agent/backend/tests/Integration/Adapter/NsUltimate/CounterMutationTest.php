@@ -130,6 +130,30 @@ final class CounterMutationTest extends IntegrationWebTestCase
         self::assertSame('Protected', $em->find(Counter::class, $counter->getId())->getName());
     }
 
+    public function testOriginalActorRoleRevokedBetweenPrepareAndCommitCannotWrite(): void
+    {
+        $client = self::createClient();
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $actor = (new User())->setEmail('counter-revoked-actor@example.test')->setUsername('counter-revoked-actor')->setRoles(['ROLE_ADMIN']);
+        $em->persist($actor);
+        $counter = (new Counter())->setStoreUuid('00000000-0000-4000-8000-000000000001')->setCode('revoked-actor')->setName('Protected');
+        $em->persist($counter);
+        $em->flush();
+        $token = $client->getContainer()->get(TokenManager::class)->createAccessToken($actor);
+        $client->jsonRequest('POST', self::URL, ['entity' => 'Counter', 'action' => 'update', 'identifier' => (string) $counter->getId(),
+            'changes' => ['name' => 'Must not apply']], ['HTTP_AUTHORIZATION' => 'Bearer '.$token]);
+        self::assertResponseIsSuccessful();
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        $preview = $body['data'] ?? $body;
+        $actor->setRoles(['ROLE_USER']);
+        $em->flush();
+
+        $client->jsonRequest('POST', self::URL.'/'.$preview['operationId'].'/commit', ['confirmed' => true], ['HTTP_AUTHORIZATION' => 'Bearer '.$token]);
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame('Protected', $em->find(Counter::class, $counter->getId())->getName());
+        self::assertSame('pending', $em->find(AgentOperation::class, $preview['operationId'])->getStatus());
+    }
+
     public function testStaleSnapshotConflictsWithoutChangingTheCounter(): void
     {
         $client = self::createAuthenticatedClient();
@@ -172,6 +196,24 @@ final class CounterMutationTest extends IntegrationWebTestCase
             self::assertSame('pending', $em->find(AgentOperation::class, $preview['operationId'])->getStatus());
             self::ensureKernelShutdown();
         }
+    }
+
+    public function testRawSqlNonNameChangeConflictsWithManagedProposal(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $counter = (new Counter())->setStoreUuid('00000000-0000-4000-8000-000000000001')->setCode('raw-stale')->setName('Before');
+        $em->persist($counter);
+        $em->flush();
+        $id = $counter->getId();
+        $preview = $this->post($client, ['action' => 'update', 'identifier' => (string) $id, 'changes' => ['name' => 'Proposed']]);
+
+        $em->getConnection()->executeStatement('UPDATE counter SET capacity = ? WHERE id = ?', [37, $id]);
+        $client->jsonRequest('POST', self::URL.'/'.$preview['operationId'].'/commit', ['confirmed' => true]);
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('Before', $em->find(Counter::class, $id)->getName());
+        self::assertSame(37, $em->getConnection()->fetchOne('SELECT capacity FROM counter WHERE id = ?', [$id]));
+        self::assertSame('pending', $em->find(AgentOperation::class, $preview['operationId'])->getStatus());
     }
 
     public function testDeletedTargetAllowsCancelButRestoreAndCommitConflict(): void

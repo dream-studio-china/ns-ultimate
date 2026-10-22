@@ -161,8 +161,9 @@ final class ContentMutationTest extends IntegrationWebTestCase
     public function testExpiryCancellationAndAccountBinding(): void
     {
         $client = self::createAuthenticatedClient();
-        $preview = $this->post($client, self::URL, ['action' => 'create', 'changes' => ['title' => 'Expire']]);
         $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $initialContentCount = $em->getRepository(CoreContent::class)->count([]);
+        $preview = $this->post($client, self::URL, ['action' => 'create', 'changes' => ['title' => 'Expire']]);
         $operation = $em->find(AgentOperation::class, $preview['operationId']);
         (new \ReflectionProperty(AgentOperation::class, 'expiresAt'))->setValue($operation, new \DateTimeImmutable('-1 minute'));
         $em->flush();
@@ -177,11 +178,13 @@ final class ContentMutationTest extends IntegrationWebTestCase
         self::assertSame([], $em->find(AgentOperation::class, $preview['operationId'])->getChanges());
         $client->jsonRequest('POST', self::URL.'/'.$preview['operationId'].'/commit', ['confirmed' => true]);
         self::assertResponseStatusCodeSame(409);
+        self::assertSame($initialContentCount, $em->getRepository(CoreContent::class)->count([]), 'An expired operation must never create its target.');
 
         $cancel = $this->post($client, self::URL, ['action' => 'create', 'changes' => ['title' => 'Cancel']]);
         $this->post($client, self::URL.'/'.$cancel['operationId'].'/cancel');
         $client->jsonRequest('POST', self::URL.'/'.$cancel['operationId'].'/commit', ['confirmed' => true]);
         self::assertResponseStatusCodeSame(409);
+        self::assertSame($initialContentCount, $em->getRepository(CoreContent::class)->count([]), 'A cancelled operation must never create its target.');
 
         $client->jsonRequest('GET', self::URL.'/'.$cancel['operationId']);
         self::assertResponseIsSuccessful();
