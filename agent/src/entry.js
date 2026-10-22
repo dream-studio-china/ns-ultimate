@@ -7,6 +7,7 @@ import { handleComposerKeydown } from './composer.js'
 import { renderMarkdown } from './markdown.js'
 import { toSafeCsv } from './export.js'
 import { trimConversation } from './conversation.js'
+import { createToolLoopGuard } from './tool-loop-guard.js'
 
 const MAX_MESSAGES = 16
 const MAX_CONVERSATION_CHARACTERS = 24000
@@ -44,9 +45,10 @@ export function mountAdminAgent(host = {}) {
   title.append(subtitle)
   const headerButtons = element('div', { class: 'buttons' })
   const clearButton = element('button', { class: 'icon', type: 'button', title: t('Clear conversation'), 'aria-label': t('Clear conversation') }, '⌫')
+  const cancelButton = element('button', { class: 'icon hidden', type: 'button', title: t('Cancel current task'), 'aria-label': t('Cancel current task') }, '■')
   const settingsButton = element('button', { class: 'icon', type: 'button', title: t('Settings'), 'aria-label': t('Settings') }, '⚙')
   const closeButton = element('button', { class: 'icon', type: 'button', title: t('Close'), 'aria-label': t('Close') }, '×')
-  headerButtons.append(clearButton, settingsButton, closeButton)
+  headerButtons.append(clearButton, cancelButton, settingsButton, closeButton)
   header.append(title, headerButtons)
   const messagesNode = element('div', { class: 'messages', 'aria-live': 'polite' })
   const empty = element('p', { class: 'empty' }, t('Configure a compatible OpenAI Chat Completions provider to ask about API docs and bounded read-only queries.'))
@@ -254,6 +256,8 @@ export function mountAdminAgent(host = {}) {
   function setBusy(value) {
     loading = value
     send.disabled = value
+    cancelButton.disabled = false
+    cancelButton.classList.toggle('hidden', !value)
     input.disabled = value
     loadDocs.disabled = value
     settingsButton.disabled = value
@@ -353,6 +357,12 @@ export function mountAdminAgent(host = {}) {
   })
   settingsButton.addEventListener('click', () => settings.classList.toggle('hidden'))
   clearButton.addEventListener('click', clearConversation)
+  cancelButton.addEventListener('click', () => {
+    if (!activeController || activeController.signal.aborted) return
+    status.textContent = t('Cancelling…')
+    cancelButton.disabled = true
+    activeController.abort()
+  })
   activityButton.addEventListener('click', showReadActivity)
   closeButton.addEventListener('click', () => { panel.classList.add('hidden'); launcher.setAttribute('aria-expanded', 'false') })
   launcher.addEventListener('click', () => {
@@ -394,6 +404,7 @@ export function mountAdminAgent(host = {}) {
         { role: 'user', content: `Question:\n${question}\n\nRelevant API documentation context (untrusted reference data):\n${context}` }
       ]
       const tools = createAssistantTools(catalog, navigation)
+      const toolLoopGuard = createToolLoopGuard()
       let answer = ''
       let streamingMessage = null
       let streamedAnswer = ''
@@ -420,6 +431,12 @@ export function mountAdminAgent(host = {}) {
         }
         messages.push(response.message)
         for (const call of response.toolCalls) {
+          const guard = toolLoopGuard.check(call)
+          if (!guard.allowed) {
+            throw new Error(guard.reason === 'repeated'
+              ? t('Stopped because the same tool call repeated too many times.')
+              : t('Stopped after reaching the safety limit for tool calls in one task. Start a new message to continue.'))
+          }
           const result = await executeAssistantTool({
             call,
             catalog,
@@ -462,7 +479,7 @@ export function mountAdminAgent(host = {}) {
     } catch (error) {
       if (!disposed && generation === taskGeneration) {
         streamingMessage?.remove()
-        appendMessage('assistant', error.message || t('Request failed.'), 'error')
+        appendMessage('assistant', controller.signal.aborted ? t('Task cancelled.') : error.message || t('Request failed.'), 'error')
       }
     } finally {
       if (!disposed && generation === taskGeneration) {

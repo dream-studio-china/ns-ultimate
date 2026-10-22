@@ -57,6 +57,8 @@ test('validates query bounds and compiles only configured scalar filters', () =>
   assert.throws(() => prepareRecordQuery({ entity: 'Counter', filters: [{ field: 'status', value: 'active' }] }, catalog), /not allowed/)
   assert.equal(prepareRecordQuery({ entity: 'Counter', limit: 60 }, catalog).limit, 60)
   assert.throws(() => prepareRecordQuery({ entity: 'Counter', limit: 61 }, catalog), /Limit/)
+  assert.equal(prepareRecordQuery({ entity: 'Counter', page: 100 }, catalog).page, 100)
+  assert.throws(() => prepareRecordQuery({ entity: 'Counter', page: 101 }, catalog), /Page/)
   assert.throws(() => prepareRecordQuery({ entity: 'Unsupported' }, catalog), /no approved/)
 })
 
