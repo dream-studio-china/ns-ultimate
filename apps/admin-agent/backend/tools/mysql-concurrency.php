@@ -6,13 +6,18 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\CounterMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\CategoryMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductCategoryMutationAdapter;
+use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StorePrintingMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
 use NsUltimate\Apps\AdminAgent\Backend\Service\AgentOperationService;
 use NsUltimate\Apps\AdminAgent\Backend\Service\MutationAdapterRegistry;
 use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Printer\Entity\PrinterAccount;
+use NsUltimate\Business\Printer\Entity\PrinterDevice;
+use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use App\Common\Entity\Category;
 use App\Store\Entity\ProductCategory;
+use App\Store\Entity\Store;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -120,7 +125,8 @@ try {
         $ready = $argv[4] ?? '';
         $go = $argv[5] ?? '';
         $workerIndex = $argv[6] ?? '';
-        if (!in_array($action, ['same', 'stale', 'category-cycle', 'product-category-cycle'], true)
+        $printingActions = ['printing-same', 'printing-conflict'];
+        if (!in_array($action, ['same', 'stale', 'category-cycle', 'product-category-cycle', ...$printingActions], true)
             || $ready === '' || $go === '' || !preg_match('/^(?:0|1|2|3)$/D', $workerIndex)) {
             throw new RuntimeException('Invalid worker invocation.');
         }
@@ -133,20 +139,28 @@ try {
         };
         $operation = $em->getRepository(AgentOperation::class)->find($operationId);
         if (!$operation instanceof AgentOperation) throw new RuntimeException('Worker operation not found.');
-        $proposedName = $operation->getChanges()['name'] ?? null;
-        $proposedParent = $operation->getChanges()['parent'] ?? null;
+        $changes = $operation->getChanges();
+        $proposedName = $changes['name'] ?? null;
+        $proposedParent = $changes['parent'] ?? null;
+        $proposedCopies = $changes['order']['copies'] ?? null;
         $phase = nsAgentHarnessCounterPhase($action, (int) $workerIndex);
+        $connectionId = (int) $em->getConnection()->fetchOne('SELECT CONNECTION_ID()');
         $counterAdapter = nsAgentCountingAdapter(new CounterMutationAdapter($em, $auth), $em->getConnection(), $phase);
         $categoryAdapter = nsAgentCountingAdapter(new CategoryMutationAdapter($em, $auth), $em->getConnection(), $phase);
         $productCategoryAdapter = nsAgentCountingAdapter(new ProductCategoryMutationAdapter($em, $auth), $em->getConnection(), $phase);
-        $service = new AgentOperationService($em, new MutationAdapterRegistry([$counterAdapter, $categoryAdapter, $productCategoryAdapter]));
+        $adapters = [$counterAdapter, $categoryAdapter, $productCategoryAdapter];
+        if (in_array($action, $printingActions, true)) {
+            $adapters[] = nsAgentCountingAdapter(new StorePrintingMutationAdapter($em, $auth), $em->getConnection(), $phase);
+        }
+        $service = new AgentOperationService($em, new MutationAdapterRegistry($adapters));
         try {
             $result = $service->commit('mysql-harness-actor', $operationId);
-            $outcome = ['status' => 'succeeded', 'identifier' => $result['identifier'], 'name' => $proposedName, 'parent' => $proposedParent];
+            $outcome = ['status' => 'succeeded', 'identifier' => $result['identifier'], 'name' => $proposedName, 'parent' => $proposedParent,
+                'copies' => $proposedCopies, 'operationId' => $operationId, 'connectionId' => $connectionId];
         } catch (ProposalConflictException $error) {
-            $outcome = ['status' => 'proposal_conflict'];
+            $outcome = ['status' => 'proposal_conflict', 'copies' => $proposedCopies, 'operationId' => $operationId, 'connectionId' => $connectionId];
         } catch (Symfony\Component\HttpKernel\Exception\ConflictHttpException $error) {
-            $outcome = ['status' => 'proposal_conflict'];
+            $outcome = ['status' => 'proposal_conflict', 'copies' => $proposedCopies, 'operationId' => $operationId, 'connectionId' => $connectionId];
         }
         file_put_contents($ready.'.result', json_encode($outcome, JSON_THROW_ON_ERROR), LOCK_EX);
         $kernel->shutdown();
@@ -163,7 +177,12 @@ try {
     $pdo->exec('CREATE TABLE ns_agent_harness_executions (phase VARCHAR(40) PRIMARY KEY, executions INT NOT NULL) ENGINE=InnoDB');
     $insertExecutionRow = $pdo->prepare('INSERT INTO ns_agent_harness_executions (phase, executions) VALUES (?, 0)');
     foreach (nsAgentHarnessCounterScenarios() as $scenario => $workerCount) {
-        foreach (nsAgentHarnessCounterPhases($scenario) as $phase) $insertExecutionRow->execute([$phase]);
+        foreach (nsAgentHarnessCounterPhases($scenario) as $phase) {
+            if (preg_match(nsAgentHarnessCounterPhasePattern(), $phase) !== 1) {
+                throw new RuntimeException('Generated execution-counter phase is outside the bounded known-phase allowlist.');
+            }
+            $insertExecutionRow->execute([$phase]);
+        }
     }
     $executionCount = static function (string $scenario, int $workerCount) use ($pdo): int {
         if ((nsAgentHarnessCounterScenarios()[$scenario] ?? null) !== $workerCount) throw new RuntimeException('Invalid execution-counter aggregation scope.');
@@ -182,9 +201,19 @@ try {
         public function isGranted(mixed $attribute, mixed $subject = null, ?Symfony\Component\Security\Core\Authorization\AccessDecision $accessDecision = null): bool { return true; }
     };
     $adapter = new CounterMutationAdapter($em, $auth);
+    $storePrintingAdapter = new StorePrintingMutationAdapter($em, $auth);
     $service = new AgentOperationService($em, new MutationAdapterRegistry([
-        $adapter, new CategoryMutationAdapter($em, $auth), new ProductCategoryMutationAdapter($em, $auth),
+        $adapter, new CategoryMutationAdapter($em, $auth), new ProductCategoryMutationAdapter($em, $auth), $storePrintingAdapter,
     ]));
+    // A rejected commit closes its EntityManager; expected-conflict scenarios
+    // continue with a freshly reset manager and the same explicit adapter set.
+    $resetOperationService = static function () use (&$em, $container, $auth): AgentOperationService {
+        $em = $container->get('doctrine')->resetManager();
+        return new AgentOperationService($em, new MutationAdapterRegistry([
+            new CounterMutationAdapter($em, $auth), new CategoryMutationAdapter($em, $auth),
+            new ProductCategoryMutationAdapter($em, $auth), new StorePrintingMutationAdapter($em, $auth),
+        ]));
+    };
     $single = $service->prepare('mysql-harness-actor', ['entity' => 'Counter', 'action' => 'update', 'identifier' => $id, 'changes' => ['name' => 'Single']]);
     $runWorkers = static function (string $mode, array $ids) use ($tools, $root, &$workersReaped, &$interrupted, &$workerFailureClass, &$workerTimedOut): array {
         $tmp = sys_get_temp_dir().'/ns-agent-mysql-'.bin2hex(random_bytes(8));
@@ -393,6 +422,237 @@ try {
     $stage = 'product-category-hierarchy-race';
     $productCategoryHierarchy = $runHierarchyRace('ProductCategory', 'product-category-cycle', ProductCategory::class);
 
+    $stage = 'store-printing-fixture';
+    $em->clear();
+    $printingStore = new Store('mysql-harness-printing', 'MySQL Harness Printing Store');
+    $printingAccount = new PrinterAccount('MySQL harness printer account', 'mysql-harness-developer', 'synthetic-test-cipher-not-a-provider-key');
+    $printingDevice = new PrinterDevice($printingAccount, 'MySQL harness printer device', 'mysql-harness-serial', PrinterDevice::KIND_RECEIPT, $printingStore->getUuid());
+    $printingTemplate = new PrinterTemplate('MySQL harness receipt template', PrinterDevice::KIND_RECEIPT);
+    $printingDeviceUuid = $printingDevice->getUuid();
+    $printingTemplateUuid = $printingTemplate->getUuid();
+    $printingBase = static fn (bool $enabled, int $copies): array => [
+        'sentinel' => ['preserve' => 'printing-marker', 'nested' => ['flag' => true]],
+        'paymentRate' => 0.006,
+        'printing' => [
+            'order' => ['enabled' => $enabled, 'copies' => $copies,
+                'deviceUuid' => $printingDeviceUuid, 'templateUuid' => $printingTemplateUuid],
+            'legacyNote' => ['preserve' => 'printing-unknown-case'],
+        ],
+    ];
+    // Synthetic raw rows only: no provider registry, credential decrypt, or print job path is exercised.
+    $printingStore->setSettings($printingBase(false, 1));
+    $em->persist($printingStore);
+    $em->persist($printingAccount);
+    $em->persist($printingDevice);
+    $em->persist($printingTemplate);
+    $em->flush();
+    $printingStoreId = (string) $printingStore->getId();
+    $printingAccountId = (int) $printingAccount->getId();
+    $printingDeviceId = (int) $printingDevice->getId();
+    nsAgentAssertNoPrintJobs($pdo, 'before Store printing scenarios');
+
+    $stage = 'store-printing-same-prepare';
+    $em->clear();
+    $printingSameDraft = $service->prepare('mysql-harness-actor', ['entity' => 'StorePrinting', 'action' => 'update',
+        'identifier' => $printingStoreId, 'changes' => ['order' => ['enabled' => true, 'copies' => 2,
+            'deviceUuid' => $printingDeviceUuid, 'templateUuid' => $printingTemplateUuid]]]);
+    if (($printingSameDraft['identifier'] ?? null) !== $printingStoreId) throw new RuntimeException('Store printing proposal targeted the wrong Store.');
+    if (array_column($printingSameDraft['differences'], 'property') !== ['order']) {
+        throw new RuntimeException('Store printing proposal previewed unrelated configuration.');
+    }
+    $stage = 'store-printing-same-workers';
+    nsAgentAssertPrivateExecutionRows($pdo, 'printing-same');
+    $printingSameResults = $runWorkers('printing-same', array_fill(0, 4, $printingSameDraft['operationId']));
+    $stage = 'store-printing-same-results';
+    $printingSameStatuses = array_count_values(array_column($printingSameResults, 'status'));
+    if (($printingSameStatuses['succeeded'] ?? 0) !== 4) throw new RuntimeException('Shared Store printing proposal did not succeed for every worker.');
+    $stage = 'store-printing-same-execution-count';
+    if ($executionCount('printing-same', 4) !== 1) throw new RuntimeException('Shared Store printing proposal committed more than one adapter execution.');
+    $stage = 'store-printing-same-identifiers';
+    if (count(array_unique(array_column($printingSameResults, 'identifier'))) !== 1 || $printingSameResults[0]['identifier'] !== $printingStoreId) {
+        throw new RuntimeException('Shared Store printing proposal returned inconsistent targets.');
+    }
+    if (count(array_unique(array_column($printingSameResults, 'operationId'))) !== 1
+        || $printingSameResults[0]['operationId'] !== $printingSameDraft['operationId']) {
+        throw new RuntimeException('Shared Store printing proposal did not return one receipt identity.');
+    }
+    $stage = 'store-printing-same-connections';
+    $printingSameConnections = array_map(static fn (array $result): int => (int) ($result['connectionId'] ?? 0), $printingSameResults);
+    if (count(array_unique($printingSameConnections)) !== 4 || in_array(0, $printingSameConnections, true)) {
+        throw new RuntimeException('Shared Store printing workers did not use independent MySQL connections.');
+    }
+    $stage = 'store-printing-same-receipt';
+    $em->clear();
+    $printingSameReceipt = $em->find(AgentOperation::class, $printingSameDraft['operationId']);
+    if (!$printingSameReceipt instanceof AgentOperation || $printingSameReceipt->getStatus() !== 'succeeded'
+        || $printingSameReceipt->getTargetId() !== $printingStoreId) {
+        throw new RuntimeException('Shared Store printing proposal receipt was not succeeded.');
+    }
+    $stage = 'store-printing-same-settings';
+    $printingSameSettings = $em->find(Store::class, (int) $printingStoreId)->getSettings();
+    if (($printingSameSettings['printing']['order']['enabled'] ?? null) !== true
+        || ($printingSameSettings['printing']['order']['copies'] ?? null) !== 2
+        || ($printingSameSettings['printing']['order']['deviceUuid'] ?? null) !== $printingDeviceUuid
+        || ($printingSameSettings['printing']['order']['templateUuid'] ?? null) !== $printingTemplateUuid) {
+        throw new RuntimeException('Shared Store printing proposal did not persist the merged enabled case.');
+    }
+    if (nsAgentCanonicalizeHarnessValue($printingSameSettings['sentinel'] ?? null) !== nsAgentCanonicalizeHarnessValue(['preserve' => 'printing-marker', 'nested' => ['flag' => true]])
+        || nsAgentCanonicalizeHarnessValue($printingSameSettings['printing']['legacyNote'] ?? null) !== nsAgentCanonicalizeHarnessValue(['preserve' => 'printing-unknown-case'])
+        || ($printingSameSettings['paymentRate'] ?? null) !== 0.006) {
+        throw new RuntimeException('Shared Store printing proposal did not preserve unrelated settings.');
+    }
+    nsAgentAssertNoPrintJobs($pdo, 'after shared Store printing race');
+
+    $stage = 'store-printing-conflict-prepare';
+    $em->clear();
+    $printingStore = $em->find(Store::class, (int) $printingStoreId);
+    $printingStore->setSettings($printingBase(true, 2));
+    $em->flush();
+    $em->clear();
+    $printingConflictDrafts = [];
+    foreach ([3, 4, 5, 6] as $copies) {
+        $stage = 'store-printing-conflict-prepare-'.$copies;
+        $printingConflictDrafts[$copies] = $service->prepare('mysql-harness-actor', ['entity' => 'StorePrinting', 'action' => 'update',
+            'identifier' => $printingStoreId, 'changes' => ['order' => ['enabled' => true, 'copies' => $copies,
+                'deviceUuid' => $printingDeviceUuid, 'templateUuid' => $printingTemplateUuid]]]);
+        if (array_column($printingConflictDrafts[$copies]['differences'], 'property') !== ['order']) {
+            throw new RuntimeException('Independent Store printing proposal previewed unrelated configuration.');
+        }
+    }
+    $stage = 'store-printing-conflict-snapshot';
+    $printingConflictHashes = [];
+    foreach ($printingConflictDrafts as $draft) {
+        $operation = $em->find(AgentOperation::class, $draft['operationId']);
+        if (!$operation instanceof AgentOperation) throw new RuntimeException('Independent Store printing operation was not persisted.');
+        $printingConflictHashes[] = $operation->getBeforeHash();
+    }
+    if (count(array_unique($printingConflictHashes)) !== 1) {
+        throw new RuntimeException('Independent Store printing proposals were not prepared from one settings snapshot.');
+    }
+    $stage = 'store-printing-conflict-workers';
+    nsAgentAssertPrivateExecutionRows($pdo, 'printing-conflict');
+    $printingConflictResults = $runWorkers('printing-conflict', array_column($printingConflictDrafts, 'operationId'));
+    $stage = 'store-printing-conflict-results';
+    $printingConflictStatuses = array_count_values(array_column($printingConflictResults, 'status'));
+    if (($printingConflictStatuses['succeeded'] ?? 0) !== 1 || ($printingConflictStatuses['proposal_conflict'] ?? 0) !== 3) {
+        throw new RuntimeException('Independent Store printing proposals did not produce one winner and three conflicts.');
+    }
+    if ($executionCount('printing-conflict', 4) !== 1) throw new RuntimeException('Independent Store printing proposals committed more than one adapter execution.');
+    $printingConflictConnections = array_map(static fn (array $result): int => (int) ($result['connectionId'] ?? 0), $printingConflictResults);
+    if (count(array_unique($printingConflictConnections)) !== 4 || in_array(0, $printingConflictConnections, true)) {
+        throw new RuntimeException('Independent Store printing workers did not use independent MySQL connections.');
+    }
+    $printingConflictWinners = array_values(array_filter($printingConflictResults, static fn (array $result): bool => $result['status'] === 'succeeded'));
+    $printingWinningCopies = (int) ($printingConflictWinners[0]['copies'] ?? 0);
+    if (!in_array($printingWinningCopies, [3, 4, 5, 6], true)) throw new RuntimeException('Independent Store printing winner did not return its proposed copies.');
+    $em->clear();
+    $printingConflictSettings = $em->find(Store::class, (int) $printingStoreId)->getSettings();
+    if (($printingConflictSettings['printing']['order']['copies'] ?? null) !== $printingWinningCopies
+        || ($printingConflictSettings['printing']['order']['enabled'] ?? null) !== true
+        || ($printingConflictSettings['printing']['order']['deviceUuid'] ?? null) !== $printingDeviceUuid
+        || ($printingConflictSettings['printing']['order']['templateUuid'] ?? null) !== $printingTemplateUuid) {
+        throw new RuntimeException('Independent Store printing winner did not match the persisted merged settings.');
+    }
+    if (nsAgentCanonicalizeHarnessValue($printingConflictSettings['sentinel'] ?? null) !== nsAgentCanonicalizeHarnessValue(['preserve' => 'printing-marker', 'nested' => ['flag' => true]])
+        || nsAgentCanonicalizeHarnessValue($printingConflictSettings['printing']['legacyNote'] ?? null) !== nsAgentCanonicalizeHarnessValue(['preserve' => 'printing-unknown-case'])
+        || ($printingConflictSettings['paymentRate'] ?? null) !== 0.006) {
+        throw new RuntimeException('Independent Store printing proposals did not preserve unrelated sentinel settings.');
+    }
+    foreach ($printingConflictDrafts as $copies => $draft) {
+        if ($copies === $printingWinningCopies) continue;
+        $loser = $em->find(AgentOperation::class, $draft['operationId']);
+        if (!$loser instanceof AgentOperation || $loser->getStatus() !== 'pending') {
+            throw new RuntimeException('A losing Store printing proposal was not left pending.');
+        }
+    }
+    nsAgentAssertNoPrintJobs($pdo, 'after independent Store printing race');
+
+    $stage = 'store-printing-dependency-enabled-prepare';
+    $em->clear();
+    $printingStore = $em->find(Store::class, (int) $printingStoreId);
+    $printingStore->setSettings($printingBase(true, 2));
+    $em->flush();
+    $em->clear();
+    $printingManagedDevice = $em->find(PrinterDevice::class, $printingDeviceId);
+    if (!$printingManagedDevice instanceof PrinterDevice || $printingManagedDevice->getAccount()->getId() !== $printingAccountId) {
+        throw new RuntimeException('Store printing dependency fixture did not load the original account.');
+    }
+    $printingEnabledDraft = $service->prepare('mysql-harness-actor', ['entity' => 'StorePrinting', 'action' => 'update',
+        'identifier' => $printingStoreId, 'changes' => ['order' => ['copies' => 3]]]);
+    $printingManagedDevice = $em->find(PrinterDevice::class, $printingDeviceId);
+    if ($printingManagedDevice->getAccount()->getId() !== $printingAccountId) {
+        throw new RuntimeException('Managed identity map did not retain the old printer account after prepare.');
+    }
+    $printingSettingsBeforeWriter = nsAgentRawStoreSettings($pdo, (int) $printingStoreId);
+    $printingEnabledAccount = new PrinterAccount('MySQL harness enabled reassignment', 'mysql-harness-enabled-reassignment', 'synthetic-test-cipher-not-a-provider-key');
+    $em->persist($printingEnabledAccount);
+    $em->flush();
+    $printingEnabledAccountId = (int) $printingEnabledAccount->getId();
+    $pdo->prepare('UPDATE printer_device SET account_id = ? WHERE id = ?')->execute([$printingEnabledAccountId, $printingDeviceId]);
+    if ((int) nsAgentRawScalar($pdo, 'SELECT account_id FROM printer_device WHERE id = ?', [$printingDeviceId]) !== $printingEnabledAccountId) {
+        throw new RuntimeException('Independent writer did not reassign the printer device to the enabled account.');
+    }
+    $printingManagedDevice = $em->find(PrinterDevice::class, $printingDeviceId);
+    if ($printingManagedDevice->getAccount()->getId() !== $printingAccountId) {
+        throw new RuntimeException('Doctrine identity map was unexpectedly refreshed before the dependency commit.');
+    }
+    try {
+        $service->commit('mysql-harness-actor', $printingEnabledDraft['operationId']);
+        throw new RuntimeException('An enabled-account reassignment was committed from a stale proposal.');
+    } catch (ProposalConflictException) {
+    }
+    if (nsAgentRawStoreSettings($pdo, (int) $printingStoreId) !== $printingSettingsBeforeWriter) {
+        throw new RuntimeException('Store settings changed after an enabled-account dependency conflict.');
+    }
+    if ((int) nsAgentRawScalar($pdo, 'SELECT account_id FROM printer_device WHERE id = ?', [$printingDeviceId]) !== $printingEnabledAccountId) {
+        throw new RuntimeException('Enabled-account reassignment was not persisted by the independent writer.');
+    }
+    nsAgentAssertNoPrintJobs($pdo, 'after enabled-account reassignment conflict');
+    $pdo->prepare('UPDATE printer_device SET account_id = ? WHERE id = ?')->execute([$printingAccountId, $printingDeviceId]);
+    $service = $resetOperationService();
+
+    $stage = 'store-printing-dependency-disabled-prepare';
+    $printingStore = $em->find(Store::class, (int) $printingStoreId);
+    $printingManagedDevice = $em->find(PrinterDevice::class, $printingDeviceId);
+    if ($printingManagedDevice->getAccount()->getId() !== $printingAccountId) {
+        throw new RuntimeException('Store printing dependency fixture was not restored to the original account.');
+    }
+    $printingDisabledDraft = $service->prepare('mysql-harness-actor', ['entity' => 'StorePrinting', 'action' => 'update',
+        'identifier' => $printingStoreId, 'changes' => ['order' => ['copies' => 4]]]);
+    $printingManagedDevice = $em->find(PrinterDevice::class, $printingDeviceId);
+    if ($printingManagedDevice->getAccount()->getId() !== $printingAccountId) {
+        throw new RuntimeException('Managed identity map did not retain the old printer account after prepare.');
+    }
+    $printingSettingsBeforeWriter = nsAgentRawStoreSettings($pdo, (int) $printingStoreId);
+    $printingDisabledAccount = new PrinterAccount('MySQL harness disabled reassignment', 'mysql-harness-disabled-reassignment', 'synthetic-test-cipher-not-a-provider-key');
+    $em->persist($printingDisabledAccount);
+    $em->flush();
+    $printingDisabledAccountId = (int) $printingDisabledAccount->getId();
+    $pdo->prepare('UPDATE printer_device SET account_id = ? WHERE id = ?')->execute([$printingDisabledAccountId, $printingDeviceId]);
+    $pdo->prepare('UPDATE printer_account SET enabled = 0 WHERE id = ?')->execute([$printingDisabledAccountId]);
+    if ((int) nsAgentRawScalar($pdo, 'SELECT account_id FROM printer_device WHERE id = ?', [$printingDeviceId]) !== $printingDisabledAccountId
+        || (int) nsAgentRawScalar($pdo, 'SELECT enabled FROM printer_account WHERE id = ?', [$printingDisabledAccountId]) !== 0) {
+        throw new RuntimeException('Independent writer did not reassign the device to a disabled enabled-account.');
+    }
+    $printingManagedDevice = $em->find(PrinterDevice::class, $printingDeviceId);
+    if ($printingManagedDevice->getAccount()->getId() !== $printingAccountId) {
+        throw new RuntimeException('Doctrine identity map was unexpectedly refreshed before the dependency commit.');
+    }
+    try {
+        $service->commit('mysql-harness-actor', $printingDisabledDraft['operationId']);
+        throw new RuntimeException('A disabled actual printer account was committed from a stale proposal.');
+    } catch (ProposalConflictException) {
+    }
+    if (nsAgentRawStoreSettings($pdo, (int) $printingStoreId) !== $printingSettingsBeforeWriter) {
+        throw new RuntimeException('Store settings changed after a disabled-account dependency conflict.');
+    }
+    if ((int) nsAgentRawScalar($pdo, 'SELECT account_id FROM printer_device WHERE id = ?', [$printingDeviceId]) !== $printingDisabledAccountId
+        || (int) nsAgentRawScalar($pdo, 'SELECT enabled FROM printer_account WHERE id = ?', [$printingDisabledAccountId]) !== 0) {
+        throw new RuntimeException('Disabled-account dependency state was not preserved by the independent writer.');
+    }
+    nsAgentAssertNoPrintJobs($pdo, 'after disabled-account reassignment conflict');
+    $service = $resetOperationService();
+
     $stage = 'persisted-json-restore';
     $restoreChanges = ['description' => 'Restored multi-field JSON', 'sortOrder' => 37, 'name' => 'Restored Category'];
     $restoreTarget = $em->getRepository(Category::class)->findOneBy(['slug' => 'harness-category-cycle-A']);
@@ -406,7 +666,7 @@ try {
     $freshService = new AgentOperationService($freshEm, new MutationAdapterRegistry([new CategoryMutationAdapter($freshEm, $freshAuth)]));
     $restored = $freshService->restore('mysql-harness-actor', $restoreDraft['operationId']);
     if (count($restored['differences']) !== 3) throw new RuntimeException('Persisted reordered multi-field JSON restore failed.');
-    fwrite(STDOUT, "MySQL concurrency checks passed.\nSchema: {$schema}\nServer: ".(string) $identity['version'].' ('.(string) $identity['comment'].')'."\nIsolation: ".(string) $identity['isolation']."\nWorkers: 4 for Counter races; 2 per hierarchy race\nSame proposal: 4 succeeded; adapter execute count 1; one succeeded receipt and one target.\nIndependent snapshots: 1 succeeded, 3 proposal_conflict; adapter execute count 1; winner matched final name.\nCategory hierarchy: ".json_encode($categoryHierarchy)."; final hierarchy acyclic.\nProductCategory hierarchy: ".json_encode($productCategoryHierarchy)."; final hierarchy acyclic.\nPersisted reordered multi-field JSON: fresh-EntityManager restore passed.\n");
+    fwrite(STDOUT, "MySQL concurrency checks passed.\nSchema: {$schema}\nServer: ".(string) $identity['version'].' ('.(string) $identity['comment'].')'."\nIsolation: ".(string) $identity['isolation']."\nWorkers: 4 for Counter and Store printing races; 2 per hierarchy race\nSame proposal: 4 succeeded; adapter execute count 1; one succeeded receipt and one target.\nIndependent snapshots: 1 succeeded, 3 proposal_conflict; adapter execute count 1; winner matched final name.\nCategory hierarchy: ".json_encode($categoryHierarchy)."; final hierarchy acyclic.\nProductCategory hierarchy: ".json_encode($productCategoryHierarchy)."; final hierarchy acyclic.\nStore printing shared proposal: 4 succeeded; one receipt; committed adapter executions 1; independent MySQL connections 4.\nStore printing independent proposals: 1 succeeded, 3 proposal_conflict; committed adapter executions 1; winning copies ".$printingWinningCopies."; unrelated sentinel preserved.\nStore printing dependency freshness: enabled and disabled raw account reassignments produced proposal_conflict; Store settings unchanged; no print jobs or order requests.\nPrinterJob/PrinterOrderRequest rows: 0 before and 0 after the Store printing scenarios.\nPersisted reordered multi-field JSON: fresh-EntityManager restore passed.\nDirect operation-service/adapter validation with a ROLE_ADMIN authorization stub; no HTTP, provider, or print-job path.\n");
     $success = true;
     $kernel->shutdown();
 } catch (Throwable $error) {
@@ -455,7 +715,14 @@ if (isset($exit)) exit($exit);
 /** @return array<string, int> */
 function nsAgentHarnessCounterScenarios(): array
 {
-    return ['same' => 4, 'stale' => 4, 'category-cycle' => 2, 'product-category-cycle' => 2];
+    return ['same' => 4, 'stale' => 4, 'category-cycle' => 2, 'product-category-cycle' => 2,
+        'printing-same' => 4, 'printing-conflict' => 4];
+}
+
+/** Bounded known-phase allowlist: scenario names and their exact worker counts only. */
+function nsAgentHarnessCounterPhasePattern(): string
+{
+    return '/^(?:(?:same|stale|printing-same|printing-conflict)-[0-3]|(?:category-cycle|product-category-cycle)-[01])$/D';
 }
 
 function nsAgentHarnessCounterPhase(string $scenario, int $workerIndex): string
@@ -464,7 +731,11 @@ function nsAgentHarnessCounterPhase(string $scenario, int $workerIndex): string
     if (!is_int($workerCount) || $workerIndex < 0 || $workerIndex >= $workerCount) {
         throw new InvalidArgumentException('Invalid concurrency execution-counter worker identity.');
     }
-    return $scenario.'-'.$workerIndex;
+    $phase = $scenario.'-'.$workerIndex;
+    if (preg_match(nsAgentHarnessCounterPhasePattern(), $phase) !== 1) {
+        throw new InvalidArgumentException('Invalid concurrency execution-counter phase.');
+    }
+    return $phase;
 }
 
 /** @return list<string> */
@@ -477,26 +748,100 @@ function nsAgentHarnessCounterPhases(string $scenario): array
     return $phases;
 }
 
+function nsAgentAssertPrivateExecutionRows(PDO $pdo, string $scenario): void
+{
+    $workerCount = nsAgentHarnessCounterScenarios()[$scenario] ?? null;
+    if (!is_int($workerCount)) throw new InvalidArgumentException('Invalid concurrency execution-counter scenario.');
+    $phases = nsAgentHarnessCounterPhases($scenario);
+    $placeholders = implode(',', array_fill(0, count($phases), '?'));
+    $statement = $pdo->prepare('SELECT COUNT(*) FROM ns_agent_harness_executions WHERE phase IN ('.$placeholders.')');
+    $statement->execute($phases);
+    if ((int) $statement->fetchColumn() !== $workerCount) {
+        throw new RuntimeException('Execution-counter worker rows are not private to each scenario worker.');
+    }
+}
+
+function nsAgentCanonicalizeHarnessValue(mixed $value): mixed
+{
+    if (!is_array($value)) return $value;
+    if (array_is_list($value)) return array_map(nsAgentCanonicalizeHarnessValue(...), $value);
+    ksort($value, SORT_STRING);
+    foreach ($value as $key => $item) $value[$key] = nsAgentCanonicalizeHarnessValue($item);
+    return $value;
+}
+
+function nsAgentAssertNoPrintJobs(PDO $pdo, string $context): void
+{
+    foreach (['printer_job', 'printer_order_request'] as $table) {
+        if ((int) $pdo->query('SELECT COUNT(*) FROM `'.$table.'`')->fetchColumn() !== 0) {
+            throw new RuntimeException('Unexpected '.$table.' rows '.$context.'.');
+        }
+    }
+}
+
+function nsAgentRawStoreSettings(PDO $pdo, int $storeId): string
+{
+    $statement = $pdo->prepare('SELECT settings FROM store WHERE id = ?');
+    $statement->execute([$storeId]);
+    $value = $statement->fetchColumn();
+    $statement->closeCursor();
+    return is_string($value) ? $value : '';
+}
+
+/** @param list<int|string> $params */
+function nsAgentRawScalar(PDO $pdo, string $sql, array $params = []): mixed
+{
+    $statement = $pdo->prepare($sql);
+    $statement->execute($params);
+    $value = $statement->fetchColumn();
+    $statement->closeCursor();
+    return $value;
+}
+
 function nsAgentConcurrencyCounterSelfTest(): void
 {
+    $expectedScenarios = ['same' => 4, 'stale' => 4, 'category-cycle' => 2, 'product-category-cycle' => 2,
+        'printing-same' => 4, 'printing-conflict' => 4];
+    if (nsAgentHarnessCounterScenarios() !== $expectedScenarios) {
+        throw new RuntimeException('Execution-counter scenario allowlist changed unexpectedly.');
+    }
     $allPhases = [];
-    foreach (nsAgentHarnessCounterScenarios() as $scenario => $count) {
+    foreach ($expectedScenarios as $scenario => $count) {
         $phases = nsAgentHarnessCounterPhases($scenario);
         if (count($phases) !== $count || count(array_unique($phases)) !== $count) {
             throw new RuntimeException('Execution-counter worker phases are not unique within a scenario.');
         }
         foreach ($phases as $index => $phase) {
             if ($phase !== nsAgentHarnessCounterPhase($scenario, $index)) throw new RuntimeException('Execution-counter aggregation scope does not match worker phases.');
+            if (preg_match(nsAgentHarnessCounterPhasePattern(), $phase) !== 1) {
+                throw new RuntimeException('Execution-counter phase is outside the bounded known-phase allowlist.');
+            }
         }
         $allPhases = [...$allPhases, ...$phases];
     }
     if (count(array_unique($allPhases)) !== count($allPhases)) throw new RuntimeException('Execution-counter rows are shared across scenarios.');
-    foreach ([['same', 4], ['stale', 4], ['category-cycle', 2], ['product-category-cycle', 2]] as [$scenario, $count]) {
+    foreach ($expectedScenarios as $scenario => $count) {
         if (count(nsAgentHarnessCounterPhases($scenario)) !== $count) throw new RuntimeException('Execution-counter aggregate contains the wrong worker rows.');
+    }
+    foreach (['same-4', 'stale-4x', 'category-cycle-2', 'product-category-cycle-2', 'printing-same-4',
+        'printing-conflict-9', 'printing-same-00', 'arbitrary-phase-0', 'printing-same-0; DROP'] as $unsafePhase) {
+        if (preg_match(nsAgentHarnessCounterPhasePattern(), $unsafePhase) === 1) {
+            throw new RuntimeException('Execution-counter phase allowlist accepted an unknown phase.');
+        }
     }
     try {
         nsAgentHarnessCounterPhase('category-cycle', 2);
         throw new RuntimeException('Out-of-range execution-counter worker identity was accepted.');
+    } catch (InvalidArgumentException) {
+    }
+    try {
+        nsAgentHarnessCounterPhase('printing-same', 4);
+        throw new RuntimeException('Out-of-range printing execution-counter worker identity was accepted.');
+    } catch (InvalidArgumentException) {
+    }
+    try {
+        nsAgentHarnessCounterPhase('arbitrary-phase', 0);
+        throw new RuntimeException('Unknown execution-counter scenario was accepted.');
     } catch (InvalidArgumentException) {
     }
 }

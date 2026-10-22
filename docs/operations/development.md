@@ -59,23 +59,20 @@ Manual migrations retain Symfony's interactive confirmation. Migrations do not r
 
 ## Optional MySQL verification for the admin agent
 
-The backend test suite always runs against a temporary SQLite file. SQLite does not reproduce MySQL JSON key ordering or InnoDB row-lock contention, so the admin-agent operation protocol has portability risks that only a MySQL run exposes. Verify them against a **dedicated disposable schema**, never the development or production database: the shared integration test bootstrap calls `doctrine:schema:drop --full-database` before creating the schema.
-
-1. Create a dedicated schema and confirm the target name.
-2. Point `DATABASE_URL` for the test process at that schema and run the app backend tests, for example `apps/admin-agent/backend/tests`.
-3. Optionally exercise concurrent commits against a temporary loopback server using the same schema, then confirm one target record and one succeeded receipt.
-4. Drop the disposable schema and confirm the development database was untouched.
+The composed PHPUnit bootstrap forces a temporary SQLite file, overriding `DATABASE_URL`; setting that variable alone does not run the suite on MySQL. SQLite does not reproduce MySQL JSON key ordering or InnoDB row-lock contention. Use the guarded opt-in harness below for the bounded MySQL scenarios it implements, against a **dedicated disposable schema**, never the development or production database. Schema creation/drop is destructive; do not bypass the harness's target checks or substitute a configured application schema.
 
 This verification is manual and outside CI. Do not commit credentials, generated schema names, or test tokens. Record results as dated evidence for the environment actually tested, not as a production concurrency guarantee.
 
-For an opt-in Counter operation concurrency check, use the app-owned harness:
+For opt-in operation concurrency and JSON-portability checks, use the app-owned harness:
 
 ```sh
 php apps/admin-agent/backend/tools/mysql-concurrency.php --self-test
 php apps/admin-agent/backend/tools/mysql-concurrency.php
 ```
 
-The self-test is connection-free. The live run loads local development connection configuration internally without printing credentials, requires an IP loopback target, and uses a newly generated disposable schema rather than the configured application schema. It rejects connection-target query overrides, verifies Doctrine's effective target and database identity before application writes, bounds worker execution, and requires verified schema cleanup for success. It runs four-worker same-proposal and stale-proposal races and counts committed adapter executions transactionally, not every attempted invocation. This is direct operation-service/Counter-adapter validation with stubbed authorization, not an HTTP authentication or production-load test. Do not run it against production. Forced termination such as SIGKILL or host failure can prevent cleanup; an unverified cleanup is a failure and requires operator inspection of the reported disposable schema.
+The self-test is connection-free. The live run loads local development connection configuration internally without printing credentials, requires an IP loopback target, and uses a newly generated disposable schema rather than the configured application schema. It rejects connection-target query overrides, verifies Doctrine's effective target and database identity before application writes, bounds worker execution, and requires verified schema cleanup for success. Counter and StorePrinting run four-worker same-proposal and stale-proposal races; Category and ProductCategory run crossed hierarchy-move races. Other checks cover persisted JSON restoration and printing dependency changes made through an independent connection. Per-worker private instrumentation counts committed adapter executions, not every attempted invocation, without introducing a shared counter-row lock before the adapter. Printing scenarios assert that no print jobs or order requests are created; no provider is invoked.
+
+This is direct operation-service/adapter validation with stubbed authorization, not an HTTP authentication, production-load or universal nonparticipating-writer test. Record the actual revision/environment and cleanup result; see the [follow-up acceptance record](../sessions/2026-10-23-admin-agent-follow-up-acceptance.md). Do not run it against production. Forced termination such as SIGKILL or host failure can prevent cleanup; an unverified cleanup is a failure and requires operator inspection of the reported disposable schema.
 
 ## Debugging and validation
 
