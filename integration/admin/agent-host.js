@@ -52,7 +52,7 @@ export function createAdminAgentHost() {
       const timeout = setTimeout(() => {
         timedOut = true
         controller.abort()
-      }, 20000)
+      }, 60000)
       if (signal?.aborted) abortFromCaller()
       // Use the admin's authenticated GET client so existing session refresh,
       // locale, API base URL, and backend authorization remain authoritative.
@@ -60,7 +60,7 @@ export function createAdminAgentHost() {
       try {
         response = await request.get(query.path, { params: query.params, signal: controller.signal })
       } catch (error) {
-        if (timedOut) throw new Error('The read query timed out after 20 seconds.')
+        if (timedOut) throw new Error('The read query timed out after 60 seconds.')
         throw new Error(formatAdminReadError(error))
       } finally {
         clearTimeout(timeout)

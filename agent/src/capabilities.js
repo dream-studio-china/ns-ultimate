@@ -3,7 +3,7 @@ const SENSITIVE_PROPERTY = /password|secret|token|private.?key|certificate|crede
 const GENERIC_SENSITIVE_PROPERTY = /^(value|metadata|config|payload|body|content|extradata)$/i
 const MAX_FILTERS = 5
 const MAX_PAGE = 100
-const MAX_LIMIT = 20
+const MAX_LIMIT = 60
 const MAX_SELECT_FIELDS = 30
 const MAX_RESULT_CHARACTERS = 8000
 

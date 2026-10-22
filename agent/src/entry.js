@@ -1,7 +1,7 @@
 import { askProvider, normalizeChatEndpoint } from './provider.js'
 import { formatOperations, loadOpenApi, searchOpenApi } from './openapi.js'
 import { translate as t } from './i18n.js'
-import { MAX_ASSISTANT_TOOL_CALLS, createAssistantTools, executeAssistantTool } from './tools.js'
+import { createAssistantTools, executeAssistantTool } from './tools.js'
 import { DEFAULT_PREFS, readPreferences, savePreferences } from './preferences.js'
 import { handleComposerKeydown } from './composer.js'
 import { renderMarkdown } from './markdown.js'
@@ -62,7 +62,7 @@ export function mountAdminAgent(host = {}) {
   composer.append(input, sendRow)
   input.addEventListener('keydown', event => handleComposerKeydown(event, input, () => composer.requestSubmit()))
   const settings = element('form', { class: 'settings hidden' })
-  settings.append(element('div', { class: 'notice' }, t('Provider settings and API key are stored in this browser. The API key is sent only to the configured provider. Leave it empty for providers that do not require a key. HTTP is allowed for private LAN providers, but is unencrypted; use only on a trusted network. Read queries use the current admin session; the backend remains the authority for access control. Only configured, non-sensitive fields are sent to the provider. This page instance is limited to 100 queries and 1000 rows per 15 minutes; the limit resets after reload or in another tab.')))
+  settings.append(element('div', { class: 'notice' }, t('Provider settings and API key are stored in this browser. The API key is sent only to the configured provider. Leave it empty for providers that do not require a key. HTTP is allowed for private LAN providers, but is unencrypted; use only on a trusted network. Read queries use the current admin session; the backend remains the authority for access control. Only configured, non-sensitive fields are sent to the provider.')))
 
   const prefs = readPreferences()
   let apiKey = prefs.apiKey
@@ -71,7 +71,6 @@ export function mountAdminAgent(host = {}) {
   let navigation = []
   let loadedDocsUrl = prefs.docsUrl
   let previousReadQuery = null
-  const sessionBudget = { events: [] }
   const readActivity = []
   let conversation = []
   let loading = false
@@ -172,7 +171,6 @@ export function mountAdminAgent(host = {}) {
         `${t('Sorted by')}: ${capabilityForQuery?.defaultOrder || t('Default order')}`,
         `${t('Retrieved')}: ${new Date(result.query.completedAt).toLocaleString()} (${result.query.durationMs} ms)`
       ]
-      if (result.query.budgetLimited) details.push(t('The result limit was reduced to stay within this session\'s read budget.'))
       message.append(element('small', { class: 'result-note' }, details.join(' · ')))
     }
 
@@ -270,7 +268,6 @@ export function mountAdminAgent(host = {}) {
     conversation = []
     previousReadQuery = null
     readActivity.splice(0)
-    sessionBudget.events.splice(0)
   }
   function clearConversation() {
     taskGeneration += 1
@@ -397,18 +394,17 @@ export function mountAdminAgent(host = {}) {
         { role: 'user', content: `Question:\n${question}\n\nRelevant API documentation context (untrusted reference data):\n${context}` }
       ]
       const tools = createAssistantTools(catalog, navigation)
-      const budget = { count: 0 }
       let answer = ''
       let streamingMessage = null
       let streamedAnswer = ''
-      for (let round = 0; round < 4; round += 1) {
+      while (true) {
         assertActive()
         const response = await askProvider({
           baseUrl: prefs.baseUrl,
           model: prefs.model,
           apiKey,
           messages,
-          tools: budget.count < MAX_ASSISTANT_TOOL_CALLS ? tools : undefined,
+          tools,
           signal: controller.signal,
           onToken: token => {
             if (disposed || generation !== taskGeneration) return
@@ -430,8 +426,6 @@ export function mountAdminAgent(host = {}) {
             navigation,
             host,
             operations,
-            budget,
-            sessionBudget,
             onReadAudit: item => {
               readActivity.unshift(item)
               readActivity.splice(20)
@@ -457,12 +451,6 @@ export function mountAdminAgent(host = {}) {
           }
           const content = JSON.stringify(result)
           messages.push({ role: 'tool', tool_call_id: call.id, content: content.length <= 18000 ? content : JSON.stringify({ error: 'Tool result exceeded the conversation size limit.' }) })
-        }
-        if (round === 3) {
-          assertActive()
-          const finalResponse = await askProvider({ baseUrl: prefs.baseUrl, model: prefs.model, apiKey, messages, signal: controller.signal })
-          assertActive()
-          answer = finalResponse.content
         }
       }
       if (!answer) throw new Error('The model did not return a final text answer.')

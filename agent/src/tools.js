@@ -1,11 +1,6 @@
 import { prepareRecordQuery } from './capabilities.js'
 import { resolveAdminNavigation } from './navigation.js'
 
-const TOOL_BUDGET = 4
-const SESSION_QUERY_LIMIT = 100
-const SESSION_ROW_LIMIT = 1000
-const SESSION_WINDOW_MS = 15 * 60 * 1000
-
 export function createAssistantTools(catalog, navigation = []) {
   const readable = catalog.filter(item => item.readable)
   const tools = [{
@@ -52,7 +47,7 @@ export function createAssistantTools(catalog, navigation = []) {
           properties: {
             entity: { type: 'string', enum: readable.map(item => item.key) },
             page: { type: 'integer', minimum: 1, maximum: 100 },
-            limit: { type: 'integer', minimum: 1, maximum: 20 },
+            limit: { type: 'integer', minimum: 1, maximum: 60 },
             filters: {
               type: 'array',
               maxItems: 5,
@@ -77,7 +72,7 @@ export function createAssistantTools(catalog, navigation = []) {
   return tools
 }
 
-export async function executeAssistantTool({ call, catalog, navigation = [], host, operations, budget, sessionBudget = { events: [] }, onReadAudit = () => {}, signal, assertActive = () => {} }) {
+export async function executeAssistantTool({ call, catalog, navigation = [], host, operations, onReadAudit = () => {}, signal, assertActive = () => {} }) {
   if (!call || call.type !== 'function' || !call.function || typeof call.function.name !== 'string') {
     return { error: 'Unsupported tool call.' }
   }
@@ -117,32 +112,12 @@ export async function executeAssistantTool({ call, catalog, navigation = [], hos
     }
   }
   if (call.function.name !== 'query_records') return { error: 'This tool is not available.' }
-  if (budget.count >= TOOL_BUDGET) return { error: 'The read-query limit for this task has been reached.' }
-
   let input
   try { input = JSON.parse(call.function.arguments || '') } catch { return { error: 'Invalid query arguments.' } }
   let query
   try { query = prepareRecordQuery(input, catalog) } catch (error) { return { error: error.message || 'The query was rejected by policy.' } }
-  const now = Date.now()
-  if (!Array.isArray(sessionBudget.events)) sessionBudget.events = []
-  const cutoff = now - SESSION_WINDOW_MS
-  sessionBudget.events = sessionBudget.events.filter(event => Number.isFinite(event.at) && event.at > cutoff && event.at <= now)
-  const rowsUsed = sessionBudget.events.reduce((total, event) => total + (Number.isInteger(event.rows) && event.rows > 0 ? event.rows : 0), 0)
-  if (sessionBudget.events.length >= SESSION_QUERY_LIMIT || rowsUsed >= SESSION_ROW_LIMIT) {
-    return { error: 'The assistant session read budget has been reached. Try again after the 15-minute budget window resets.' }
-  }
-  const remainingRows = SESSION_ROW_LIMIT - rowsUsed
-  const requestedLimit = query.limit
-  if (query.limit > remainingRows) {
-    input.limit = remainingRows
-    query = prepareRecordQuery(input, catalog)
-  }
-  const budgetLimited = query.limit < requestedLimit
   assertActive()
   if (signal?.aborted) return { cancelled: true, message: 'The read query was cancelled.' }
-  budget.count += 1
-  const budgetEvent = { at: Date.now(), rows: 0 }
-  sessionBudget.events.push(budgetEvent)
   const startedAt = Date.now()
   const audit = metadata => {
     try {
@@ -161,7 +136,6 @@ export async function executeAssistantTool({ call, catalog, navigation = [], hos
       return { error: 'The read query returned an unsupported response.', failureType: 'invalid-response' }
     }
     const records = result.records.slice(0, query.limit)
-    budgetEvent.rows = records.length
     audit({ durationMs: Date.now() - startedAt, rows: records.length, outcome: 'success', failureType: null })
     return {
       ...result,
@@ -174,7 +148,6 @@ export async function executeAssistantTool({ call, catalog, navigation = [], hos
         limit: query.limit,
         durationMs: Date.now() - startedAt,
         completedAt: new Date().toISOString(),
-        budgetLimited,
         filters: (input.filters || []).map(filter => ({
           field: filter.field,
           operator: filter.operator ?? catalog.find(item => item.key === input.entity)?.filters.find(item => item.property === filter.field)?.operator,
@@ -191,5 +164,3 @@ export async function executeAssistantTool({ call, catalog, navigation = [], hos
     return { error: failureType === 'timeout' ? 'The read query timed out.' : failureType === 'authorization' ? 'The current account is not authorized to read this collection.' : failureType === 'cancelled' ? 'The read query was cancelled.' : 'The read query failed.', failureType }
   }
 }
-
-export const MAX_ASSISTANT_TOOL_CALLS = TOOL_BUDGET
