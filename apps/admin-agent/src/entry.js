@@ -9,7 +9,7 @@ import { toSafeCsv } from './export.js'
 import { trimConversation } from './conversation.js'
 import { createToolLoopGuard } from './tool-loop-guard.js'
 import { createPreparedChange } from './prepared-change.js'
-import { loadKnowledgeArticles, selectKnowledgeContext } from './knowledge.js'
+import { buildDocumentQuery, loadKnowledgeArticles, selectKnowledgeContext } from './knowledge.js'
 import { mountOperationHistory } from './operation-history.js'
 
 const MAX_MESSAGES = 16
@@ -559,13 +559,17 @@ export function mountAdminAgent(host = {}) {
     input.value = ''
     appendMessage('user', question)
     try { navigation = typeof host.getNavigationCatalog === 'function' ? host.getNavigationCatalog() : [] } catch { navigation = [] }
-    const matched = searchOpenApi(operations, question, 10)
+    const knowledgeArticles = await loadKnowledgeArticles(host)
+    // Select once to obtain host-owned English aliases, so a Chinese question can
+    // still match English API documentation, then reselect within the shared budget.
+    const initialKnowledge = selectKnowledgeContext(knowledgeArticles, question)
+    const matched = searchOpenApi(operations, buildDocumentQuery(question, initialKnowledge.searchTerms), 10)
     const context = matched.length
       ? formatOperations(matched)
       : 'No matching operation was found in the API document currently loaded in this session.'
     // Share the existing API-document context budget rather than appending a
     // second independent allowance of knowledge text to the provider request.
-    const knowledge = selectKnowledgeContext(await loadKnowledgeArticles(host), question, {
+    const knowledge = selectKnowledgeContext(knowledgeArticles, question, {
       maxContextCharacters: Math.max(0, 18000 - context.length)
     })
     const nextConversation = trimConversation([...conversation, { role: 'user', content: question }], MAX_MESSAGES, MAX_CONVERSATION_CHARACTERS)

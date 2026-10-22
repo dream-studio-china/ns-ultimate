@@ -2,6 +2,8 @@ export const MAX_KNOWLEDGE_SOURCE_ARTICLES = 200
 export const MAX_SELECTED_ARTICLES = 4
 export const MAX_EXCERPT_CHARACTERS = 2000
 export const MAX_CONTEXT_CHARACTERS = 8000
+export const MAX_CHUNK_CHARACTERS = 900
+export const MAX_SEARCH_TERMS = 6
 
 const MAX_ID_CHARACTERS = 120
 const MAX_TITLE_CHARACTERS = 200
@@ -14,6 +16,8 @@ const MAX_ALIASES = 20
 const MAX_ALIAS_CHARACTERS = 120
 const MAX_QUERY_TOKENS = 20
 const MAX_QUERY_BIGRAMS = 40
+const MAX_SECTION_CHARACTERS = 120
+const MAX_CHUNKS_PER_ARTICLE = 3
 
 function cleanText(value, maxLength) {
   if (typeof value !== 'string') return ''
@@ -100,10 +104,24 @@ function cjkBigrams(text) {
   return bigrams
 }
 
+function scoreText(text, aliasText, latin, bigrams, queryText, weight = 1) {
+  const body = text.toLocaleLowerCase()
+  let score = 0
+  for (const alias of aliasText) {
+    if (alias.length >= 2 && queryText.includes(alias)) score += 4 * weight
+  }
+  for (const token of latin) {
+    if (body.includes(token)) score += 3 * weight
+  }
+  for (const bigram of bigrams) {
+    if (body.includes(bigram)) score += 2 * weight
+  }
+  return score
+}
+
 function scoreArticle(article, latin, bigrams, queryText) {
   const title = article.title.toLocaleLowerCase()
   const aliasText = article.aliases.map(alias => alias.toLocaleLowerCase())
-  const body = article.content.toLocaleLowerCase()
   let score = 0
   for (const alias of aliasText) {
     if (alias.length >= 2 && queryText.includes(alias)) score += 4
@@ -111,38 +129,120 @@ function scoreArticle(article, latin, bigrams, queryText) {
   for (const token of latin) {
     if (title.includes(token)) score += 3
     else if (aliasText.some(alias => alias.includes(token))) score += 2
-    else if (body.includes(token)) score += 1
+    else if (article.content.toLocaleLowerCase().includes(token)) score += 1
   }
   for (const bigram of bigrams) {
     if (title.includes(bigram)) score += 2
     else if (aliasText.some(alias => alias.includes(bigram))) score += 2
-    else if (body.includes(bigram)) score += 1
+    else if (article.content.toLocaleLowerCase().includes(bigram)) score += 1
   }
   return score
 }
 
-function firstMatchPosition(contentLower, latin, bigrams, aliasText) {
-  let position = -1
-  const consider = index => {
-    if (index >= 0 && (position === -1 || index < position)) position = index
+/** Split a paragraph that exceeds one chunk at a sentence boundary when possible. */
+function splitLongParagraph(text, limit) {
+  const parts = []
+  let rest = text
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit)
+    const candidates = [window.lastIndexOf('. '), window.lastIndexOf('。'), window.lastIndexOf('; '), window.lastIndexOf('；')]
+      .filter(index => index >= Math.floor(limit * 0.5))
+    const cut = candidates.length ? Math.max(...candidates) + 1 : limit
+    parts.push(rest.slice(0, cut).trim())
+    rest = rest.slice(cut).trim()
   }
-  for (const token of latin) consider(contentLower.indexOf(token))
-  for (const bigram of bigrams) consider(contentLower.indexOf(bigram))
-  for (const alias of aliasText) {
-    if (alias.length >= 2) consider(contentLower.indexOf(alias))
-  }
-  return position
+  if (rest) parts.push(rest)
+  return parts.filter(Boolean)
 }
 
-export function excerptArticle(article, latin, bigrams) {
+/**
+ * Split article content into paragraph chunks. Markdown headings become section
+ * labels so a selected chunk stays readable without copying the whole article.
+ */
+export function chunkArticle(article) {
+  const blocks = []
+  let section = ''
+  for (const rawLine of article.content.split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const heading = /^#{1,6}\s+(.+)$/u.exec(line)
+    if (heading) {
+      section = cleanText(heading[1], MAX_SECTION_CHARACTERS)
+      continue
+    }
+    for (const part of splitLongParagraph(line, MAX_CHUNK_CHARACTERS)) blocks.push({ section, text: part })
+  }
+  const chunks = []
+  let current = null
+  for (const block of blocks) {
+    if (!current || current.section !== block.section
+      || current.text.length + block.text.length + 1 > MAX_CHUNK_CHARACTERS) {
+      if (current) chunks.push(current)
+      current = { section: block.section, text: block.text }
+    } else {
+      current.text += `\n${block.text}`
+    }
+  }
+  if (current) chunks.push(current)
+  return chunks
+}
+
+function chunkScore(chunk, aliasText, latin, bigrams, queryText) {
+  const sectionScore = chunk.section
+    ? scoreText(chunk.section, aliasText, latin, bigrams, queryText, 2)
+    : 0
+  return sectionScore + scoreText(chunk.text, aliasText, latin, bigrams, queryText)
+}
+
+function formatChunk(chunk) {
+  return chunk.section ? `${chunk.section}\n${chunk.text}` : chunk.text
+}
+
+/**
+ * Select the most relevant chunk of an article instead of cutting the content at
+ * an arbitrary character offset. Chunks end at a paragraph or sentence boundary.
+ */
+export function excerptArticle(article, latin, bigrams, queryText = '') {
   const content = article.content
-  if (content.length <= MAX_EXCERPT_CHARACTERS) return content
-  const contentLower = content.toLocaleLowerCase()
+  if (content.length <= MAX_CHUNK_CHARACTERS) return content
   const aliasText = article.aliases.map(alias => alias.toLocaleLowerCase())
-  const position = firstMatchPosition(contentLower, latin, bigrams, aliasText)
-  const start = position === -1 ? 0 : Math.max(0, position - 400)
-  const excerpt = content.slice(start, start + MAX_EXCERPT_CHARACTERS)
-  return `${start > 0 ? '…' : ''}${excerpt}${start + excerpt.length < content.length ? '…' : ''}`.slice(0, MAX_EXCERPT_CHARACTERS + 2)
+  const chunks = chunkArticle(article)
+  if (!chunks.length) return ''
+  const scored = chunks.map((chunk, index) => ({ chunk, index, score: chunkScore(chunk, aliasText, latin, bigrams, queryText) }))
+  const matched = scored.filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, MAX_CHUNKS_PER_ARTICLE)
+    .sort((a, b) => a.index - b.index)
+  const chosen = matched.length ? matched : [scored[0]]
+  let excerpt = ''
+  for (const item of chosen) {
+    const text = formatChunk(item.chunk)
+    if (excerpt && excerpt.length + text.length + 2 > MAX_EXCERPT_CHARACTERS) break
+    excerpt += `${excerpt ? '\n\n' : ''}${text}`
+  }
+  if (!excerpt) excerpt = formatChunk(chosen[0].chunk)
+  return excerpt.length <= MAX_EXCERPT_CHARACTERS ? excerpt : excerpt.slice(0, MAX_EXCERPT_CHARACTERS)
+}
+
+function latinAliases(article) {
+  const terms = []
+  for (const alias of article.aliases) {
+    for (const token of alias.match(/[A-Za-z][A-Za-z0-9_-]{2,}/g) || []) {
+      const cleaned = token.toLocaleLowerCase()
+      if (cleaned.length >= 3) terms.push(cleaned)
+    }
+  }
+  return terms
+}
+
+/** Build the API-document query, adding host-owned English aliases for non-English questions. */
+export function buildDocumentQuery(question, searchTerms = []) {
+  const base = String(question || '').trim()
+  const extra = [...new Set(searchTerms
+    .map(term => String(term || '').trim().toLocaleLowerCase())
+    .filter(term => /^[a-z0-9][a-z0-9_-]{2,}$/u.test(term)))]
+    .slice(0, MAX_SEARCH_TERMS)
+  return [base, ...extra].filter(Boolean).join(' ')
 }
 
 export function selectKnowledgeContext(articles, question, options = {}) {
@@ -156,7 +256,7 @@ export function selectKnowledgeContext(articles, question, options = {}) {
   const queryText = String(question || '').toLocaleLowerCase()
   const latin = latinTokens(queryText)
   const bigrams = cjkBigrams(queryText)
-  if (!latin.length && !bigrams.length) return { selected: [], references: [], contextText: '' }
+  if (!latin.length && !bigrams.length) return { selected: [], references: [], contextText: '', searchTerms: [] }
   const ranked = normalized
     .map(article => ({ article, score: scoreArticle(article, latin, bigrams, queryText) }))
     .filter(item => item.score > 0)
@@ -165,6 +265,7 @@ export function selectKnowledgeContext(articles, question, options = {}) {
       || a.article.id.localeCompare(b.article.id))
     .slice(0, maxArticles)
   const selected = []
+  const searchTerms = []
   let contextText = ''
   for (const { article } of ranked) {
     const remaining = maxContextCharacters - contextText.length
@@ -175,7 +276,7 @@ export function selectKnowledgeContext(articles, question, options = {}) {
     const separator = contextText ? '\n\n' : ''
     const availableExcerpt = remaining - separator.length - heading.length
     if (availableExcerpt < 1) break
-    let excerpt = excerptArticle(article, latin, bigrams)
+    let excerpt = excerptArticle(article, latin, bigrams, queryText)
     if (excerpt.length > availableExcerpt) excerpt = excerpt.slice(0, availableExcerpt)
     // Citation carries only validated display metadata (id/title/module/kind).
     // sourcePath is validated for provenance debugging but never rendered as
@@ -189,8 +290,9 @@ export function selectKnowledgeContext(articles, question, options = {}) {
       sourcePath: article.sourcePath,
       excerpt
     })
+    for (const term of latinAliases(article)) if (!searchTerms.includes(term)) searchTerms.push(term)
     contextText += `${separator}${heading}${excerpt}`
   }
   const references = selected.map(item => ({ id: item.id, title: item.title, module: item.module, kind: item.kind, sourcePath: item.sourcePath }))
-  return { selected, references, contextText }
+  return { selected, references, contextText, searchTerms: searchTerms.slice(0, MAX_SEARCH_TERMS) }
 }
