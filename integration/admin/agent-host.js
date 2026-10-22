@@ -4,6 +4,7 @@ import request from '@/utils/request'
 import router from '@/router'
 import previewPolicy from '../../apps/admin-agent/adapters/ns-ultimate/admin/preview-policy.mjs'
 import mutationCapabilities from '../../apps/admin-agent/adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createMutationHost } from '../../apps/admin-agent/src/mutation-host.js'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import { buildCapabilityCatalog, formatAdminReadError, prepareRecordQuery, sanitizeRecordResults } from '../../apps/admin-agent/src/capabilities.js'
@@ -34,6 +35,7 @@ export function createAdminAgentHost() {
     ...createMutationHost(request, `${defaultPrefix}/agent/operations`, mutationCapabilities),
     getWritePreviewPolicy() { return previewPolicy },
     getCatalog,
+    getKnowledgeArticles() { return knowledgeArticles },
     getNavigationCatalog() { return accessibleNavigation() },
     async navigateAdminPage(pageKey, identifier) {
       const target = resolveAdminNavigation(adminPages, pageKey, identifier)

@@ -91,6 +91,7 @@ export default {
   'Fetch next page of the previous query.': '继续查询上一条查询的下一页。',
   'Open': '打开',
   'Sources': '来源',
+  'Knowledge references': '知识参考',
   'Clear conversation': '清空对话和查询上下文',
   'Cancel current task': '取消当前任务',
   'Cancelling…': '正在取消…',

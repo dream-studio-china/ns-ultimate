@@ -69,6 +69,7 @@ export default {
   'Fetch next page of the previous query.': 'Fetch the next page of the previous query.',
   'Open': 'Open',
   'Sources': 'Sources',
+  'Knowledge references': 'Knowledge references',
   'Clear conversation': 'Clear conversation and query context',
   'Cancel current task': 'Cancel current task',
   'Cancelling…': 'Cancelling…',
