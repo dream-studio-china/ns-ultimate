@@ -8,7 +8,7 @@
 - `core/crud-skeleton/` — Symfony 后端，以 Git subtree 方式跟踪 `immane/crud-skeleton`。
 - `integration/` — 项目自有的应用组合层及 core 与业务模块之间的适配器。
 - `business/` — 所有项目特定的前后端业务功能。
-- `apps/` — 为具有独立运行或部署边界的项目预留；当前尚未接入现有工作流。
+- `apps/` — 应用包；`admin-agent/` 包含通用助手前后端，通过 integration 显式组合。
 - `docs/` — 架构、契约、运维流程和工作记录。
 - `infra/` — 项目自有部署资源（Docker Compose、PHP-FPM/Nginx、MySQL/Redis 拓扑）。
 
@@ -59,7 +59,7 @@ flowchart LR
         ID["Docker Compose、PHP-FPM 和 Nginx"]
     end
 
-    Apps["apps/ — 独立应用（预留）"]
+    Apps["apps/ — 应用包（admin-agent）"]
     Browser["浏览器"]
 
     BA --> IA --> CA
@@ -70,7 +70,7 @@ flowchart LR
     CB --> DB[("数据库")]
 ```
 
-业务模块拥有领域行为；集成层只负责接线。管理前端和 API 由不同的上游 core 构建，并组合为一个可部署应用。部署时，Nginx 在 `/admin/` 提供组合后的管理端静态构建，并将后端请求转发至 integration 前端控制器。`apps/` 用于预留独立项目，已从主应用 Docker 构建上下文排除，且现有工作流不会自动发现或运行其中的项目。详见[架构指南](docs/design/architecture.md)和[系统契约](docs/contracts/README.md)。
+业务模块拥有领域行为；集成层只负责接线。管理前端和 API 由不同的上游 core 构建，并组合为一个可部署应用。部署时，Nginx 在 `/admin/` 提供组合后的管理端静态构建，并将后端请求转发至 integration 前端控制器。`apps/admin-agent/` 已显式接入主应用组合、Docker 上下文和测试；其他应用不会被自动发现或部署。详见[架构指南](docs/design/architecture.md)和[系统契约](docs/contracts/README.md)。
 
 ## Store 商品字段
 

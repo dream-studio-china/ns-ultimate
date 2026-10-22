@@ -1,5 +1,7 @@
 # Independent applications
 
-This directory is reserved for self-contained projects that are independent of the main `business/` modules and the composed admin/API application. Add an application here only when it has a distinct runtime or deployment boundary; keep its source, dependencies, configuration, and operating instructions with that application.
+This directory owns self-contained application packages. A package may be embedded in the composed admin/API deployment or have its own runtime. Keep its source, dependencies, configuration, adapters and operating instructions together, and document its host dependencies explicitly.
 
-This is currently a placeholder. No existing integration, build, test, CI, or deployment workflow discovers, starts, or deploys applications under `apps/`. The main Docker build context explicitly excludes this directory. Build and operate any future app through its own documented workflow, or add deliberate project-level wiring. Product capabilities that extend the main application remain under `business/` and are composed through `integration/`.
+[`admin-agent/`](admin-agent/README.md) is an embeddable assistant app package: it owns its generic frontend, Symfony operation backend, and separate host-specific adapters and capability policies. Integration explicitly selects the adapters and composes the app; Docker and CI include it. It is not a new network service. Agent features reuse existing domain models and validation without adding code to `business/` or `core/`.
+
+Other apps are not automatically discovered, built, tested, or deployed. Add explicit wiring and an operations guide before relying on a new app. The Docker context continues to exclude other app directories by default.

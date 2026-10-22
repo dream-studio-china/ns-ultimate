@@ -1,7 +1,7 @@
 # Documentation
 
 - [`../LICENSE`](../LICENSE) — MIT license for project-owned code outside `core/`.
-- [`../apps/README.md`](../apps/README.md) — reserved location and boundary for future independent applications.
+- [`../apps/README.md`](../apps/README.md) — application packages and their explicit integration boundaries.
 - [`../README.zh-cn.md`](../README.zh-cn.md) — project overview in Simplified Chinese.
 - [`../QUICKSTART.md`](../QUICKSTART.md) — local prerequisites, setup, development, and tests.
 - [`../QUICKSTART.zh-cn.md`](../QUICKSTART.zh-cn.md) — Quickstart in Simplified Chinese.
@@ -12,7 +12,7 @@
 - [`.github/workflows/ci.yaml`](../.github/workflows/ci.yaml) — CI scope and project composition checks.
 - [`design/architecture.md`](design/architecture.md) — project layers and deployment infrastructure ownership.
 - [`design/admin-ai-assistant.md`](design/admin-ai-assistant.md) — config-first assistant design, current implementation status, security boundaries, storage, and future core migration.
-- [`../agent/README.md`](../agent/README.md) — current assistant prototype status, setup, and validation commands.
+- [`../apps/admin-agent/README.md`](../apps/admin-agent/README.md) — assistant app status, setup, and validation commands.
 - [`design/`](design/) — architecture and design decisions.
 - [`contracts/`](contracts/) — cross-layer interface specifications and their validation status.
 - [`operations/`](operations/) — repository workflows, including subtree synchronization.
