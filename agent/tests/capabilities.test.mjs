@@ -55,7 +55,8 @@ test('validates query bounds and compiles only configured scalar filters', () =>
   assert.equal(query.params['@filter'], 'entity.getName() matches "West \\"counter\\"" && entity.getEnabled() == true')
   assert.equal(query.params['@order'], 'entity.id|DESC')
   assert.throws(() => prepareRecordQuery({ entity: 'Counter', filters: [{ field: 'status', value: 'active' }] }, catalog), /not allowed/)
-  assert.throws(() => prepareRecordQuery({ entity: 'Counter', limit: 21 }, catalog), /Limit/)
+  assert.equal(prepareRecordQuery({ entity: 'Counter', limit: 60 }, catalog).limit, 60)
+  assert.throws(() => prepareRecordQuery({ entity: 'Counter', limit: 61 }, catalog), /Limit/)
   assert.throws(() => prepareRecordQuery({ entity: 'Unsupported' }, catalog), /no approved/)
 })
 
