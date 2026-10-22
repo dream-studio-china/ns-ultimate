@@ -1,7 +1,8 @@
 import { prepareRecordQuery } from './capabilities.js'
 import { resolveAdminNavigation } from './navigation.js'
+import { createWritePreview } from './write-preview.js'
 
-export function createAssistantTools(catalog, navigation = []) {
+export function createAssistantTools(catalog, navigation = [], previewPolicy = {}, writeCapabilities = []) {
   const readable = catalog.filter(item => item.readable)
   const tools = [{
     type: 'function',
@@ -69,12 +70,67 @@ export function createAssistantTools(catalog, navigation = []) {
       }
     })
   }
+  if (Object.keys(previewPolicy).length) tools.push({
+    type: 'function',
+    function: {
+      name: 'preview_record_update',
+      description: `Produce an unsaved single-record update preview only when the user asks to change a record. No write is performed. First query the target and use its exact ID/UUID. Allowed fields: ${JSON.stringify(previewPolicy)}. Never invent old values or claim a change was saved.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          entity: { type: 'string', enum: Object.keys(previewPolicy) },
+          identifier: { type: 'string' },
+          changes: { type: 'object', description: 'Explicit proposed values for allowlisted fields only.' }
+        },
+        required: ['entity', 'identifier', 'changes'], additionalProperties: false
+      }
+    }
+  })
+  if (writeCapabilities.length) tools.push({
+    type: 'function',
+    function: {
+      name: 'prepare_record_change',
+      description: `Prepare a server-validated single-record change ONLY when the user explicitly requests a write. Nothing is saved to the target until the user clicks confirmation in the UI. Never claim success from preparation. Use an exact ID/UUID for update/delete, ask for clarification if ambiguous, and never invent relation IDs. Supported policy: ${JSON.stringify(writeCapabilities)}`,
+      parameters: {
+        type: 'object', properties: {
+          entity: { type: 'string', enum: writeCapabilities.map(item => item.entity) },
+          action: { type: 'string', enum: ['create', 'update', 'delete'] },
+          identifier: { type: 'string', description: 'Exact target numeric ID or UUID. Omit for create.' },
+          changes: { type: 'object', description: 'Explicit allowlisted field values; omit for delete.' }
+        }, required: ['entity', 'action'], additionalProperties: false
+      }
+    }
+  })
   return tools
 }
 
-export async function executeAssistantTool({ call, catalog, navigation = [], host, operations, onReadAudit = () => {}, signal, assertActive = () => {} }) {
+export async function executeAssistantTool({ call, catalog, navigation = [], previewPolicy = {}, snapshots = new Map(), host, operations, onReadAudit = () => {}, onPreparedChange = () => {}, signal, assertActive = () => {} }) {
   if (!call || call.type !== 'function' || !call.function || typeof call.function.name !== 'string') {
     return { error: 'Unsupported tool call.' }
+  }
+  if (call.function.name === 'prepare_record_change') {
+    assertActive()
+    if (signal?.aborted) return { error: 'The operation was cancelled.' }
+    if (typeof host?.prepareRecordChange !== 'function') return { error: 'Change preparation is unavailable.' }
+    try {
+      const input = JSON.parse(call.function.arguments || '')
+      const preview = await host.prepareRecordChange(input, signal)
+      assertActive()
+      if (signal?.aborted) return { error: 'The operation was cancelled.' }
+      if (!preview || preview.saved !== false || !Array.isArray(preview.differences)) return { error: 'Unsupported prepared change response.' }
+      onPreparedChange(preview)
+      // Execution identifiers and full before/after values stay in the host/UI boundary.
+      return { prepared: true, saved: false, entity: preview.entity, action: preview.action, identifier: preview.identifier,
+        affectedRecords: 1, message: 'Awaiting explicit UI confirmation. No target data has been changed.' }
+    } catch {
+      return { error: 'Change preparation failed. Check the displayed server error, permissions and field values. Nothing was submitted for execution.' }
+    }
+  }
+  if (call.function.name === 'preview_record_update') {
+    assertActive()
+    if (signal?.aborted) return { error: 'The preview was cancelled.' }
+    try { return createWritePreview(JSON.parse(call.function.arguments || ''), previewPolicy, snapshots) }
+    catch (error) { return { error: error.message || 'The update preview was rejected.' } }
   }
   if (call.function.name === 'list_entities') {
     let args

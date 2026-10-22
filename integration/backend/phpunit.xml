@@ -7,6 +7,7 @@
     <testsuites>
         <testsuite name="Business integration">
             <directory>tests</directory>
+            <directory>../../apps/admin-agent/backend/tests</directory>
             <directory>../../business/backend/Common/tests/Integration</directory>
             <directory>../../business/backend/Dummy/tests/Integration</directory>
             <directory>../../business/backend/Counter/tests/Integration</directory>

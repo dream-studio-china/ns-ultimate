@@ -15,7 +15,7 @@ final class RemoveBusinessControllerRouteTagsPass implements CompilerPassInterfa
             $class = $definition->getClass();
             if (
                 is_string($class)
-                && str_starts_with($class, 'NsUltimate\\Business\\')
+                && (str_starts_with($class, 'NsUltimate\\Business\\') || str_starts_with($class, 'NsUltimate\\Apps\\AdminAgent\\Backend\\'))
                 && $definition->hasTag('routing.controller')
             ) {
                 $definition->clearTag('routing.controller');

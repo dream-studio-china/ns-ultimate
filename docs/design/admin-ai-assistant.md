@@ -1,10 +1,10 @@
 # Config-first admin AI assistant
 
-**Status: Read-only prototype implemented. It includes the independent launcher, locally persisted provider preferences and API key, same-origin OpenAPI lookup, config-first entity/field catalog, bounded authenticated GET queries without per-query confirmation, allowlisted navigation, and local CSV export. Client-side safeguards include sensitive-name filtering, type-checked filters, query/time/session budgets, bounded provider context, and session-only metadata diagnostics. Backend field-level authorization and tamper-resistant assistant audit are not implemented by this module and remain deployment/backend responsibilities. The admin-operation bridge, mutation policy, and full task execution remain unimplemented.**
+**Status: Read/query/navigation prototype and a user-confirmed single-record Content create/update/delete workflow are implemented. Operations use the app-owned preparation/commit protocol and explicitly selected host adapter with account binding, expiry, conflict checks and idempotent receipts; a database migration is required. Other entities remain read-only or preview-only. Client safeguards include field filtering, typed filters, single-request time/page limits, cancellation, loop protection and bounded provider context. Fine-grained backend field grants, cryptographically tamper-proof auditing, automatic/countdown submission and bulk operations remain unimplemented. Real-browser and production-database concurrency verification remain outstanding.**
 
 ## 1. Purpose and agreed scope
 
-Build an assistant embedded in the admin web application. Develop it independently under a root-level `agent/` directory so that its generic functionality can later move into the admin core without carrying project-specific business rules.
+Build an assistant embedded in the admin web application. Package its generic frontend and Symfony operation backend together under `apps/admin-agent/`, with host-specific adapters isolated from generic code. Integration explicitly composes the package and selects adapters. Agent-specific policies, implementations and tests stay in the app, reusing existing domain entities and validation without adding agent code to business modules or core.
 
 The assistant can understand the API documentation, query approved read-only endpoints, and perform controlled operations through existing admin functionality. The model must not receive a general HTTP client, arbitrary JavaScript execution, or direct access to write endpoints.
 
@@ -51,7 +51,7 @@ LLM provider receives only approved descriptions and minimized context.
 Proposed module layout:
 
 ```text
-agent/
+apps/admin-agent/
   src/
     assistant/             Conversation and bounded task execution
     capabilities/          Serializable capability descriptions and validation
@@ -62,6 +62,12 @@ agent/
     adapters/crud-admin/   Configuration and component integration
   tests/
   package.json
+  backend/
+    src/                   Generic lifecycle, operation entity and adapter contracts
+    config/                Symfony service registration
+    migrations/            Shared operation table, not per-domain tables
+    tests/                 Generic lifecycle and migration verification
+    composer.json
 ```
 
 These are responsibility boundaries, not a requirement to create empty directories or a framework before they are needed.
@@ -191,6 +197,10 @@ Cancellation prevents future work. Once submission has started, cancelling the c
 
 ## 8. Risk policy, preview, and submission
 
+**Implemented generic workflow:** the app owns a shared operation lifecycle and `AgentOperation` entity for registered adapters. The current host enables Content create/update/delete through an app-owned ns-ultimate adapter explicitly selected by integration, only after explicit UI confirmation. The model has no submission tool. Operations bind owner, payload, expiry and idempotent execution; adapters reuse existing domain validation and own target conflict checks. Other entities remain read-only or preview-only. See the [contract and remaining limits](../contracts/admin-agent.md). The broader automatic/countdown and bulk policies below are still proposals, not enabled behavior.
+
+**Implemented phase-one exception:** `preview_record_update` is an unsaved, single-record preview, currently enabled only for `Counter.name` by the app-owned host preview policy. It uses the latest sanitized query page in the current task and an exact ID/UUID; missing, ambiguous or potentially truncated before-values are rejected. Only local required/type/length checks run. Backend permissions, business rules and freshness are not validated. No execution grant, confirmation transition, countdown, editor mutation or submission exists. The lifecycle and submission policies below remain design targets, not implemented behavior.
+
 ### 8.1 Deterministic classification
 
 Classify each action as `automatic`, `confirmation_required`, or `blocked` using host policy. Unknown actions and fields are never automatically classified as low-risk. The model may explain a classification but cannot lower it.
@@ -284,11 +294,11 @@ Do not render model HTML unsafely. Apply content-security-policy-compatible load
 
 ## 11. Build, deployment, and operational behavior
 
-The proposed `agent/package.json` owns assistant dependencies and test commands. Select and lock compatible tooling during implementation. Reuse the host Vue runtime rather than bundling a second incompatible copy. Explicitly configure dependency resolution, JSX/SFC transformation, development file access, watch behavior, and production asset inclusion for sources outside the current core root.
+`apps/admin-agent/package.json` owns frontend test commands; `backend/composer.json` describes compatible Symfony/Doctrine requirements. This repository uses the existing locked backend runtime rather than installing a second copy. The current UI uses DOM modules rather than a second Vue runtime. Integration configures development file access and production asset inclusion outside the core root.
 
 Use integration-owned loading, preferably a lazy entry, with an explicit feature flag that contains no secrets. Do not edit the core HTML or bootstrap. Verify that the actual loader can obtain a supported authenticated host context; HTML injection by itself does not provide router/store access. If this cannot be established without forbidden hooks, leave the feature disabled and report the integration gap.
 
-Production paths must respect the composed `/admin/` base and its asset routing. Review Docker build context and COPY rules before assuming `agent/` reaches the image. Existing CI does not automatically discover assistant tests. Add deliberate build/test coverage when runtime code is introduced, following [development and validation](../operations/development.md).
+Production paths respect the composed `/admin/` base and asset routing. Docker explicitly includes `apps/admin-agent/` while excluding other app packages. CI and project scripts run frontend tests at the new path; the integration PHPUnit suite includes app backend tests. App autoloading, services, routes, mappings and migrations are registered explicitly, not through business-module discovery. See [development and validation](../operations/development.md).
 
 Loading failure, invalid provider configuration, or provider downtime must leave admin navigation, editing, and authentication functional. Feature disablement must be a sufficient rollback for assistant behavior without a database migration. There is no new backend service in the baseline design.
 

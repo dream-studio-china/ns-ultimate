@@ -8,7 +8,7 @@ Integrated application built from two upstream cores and project-owned business 
 - `core/crud-skeleton/` — Symfony backend, tracked as a Git subtree of `immane/crud-skeleton`.
 - `integration/` — project-owned application wiring and adapters between core and business modules.
 - `business/` — all project-specific frontend and backend business functionality.
-- `apps/` — placeholder for independent applications with separate runtime/deployment boundaries; not currently wired into project workflows.
+- `apps/` — application packages; `admin-agent/` contains the generic assistant frontend and backend, explicitly composed through integration.
 - `docs/` — architecture, contracts, operations, and work records.
 - `infra/` — project-owned deployment assets (Docker Compose, PHP-FPM/Nginx, MySQL/Redis topology).
 
@@ -60,7 +60,7 @@ flowchart LR
         ID["Docker Compose, PHP-FPM and Nginx"]
     end
 
-    Apps["apps/ — independent applications (reserved)"]
+    Apps["apps/ — application packages (admin-agent)"]
     Browser["Browser"]
 
     BA --> IA --> CA
@@ -71,7 +71,7 @@ flowchart LR
     CB --> DB[("Database")]
 ```
 
-Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. In deployment, Nginx serves the composed admin build at `/admin/` and routes backend requests to the integration front controller. `apps/` is reserved for independent projects, excluded from the main Docker build context, and not currently discovered or run by existing workflows. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
+Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. In deployment, Nginx serves the composed admin build at `/admin/` and routes backend requests to the integration front controller. The `apps/admin-agent/` package is explicitly included in this composition, Docker context and tests; other apps are not automatically discovered or deployed. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
 
 ## Store Product fields
 

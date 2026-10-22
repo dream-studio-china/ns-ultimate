@@ -4,7 +4,9 @@
 
 ```text
 business/admin router + config ──> integration/admin config injection ──> core admin
-agent/ optional assistant ─────────> integration/admin loader + host adapter ─> core admin
+apps/admin-agent frontend ───────> integration/admin loader + host adapter ─> core admin
+apps/admin-agent operation backend <── app-owned host mutation adapters
+                 └──────────────> integration/backend explicit app wiring ─> core Symfony app
 business/backend modules ───────> integration/backend Kernel ──────────> core Symfony app
                                            ▲
                               infra/docker Nginx + PHP-FPM
@@ -22,11 +24,11 @@ Owns all application-specific behavior, including frontend pages/components, men
 
 ### `apps/`
 
-Reserved for self-contained applications with a distinct runtime or deployment boundary. It currently contains only a placeholder and is not discovered, built, tested, or run by the main application's integration, CI, or deployment workflows; it is also excluded from the main Docker build context. Keep product capabilities of the composed admin/API application in `business/`; add an app-specific build/operations workflow or explicit integration before using an independent app.
+Owns application packages. `apps/admin-agent/` is explicitly composed into the admin/API deployment and included in CI and Docker; other app directories remain excluded and are not automatically discovered. This establishes a frontend/backend ownership boundary, not an additional network service. General domain models and rules stay in business modules; agent-specific host bindings stay in the app's separate adapter directories and reuse those existing models and validation.
 
-### `agent/`
+### `apps/admin-agent/`
 
-Contains the independent, optional admin AI assistant prototype. Its generic UI, provider integration, and documentation processing are kept separate from `business/`; `integration/admin/` owns the loader and the narrow adapter to the current admin authentication context. The assistant is not a separate runtime or deployment boundary. See the [assistant design and implementation status](admin-ai-assistant.md) and [prototype usage](../../agent/README.md).
+Contains the optional assistant's generic UI, provider/documentation processing, and Symfony operation lifecycle. One app-owned `AgentOperation` entity serves all registered mutation adapters; it does not create one operation table per business entity. Host-specific frontend policies live in `adapters/ns-ultimate/admin/`; backend bindings live in `backend/src/Adapter/NsUltimate/`, separate from generic code. Integration explicitly selects adapters, registers the namespace, services, routes, Doctrine mapping and migrations, and supplies account identity. No agent implementation is added to business modules or core; adapters reuse existing entities and validation. See the [assistant design](admin-ai-assistant.md), [app guide](../../apps/admin-agent/README.md), and [operation contract](../contracts/admin-agent.md).
 
 ### `integration/`
 
