@@ -118,16 +118,19 @@ The integration Kernel uses repository-level `var/cache/backend/` for cache. Pro
 Run commands as the release user with production variables available to the CLI, or use the linked `.env.prod.local`:
 
 ```sh
+APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console cache:clear --no-warmup
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console about
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console debug:router
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console doctrine:migrations:status
-APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console cache:clear
 ```
+
+Refresh the production container before inspecting migrations: with `APP_DEBUG=0`, an old cached container can retain the previous migration namespaces and omit a newly registered app migration. Defer optional cache warmers until after migration. The in-place deployment script follows this order as well; it does not update the Git checkout for you.
 
 Review the database host/schema, pending migrations, backups, and rollback plan before applying any schema change. Apply migrations as a deliberate release operation, with an authorized operator and a verified backup:
 
 ```sh
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console doctrine:migrations:migrate --no-interaction
+APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console cache:clear
 ```
 
 Create the production administrator explicitly after migrations; never use the development initializer:

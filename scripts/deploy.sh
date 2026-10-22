@@ -21,7 +21,7 @@ Usage: bash scripts/deploy.sh (--frontend | --backend | --all) [--help]
 
 Select exactly one deployment mode:
   --frontend  Build the admin, and publish dist/admin only.
-  --backend   Install production PHP dependencies, run migrations,
+  --backend   Install production PHP dependencies, refresh container cache, run migrations,
               install Symfony assets, and clear the production cache.
   --all       Build and deploy both frontend and backend, and run migrations.
 
@@ -152,6 +152,12 @@ if [[ "$MODE" != frontend ]]; then
   install -d -o "$PHP_FPM_USER" -g "$PHP_FPM_GROUP" -m 0750 "$cache_dir"
   chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$cache_dir"
   chmod -R u+rwX "$cache_dir"
+
+  # Production does not track container configuration changes. Rebuild it before
+  # discovering migrations, including newly registered app or business namespaces.
+  # Defer optional cache warmers until the database schema has been migrated.
+  printf '\nRefreshing the production container before migration discovery:\n'
+  run_console cache:clear --no-warmup
 
   printf '\nMigration status for the configured production database:\n'
   run_console doctrine:migrations:status

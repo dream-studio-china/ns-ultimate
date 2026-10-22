@@ -118,16 +118,19 @@ chmod 0640 /etc/ns-ultimate/keys/private.pem /etc/ns-ultimate/keys/public.pem
 以发布用户身份执行命令，并确保生产变量已提供；也可以通过链接的 `.env.prod.local` 加载：
 
 ```sh
+APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console cache:clear --no-warmup
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console about
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console debug:router
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console doctrine:migrations:status
-APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console cache:clear
 ```
+
+检查迁移前先刷新生产容器：在 `APP_DEBUG=0` 时，旧容器缓存可能仍使用原来的迁移命名空间，遗漏新注册的 app 迁移。可选的缓存预热应留到迁移完成后。原地部署脚本也遵循该顺序，但不会替你更新 Git checkout。
 
 应用任何数据库变更前，检查数据库主机和 schema、待执行迁移、数据库备份和回滚方案。迁移应作为明确的发布步骤，由获授权的操作人员在确认备份有效后执行：
 
 ```sh
 APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console doctrine:migrations:migrate --no-interaction
+APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console cache:clear
 ```
 
 迁移完成后，使用生产集成控制台显式创建管理员；不要使用开发初始化脚本：
