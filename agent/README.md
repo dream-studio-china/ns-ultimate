@@ -1,10 +1,12 @@
 # Admin AI assistant (initial prototype)
 
-The assistant is an independent, optional frontend module. The current prototype provides a floating panel, locally persisted provider preferences and API key, automatic same-origin OpenAPI documentation loading on mount, config-first entity discovery, bounded authenticated read-only collection queries, Markdown-rendered assistant replies (including GFM-style tables), and streamed documentation-grounded chat with an OpenAI Chat Completions-compatible endpoint.
+The assistant is an independent, optional frontend module. It provides a floating panel, locally persisted provider preferences and API key, automatic same-origin OpenAPI documentation loading on mount, config-first entity discovery, bounded authenticated read-only collection queries, allowlisted navigation to registered admin lists and record detail views, Markdown-rendered assistant replies (including GFM-style tables), and streamed documentation-grounded chat with an OpenAI Chat Completions-compatible endpoint.
 
-Bounded record queries run without per-query confirmation. Queries are limited to documented GET collection endpoints that also match the composed admin entity config; arbitrary URLs, filter expressions, and write methods are unavailable. Returned fields are projected from safe list columns and sensitive property names/types are excluded. Query results are sent to the configured model provider, as are the user's question and matching API-documentation excerpts.
+Bounded record queries run without per-query confirmation. Queries are limited to documented GET collection endpoints that also match the composed admin entity config; text filters use substring matching, configured select filters use exact equality, and pagination is capped at 20 rows per request. Arbitrary URLs, filter expressions, and write methods are unavailable. Returned fields are projected from safe list columns and sensitive property names/types are excluded. Results are shown in a bounded table, include total/next-page metadata when available, and are sent to the configured model provider, as are the user's question and matching API-documentation excerpts.
 
-It does **not** execute admin actions. It has no write API client. Do not treat this prototype as an operational agent for modifying production data.
+Navigation is available only when explicitly requested by the user and only to registered list pages or read-only record detail routes. It does not open create/edit routes or arbitrary URLs.
+
+It does **not** execute admin actions. It has no write API client. Do not treat this assistant as an agent for modifying production data.
 
 ## Enable or disable
 

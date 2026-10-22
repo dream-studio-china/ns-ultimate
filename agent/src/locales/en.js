@@ -7,5 +7,14 @@ export default {
   'Settings saved for this page only; browser storage is unavailable.': 'Settings saved for this page only; browser storage is unavailable.',
   'API key cleared from this browser.': 'API key cleared from this browser.',
   'API key cleared for this page only.': 'API key cleared for this page only.',
-  'Forget session API key': 'Clear saved API key'
+  'Forget session API key': 'Clear saved API key',
+  'Read query failed': 'Read query failed',
+  'Read-only query: {entity} — page {page}, {count} records': 'Read-only query: {entity} — page {page}, {count} records',
+  '{total} total': '{total} total',
+  'more pages available': 'more pages available',
+  'Showing the first {count} fields.': 'Showing the first {count} fields.',
+  'API docs, bounded read-only queries, and safe page navigation; no admin writes': 'API docs, bounded read-only queries, and safe page navigation; no admin writes',
+  'Opened admin page: {title}{record}': 'Opened admin page: {title}{record}',
+  'record {identifier}': 'record {identifier}',
+  'Navigation failed': 'Navigation failed'
 }

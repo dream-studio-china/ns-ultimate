@@ -42,11 +42,26 @@ test('validates query bounds and compiles only configured scalar filters', () =>
   const query = prepareRecordQuery({ entity: 'Counter', page: 2, limit: 5, filters: [{ field: 'name', value: 'West "counter"' }, { field: 'enabled', value: true }] }, catalog)
   assert.equal(query.path, '/api/v1/manage/counters')
   assert.equal('@select' in query.params, false)
-  assert.equal(query.params['@filter'], 'entity.name=="West \\"counter\\"" && entity.enabled==true')
+  assert.equal(query.params['@filter'], 'entity.getName() matches "West \\"counter\\"" && entity.getEnabled() == true')
   assert.equal(query.params['@order'], 'entity.id|DESC')
   assert.throws(() => prepareRecordQuery({ entity: 'Counter', filters: [{ field: 'status', value: 'active' }] }, catalog), /not allowed/)
   assert.throws(() => prepareRecordQuery({ entity: 'Counter', limit: 21 }, catalog), /Limit/)
   assert.throws(() => prepareRecordQuery({ entity: 'Unsupported' }, catalog), /no approved/)
+})
+
+test('compiles text filters as substring matches and option filters as typed getter equality', () => {
+  const mixedCatalog = buildCapabilityCatalog({
+    Item: {
+      entity: { name: 'Item', plural: 'items' },
+      list: { list_display: ['id', 'name', 'enabled'], list_filter: { name: 'Name', enabled: { __label: 'Enabled', true: 'Yes', false: 'No' } } }
+    }
+  }, [{ method: 'GET', path: '/api/v1/manage/items' }], { parameterize })
+  const query = prepareRecordQuery({ entity: 'Item', filters: [
+    { field: 'name', value: 'tea' }, { field: 'enabled', value: false }
+  ] }, mixedCatalog)
+  assert.equal(query.params['@filter'], 'entity.getName() matches "tea" && entity.getEnabled() == false')
+  assert.throws(() => prepareRecordQuery({ entity: 'Item', filters: [{ field: 'name', value: '' }] }, mixedCatalog), /non-empty string/)
+  assert.throws(() => prepareRecordQuery({ entity: 'Item', filters: [{ field: 'enabled', value: 'maybe' }] }, mixedCatalog), /allowed option/)
 })
 
 test('sanitizes query results to configured scalar display fields and bounds values', () => {

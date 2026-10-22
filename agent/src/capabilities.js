@@ -58,7 +58,13 @@ function normalizeFilters(filters = {}) {
       ? Object.keys(definition).filter(key => !key.startsWith('__') && !['label', 'type', 'expression'].includes(key) && safeProperty(key))
       : []
     const fieldType = definition && typeof definition === 'object' && typeof definition.type === 'string' ? definition.type : 'text'
-    return [{ property, type: fieldType.slice(0, 50), options: optionValues.slice(0, 50) }]
+    return [{
+      property,
+      label: String(typeof definition === 'string' ? definition : definition?.__label ?? definition?.label ?? property).slice(0, 120),
+      type: fieldType.slice(0, 50),
+      operator: typeof definition === 'string' ? 'contains' : 'equals',
+      options: optionValues.slice(0, 50)
+    }]
   })
 }
 
@@ -149,7 +155,12 @@ export function prepareRecordQuery(input, catalog) {
     if (definition.options.length && !definition.options.includes(String(value))) {
       throw new TypeError(`Filter value is not an allowed option for ${filter.field}.`)
     }
-    return `entity.${filter.field}==${JSON.stringify(value)}`
+    if (definition.operator === 'contains' && (typeof value !== 'string' || !value.trim())) {
+      throw new TypeError(`Filter value for ${filter.field} must be a non-empty string.`)
+    }
+    const getter = `entity.get${filter.field[0].toUpperCase()}${filter.field.slice(1)}()`
+    const operator = definition.operator === 'contains' ? ' matches ' : ' == '
+    return `${getter}${operator}${JSON.stringify(value)}`
   })
 
   // Do not push list_display into Doctrine's @select DSL. Admin display

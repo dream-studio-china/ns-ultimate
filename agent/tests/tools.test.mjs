@@ -33,3 +33,31 @@ test('rejects unapproved tool names and malformed entity lists', async() => {
   assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'delete_record', arguments: '{}' } } }), { error: 'This tool is not available.' })
   assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"url":"https://example.test"}' } } }), { error: 'This tool takes no arguments.' })
 })
+
+test('lists registered pages and opens only allowlisted pages or safe record details', async() => {
+  const navigation = [{ key: 'CounterList', title: 'Counters', path: '/counter/list' }]
+  const calls = []
+  const host = { navigateAdminPage: async(...args) => { calls.push(args); return { title: 'Counters', identifier: args[1] || null } } }
+  const tools = createAssistantTools(catalog, navigation)
+  assert.deepEqual(tools.map(tool => tool.function.name), ['list_entities', 'list_admin_pages', 'navigate_admin_page', 'query_records'])
+  const args = { catalog, navigation, host, operations: [], budget: { count: 0 } }
+  const listed = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'list_admin_pages', arguments: '{}' } }
+  })
+  assert.deepEqual(listed.pages, navigation)
+
+  const opened = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'navigate_admin_page', arguments: '{"page":"CounterList","identifier":"12"}' } }
+  })
+  assert.deepEqual(opened, { navigated: true, title: 'Counters', identifier: '12' })
+  assert.deepEqual(calls, [['CounterList', '12']])
+
+  const rejected = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'navigate_admin_page', arguments: '{"page":"CounterList","identifier":"../../login"}' } }
+  })
+  assert.match(rejected.error, /positive numeric ID or UUID/)
+  assert.equal(calls.length, 1)
+})

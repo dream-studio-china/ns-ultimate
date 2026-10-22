@@ -29,5 +29,14 @@ export default {
   'Loaded {count} API operations and {entities} config-backed read collections.': '已加载 {count} 个接口说明及 {entities} 个配置驱动的只读实体。',
   'Failed to load API documentation.': '读取 API 文档失败。',
   'Request failed.': '请求失败。',
-  'No filters': '无筛选条件'
+  'No filters': '无筛选条件',
+  'Read query failed': '只读查询失败',
+  'Read-only query: {entity} — page {page}, {count} records': '只读查询：{entity} — 第 {page} 页，显示 {count} 条',
+  '{total} total': '共 {total} 条',
+  'more pages available': '还有后续页',
+  'Showing the first {count} fields.': '仅显示前 {count} 个字段。',
+  'API docs, bounded read-only queries, and safe page navigation; no admin writes': '接口文档问答、受限只读查询和安全页面跳转；不执行后台写操作',
+  'Opened admin page: {title}{record}': '已打开后台页面：{title}{record}',
+  'record {identifier}': '记录 {identifier}',
+  'Navigation failed': '页面跳转失败'
 }
