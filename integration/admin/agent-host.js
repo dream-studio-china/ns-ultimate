@@ -9,6 +9,13 @@ import { buildAdminPageCatalog, resolveAdminNavigation } from '../../agent/src/n
 const inflect = inflectFactory(true)
 const defaultPrefix = apiPath(API_PREFIX, 'manage')
 const adminPages = buildAdminPageCatalog(adminConfig.routes)
+const adminNavigation = adminPages.map(page => {
+  const entity = Object.keys(adminConfig.entities).find(key => {
+    const config = adminConfig.entities[key]
+    return (typeof config?.entity?.name === 'string' ? config.entity.name : key) === page.key.slice(0, -'List'.length)
+  })
+  return { key: page.key, title: page.title, ...(entity ? { entity } : {}) }
+})
 
 const parameterize = name => inflect.dasherize(inflect.underscore(inflect.pluralize(name)))
 
@@ -17,7 +24,7 @@ export function createAdminAgentHost() {
 
   return {
     getCatalog,
-    getNavigationCatalog() { return adminPages.map(({ key, title }) => ({ key, title })) },
+    getNavigationCatalog() { return adminNavigation },
     async navigateAdminPage(pageKey, identifier) {
       const target = resolveAdminNavigation(adminPages, pageKey, identifier)
       const route = router.resolve(target.path)

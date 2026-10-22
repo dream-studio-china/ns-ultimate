@@ -64,6 +64,37 @@ test('compiles text filters as substring matches and option filters as typed get
   assert.throws(() => prepareRecordQuery({ entity: 'Item', filters: [{ field: 'enabled', value: 'maybe' }] }, mixedCatalog), /allowed option/)
 })
 
+test('supports bounded numeric/date comparisons and configured relation equality without running dynamic filters', () => {
+  const relationLoader = () => { throw new Error('Configuration callbacks must not execute.') }
+  const typedCatalog = buildCapabilityCatalog({
+    Invoice: {
+      entity: { name: 'Invoice', plural: 'invoices' },
+      form: { fields: [
+        { property: 'amount', type: 'integer' },
+        { property: 'createdAt', type: 'datetime' },
+        { property: 'storeUuid', relation: { entity: 'Store', valueKey: 'uuid' } }
+      ] },
+      list: { list_display: ['id', 'amount', 'createdAt'], list_filter: {
+        amount: 'Amount', createdAt: 'Created at', storeUuid: relationLoader
+      } }
+    }
+  }, [{ method: 'GET', path: '/api/v1/manage/invoices' }], { parameterize })
+  const invoice = typedCatalog.find(item => item.key === 'Invoice')
+  assert.equal(invoice.filters.find(filter => filter.property === 'storeUuid').dynamicOptions, true)
+  const query = prepareRecordQuery({ entity: 'Invoice', filters: [
+    { field: 'amount', operator: 'gte', value: 500 },
+    { field: 'createdAt', operator: 'gte', value: '2026-01-01' },
+    { field: 'createdAt', operator: 'lte', value: '2026-12-31' },
+    { field: 'storeUuid', value: 'store-uuid' }
+  ] }, typedCatalog)
+  assert.equal(query.params['@filter'], 'entity.getAmount() >= 500 && entity.getCreatedAt() >= "2026-01-01" && entity.getCreatedAt() <= "2026-12-31" && entity.getStoreUuid() == "store-uuid"')
+  assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'amount', operator: 'gte', value: '500' }] }, typedCatalog), /finite number/)
+  assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'amount', operator: 'gte', value: 1.5 }] }, typedCatalog), /integer/)
+  assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'createdAt', operator: 'gte', value: 'yesterday' }] }, typedCatalog), /ISO date/)
+  assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'createdAt', operator: 'gte', value: '2026-02-31' }] }, typedCatalog), /ISO date/)
+  assert.throws(() => prepareRecordQuery({ entity: 'Invoice', filters: [{ field: 'amount', operator: 'contains', value: '5' }] }, typedCatalog), /operator is not allowed/)
+})
+
 test('sanitizes query results to configured scalar display fields and bounds values', () => {
   const catalog = buildCapabilityCatalog(entities, operations, { parameterize })
   const query = prepareRecordQuery({ entity: 'Counter' }, catalog)

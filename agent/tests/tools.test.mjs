@@ -23,7 +23,10 @@ test('runs bounded read-only queries without confirmation and validates argument
   const call = { type: 'function', function: { name: 'query_records', arguments: JSON.stringify({ entity: 'Counter', filters: [{ field: 'name', value: 'West' }] }) } }
 
   const result = await executeAssistantTool({ call, catalog, host, operations: [], budget })
-  assert.deepEqual(result, { records: [{ name: 'West' }] })
+  assert.deepEqual(result, {
+    records: [{ name: 'West' }],
+    query: { entity: 'Counter', page: 1, limit: 10, filters: [{ field: 'name', operator: 'contains', value: 'West' }] }
+  })
   assert.equal(queryCount, 1)
   assert.equal(budget.count, 1)
 })

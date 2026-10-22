@@ -43,7 +43,7 @@ export function createAssistantTools(catalog, navigation = []) {
       type: 'function',
       function: {
         name: 'query_records',
-        description: 'Read one bounded page from a documented admin collection. Text filters perform substring matches; configured select filters use exact equality. Results include pagination metadata when available. Do not fetch additional pages unless the user asks.',
+        description: 'Read one bounded page from a documented admin collection. Choose only the operator advertised for each configured filter: contains is substring matching, equals is exact matching, and numeric/date fields may allow comparisons. Results include pagination metadata when available. Do not fetch additional pages unless the user asks.',
         parameters: {
           type: 'object',
           properties: {
@@ -57,6 +57,7 @@ export function createAssistantTools(catalog, navigation = []) {
                 type: 'object',
                 properties: {
                   field: { type: 'string' },
+                  operator: { type: 'string', enum: ['contains', 'equals', 'gt', 'gte', 'lt', 'lte'] },
                   value: { type: ['string', 'number', 'boolean', 'null'] }
                 },
                 required: ['field', 'value'],
@@ -86,7 +87,7 @@ export async function executeAssistantTool({ call, catalog, navigation = [], hos
       name: item.name,
       readable: item.readable,
       fields: item.fields.slice(0, 12).map(field => ({ property: field.property, label: field.label, type: field.type, required: field.required })),
-      filters: item.filters.slice(0, 10).map(filter => ({ property: filter.property, label: filter.label, type: filter.type, operator: filter.operator, options: filter.options.slice(0, 20) }))
+      filters: item.filters.slice(0, 10).map(filter => ({ property: filter.property, label: filter.label, type: filter.type, operator: filter.operator, operators: filter.operators, options: filter.options.slice(0, 20), dynamicOptions: filter.dynamicOptions }))
     }))
     return { entities, truncated: catalog.length > entities.length }
   }
@@ -123,7 +124,21 @@ export async function executeAssistantTool({ call, catalog, navigation = [], hos
   if (signal?.aborted) return { cancelled: true, message: 'The read query was cancelled.' }
   budget.count += 1
   try {
-    return await host.queryRecords(input, operations, signal)
+    const result = await host.queryRecords(input, operations, signal)
+    if (!Array.isArray(result?.records)) return result
+    return {
+      ...result,
+      query: {
+        entity: input.entity,
+        page: query.page,
+        limit: query.limit,
+        filters: (input.filters || []).map(filter => ({
+          field: filter.field,
+          operator: filter.operator ?? catalog.find(item => item.key === input.entity)?.filters.find(item => item.property === filter.field)?.operator,
+          value: filter.value
+        }))
+      }
+    }
   } catch (error) {
     return { error: error.message || 'The read query failed.' }
   }

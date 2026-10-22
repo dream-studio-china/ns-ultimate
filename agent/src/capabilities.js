@@ -37,7 +37,8 @@ function normalizeField(field, requiredByForm = false) {
     label: safeLabel(field, property),
     type,
     required: requiredByForm || field?.required === true,
-    readOnly: field?.readOnly === true || field?.readonly === true || fieldOptions?.disabled === true || field?.type_options?.disabled === true
+    readOnly: field?.readOnly === true || field?.readonly === true || fieldOptions?.disabled === true || field?.type_options?.disabled === true,
+    relation: Boolean(field?.relation)
   }
 }
 
@@ -49,21 +50,36 @@ function normalizeListColumns(columns = []) {
   }).filter(Boolean)
 }
 
-function normalizeFilters(filters = {}) {
+function normalizeFilters(filters = {}, fields = []) {
   if (!filters || typeof filters !== 'object' || Array.isArray(filters)) return []
   return Object.entries(filters).flatMap(([property, definition]) => {
-    if (!safeProperty(property) || typeof definition === 'function') return []
+    if (!safeProperty(property)) return []
+    const field = fields.find(item => item.property === property)
+    const dynamicRelationFilter = typeof definition === 'function' && field?.relation
+    if (typeof definition === 'function' && !dynamicRelationFilter) return []
     if (definition && typeof definition === 'object' && definition.expression) return []
-    const optionValues = definition && typeof definition === 'object'
-      ? Object.keys(definition).filter(key => !key.startsWith('__') && !['label', 'type', 'expression'].includes(key) && safeProperty(key))
+    const optionValues = definition && typeof definition === 'object' && !dynamicRelationFilter
+      ? Object.keys(definition).filter(key => !key.startsWith('__') && !['label', 'type', 'expression'].includes(key) && typeof definition[key] === 'string' && definition[key].length <= 200)
       : []
-    const fieldType = definition && typeof definition === 'object' && typeof definition.type === 'string' ? definition.type : 'text'
+    const fieldType = definition && typeof definition === 'object' && typeof definition.type === 'string' ? definition.type : field?.type || 'text'
+    const normalizedType = fieldType.toLowerCase()
+    const isNumeric = /integer|number|float|decimal|currency|money/.test(normalizedType)
+    const isDate = /date|time/.test(normalizedType)
+    const isBoolean = /bool/.test(normalizedType)
+    const isRelation = Boolean(field?.relation)
+    const isChoice = Boolean(optionValues.length)
+    const isInput = typeof definition === 'string' && !isRelation && !isNumeric && !isDate && !isBoolean
+    const operators = isInput ? ['contains', 'equals']
+      : isNumeric || isDate ? ['equals', 'gt', 'gte', 'lt', 'lte']
+        : ['equals']
     return [{
       property,
-      label: String(typeof definition === 'string' ? definition : definition?.__label ?? definition?.label ?? property).slice(0, 120),
+      label: String(typeof definition === 'string' ? definition : definition?.__label ?? definition?.label ?? field?.label ?? property).slice(0, 120),
       type: fieldType.slice(0, 50),
-      operator: typeof definition === 'string' ? 'contains' : 'equals',
-      options: optionValues.slice(0, 50)
+      operator: isInput ? 'contains' : 'equals',
+      operators,
+      options: optionValues.slice(0, 50),
+      dynamicOptions: Boolean(dynamicRelationFilter || isRelation && !isChoice)
     }]
   })
 }
@@ -107,10 +123,16 @@ export function buildCapabilityCatalog(entities, operations, { parameterize, def
     const fieldMap = new Map()
     for (const field of [...formFields, ...listFields]) {
       const existing = fieldMap.get(field.property)
-      fieldMap.set(field.property, existing ? { ...existing, ...field, required: existing.required || field.required } : field)
+      fieldMap.set(field.property, existing ? {
+        ...existing,
+        ...field,
+        type: field.type === 'text' ? existing.type : field.type,
+        required: existing.required || field.required,
+        relation: existing.relation || field.relation
+      } : field)
     }
     const fields = [...fieldMap.values()]
-    const filterFields = normalizeFilters(config.list?.list_filter)
+    const filterFields = normalizeFilters(config.list?.list_filter, formFields)
     const readable = Boolean(path && getOperations.has(path))
     return {
       key,
@@ -140,27 +162,44 @@ export function prepareRecordQuery(input, catalog) {
   if (!Array.isArray(filterInput) || filterInput.length > MAX_FILTERS) throw new RangeError(`At most ${MAX_FILTERS} filters are allowed.`)
   const allowedFilters = new Map(capability.filters.map(filter => [filter.property, filter]))
   const seen = new Set()
+  const comparisonOperators = { contains: 'matches', equals: '==', gt: '>', gte: '>=', lt: '<', lte: '<=' }
   const expressions = filterInput.map(filter => {
     if (!filter || typeof filter !== 'object' || Array.isArray(filter) || !allowedFilters.has(filter.field)) {
       throw new TypeError('A filter field is not allowed for this entity.')
     }
-    if (Object.keys(filter).some(key => !['field', 'value'].includes(key))) throw new TypeError('A filter contains unsupported parameters.')
+    if (Object.keys(filter).some(key => !['field', 'value', 'operator'].includes(key))) throw new TypeError('A filter contains unsupported parameters.')
     const definition = allowedFilters.get(filter.field)
-    if (seen.has(filter.field)) throw new TypeError('Duplicate filter fields are not allowed.')
-    seen.add(filter.field)
+    const filterOperator = filter.operator ?? definition.operator
+    if (!definition.operators.includes(filterOperator)) throw new TypeError(`Filter operator is not allowed for ${filter.field}.`)
+    const duplicateKey = `${filter.field}:${filterOperator}`
+    if (seen.has(duplicateKey)) throw new TypeError('Duplicate filter field/operator pairs are not allowed.')
+    seen.add(duplicateKey)
     const value = filter.value
     if (!(value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && value.length <= 200 && !/[\u0000-\u001f\u007f]/.test(value)))) {
       throw new TypeError('Filter values must be short strings, finite numbers, booleans, or null.')
     }
-    if (definition.options.length && !definition.options.includes(String(value))) {
+    if (definition.options.length && filterOperator === 'equals' && !definition.options.includes(String(value))) {
       throw new TypeError(`Filter value is not an allowed option for ${filter.field}.`)
     }
-    if (definition.operator === 'contains' && (typeof value !== 'string' || !value.trim())) {
+    const normalizedType = definition.type.toLowerCase()
+    if (filterOperator === 'contains' && (typeof value !== 'string' || !value.trim())) {
       throw new TypeError(`Filter value for ${filter.field} must be a non-empty string.`)
     }
+    if (/integer|number|float|decimal|currency|money/.test(normalizedType) && (typeof value !== 'number' || !Number.isFinite(value))) {
+      throw new TypeError(`Filter value for ${filter.field} must be a finite number.`)
+    }
+    if (/integer/.test(normalizedType) && !Number.isInteger(value)) {
+      throw new TypeError(`Filter value for ${filter.field} must be an integer.`)
+    }
+    if (/date|time/.test(normalizedType)) {
+      const validDate = typeof value === 'string'
+        && /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2}))?$/.test(value)
+        && Number.isFinite(Date.parse(value))
+        && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value)
+      if (!validDate) throw new TypeError(`Filter value for ${filter.field} must be an ISO date or datetime.`)
+    }
     const getter = `entity.get${filter.field[0].toUpperCase()}${filter.field.slice(1)}()`
-    const operator = definition.operator === 'contains' ? ' matches ' : ' == '
-    return `${getter}${operator}${JSON.stringify(value)}`
+    return `${getter} ${comparisonOperators[filterOperator]} ${JSON.stringify(value)}`
   })
 
   // Do not push list_display into Doctrine's @select DSL. Admin display

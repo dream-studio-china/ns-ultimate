@@ -16,5 +16,12 @@ export default {
   'API docs, bounded read-only queries, and safe page navigation; no admin writes': 'API docs, bounded read-only queries, and safe page navigation; no admin writes',
   'Opened admin page: {title}{record}': 'Opened admin page: {title}{record}',
   'record {identifier}': 'record {identifier}',
-  'Navigation failed': 'Navigation failed'
+  'Navigation failed': 'Navigation failed',
+  'Actions': 'Actions',
+  'Download CSV': 'Download CSV',
+  'CSV export failed.': 'CSV export failed.',
+  'Next page': 'Next page',
+  'Fetch next page of the previous query.': 'Fetch the next page of the previous query.',
+  'Open': 'Open',
+  'Sources': 'Sources'
 }

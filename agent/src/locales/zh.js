@@ -38,5 +38,12 @@ export default {
   'API docs, bounded read-only queries, and safe page navigation; no admin writes': '接口文档问答、受限只读查询和安全页面跳转；不执行后台写操作',
   'Opened admin page: {title}{record}': '已打开后台页面：{title}{record}',
   'record {identifier}': '记录 {identifier}',
-  'Navigation failed': '页面跳转失败'
+  'Navigation failed': '页面跳转失败',
+  'Actions': '操作',
+  'Download CSV': '下载 CSV',
+  'CSV export failed.': 'CSV 导出失败。',
+  'Next page': '下一页',
+  'Fetch next page of the previous query.': '继续查询上一条查询的下一页。',
+  'Open': '打开',
+  'Sources': '来源'
 }
