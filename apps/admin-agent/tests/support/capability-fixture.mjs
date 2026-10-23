@@ -1,10 +1,11 @@
 /**
- * Test-only capability loader.
+ * LEGACY TEST-ONLY capability loader.
  *
- * Tests must exercise the real runtime compiler against the canonical server
- * export snapshot rather than importing a static policy table from production
- * source. Node tests read the fixture file directly so the JSON stays the only
- * copy of the descriptor set.
+ * `catalog.v1.json` is the explicit pre-gate all-ten safety fixture. It is not
+ * the production/configured capability snapshot and must not be used to claim
+ * current deployment behavior. Generic compiler and browser tests intentionally
+ * keep this stable legacy surface; the actual configured export is verified
+ * separately against `configured-catalog.v1.json`.
  */
 import { readFileSync } from 'node:fs'
 import { compileMutationCapabilities } from '../../adapters/ns-ultimate/admin/mutation-capabilities.mjs'

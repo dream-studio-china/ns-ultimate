@@ -9,6 +9,8 @@ use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductCategoryMutatio
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StorePrintingMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
+use NsUltimate\Apps\AdminAgent\Backend\Policy\AdminConfigurationPolicy;
+use NsUltimate\Apps\AdminAgent\Backend\Service\AdminCrudControllerBridge;
 use NsUltimate\Apps\AdminAgent\Backend\Service\AgentOperationService;
 use NsUltimate\Apps\AdminAgent\Backend\Service\MutationAdapterRegistry;
 use NsUltimate\Business\Counter\Entity\Counter;
@@ -21,6 +23,7 @@ use App\Store\Entity\ProductCategory;
 use App\Store\Entity\Store;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
@@ -102,6 +105,15 @@ try {
     $kernel = new $kernelClass($envName, false);
     $kernel->boot();
     $container = $kernel->getContainer();
+    // The concurrency harness has no HTTP request. Supply the same trusted admin
+    // main-request context the ordinary controller path would receive so the
+    // audited bridge can dispatch real standard controllers.
+    $bridge = $container->get(AdminCrudControllerBridge::class);
+    $policy = new AdminConfigurationPolicy($root.'/var/admin-agent/admin-manifest.json');
+    $bridge->installHarnessContext(
+        Request::create('http://localhost/api/v1/manage/agent/operations', 'POST'),
+        (new \App\Identity\Entity\User())->setRoles(['ROLE_ADMIN']),
+    );
     $em = $container->get('doctrine')->getManager();
     $effective = $em->getConnection()->getParams();
     nsAgentAssertEffectiveTarget($effective, $schema, $parts['port']);
@@ -146,14 +158,14 @@ try {
         $proposedCopies = $changes['order']['copies'] ?? null;
         $phase = nsAgentHarnessCounterPhase($action, (int) $workerIndex);
         $connectionId = (int) $em->getConnection()->fetchOne('SELECT CONNECTION_ID()');
-        $counterAdapter = nsAgentCountingAdapter(new CounterMutationAdapter($em, $auth, new CounterWriteService($em)), $em->getConnection(), $phase);
+        $counterAdapter = nsAgentCountingAdapter(new CounterMutationAdapter($em, $auth, new CounterWriteService($em), $bridge), $em->getConnection(), $phase);
         $categoryAdapter = nsAgentCountingAdapter(new CategoryMutationAdapter($em, $auth), $em->getConnection(), $phase);
         $productCategoryAdapter = nsAgentCountingAdapter(new ProductCategoryMutationAdapter($em, $auth), $em->getConnection(), $phase);
         $adapters = [$counterAdapter, $categoryAdapter, $productCategoryAdapter];
         if (in_array($action, $printingActions, true)) {
             $adapters[] = nsAgentCountingAdapter(new StorePrintingMutationAdapter($em, $auth), $em->getConnection(), $phase);
         }
-        $service = new AgentOperationService($em, new MutationAdapterRegistry($adapters));
+        $service = new AgentOperationService($em, new MutationAdapterRegistry($adapters), $policy);
         try {
             $result = $service->commit('mysql-harness-actor', $operationId);
             $outcome = ['status' => 'succeeded', 'identifier' => $result['identifier'], 'name' => $proposedName, 'parent' => $proposedParent,
@@ -201,19 +213,19 @@ try {
     $auth = new class implements AuthorizationCheckerInterface {
         public function isGranted(mixed $attribute, mixed $subject = null, ?Symfony\Component\Security\Core\Authorization\AccessDecision $accessDecision = null): bool { return true; }
     };
-    $adapter = new CounterMutationAdapter($em, $auth, new CounterWriteService($em));
+    $adapter = new CounterMutationAdapter($em, $auth, new CounterWriteService($em), $bridge);
     $storePrintingAdapter = new StorePrintingMutationAdapter($em, $auth);
     $service = new AgentOperationService($em, new MutationAdapterRegistry([
         $adapter, new CategoryMutationAdapter($em, $auth), new ProductCategoryMutationAdapter($em, $auth), $storePrintingAdapter,
-    ]));
+    ]), $policy);
     // A rejected commit closes its EntityManager; expected-conflict scenarios
     // continue with a freshly reset manager and the same explicit adapter set.
-    $resetOperationService = static function () use (&$em, $container, $auth): AgentOperationService {
+    $resetOperationService = static function () use (&$em, $container, $auth, $bridge, $policy): AgentOperationService {
         $em = $container->get('doctrine')->resetManager();
         return new AgentOperationService($em, new MutationAdapterRegistry([
-            new CounterMutationAdapter($em, $auth, new CounterWriteService($em)), new CategoryMutationAdapter($em, $auth),
+            new CounterMutationAdapter($em, $auth, new CounterWriteService($em), $bridge), new CategoryMutationAdapter($em, $auth),
             new ProductCategoryMutationAdapter($em, $auth), new StorePrintingMutationAdapter($em, $auth),
-        ]));
+        ]), $policy);
     };
     $single = $service->prepare('mysql-harness-actor', ['entity' => 'Counter', 'action' => 'update', 'identifier' => $id, 'changes' => ['name' => 'Single']]);
     $runWorkers = static function (string $mode, array $ids) use ($tools, $root, &$workersReaped, &$interrupted, &$workerFailureClass, &$workerTimedOut): array {
@@ -664,7 +676,7 @@ try {
     $freshAuth = new class implements AuthorizationCheckerInterface {
         public function isGranted(mixed $attribute, mixed $subject = null, ?Symfony\Component\Security\Core\Authorization\AccessDecision $accessDecision = null): bool { return true; }
     };
-    $freshService = new AgentOperationService($freshEm, new MutationAdapterRegistry([new CategoryMutationAdapter($freshEm, $freshAuth)]));
+    $freshService = new AgentOperationService($freshEm, new MutationAdapterRegistry([new CategoryMutationAdapter($freshEm, $freshAuth)]), $policy);
     $restored = $freshService->restore('mysql-harness-actor', $restoreDraft['operationId']);
     if (count($restored['differences']) !== 3) throw new RuntimeException('Persisted reordered multi-field JSON restore failed.');
     fwrite(STDOUT, "MySQL concurrency checks passed.\nSchema: {$schema}\nServer: ".(string) $identity['version'].' ('.(string) $identity['comment'].')'."\nIsolation: ".(string) $identity['isolation']."\nWorkers: 4 for Counter and Store printing races; 2 per hierarchy race\nSame proposal: 4 succeeded; adapter execute count 1; one succeeded receipt and one target.\nIndependent snapshots: 1 succeeded, 3 proposal_conflict; adapter execute count 1; winner matched final name.\nCategory hierarchy: ".json_encode($categoryHierarchy)."; final hierarchy acyclic.\nProductCategory hierarchy: ".json_encode($productCategoryHierarchy)."; final hierarchy acyclic.\nStore printing shared proposal: 4 succeeded; one receipt; committed adapter executions 1; independent MySQL connections 4.\nStore printing independent proposals: 1 succeeded, 3 proposal_conflict; committed adapter executions 1; winning copies ".$printingWinningCopies."; unrelated sentinel preserved.\nStore printing dependency freshness: enabled and disabled raw account reassignments produced proposal_conflict; Store settings unchanged; no print jobs or order requests.\nPrinterJob/PrinterOrderRequest rows: 0 before and 0 after the Store printing scenarios.\nPersisted reordered multi-field JSON: fresh-EntityManager restore passed.\nDirect operation-service/adapter validation with a ROLE_ADMIN authorization stub; no HTTP, provider, or print-job path.\n");

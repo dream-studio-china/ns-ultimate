@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate;
 
 use App\Common\Entity\Tag;
-use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
+use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
+use NsUltimate\Apps\AdminAgent\Backend\Contract\AdminCrudExecutor;
 use NsUltimate\Apps\AdminAgent\Backend\Contract\MutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
 use NsUltimate\Business\Common\Service\TagWriteService;
@@ -17,7 +17,11 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
-/** Agent-specific Tag policy: permissions, previews, conflicts and receipts. Domain writes live in TagWriteService. */
+/**
+ * Agent-specific Tag policy: permissions, previews, conflicts and receipts. Domain
+ * writes are executed by the standard Tag administration controller through the
+ * audited bridge; TagWriteService remains the read-only normalization/lookup policy.
+ */
 final class TagMutationAdapter implements MutationAdapter
 {
     /**
@@ -30,6 +34,7 @@ final class TagMutationAdapter implements MutationAdapter
         private readonly EntityManagerInterface $em,
         private readonly AuthorizationCheckerInterface $authorization,
         private readonly TagWriteService $writes,
+        private readonly AdminCrudExecutor $crud,
     ) {
     }
 
@@ -74,31 +79,39 @@ final class TagMutationAdapter implements MutationAdapter
         catch (\InvalidArgumentException $error) { throw new ProposalConflictException('Tag proposal is no longer valid. Prepare a new preview.', $error); }
 
         if ($action === 'create') {
-            $target = $this->writes->create($changes);
-        } else {
-            try { $target = $this->writes->find($identifier, true); }
-            catch (\OutOfBoundsException $error) { throw new ProposalConflictException('Tag no longer exists. Prepare a new preview.', $error); }
-            $this->em->refresh($target, LockMode::PESSIMISTIC_WRITE);
-            if (!hash_equals($beforeHash, $this->hash($this->snapshot($target)))) throw new ProposalConflictException('Tag changed since preview. Prepare a new preview.');
+            $this->revalidate(fn () => $this->writes->assertUniqueSlug($changes['slug']), 'Tag slug was claimed after preview. Prepare a new preview.');
+            $id = $this->crud->execute($this->em, 'Tag', 'create', null, $changes);
+            if ($id === null) throw new \RuntimeException('Tag create returned no identifier.');
+            $persisted = $this->freshManager()->find(Tag::class, (int) $id);
+            if (!$persisted instanceof Tag) throw new \RuntimeException('Tag mutation read-back verification failed.');
+            $expected = array_replace(['name' => '', 'slug' => '', 'color' => null], $changes);
+            return ['identifier' => $id, 'verified' => $this->exposedSnapshot($persisted) === array_intersect_key($expected, array_fill_keys(self::EXPOSED_FIELDS, true))];
         }
+
+        try { $target = $this->writes->find($identifier, true); }
+        catch (\OutOfBoundsException $error) { throw new ProposalConflictException('Tag no longer exists. Prepare a new preview.', $error); }
+        $this->em->refresh($target, LockMode::PESSIMISTIC_WRITE);
+        if (!hash_equals($beforeHash, $this->hash($this->snapshot($target)))) throw new ProposalConflictException('Tag changed since preview. Prepare a new preview.');
 
         if ($action === 'delete') {
             $this->revalidate(fn () => $this->writes->assertUnused($target, true), 'Tag associations changed after preview. Prepare a new preview.');
             $id = (string) $target->getId();
-            $this->writes->remove($target);
-            try { $this->em->flush(); }
-            catch (ForeignKeyConstraintViolationException $error) { throw new ProposalConflictException('Tag acquired an association after preview. Prepare a new preview.', $error); }
-            return ['identifier' => $id, 'verified' => $this->em->find(Tag::class, $id) === null];
+            $this->crud->execute($this->em, 'Tag', 'delete', $identifier, []);
+            $remaining = $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM common_tag WHERE id = ?', [$id]);
+            return ['identifier' => $id, 'verified' => (int) $remaining === 0];
         }
 
-        $this->writes->apply($target, $changes);
-        $this->revalidate(fn () => $this->writes->assertUniqueSlug($target->getSlug(), $target->getId()), 'Tag slug was claimed after preview. Prepare a new preview.');
-        $expected = array_intersect_key($this->snapshot($target), array_fill_keys(self::EXPOSED_FIELDS, true));
-        $this->writes->persist($target);
-        try { $this->em->flush(); }
-        catch (UniqueConstraintViolationException $error) { throw new ProposalConflictException('Tag slug was claimed after preview. Prepare a new preview.', $error); }
-        $this->em->refresh($target);
-        return ['identifier' => (string) $target->getId(), 'verified' => array_intersect_key($this->snapshot($target), array_fill_keys(self::EXPOSED_FIELDS, true)) === $expected];
+        $before = $this->snapshot($target);
+        $expected = array_replace($before, $changes);
+        $this->revalidate(fn () => $this->writes->assertUniqueSlug($expected['slug'], $target->getId()), 'Tag slug was claimed after preview. Prepare a new preview.');
+        $this->crud->execute($this->em, 'Tag', 'update', $identifier, $changes);
+        $persisted = $this->freshManager()->find(Tag::class, (int) $target->getId());
+        if (!$persisted instanceof Tag) throw new \RuntimeException('Tag mutation read-back verification failed.');
+
+        return [
+            'identifier' => (string) $target->getId(),
+            'verified' => $this->exposedSnapshot($persisted) === array_intersect_key($expected, array_fill_keys(self::EXPOSED_FIELDS, true)),
+        ];
     }
 
     /** @param array<string, mixed> $changes
@@ -119,6 +132,22 @@ final class TagMutationAdapter implements MutationAdapter
     private function snapshot(Tag $entity): array
     {
         return ['id' => $entity->getId(), 'uuid' => $entity->getUuid(), 'name' => $entity->getName(), 'slug' => $entity->getSlug(), 'color' => $entity->getColor()];
+    }
+
+    /** @return array<string, mixed> */
+    private function exposedSnapshot(Tag $entity): array
+    {
+        return array_intersect_key($this->snapshot($entity), array_fill_keys(self::EXPOSED_FIELDS, true));
+    }
+
+    /**
+     * A fresh manager on the same connection reads committed writes without
+     * touching the outer operation's identity map. The controller flush remains
+     * inside the caller-owned transaction.
+     */
+    private function freshManager(): EntityManagerInterface
+    {
+        return new EntityManager($this->em->getConnection(), $this->em->getConfiguration());
     }
 
     /** @param array<string, mixed>|null $value */

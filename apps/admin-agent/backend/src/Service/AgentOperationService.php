@@ -8,6 +8,7 @@ use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
+use NsUltimate\Apps\AdminAgent\Backend\Policy\AdminConfigurationPolicy;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -16,7 +17,11 @@ use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 /** Generic lifecycle only. Target lookup, permissions, field rules and domain effects belong to adapters. */
 final class AgentOperationService
 {
-    public function __construct(private readonly EntityManagerInterface $em, private readonly MutationAdapterRegistry $adapters) {}
+    public function __construct(
+        private readonly EntityManagerInterface $em,
+        private readonly MutationAdapterRegistry $adapters,
+        private readonly AdminConfigurationPolicy $configuration,
+    ) {}
 
     /** @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -27,16 +32,18 @@ final class AgentOperationService
             || !is_string($input['entity'] ?? null) || !in_array($input['action'] ?? null, ['create', 'update', 'delete'], true)) {
             throw new BadRequestHttpException('A registered entity and a single create/update/delete action are required.');
         }
-        $adapter = $this->adapters->get($input['entity']);
         $identifier = $input['identifier'] ?? null;
         if ($identifier !== null && (!is_string($identifier) || strlen($identifier) > 128 || preg_match('/[\x00-\x1f\x7f]/', $identifier))) {
             throw new BadRequestHttpException('Invalid target identifier.');
         }
         if ($input['action'] === 'create' && $identifier !== null) throw new BadRequestHttpException('Creation cannot specify an identifier.');
-        $adapter->authorize($input['action'], $identifier);
         $changes = $input['changes'] ?? [];
         if (!is_array($changes) || ($changes !== [] && array_is_list($changes))) throw new BadRequestHttpException('Changes must be a field object.');
         if ($input['action'] === 'delete' && $changes !== []) throw new BadRequestHttpException('Deletion cannot include field changes.');
+
+        $adapter = $this->adapters->get($input['entity']);
+        $adapter->authorize($input['action'], $identifier);
+        $this->configuration->assertPrepareAllowed($input['entity'], $input['action'], $changes);
         $draft = $adapter->prepare($input['action'], $identifier, $changes);
         if ($draft['differences'] === []) throw new BadRequestHttpException('The proposed update contains no effective changes.');
         if (strlen(json_encode($draft['differences'], JSON_THROW_ON_ERROR)) > 60000) throw new BadRequestHttpException('The full preview exceeds 60 KB. Use the standard editor instead.');
@@ -59,6 +66,13 @@ final class AgentOperationService
             if ($operation->getStatus() !== 'pending' || $operation->getExpiresAt() <= new \DateTimeImmutable()) {
                 throw new ConflictHttpException('This operation is cancelled or expired. Prepare a new preview.');
             }
+            $snapshot = $this->configuration->snapshot();
+            $this->configuration->assertMutationAllowed(
+                $operation->getEntityKey(),
+                $operation->getAction(),
+                $operation->getChanges(),
+                $snapshot,
+            );
             $result = $adapter->execute($operation->getAction(), $operation->getTargetId(), $operation->getBeforeHash(), $operation->getChanges());
             if (!$result['verified']) throw new \RuntimeException('Mutation read-back verification failed.');
             $operation->complete($result['identifier']);
@@ -106,6 +120,13 @@ final class AgentOperationService
             $adapter = $this->adapters->get($operation->getEntityKey());
             $adapter->authorize($operation->getAction(), $operation->getTargetId());
             if ($operation->receipt()['status'] !== 'pending') throw new ConflictHttpException('Only an unexpired pending operation can be restored. Check its outcome.');
+            $snapshot = $this->configuration->snapshot();
+            $this->configuration->assertMutationAllowed(
+                $operation->getEntityKey(),
+                $operation->getAction(),
+                $operation->getChanges(),
+                $snapshot,
+            );
             try {
                 $draft = $adapter->prepare($operation->getAction(), $operation->getTargetId(), $operation->getChanges());
             } catch (NotFoundHttpException $error) {

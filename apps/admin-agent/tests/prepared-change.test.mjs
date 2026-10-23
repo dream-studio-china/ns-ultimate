@@ -137,7 +137,11 @@ test('only an explicit conflict response invalidates submission without an outco
     Object.assign(new Error('cancelled'), { name: 'AbortError' })
   ]) {
     let commits = 0
-    const host = createMutationHost({ post: async() => { commits += 1; throw error } }, '/operations')
+    const host = createMutationHost({
+      get: async() => ({ data: preview }),
+      post: async() => { commits += 1; throw error }
+    }, '/operations', [{ entity: 'Content', actions: ['create'] }])
+    await host.restoreRecordChange(preview.operationId)
     const change = createPreparedChange(preview, host)
     const expected = error.response?.status === 409 && error.response.data?.error === 'proposal_conflict' ? 'conflicted' : 'unknown'
     assert.equal((await change.submit(true)).state, expected)
@@ -154,15 +158,19 @@ test('only an explicit conflict response invalidates submission without an outco
 test('pending outcome revalidates the original preview and never re-enables a stale proposal', async() => {
   for (const conflict of [true, false]) {
     const requests = []
+    let allowInitialRestore = true
     const host = createMutationHost({
       post: async() => { requests.push('commit'); throw new Error('lost response') },
       get: async path => {
         requests.push(path.endsWith('/preview') ? 'preview' : 'status')
         if (!path.endsWith('/preview')) return { data: { status: 'pending' } }
+        if (allowInitialRestore) { allowInitialRestore = false; return { data: preview } }
         if (conflict) throw { response: { status: 409, data: { error: 'proposal_conflict' } } }
         return { data: preview }
       }
     }, '/operations', [{ entity: 'Content', actions: ['create'] }])
+    await host.restoreRecordChange(preview.operationId)
+    requests.length = 0
     const change = createPreparedChange(preview, host)
     await change.submit(true)
     assert.equal((await change.recover()).state, conflict ? 'conflicted' : 'ready')

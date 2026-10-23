@@ -58,7 +58,7 @@ final class SpecificationMutationTest extends IntegrationWebTestCase
         try { $service->prepare('spec-test',['entity'=>'Specification','action'=>'create','changes'=>['productId'=>$product->getId(),'name'=>'Too large','price'=>2147483648]]); self::fail('Out-of-range price was accepted.'); }
         catch (BadRequestHttpException) { self::assertSame($countBefore,$em->getRepository(Specification::class)->count([])); }
         $deny=$this->createStub(AuthorizationCheckerInterface::class);$deny->method('isGranted')->willReturn(false);
-        $deniedService=new AgentOperationService($em,new MutationAdapterRegistry([new SpecificationMutationAdapter($em,$deny)]));
+        $deniedService=new AgentOperationService($em,new MutationAdapterRegistry([new SpecificationMutationAdapter($em,$deny)]),\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
         foreach ([['action'=>'create','changes'=>['productId'=>$product->getId(),'name'=>'X','price'=>1]],['action'=>'update','identifier'=>'999999','changes'=>['productId'=>$product->getId(),'name'=>'X']],['action'=>'delete','identifier'=>'999999']] as $proposal) {
             try { $deniedService->prepare('spec-test',['entity'=>'Specification',...$proposal]); self::fail('Non-admin was allowed.'); }
             catch (\Symfony\Component\Security\Core\Exception\AccessDeniedException) { self::assertTrue(true); }
@@ -149,7 +149,7 @@ final class SpecificationMutationTest extends IntegrationWebTestCase
     private function operationService(bool $withChecker=false): array
     {
         $container=self::getContainer();$em=$container->get(EntityManagerInterface::class);$checker=$this->createStub(AuthorizationCheckerInterface::class);$checker->method('isGranted')->willReturn(true);
-        $adapter=new SpecificationMutationAdapter($em,$checker);$service=new AgentOperationService($em,new MutationAdapterRegistry([$adapter]));
+        $adapter=new SpecificationMutationAdapter($em,$checker);$service=new AgentOperationService($em,new MutationAdapterRegistry([$adapter]),\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
         return $withChecker?[$service,$em,$checker]:[$service,$em];
     }
 }

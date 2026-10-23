@@ -19,16 +19,66 @@ use NsUltimate\Business\Common\Service\TagWriteService;
 use NsUltimate\Business\Counter\Service\CounterWriteService;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
+require_once __DIR__.'/Support/AdminConfigurationTestManifest.php';
+
 final class CapabilityCatalogTest extends IntegrationWebTestCase
 {
     use DatabaseBootstrapTrait;
 
     private const URL = '/api/v1/manage/agent/capabilities';
 
+    private string|false $previousManifestPath = false;
+
     protected function setUp(): void
     {
+        $this->previousManifestPath = getenv('ADMIN_AGENT_MANIFEST_PATH');
+        $this->ensureManifest();
+        $manifest = dirname(__DIR__, 5).'/var/admin-agent/admin-manifest.json';
+        putenv('ADMIN_AGENT_MANIFEST_PATH='.$manifest);
+        $_ENV['ADMIN_AGENT_MANIFEST_PATH'] = $manifest;
+        $_SERVER['ADMIN_AGENT_MANIFEST_PATH'] = $manifest;
         $this->bootTestDatabase();
         self::ensureKernelShutdown();
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->previousManifestPath !== false) {
+            putenv('ADMIN_AGENT_MANIFEST_PATH='.$this->previousManifestPath);
+            $_ENV['ADMIN_AGENT_MANIFEST_PATH'] = $this->previousManifestPath;
+            $_SERVER['ADMIN_AGENT_MANIFEST_PATH'] = $this->previousManifestPath;
+        } else {
+            putenv('ADMIN_AGENT_MANIFEST_PATH');
+            unset($_ENV['ADMIN_AGENT_MANIFEST_PATH'], $_SERVER['ADMIN_AGENT_MANIFEST_PATH']);
+        }
+        self::ensureKernelShutdown();
+    }
+
+    private static bool $manifestReady = false;
+
+    private function ensureManifest(): void
+    {
+        if (self::$manifestReady) return;
+        $manifest = dirname(__DIR__, 5).'/var/admin-agent/admin-manifest.json';
+
+        $nodeOutput = [];
+        $nodeCode = 1;
+        exec('command -v node 2>/dev/null', $nodeOutput, $nodeCode);
+        $node = trim((string) ($nodeOutput[0] ?? ''));
+        if ($nodeCode !== 0 || $node === '') {
+            self::fail('Node is required to generate the actual admin configuration manifest.');
+        }
+        $output = [];
+        $code = 1;
+        exec(
+            escapeshellarg($node).' '.escapeshellarg(dirname(__DIR__, 5).'/integration/admin/export-agent-manifest-cli.mjs').' 2>&1',
+            $output,
+            $code,
+        );
+        if ($code !== 0 || !is_file($manifest)) {
+            self::fail('Unable to generate the actual admin configuration manifest: '.implode("\n", $output));
+        }
+        self::$manifestReady = true;
     }
 
     protected static function getKernelClass(): string
@@ -64,8 +114,11 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         self::assertSame(['schemaVersion', 'revision', 'capabilities', 'batchCapabilities'], array_keys($catalog));
         self::assertSame(CapabilityCatalog::SCHEMA_VERSION, $catalog['schemaVersion']);
         self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $catalog['revision']);
+        // Actual configuration artifact: Specification has no list route/context
+        // binding, and the printing capabilities are semantic aliases that the
+        // current manifest generator deliberately does not synthesize.
         self::assertSame(
-            ['Content', 'Counter', 'Store', 'Category', 'ProductCategory', 'Tag', 'Product', 'Specification', 'StorePrinting', 'ProductPrinting'],
+            ['Content', 'Counter', 'Store', 'Category', 'ProductCategory', 'Tag', 'Product', 'StorePrinting', 'ProductPrinting'],
             array_column($catalog['capabilities'], 'entity'),
         );
 
@@ -77,7 +130,6 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
             'ProductCategory' => ['create', 'update', 'delete'],
             'Tag' => ['create', 'update', 'delete'],
             'Product' => ['create', 'update'],
-            'Specification' => ['create', 'update'],
             'StorePrinting' => ['update'],
             'ProductPrinting' => ['update'],
         ];
@@ -103,7 +155,12 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
             self::assertArrayNotHasKey('delete', $capability['actionFields'], $entity.' actionFields must contain write actions only');
             if (in_array('delete', $capability['actions'], true)) {
                 self::assertArrayHasKey('deletePreviewFields', $capability, $entity.' must expose safe delete preview metadata');
-                self::assertSame(array_keys($capability['fields']), array_keys($capability['deletePreviewFields']), $entity.' delete preview fields must use the existing safe policy');
+                self::assertNotEmpty($capability['deletePreviewFields'], $entity.' delete preview metadata must not be empty');
+                self::assertSame(
+                    [],
+                    array_diff(array_keys($capability['fields']), array_keys($capability['deletePreviewFields'])),
+                    $entity.' delete preview metadata must cover every writable field',
+                );
             } else {
                 self::assertArrayNotHasKey('deletePreviewFields', $capability, $entity.' has no authorized delete action');
             }
@@ -114,11 +171,13 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         self::assertArrayHasKey('Store:update:address', $covered);
         self::assertArrayHasKey('Category:create:parent', $covered);
         self::assertArrayHasKey('ProductCategory:create:store', $covered);
+        self::assertArrayHasKey('ProductCategory:update:slug', $covered);
         self::assertArrayHasKey('Tag:create:color', $covered);
         self::assertArrayHasKey('Product:create:store', $covered);
-        self::assertArrayHasKey('Specification:create:price', $covered);
         self::assertArrayHasKey('StorePrinting:update:settlement', $covered);
         self::assertArrayHasKey('ProductPrinting:update:kitchenPrinterEnable', $covered);
+        self::assertArrayNotHasKey('Content:create:metadata', $covered);
+        self::assertArrayNotHasKey('Specification:create:price', $covered);
 
         self::assertSame(
             ['Counter', 'Tag'],
@@ -143,12 +202,18 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         $byEntity = array_column($this->decode($client)['capabilities'], null, 'entity');
 
         $content = $byEntity['Content']['actionFields']['create'];
-        self::assertSame(['title', 'body', 'category', 'tags', 'metadata', 'sortOrder'], array_keys($content));
+        self::assertSame(['title', 'body', 'category', 'tags'], array_keys($content));
         self::assertTrue($content['title']['requiredOnCreate']);
         self::assertTrue($content['title']['nonEmpty']);
         self::assertSame(20000, $content['body']['maxBytes']);
         self::assertSame(50, $content['tags']['maxItems']);
-        self::assertSame(['featured', 'layout'], array_keys($content['metadata']['properties']));
+        self::assertArrayNotHasKey('metadata', $content);
+        self::assertArrayNotHasKey('sortOrder', $content);
+        self::assertSame(
+            ['title', 'body', 'category', 'tags', 'metadata', 'sortOrder'],
+            array_keys($byEntity['Content']['deletePreviewFields']),
+            'Delete preview metadata remains the full safe explicit preview policy.',
+        );
 
         $store = $byEntity['Store']['actionFields']['update'];
         self::assertSame(['name', 'contact', 'address'], array_keys($store));
@@ -163,6 +228,8 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         $productCategoryUpdate = $byEntity['ProductCategory']['actionFields']['update'];
         self::assertSame(100, $productCategoryCreate['slug']['maxLength']);
         self::assertNull($productCategoryCreate['store']['default']);
+        self::assertArrayHasKey('name', $productCategoryCreate);
+        self::assertArrayHasKey('name', $productCategoryUpdate);
         self::assertArrayNotHasKey('store', $productCategoryUpdate);
         self::assertTrue($productCategoryCreate['parent']['mustMatchStoreScope']);
 
@@ -176,13 +243,8 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         self::assertTrue($productCreate['category']['mustBeEnabled']);
         self::assertTrue($productCreate['category']['mustMatchProductStore']);
 
-        $specificationCreate = $byEntity['Specification']['actionFields']['create'];
-        $specificationUpdate = $byEntity['Specification']['actionFields']['update'];
-        self::assertTrue($specificationCreate['price']['requiredOnCreate']);
-        self::assertSame(0, $specificationCreate['price']['minimum']);
-        self::assertTrue($specificationCreate['productId']['immutableScope']);
-        self::assertTrue($specificationUpdate['productId']['requiredOnUpdate']);
-        self::assertTrue($specificationUpdate['productId']['immutableScope']);
+        // Specification still has no productId context binding.
+        self::assertArrayNotHasKey('Specification', $byEntity);
 
         $printing = $byEntity['StorePrinting']['actionFields']['update'];
         self::assertSame(['order', 'perItem', 'filteredList', 'fullList', 'settlement'], array_keys($printing));
@@ -204,9 +266,10 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         $catalog = $this->decode($client);
         $byEntity = array_column($catalog['capabilities'], null, 'entity');
 
-        foreach (['Content', 'Counter', 'Store', 'Category', 'ProductCategory', 'Tag', 'Product', 'Specification'] as $entity) {
+        foreach (['Content', 'Counter', 'Store', 'Category', 'ProductCategory', 'Tag', 'Product'] as $entity) {
             self::assertArrayNotHasKey('description', $byEntity[$entity]);
         }
+        self::assertArrayNotHasKey('Specification', $byEntity);
         self::assertSame(
             'Update the five fixed automatic order-printing cases on the exact stored Store identified by numeric ID or UUID. Only update is supported; settings roots and unrelated settings fields are not accepted.',
             $byEntity['StorePrinting']['description'],
@@ -266,6 +329,7 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         $catalog = new CapabilityCatalog(
             new MutationAdapterRegistry([$content, $store, $denied]),
             new BatchCreateAdapterRegistry([]),
+            \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy(),
         );
         $result = $catalog->build();
 
@@ -289,7 +353,7 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
             public function prepare(string $action, ?string $identifier, array $changes): array { throw new \LogicException('Not used.'); }
             public function execute(string $action, ?string $identifier, string $beforeHash, array $changes): array { throw new \LogicException('Not used.'); }
         };
-        $catalog = new CapabilityCatalog(new MutationAdapterRegistry([$deleteOnly]), new BatchCreateAdapterRegistry([]));
+        $catalog = new CapabilityCatalog(new MutationAdapterRegistry([$deleteOnly]), new BatchCreateAdapterRegistry([]), \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
         $result = $catalog->build();
 
         self::assertSame(['delete'], $result['capabilities'][0]['actions']);
@@ -328,7 +392,7 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
             public function prepare(string $action, ?string $identifier, array $changes): array { throw new \LogicException('Not used.'); }
             public function execute(string $action, ?string $identifier, string $beforeHash, array $changes): array { throw new \LogicException('Not used.'); }
         };
-        $catalog = new CapabilityCatalog(new MutationAdapterRegistry([$deleteOnly]), new BatchCreateAdapterRegistry([]));
+        $catalog = new CapabilityCatalog(new MutationAdapterRegistry([$deleteOnly]), new BatchCreateAdapterRegistry([]), \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
         $file = tempnam(sys_get_temp_dir(), 'capability-delete-only-');
         self::assertIsString($file);
         file_put_contents($file, $catalog->encode($catalog->build()));
@@ -368,7 +432,7 @@ JS;
             public function prepare(string $action, ?string $identifier, array $changes): array { throw new \LogicException('Not used.'); }
             public function execute(string $action, ?string $identifier, string $beforeHash, array $changes): array { throw new \LogicException('Not used.'); }
         };
-        $catalog = new CapabilityCatalog(new MutationAdapterRegistry([$updateOnly]), new BatchCreateAdapterRegistry([]));
+        $catalog = new CapabilityCatalog(new MutationAdapterRegistry([$updateOnly]), new BatchCreateAdapterRegistry([]), \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
         $result = $catalog->build()['capabilities'][0];
 
         self::assertSame(['update'], $result['actions']);
@@ -404,6 +468,7 @@ JS;
                 $this->permissiveAdapter('Tag'),
             ]),
             new BatchCreateAdapterRegistry([$allowed, $denied]),
+            \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy(),
             $tagService,
         );
         $batch = $catalog->build()['batchCapabilities'];
@@ -428,7 +493,13 @@ JS;
             $this->permissiveAdapter('Counter'),
             $this->permissiveAdapter('Tag'),
         ]);
-        $catalog = new CapabilityCatalog($registry, new BatchCreateAdapterRegistry([]), $tag, $counter);
+        $catalog = new CapabilityCatalog(
+            $registry,
+            new BatchCreateAdapterRegistry([]),
+            \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy(),
+            $tag,
+            $counter,
+        );
         $byEntity = array_column($catalog->build()['capabilities'], null, 'entity');
 
         foreach (['Tag', 'Counter'] as $entity) {

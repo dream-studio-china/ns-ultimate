@@ -14,6 +14,15 @@ use NsUltimate\Apps\AdminAgent\Backend\Capability\CapabilityCatalog;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
 
+$repositoryRoot = dirname(__DIR__, 5);
+$manifest = $repositoryRoot.'/var/admin-agent/admin-manifest.json';
+if (!is_file($manifest)) {
+    throw new RuntimeException('The actual generated admin configuration manifest is required for the catalog export.');
+}
+putenv('ADMIN_AGENT_MANIFEST_PATH='.$manifest);
+$_ENV['ADMIN_AGENT_MANIFEST_PATH'] = $manifest;
+$_SERVER['ADMIN_AGENT_MANIFEST_PATH'] = $manifest;
+
 $kernel = new Kernel('test', true);
 $kernel->boot();
 try {

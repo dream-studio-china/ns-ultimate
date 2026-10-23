@@ -17,16 +17,29 @@ use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\Console\Tester\CommandTester;
 
+require_once dirname(__DIR__, 2).'/Support/AdminConfigurationTestManifest.php';
+
 final class ContentMutationTest extends IntegrationWebTestCase
 {
     use DatabaseBootstrapTrait;
 
     private const URL = '/api/v1/manage/agent/operations';
 
+    private ?string $testManifest = null;
+
     protected function setUp(): void
     {
+        $this->testManifest = \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::install();
         $this->bootTestDatabase();
         self::ensureKernelShutdown();
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->testManifest !== null) {
+            \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::restore($this->testManifest);
+            $this->testManifest = null;
+        }
     }
 
     protected static function getKernelClass(): string

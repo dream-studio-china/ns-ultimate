@@ -71,7 +71,7 @@ final class ProductMutationTest extends IntegrationWebTestCase
             catch (BadRequestHttpException) { self::assertSame('Before',$product->getName()); }
         }
         $deny = $this->createStub(AuthorizationCheckerInterface::class); $deny->method('isGranted')->willReturn(false);
-        $deniedService = new AgentOperationService($em,new MutationAdapterRegistry([new ProductMutationAdapter($em,self::getContainer()->get(ValidatorInterface::class),$deny)]));
+        $deniedService = new AgentOperationService($em,new MutationAdapterRegistry([new ProductMutationAdapter($em,self::getContainer()->get(ValidatorInterface::class),$deny)]),\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
         foreach ([['action'=>'update','identifier'=>'999999999','changes'=>['name'=>'X']],['action'=>'create','changes'=>['name'=>'New','store'=>$store->getUuid()]],['action'=>'delete','identifier'=>'999999999']] as $proposal) {
             try { $deniedService->prepare('agent-test',['entity'=>'Product',...$proposal]); self::fail('Non-admin was allowed.'); }
             catch (AccessDeniedException) { self::assertTrue(true); }
@@ -135,7 +135,7 @@ final class ProductMutationTest extends IntegrationWebTestCase
         $container=self::getContainer(); $em=$container->get(EntityManagerInterface::class);
         $checker=$this->createStub(AuthorizationCheckerInterface::class); $checker->method('isGranted')->willReturn(true);
         $adapter=new ProductMutationAdapter($em,$container->get(ValidatorInterface::class),$checker);
-        $service=new AgentOperationService($em,new MutationAdapterRegistry([$adapter]));
+        $service=new AgentOperationService($em,new MutationAdapterRegistry([$adapter]),\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
         return $withChecker?[$service,$em,$checker]:[$service,$em];
     }
 }

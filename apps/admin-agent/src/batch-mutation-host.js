@@ -7,7 +7,14 @@
  * that do not match the backend protocol before they can reach the UI.
  */
 
-import { resolveCapabilitySource } from './mutation-host.js'
+import {
+  assertCapabilityPolicyCurrent,
+  capabilityConflict,
+  capabilityFields,
+  capabilityFingerprint,
+  resolveCapabilitySource,
+  retainCapabilityPolicy
+} from './mutation-host.js'
 
 const BATCH_ENTITIES = Object.freeze(['Tag', 'Counter'])
 const MAX_ROWS = 20
@@ -41,12 +48,10 @@ export function createBatchMutationHost(request, path, capabilities = []) {
   }
 
   const assertSameRevision = before => {
-    if (!before.revision) return
-    if (readState().revision !== before.revision) {
-      const error = new TypeError('The host capability catalog changed. Request a fresh batch preview.')
-      error.code = 'capabilities_changed'
-      throw error
-    }
+    if (before.identity === readState().identity) return
+    const error = new TypeError('The host capability catalog changed. Request a fresh batch preview.')
+    error.code = 'capabilities_changed'
+    throw error
   }
 
   return {
@@ -72,7 +77,9 @@ export function createBatchMutationHost(request, path, capabilities = []) {
       assertActive(signal)
       assertSameRevision(sourceState)
       const preview = normalizePreview(response?.data, { entity: prepared.entity, submittedRows: prepared.rows, entries })
-      retained.set(preview.operationId, { entity: preview.entity, fields: entries.get(preview.entity).fields })
+      const current = readState()
+      const currentEntries = buildEntries(current.capabilities)
+      retainCapabilityPolicy(retained, preview.operationId, captureBatchPolicy(current, currentEntries.get(preview.entity), preview))
       return preview
     },
 
@@ -90,28 +97,29 @@ export function createBatchMutationHost(request, path, capabilities = []) {
       assertActive(signal)
       assertSameRevision(sourceState)
       const preview = normalizePreview(response?.data, { operationId, entries })
-      retained.set(preview.operationId, { entity: preview.entity, fields: entries.get(preview.entity).fields })
+      const current = readState()
+      const currentEntries = buildEntries(current.capabilities)
+      retainCapabilityPolicy(retained, preview.operationId, captureBatchPolicy(current, currentEntries.get(preview.entity), preview))
       return preview
     },
 
     async commitRecordBatch(operationId, signal) {
-      const sourceState = readState()
-      const entries = buildEntries(sourceState.capabilities)
-      const retainedPolicy = retained.get(operationId)
-      // Commit is a mutation request: a previously prepared operation must
-      // still be enabled by the current write catalog. Status/cancel/read
-      // receipt recovery deliberately do not use the write catalog.
-      if (retainedPolicy && !entries.has(retainedPolicy.entity)) {
-        const error = new TypeError('This batch is not enabled for assistant mutations.')
-        // No commit request is sent. Mark it as a definitive conflict so the UI
-        // offers discard instead of treating it as an ambiguous server outcome.
-        error.code = 'proposal_conflict'
-        throw error
-      }
       const target = operationPath(operationId)
       assertActive(signal)
+      const retainedPolicy = retained.get(operationId)
+      if (!retainedPolicy) {
+        // Unknown/unretained operations are closed. This host never commits a
+        // blind ID; prepare or restore must have supplied the canonical policy.
+        throw capabilityConflict('This batch was not prepared in this session. Request a fresh preview.')
+      }
+      // Commit is a mutation request: the retained identity, entity/action and
+      // exact field scope must still be current. Status/cancel/read receipt
+      // recovery deliberately do not use the write catalog.
+      assertCapabilityPolicyCurrent(readState(), retainedPolicy)
       let response
       try {
+        // No identity re-check after this POST: an in-flight commit may settle
+        // with a receipt even if authority is revoked while awaiting.
         response = await request.post(`${target}/commit`, { confirmed: true }, { signal, timeout: REQUEST_TIMEOUT })
       } catch (error) {
         throw batchError(error)
@@ -157,6 +165,28 @@ export function createBatchMutationHost(request, path, capabilities = []) {
       return normalizePage(response?.data, { page, retained })
     }
   }
+}
+
+function captureBatchPolicy(state, entry, preview) {
+  if (!entry) throw capabilityConflict('This batch is not enabled for assistant mutations.')
+  const allowed = capabilityFields(entry.capability, 'create')
+  if (allowed === null) throw capabilityConflict('This batch is not enabled for assistant mutations.')
+  const fields = []
+  for (const row of preview.rows) {
+    for (const difference of row.differences) {
+      if (!fields.includes(difference.property)) fields.push(difference.property)
+    }
+  }
+  for (const field of fields) {
+    if (!allowed.has(field)) throw new TypeError('Invalid batch preview field.')
+  }
+  return Object.freeze({
+    entity: preview.entity,
+    action: 'create',
+    fields: Object.freeze(fields),
+    identity: state.identity,
+    fingerprint: capabilityFingerprint(entry.capability, 'create')
+  })
 }
 
 function buildEntries(capabilities) {
@@ -380,7 +410,7 @@ function normalizeFields(fields, retainedPolicy) {
     // When this host retained the prepared/restored policy, require exact
     // correspondence. Otherwise accept only protocol-bounded safe field names;
     // never fall back to the current write catalog or a second field table.
-    if (retainedPolicy && !Object.hasOwn(retainedPolicy.fields, field)) throw new TypeError('Invalid batch receipt fields.')
+    if (retainedPolicy && !retainedPolicy.fields.includes(field)) throw new TypeError('Invalid batch receipt fields.')
     seen.add(field)
     return field
   })

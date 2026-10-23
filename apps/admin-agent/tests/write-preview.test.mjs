@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-const policy = { Counter: { name: { label: 'Name', type: 'string', required: true, maxLength: 120 } } }
 import { createWritePreview } from '../src/write-preview.js'
 import { createMutationHost } from '../src/mutation-host.js'
 import { createAssistantTools, executeAssistantTool } from '../src/tools.js'
-import previewPolicy from '../adapters/ns-ultimate/admin/preview-policy.mjs'
 import { mutationCapabilities } from './support/capability-fixture.mjs'
+
+// Test-only fixture. The project host intentionally has no local preview pilot;
+// these generic preview tests own their minimal policy explicitly.
+const policy = Object.freeze({ Counter: { name: { label: 'Name', type: 'string', required: true, maxLength: 120 } } })
+const counterPreviewPolicy = Object.freeze({
+  Counter: { name: { label: 'Name', type: 'string', required: true, maxLength: 120, lengthUnit: 'codePoints', trimForValidation: true } }
+})
 
 const snapshots = new Map([['Counter', { observedAt: '2026-10-22T00:00:00Z', records: [{ id: 7, name: 'Before' }] }]])
 const input = { entity: 'Counter', identifier: '7', changes: { name: 'After' } }
@@ -48,10 +53,10 @@ test('local Counter preview and host preparation agree on Unicode length and whi
     post: async(_path, payload) => ({ data: { saved: false, ...payload } })
   }, '/operations', [counterCapability])
   const localAccepts = name => assert.doesNotThrow(() => createWritePreview(
-    { ...input, changes: { name } }, previewPolicy, snapshots
+    { ...input, changes: { name } }, counterPreviewPolicy, snapshots
   ))
   const localRejects = name => assert.throws(() => createWritePreview(
-    { ...input, changes: { name } }, previewPolicy, snapshots
+    { ...input, changes: { name } }, counterPreviewPolicy, snapshots
   ))
   const hostAccepts = name => host.prepareRecordChange({ entity: 'Counter', action: 'update', identifier: '7', changes: { name } })
   const hostRejects = name => assert.rejects(

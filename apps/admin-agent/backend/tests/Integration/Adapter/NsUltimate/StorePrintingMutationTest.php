@@ -24,6 +24,8 @@ use Symfony\Component\Security\Core\Authorization\AccessDecision;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
+require_once dirname(__DIR__, 2).'/Support/AdminConfigurationTestManifest.php';
+
 final class StorePrintingMutationTest extends IntegrationWebTestCase
 {
     use DatabaseBootstrapTrait;
@@ -31,8 +33,20 @@ final class StorePrintingMutationTest extends IntegrationWebTestCase
     private const URL = '/api/v1/manage/agent/operations';
     private const CASES = ['order', 'perItem', 'filteredList', 'fullList', 'settlement'];
     private const CASE_FIELDS = ['enabled', 'deviceUuid', 'templateUuid', 'copies'];
+    private ?string $testManifest = null;
 
-    protected function setUp(): void { $this->bootTestDatabase(); self::ensureKernelShutdown(); }
+    protected function setUp(): void {
+        $this->testManifest = \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::install();
+        $this->bootTestDatabase();
+        self::ensureKernelShutdown();
+    }
+
+    protected function tearDown(): void {
+        if ($this->testManifest !== null) {
+            \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::restore($this->testManifest);
+            $this->testManifest = null;
+        }
+    }
     protected static function getKernelClass(): string { return 'NsUltimate\\Integration\\Backend\\Kernel'; }
 
     public function testPartialPatchPreservesUnrelatedSettingsAndUnknownStoredKeys(): void
@@ -677,7 +691,7 @@ final class StorePrintingMutationTest extends IntegrationWebTestCase
         $container = self::getContainer();
         $em = $container->get(EntityManagerInterface::class);
         $checker ??= new SwitchableStorePrintingAuthorization();
-        return [new AgentOperationService($em, new MutationAdapterRegistry([new StorePrintingMutationAdapter($em, $checker)])), $em];
+        return [new AgentOperationService($em, new MutationAdapterRegistry([new StorePrintingMutationAdapter($em, $checker)]), \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy()), $em];
     }
 
     /**

@@ -20,6 +20,12 @@ services:
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StorePrintingMutationAdapter: ~
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductPrintingMutationAdapter: ~
 
+    # The audited bridge is the only adapter-facing write executor for Tag and Counter.
+    # It stays public so opt-in PHP exporters/harnesses can inject the real composed one.
+    NsUltimate\Apps\AdminAgent\Backend\Contract\AdminCrudExecutor: '@NsUltimate\Apps\AdminAgent\Backend\Service\AdminCrudControllerBridge'
+    NsUltimate\Apps\AdminAgent\Backend\Service\AdminCrudControllerBridge:
+        public: true
+
     # Explicit create-only batch selection; single-record adapters above remain the source of
     # field validation, authorization and uniqueness behavior.
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagBatchCreateAdapter: ~

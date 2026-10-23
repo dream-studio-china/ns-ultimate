@@ -12,11 +12,21 @@ use App\Tests\Integration\IntegrationWebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 
+require_once dirname(__DIR__, 2).'/Support/AdminConfigurationTestManifest.php';
+
 final class ProductCategoryMutationTest extends IntegrationWebTestCase
 {
     use DatabaseBootstrapTrait;
     private const URL='/api/v1/manage/agent/operations';
-    protected function setUp():void{$this->bootTestDatabase();self::ensureKernelShutdown();}
+    private ?string $testManifest = null;
+    protected function setUp():void{
+        $this->testManifest=\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::install();
+        $this->bootTestDatabase();
+        self::ensureKernelShutdown();
+    }
+    protected function tearDown():void{
+        if($this->testManifest!==null){\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::restore($this->testManifest);$this->testManifest=null;}
+    }
     protected static function getKernelClass():string{return 'NsUltimate\\Integration\\Backend\\Kernel';}
 
     public function testCreateUpdateRestoreAndDeleteInStoreScope():void

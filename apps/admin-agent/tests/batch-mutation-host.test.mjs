@@ -532,7 +532,11 @@ test('restores the same operation and rejects mismatched or malformed responses'
 
 test('maps only the exact 409 proposal_conflict marker and preserves every other error', async() => {
   for (const method of ['restore', 'commit']) {
-    const conflict = makeHost({ get: () => { throw conflictError() }, post: () => { throw conflictError() } })
+    const conflict = makeHost({
+      get: () => { throw conflictError() },
+      post: path => { if (path === PATH) return tagPreview(); throw conflictError() }
+    })
+    if (method === 'commit') await conflict.host.prepareRecordBatch(tagInput)
     await assert.rejects(conflict.host[method === 'restore' ? 'restoreRecordBatch' : 'commitRecordBatch'](OPERATION_ID), error => {
       assert.equal(error.code, 'proposal_conflict')
       assert.doesNotMatch(error.message, /stored|payload|value/i)
@@ -545,7 +549,11 @@ test('maps only the exact 409 proposal_conflict marker and preserves every other
       Object.assign(new Error('Server failure'), { response: { status: 500, data: {} } }),
       Object.assign(new Error('Timed out'))
     ]) {
-      const preserved = makeHost({ get: () => { throw original }, post: () => { throw original } })
+      const preserved = makeHost({
+        get: () => { throw original },
+        post: path => { if (path === PATH) return tagPreview(); throw original }
+      })
+      if (method === 'commit') await preserved.host.prepareRecordBatch(tagInput)
       await assert.rejects(
         preserved.host[method === 'restore' ? 'restoreRecordBatch' : 'commitRecordBatch'](OPERATION_ID),
         error => error === original
@@ -557,7 +565,9 @@ test('maps only the exact 409 proposal_conflict marker and preserves every other
 test('commits only with explicit confirmation and validates metadata-only receipts', async() => {
   const signal = new AbortController().signal
   const verifiedReceipt = receipt({ verified: true })
-  const valid = makeHost({ post: () => verifiedReceipt })
+  const valid = makeHost({ post: path => path.endsWith('/commit') ? verifiedReceipt : tagPreview() })
+  await valid.host.prepareRecordBatch(tagInput)
+  valid.calls.length = 0
   assert.deepEqual(await valid.host.commitRecordBatch(OPERATION_ID, signal), verifiedReceipt)
   assert.equal(valid.calls.length, 1)
   assert.equal(valid.calls[0].method, 'POST')
@@ -597,23 +607,28 @@ test('commits only with explicit confirmation and validates metadata-only receip
     { ...verifiedReceipt, rows: tagInput.rows }
   ]
   for (const invalidReceipt of invalid) {
-    const { host } = makeHost({ post: () => invalidReceipt })
+    const { host } = makeHost({ post: path => path.endsWith('/commit') ? invalidReceipt : tagPreview() })
+    await host.prepareRecordBatch(tagInput)
     await assert.rejects(host.commitRecordBatch(OPERATION_ID), /Invalid batch|unsupported|not verified|did not succeed|identity|entity|action|status|row count|receipt time|receipt fields|receipt results/)
   }
 })
 
 test('commit replay returns the same verified receipt and never accepts an unverified commit', async() => {
   const verified = receipt({ verified: true })
-  const replay = makeHost({ post: () => verified })
+  const replay = makeHost({ post: path => path.endsWith('/commit') ? verified : tagPreview() })
+  await replay.host.prepareRecordBatch(tagInput)
+  replay.calls.length = 0
   assert.deepEqual(await replay.host.commitRecordBatch(OPERATION_ID), verified)
   assert.deepEqual(await replay.host.commitRecordBatch(OPERATION_ID), verified)
   assert.equal(replay.calls.length, 2)
   assert.ok(replay.calls.every(call => call.method === 'POST' && call.path === `${PATH}/${OPERATION_ID}/commit`))
   assert.ok(replay.calls.every(call => JSON.stringify(call.body) === JSON.stringify({ confirmed: true })))
 
-  const unverified = makeHost({ post: () => receipt() })
+  const unverified = makeHost({ post: path => path.endsWith('/commit') ? receipt() : tagPreview() })
+  await unverified.host.prepareRecordBatch(tagInput)
   await assert.rejects(unverified.host.commitRecordBatch(OPERATION_ID), /not verified/)
-  const wrongMarker = makeHost({ post: () => receipt({ verified: false }) })
+  const wrongMarker = makeHost({ post: path => path.endsWith('/commit') ? receipt({ verified: false }) : tagPreview() })
+  await wrongMarker.host.prepareRecordBatch(tagInput)
   await assert.rejects(wrongMarker.host.commitRecordBatch(OPERATION_ID), /not verified/)
 })
 
@@ -721,14 +736,24 @@ test('aborts before transport and never accepts a response after caller cancella
     const controller = new AbortController()
     args[args.length - 1] = controller.signal
     const payload = {
-      post: () => tagPreview(),
+      post: path => {
+        if (method === 'commitRecordBatch' && path === PATH) return tagPreview()
+        controller.abort()
+        return path.endsWith('/commit') ? { ...receipt({ verified: true }) } : tagPreview()
+      },
       get: () => tagPreview()
     }
-    payload[handler] = () => {
+    const basePost = payload.post
+    payload[handler] = (...callArgs) => {
+      if (handler === 'post') return basePost(...callArgs)
       controller.abort()
-      return handler === 'post' ? (method === 'prepareRecordBatch' ? tagPreview() : { ...receipt({ verified: true }) }) : (method === 'restoreRecordBatch' ? tagPreview() : (method === 'getRecordBatchStatus' ? pendingReceipt() : { items: [], page: 1, hasMore: false }))
+      return method === 'restoreRecordBatch' ? tagPreview() : (method === 'getRecordBatchStatus' ? pendingReceipt() : { items: [], page: 1, hasMore: false })
     }
     const { host, calls } = makeHost(payload)
+    if (method === 'commitRecordBatch') {
+      await host.prepareRecordBatch(tagInput)
+      calls.length = 0
+    }
     await assert.rejects(host[method](...args), error => error.name === 'AbortError')
     assert.equal(calls.length, 1)
   }
@@ -799,4 +824,128 @@ test('receipt reads without retained history accept only bounded protocol field 
     }, PATH, [])
     await assert.rejects(invalid.getRecordBatchStatus(OPERATION_ID), /receipt fields/)
   }
+})
+
+function cloneBatchCapabilities(capabilities = batchCapabilities) {
+  return capabilities.map(capability => ({
+    ...capability,
+    actions: [...capability.actions],
+    actionFields: capability.actionFields
+      ? Object.fromEntries(Object.entries(capability.actionFields).map(([action, fields]) => [action, { ...fields }]))
+      : capability.actionFields,
+    fields: capability.fields ? { ...capability.fields } : capability.fields
+  }))
+}
+
+function dynamicBatchState(identity = 'runtime-1:config-1') {
+  return { identity, capabilities: cloneBatchCapabilities() }
+}
+
+function dynamicBatchSource(state) {
+  return {
+    getCapabilities: () => state.capabilities,
+    getRevision: () => state.identity
+  }
+}
+
+function batchTransport(state, handlers = {}) {
+  const calls = []
+  const request = {
+    async post(path, body, options = {}) {
+      calls.push({ method: 'POST', path, body, options })
+      if (path === PATH) return { data: handlers.prepare ? handlers.prepare() : tagPreview() }
+      return { data: handlers.commit ? await handlers.commit() : receipt({ verified: true }) }
+    },
+    async get(path, options = {}) {
+      calls.push({ method: 'GET', path, options })
+      return { data: handlers.restore ? handlers.restore() : tagPreview() }
+    }
+  }
+  return { host: createBatchMutationHost(request, PATH, dynamicBatchSource(state)), calls }
+}
+
+function tagBatchCapability(state) {
+  return state.capabilities.find(item => item.entity === 'Tag')
+}
+
+function batchCommitCalls(calls) {
+  return calls.filter(call => call.method === 'POST' && call.path === `${PATH}/${OPERATION_ID}/commit`)
+}
+
+test('dynamic batch commit rejects a removed field under the same identity without posting', async() => {
+  const state = dynamicBatchState()
+  const { host, calls } = batchTransport(state)
+  await host.prepareRecordBatch(tagInput)
+  delete tagBatchCapability(state).actionFields.create.color
+  delete tagBatchCapability(state).fields.color
+
+  await assert.rejects(host.commitRecordBatch(OPERATION_ID), error => error.code === 'proposal_conflict')
+  assert.equal(batchCommitCalls(calls).length, 0)
+})
+
+test('dynamic batch commit rejects a revoked create action without posting', async() => {
+  const state = dynamicBatchState()
+  const { host, calls } = batchTransport(state)
+  await host.prepareRecordBatch(tagInput)
+  tagBatchCapability(state).actions = tagBatchCapability(state).actions.filter(action => action !== 'create')
+
+  await assert.rejects(host.commitRecordBatch(OPERATION_ID), error => error.code === 'proposal_conflict')
+  assert.equal(batchCommitCalls(calls).length, 0)
+})
+
+test('dynamic batch commit rejects an epoch-qualified identity change without posting', async() => {
+  const state = dynamicBatchState('runtime-a:config-1')
+  const { host, calls } = batchTransport(state)
+  await host.prepareRecordBatch(tagInput)
+  state.identity = 'runtime-a:config-2'
+
+  await assert.rejects(host.commitRecordBatch(OPERATION_ID), error => error.code === 'proposal_conflict')
+  assert.equal(batchCommitCalls(calls).length, 0)
+})
+
+test('dynamic batch commit rejects a nested descriptor change under the same identity', async() => {
+  const state = dynamicBatchState()
+  const { host, calls } = batchTransport(state)
+  await host.prepareRecordBatch(tagInput)
+  const nameRule = tagBatchCapability(state).actionFields.create.name
+  tagBatchCapability(state).actionFields.create.name = { ...nameRule, maxLength: 1 }
+
+  await assert.rejects(host.commitRecordBatch(OPERATION_ID), error => error.code === 'proposal_conflict')
+  assert.equal(batchCommitCalls(calls).length, 0)
+})
+
+test('dynamic batch unknown operation IDs are closed and never posted blindly', async() => {
+  const state = dynamicBatchState()
+  const { host, calls } = batchTransport(state)
+  await assert.rejects(host.commitRecordBatch(OPERATION_ID), error => error.code === 'proposal_conflict')
+  assert.equal(batchCommitCalls(calls).length, 0)
+})
+
+test('dynamic batch restore rebinds the current generation before a new confirmation', async() => {
+  const state = dynamicBatchState('generation-1')
+  const { host, calls } = batchTransport(state)
+  await host.prepareRecordBatch(tagInput)
+  state.identity = 'generation-2'
+  await assert.rejects(host.commitRecordBatch(OPERATION_ID), error => error.code === 'proposal_conflict')
+  assert.equal(batchCommitCalls(calls).length, 0)
+
+  const restored = await host.restoreRecordBatch(OPERATION_ID)
+  assert.deepEqual(restored, tagPreview())
+  assert.deepEqual(await host.commitRecordBatch(OPERATION_ID), receipt({ verified: true }))
+  assert.equal(batchCommitCalls(calls).length, 1)
+})
+
+test('dynamic batch in-flight commit settles after authority is revoked', async() => {
+  const state = dynamicBatchState()
+  let release
+  const { host, calls } = batchTransport(state, {
+    commit: () => new Promise(resolve => { release = resolve })
+  })
+  await host.prepareRecordBatch(tagInput)
+  const pending = host.commitRecordBatch(OPERATION_ID)
+  state.capabilities = []
+  state.identity = 'revoked-generation'
+  release(receipt({ verified: true }))
+  assert.deepEqual(await pending, receipt({ verified: true }))
+  assert.equal(batchCommitCalls(calls).length, 1)
 })

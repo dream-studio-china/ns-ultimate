@@ -29,6 +29,8 @@ use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\SpecificationMutationA
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StoreMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StorePrintingMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagMutationAdapter;
+use NsUltimate\Apps\AdminAgent\Backend\Policy\AdminConfigurationPolicy;
+use NsUltimate\Apps\AdminAgent\Backend\Service\AdminCrudControllerBridge;
 use NsUltimate\Apps\AdminAgent\Backend\Service\AgentOperationService;
 use NsUltimate\Apps\AdminAgent\Backend\Service\MutationAdapterRegistry;
 use NsUltimate\Business\Common\Service\TagWriteService;
@@ -42,6 +44,7 @@ use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Business\Store\Entity\Product as BusinessProduct;
 use NsUltimate\Integration\Backend\Kernel;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Authorization\AccessDecision;
 use Symfony\Component\Validator\Validation;
@@ -51,6 +54,18 @@ try {
     $kernel->boot();
     $container = $kernel->getContainer();
     $em = $container->get('doctrine')->getManager();
+    $bridge = $container->get(AdminCrudControllerBridge::class);
+    // Legacy preview exporter: explicit test-only synthetic manifest so every
+    // previously approved preview case remains exercisable independently of the
+    // current composed configuration. The actual catalog export uses the real DI policy.
+    $policy = \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy();
+    // No HTTP request exists in this opt-in exporter. Install the same trusted
+    // main-request and authenticated admin token an ordinary admin request would
+    // carry so the audited standard-controller bridge and class-level IsGranted run.
+    $bridge->installHarnessContext(
+        Request::create('http://localhost/api/v1/manage/agent/operations', 'POST'),
+        (new \App\Identity\Entity\User())->setRoles(['ROLE_ADMIN']),
+    );
     $connection = $em->getConnection();
     $params = $connection->getParams();
     $database = (string) ($params['path'] ?? '');
@@ -65,19 +80,19 @@ try {
         public function isGranted(mixed $attribute, mixed $subject = null, ?AccessDecision $accessDecision = null): bool { return $attribute === 'ROLE_ADMIN'; }
     };
     $validator = Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator();
-    $buildService = static function (EntityManagerInterface $manager) use ($validator, $auth): AgentOperationService {
+    $buildService = static function (EntityManagerInterface $manager) use ($validator, $auth, $bridge, $policy): AgentOperationService {
         return new AgentOperationService($manager, new MutationAdapterRegistry([
             new ContentMutationAdapter($manager, $validator, $auth),
-            new CounterMutationAdapter($manager, $auth, new CounterWriteService($manager)),
+            new CounterMutationAdapter($manager, $auth, new CounterWriteService($manager), $bridge),
             new StoreMutationAdapter($manager, $auth),
             new CategoryMutationAdapter($manager, $auth),
-            new TagMutationAdapter($manager, $auth, new TagWriteService($manager)),
+            new TagMutationAdapter($manager, $auth, new TagWriteService($manager), $bridge),
             new ProductCategoryMutationAdapter($manager, $auth),
             new ProductMutationAdapter($manager, $validator, $auth),
             new SpecificationMutationAdapter($manager, $auth),
             new StorePrintingMutationAdapter($manager, $auth),
             new ProductPrintingMutationAdapter($manager, $validator, $auth),
-        ]));
+        ]), $policy);
     };
     $service = $buildService($em);
     $doctrine = $container->get('doctrine');
@@ -293,5 +308,70 @@ try {
     fwrite(STDERR, 'Preview fixture export failed: '.get_class($error).' '.$error->getMessage());
     exit(1);
 } finally {
+    if (isset($policyPath)) @unlink($policyPath);
     $kernel->shutdown();
+}
+
+/**
+ * Contract fixtures exercise the transport/domain path, not the in-flight admin
+ * manifest integration. Build a disposable permissive manifest for exactly the
+ * entities/fields this fixture submits, with no nested-path proof (server rules
+ * still narrow nested values).
+ *
+ * @return array{0: AdminConfigurationPolicy, 1: string}
+ */
+function nsAdminAgentFixturePolicy(): array
+{
+    $fields = [
+        'Content' => ['title', 'body', 'category', 'tags', 'metadata', 'sortOrder'],
+        'Counter' => ['storeUuid', 'code', 'name', 'capacity', 'sort', 'metadata', 'enabled'],
+        'Store' => ['code', 'name', 'status', 'timezone', 'contact', 'address', 'settings', 'paymentSetting'],
+        'Category' => ['name', 'slug', 'description', 'parent', 'sortOrder', 'enabled'],
+        'Tag' => ['name', 'slug', 'color'],
+        'ProductCategory' => ['name', 'slug', 'description', 'parent', 'sortOrder', 'enabled', 'store'],
+        'Product' => ['name', 'description', 'category', 'store', 'sortOrder', 'recommendationLevel', 'isSoldout', 'status', 'metadata', 'settings'],
+        'Specification' => ['productId', 'name', 'price', 'status', 'sort'],
+        'StorePrinting' => ['order', 'fullList', 'perItem', 'filteredList', 'settlement', 'payment'],
+        'ProductPrinting' => ['kitchenPrinterEnable'],
+    ];
+    $entities = [];
+    foreach ($fields as $name => $properties) {
+        $actions = [];
+        foreach (['create', 'update'] as $action) {
+            $actions[$action] = [
+                'configured' => true,
+                'fields' => array_map(static fn (string $property): array => ['property' => $property], $properties),
+            ];
+        }
+        $actions['delete'] = ['configured' => true, 'fields' => []];
+        $entities[] = ['key' => $name, 'name' => $name, 'actions' => $actions];
+    }
+    $payload = [
+        'schemaVersion' => AdminConfigurationPolicy::SCHEMA_VERSION,
+        'source' => AdminConfigurationPolicy::SOURCE,
+        'entities' => $entities,
+        'semanticCapabilities' => [],
+    ];
+    $revision = hash('sha256', json_encode(
+        nsAdminAgentFixtureCanonicalize($payload),
+        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+    ));
+    $path = tempnam(sys_get_temp_dir(), 'ns-agent-fixture-policy-');
+    if ($path === false) throw new RuntimeException('Unable to create a disposable policy manifest.');
+    file_put_contents($path, json_encode(
+        ['revision' => $revision, ...$payload],
+        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+    ));
+
+    return [new AdminConfigurationPolicy($path), $path];
+}
+
+function nsAdminAgentFixtureCanonicalize(mixed $value): mixed
+{
+    if (!is_array($value)) return $value;
+    if (array_is_list($value)) return array_map(nsAdminAgentFixtureCanonicalize(...), $value);
+    ksort($value, SORT_STRING);
+    foreach ($value as $key => $item) $value[$key] = nsAdminAgentFixtureCanonicalize($item);
+
+    return $value;
 }

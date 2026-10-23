@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Apps\AdminAgent\Backend\Contract\BatchCreateAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentBatchOperation;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
+use NsUltimate\Apps\AdminAgent\Backend\Policy\AdminConfigurationPolicy;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -22,7 +23,15 @@ final class BatchAgentOperationService
 {
     private const MAX_ROWS = 20;
 
-    public function __construct(private readonly EntityManagerInterface $em, private readonly BatchCreateAdapterRegistry $adapters) {}
+    /**
+     * The nullable policy is for legacy manually constructed tests/exporters only.
+     * The composed container injects the trusted policy for every production call.
+     */
+    public function __construct(
+        private readonly EntityManagerInterface $em,
+        private readonly BatchCreateAdapterRegistry $adapters,
+        private readonly AdminConfigurationPolicy $configuration,
+    ) {}
 
     /** @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -39,6 +48,13 @@ final class BatchAgentOperationService
         }
         $adapter = $this->adapters->get($input['entity']);
         $adapter->authorize();
+        $snapshot = $this->configuration->snapshot();
+        foreach ($rows as $row) {
+            if (!is_array($row) || ($row !== [] && array_is_list($row))) {
+                throw new BadRequestHttpException('Each batch row must be a field object.');
+            }
+            $this->configuration->assertPrepareAllowed($input['entity'], 'create', $row, $snapshot);
+        }
         [$canonical, $preview] = $this->preparedRows($adapter, $rows);
         $operation = new AgentBatchOperation($actor, $adapter->entityKey(), 'create', $canonical);
         $this->em->persist($operation);
@@ -61,6 +77,13 @@ final class BatchAgentOperationService
             }
             if ($operation->getStatus() !== 'pending' || $operation->getExpiresAt() <= new \DateTimeImmutable()) {
                 throw new ConflictHttpException('This batch is cancelled or expired. Prepare a new preview.');
+            }
+            $snapshot = $this->configuration->snapshot();
+            foreach ($operation->getRows() as $row) {
+                if (!is_array($row)) {
+                    throw new ProposalConflictException('The stored batch payload is invalid. Discard this proposal and prepare a new preview.');
+                }
+                $this->configuration->assertMutationAllowed($operation->getEntityKey(), 'create', $row, $snapshot);
             }
             [$rows] = $this->revalidateStoredRows($operation, $adapter);
             $results = $adapter->execute($rows);
@@ -127,6 +150,13 @@ final class BatchAgentOperationService
             $adapter->authorize();
             if ($operation->receipt()['status'] !== 'pending') {
                 throw new ConflictHttpException('Only an unexpired pending batch can be restored. Check its outcome.');
+            }
+            $snapshot = $this->configuration->snapshot();
+            foreach ($operation->getRows() as $row) {
+                if (!is_array($row)) {
+                    throw new ProposalConflictException('The stored batch payload is invalid. Discard this proposal and prepare a new preview.');
+                }
+                $this->configuration->assertMutationAllowed($operation->getEntityKey(), 'create', $row, $snapshot);
             }
             [, $preview] = $this->revalidateStoredRows($operation, $adapter);
 

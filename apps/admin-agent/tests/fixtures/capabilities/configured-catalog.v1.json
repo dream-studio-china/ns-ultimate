@@ -1,0 +1,1841 @@
+{
+  "schemaVersion": 1,
+  "revision": "6c95ec6b925704382eddf1f3c56c7a953a850538d94bcaa485697fb554be5b41",
+  "capabilities": [
+    {
+      "entity": "Content",
+      "actions": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "actionFields": {
+        "create": {
+          "title": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "body": {
+            "type": "utf8-string",
+            "maxBytes": 20000,
+            "nullable": true
+          },
+          "category": {
+            "type": "positive-id",
+            "nullable": true
+          },
+          "tags": {
+            "type": "positive-id-list",
+            "maxItems": 50
+          }
+        },
+        "update": {
+          "title": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "body": {
+            "type": "utf8-string",
+            "maxBytes": 20000,
+            "nullable": true
+          },
+          "category": {
+            "type": "positive-id",
+            "nullable": true
+          },
+          "tags": {
+            "type": "positive-id-list",
+            "maxItems": 50
+          }
+        }
+      },
+      "fields": {
+        "title": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "body": {
+          "type": "utf8-string",
+          "maxBytes": 20000,
+          "nullable": true
+        },
+        "category": {
+          "type": "positive-id",
+          "nullable": true
+        },
+        "tags": {
+          "type": "positive-id-list",
+          "maxItems": 50
+        }
+      },
+      "deletePreviewFields": {
+        "title": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "body": {
+          "type": "utf8-string",
+          "maxBytes": 20000,
+          "nullable": true
+        },
+        "category": {
+          "type": "positive-id",
+          "nullable": true
+        },
+        "tags": {
+          "type": "positive-id-list",
+          "maxItems": 50
+        },
+        "metadata": {
+          "type": "object",
+          "nullable": true,
+          "additionalProperties": false,
+          "properties": {
+            "featured": {
+              "type": "boolean"
+            },
+            "layout": {
+              "type": "enum",
+              "values": [
+                "article",
+                "landing"
+              ]
+            }
+          }
+        },
+        "sortOrder": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        }
+      }
+    },
+    {
+      "entity": "Counter",
+      "actions": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "actionFields": {
+        "create": {
+          "storeUuid": {
+            "type": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "patternFlags": "i",
+            "requiredOnCreate": true
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 50,
+            "requiredOnCreate": true,
+            "nonEmpty": true,
+            "trimForValidation": true
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "requiredOnCreate": true,
+            "nonEmpty": true,
+            "trimForValidation": true
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "nullable": true
+          },
+          "sort": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "update": {
+          "code": {
+            "type": "string",
+            "maxLength": 50,
+            "requiredOnCreate": false,
+            "nonEmpty": true,
+            "trimForValidation": true
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "requiredOnCreate": false,
+            "nonEmpty": true,
+            "trimForValidation": true
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "nullable": true
+          },
+          "sort": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "fields": {
+        "storeUuid": {
+          "type": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "patternFlags": "i",
+          "requiredOnCreate": true
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 50,
+          "requiredOnCreate": false,
+          "nonEmpty": true,
+          "trimForValidation": true
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120,
+          "requiredOnCreate": false,
+          "nonEmpty": true,
+          "trimForValidation": true
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "nullable": true
+        },
+        "sort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "deletePreviewFields": {
+        "storeUuid": {
+          "type": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "patternFlags": "i",
+          "requiredOnCreate": true
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 50,
+          "requiredOnCreate": false,
+          "nonEmpty": true,
+          "trimForValidation": true
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120,
+          "requiredOnCreate": false,
+          "nonEmpty": true,
+          "trimForValidation": true
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "nullable": true
+        },
+        "sort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "entity": "Store",
+      "actions": [
+        "update"
+      ],
+      "actionFields": {
+        "update": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": false,
+            "nonEmpty": true,
+            "trimForValidation": true
+          },
+          "contact": {
+            "type": "object",
+            "nullable": false,
+            "additionalProperties": false,
+            "properties": {
+              "phone": {
+                "type": "string",
+                "maxLength": 20,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "pattern": "^(\\+?[0-9\\- ]{7,20}|1[3-9][0-9]{9})$"
+              },
+              "managerPhone": {
+                "type": "string",
+                "maxLength": 20,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "pattern": "^(\\+?[0-9\\- ]{7,20}|1[3-9][0-9]{9})$"
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 255,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "format": "email"
+              },
+              "managerEmail": {
+                "type": "string",
+                "maxLength": 255,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "format": "email"
+              },
+              "managerName": {
+                "type": "string",
+                "maxLength": 40,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "minLength": 1
+              },
+              "managerUserUuid": {
+                "type": "string",
+                "maxLength": 36,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i"
+              },
+              "wechat": {
+                "type": "string",
+                "maxLength": 64,
+                "requiredOnCreate": false,
+                "nonEmpty": false
+              },
+              "serviceHours": {
+                "type": "string",
+                "maxLength": 100,
+                "requiredOnCreate": false,
+                "nonEmpty": false
+              },
+              "subTitle": {
+                "type": "string",
+                "maxLength": 100,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "minLength": 1
+              },
+              "tags": {
+                "type": "string-list",
+                "maxItems": 20,
+                "minItemLength": 1,
+                "maxItemLength": 30,
+                "uniqueItems": true
+              }
+            }
+          },
+          "address": {
+            "type": "object",
+            "nullable": false,
+            "additionalProperties": false,
+            "properties": {
+              "province": {
+                "type": "string",
+                "maxLength": 40,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "minLength": 1
+              },
+              "city": {
+                "type": "string",
+                "maxLength": 40,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "minLength": 1
+              },
+              "district": {
+                "type": "string",
+                "maxLength": 40,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "minLength": 1
+              },
+              "street": {
+                "type": "string",
+                "maxLength": 100,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "minLength": 1
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 255,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "minLength": 1
+              },
+              "building": {
+                "type": "string",
+                "maxLength": 100,
+                "requiredOnCreate": false,
+                "nonEmpty": false
+              },
+              "floor": {
+                "type": "string",
+                "maxLength": 40,
+                "requiredOnCreate": false,
+                "nonEmpty": false
+              },
+              "postalCode": {
+                "type": "string",
+                "maxLength": 20,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "pattern": "^[0-9A-Za-z\\- ]{3,20}$"
+              },
+              "formattedAddress": {
+                "type": "string",
+                "maxLength": 255,
+                "requiredOnCreate": false,
+                "nonEmpty": false
+              },
+              "latitude": {
+                "type": "number",
+                "minimum": -90,
+                "maximum": 90
+              },
+              "longitude": {
+                "type": "number",
+                "minimum": -180,
+                "maximum": 180
+              },
+              "geohash": {
+                "type": "string",
+                "maxLength": 12,
+                "requiredOnCreate": false,
+                "nonEmpty": true,
+                "pattern": "^[0-9bcdefghjkmnpqrstuvwxyz]{1,12}$"
+              },
+              "poiId": {
+                "type": "string",
+                "maxLength": 64,
+                "requiredOnCreate": false,
+                "nonEmpty": false
+              }
+            },
+            "pairedProperties": [
+              [
+                "latitude",
+                "longitude"
+              ]
+            ]
+          }
+        }
+      },
+      "fields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": false,
+          "nonEmpty": true,
+          "trimForValidation": true
+        },
+        "contact": {
+          "type": "object",
+          "nullable": false,
+          "additionalProperties": false,
+          "properties": {
+            "phone": {
+              "type": "string",
+              "maxLength": 20,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "pattern": "^(\\+?[0-9\\- ]{7,20}|1[3-9][0-9]{9})$"
+            },
+            "managerPhone": {
+              "type": "string",
+              "maxLength": 20,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "pattern": "^(\\+?[0-9\\- ]{7,20}|1[3-9][0-9]{9})$"
+            },
+            "email": {
+              "type": "string",
+              "maxLength": 255,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "format": "email"
+            },
+            "managerEmail": {
+              "type": "string",
+              "maxLength": 255,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "format": "email"
+            },
+            "managerName": {
+              "type": "string",
+              "maxLength": 40,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "minLength": 1
+            },
+            "managerUserUuid": {
+              "type": "string",
+              "maxLength": 36,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i"
+            },
+            "wechat": {
+              "type": "string",
+              "maxLength": 64,
+              "requiredOnCreate": false,
+              "nonEmpty": false
+            },
+            "serviceHours": {
+              "type": "string",
+              "maxLength": 100,
+              "requiredOnCreate": false,
+              "nonEmpty": false
+            },
+            "subTitle": {
+              "type": "string",
+              "maxLength": 100,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "minLength": 1
+            },
+            "tags": {
+              "type": "string-list",
+              "maxItems": 20,
+              "minItemLength": 1,
+              "maxItemLength": 30,
+              "uniqueItems": true
+            }
+          }
+        },
+        "address": {
+          "type": "object",
+          "nullable": false,
+          "additionalProperties": false,
+          "properties": {
+            "province": {
+              "type": "string",
+              "maxLength": 40,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "minLength": 1
+            },
+            "city": {
+              "type": "string",
+              "maxLength": 40,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "minLength": 1
+            },
+            "district": {
+              "type": "string",
+              "maxLength": 40,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "minLength": 1
+            },
+            "street": {
+              "type": "string",
+              "maxLength": 100,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "minLength": 1
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 255,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "minLength": 1
+            },
+            "building": {
+              "type": "string",
+              "maxLength": 100,
+              "requiredOnCreate": false,
+              "nonEmpty": false
+            },
+            "floor": {
+              "type": "string",
+              "maxLength": 40,
+              "requiredOnCreate": false,
+              "nonEmpty": false
+            },
+            "postalCode": {
+              "type": "string",
+              "maxLength": 20,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "pattern": "^[0-9A-Za-z\\- ]{3,20}$"
+            },
+            "formattedAddress": {
+              "type": "string",
+              "maxLength": 255,
+              "requiredOnCreate": false,
+              "nonEmpty": false
+            },
+            "latitude": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "longitude": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "geohash": {
+              "type": "string",
+              "maxLength": 12,
+              "requiredOnCreate": false,
+              "nonEmpty": true,
+              "pattern": "^[0-9bcdefghjkmnpqrstuvwxyz]{1,12}$"
+            },
+            "poiId": {
+              "type": "string",
+              "maxLength": 64,
+              "requiredOnCreate": false,
+              "nonEmpty": false
+            }
+          },
+          "pairedProperties": [
+            [
+              "latitude",
+              "longitude"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "entity": "Category",
+      "actions": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "actionFields": {
+        "create": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "description": {
+            "type": "utf8-string",
+            "maxBytes": 65535,
+            "nullable": true
+          },
+          "parent": {
+            "type": "union",
+            "nullable": true,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "numeric-id-string",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i"
+              }
+            ]
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "update": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "description": {
+            "type": "utf8-string",
+            "maxBytes": 65535,
+            "nullable": true
+          },
+          "parent": {
+            "type": "union",
+            "nullable": true,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "numeric-id-string",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i"
+              }
+            ]
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "fields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "description": {
+          "type": "utf8-string",
+          "maxBytes": 65535,
+          "nullable": true
+        },
+        "parent": {
+          "type": "union",
+          "nullable": true,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "numeric-id-string",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i"
+            }
+          ]
+        },
+        "sortOrder": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "deletePreviewFields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "description": {
+          "type": "utf8-string",
+          "maxBytes": 65535,
+          "nullable": true
+        },
+        "parent": {
+          "type": "union",
+          "nullable": true,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "numeric-id-string",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i"
+            }
+          ]
+        },
+        "sortOrder": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "entity": "ProductCategory",
+      "actions": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "actionFields": {
+        "create": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 100,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "description": {
+            "type": "utf8-string",
+            "maxBytes": 65535,
+            "nullable": true
+          },
+          "parent": {
+            "type": "union",
+            "nullable": true,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "numeric-id-string",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i"
+              }
+            ],
+            "mustMatchStoreScope": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "store": {
+            "type": "union",
+            "nullable": true,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "numeric-id-string",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i"
+              }
+            ],
+            "default": null,
+            "description": "Null or omitted means global; otherwise select an existing store ID or UUID."
+          }
+        },
+        "update": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 100,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "description": {
+            "type": "utf8-string",
+            "maxBytes": 65535,
+            "nullable": true
+          },
+          "parent": {
+            "type": "union",
+            "nullable": true,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "numeric-id-string",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i"
+              }
+            ],
+            "mustMatchStoreScope": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "fields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 100,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "description": {
+          "type": "utf8-string",
+          "maxBytes": 65535,
+          "nullable": true
+        },
+        "parent": {
+          "type": "union",
+          "nullable": true,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "numeric-id-string",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i"
+            }
+          ],
+          "mustMatchStoreScope": true
+        },
+        "sortOrder": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "store": {
+          "type": "union",
+          "nullable": true,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "numeric-id-string",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i"
+            }
+          ],
+          "default": null,
+          "description": "Null or omitted means global; otherwise select an existing store ID or UUID."
+        }
+      },
+      "deletePreviewFields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 100,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "description": {
+          "type": "utf8-string",
+          "maxBytes": 65535,
+          "nullable": true
+        },
+        "parent": {
+          "type": "union",
+          "nullable": true,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "numeric-id-string",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i"
+            }
+          ],
+          "mustMatchStoreScope": true
+        },
+        "sortOrder": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "store": {
+          "type": "union",
+          "nullable": true,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "numeric-id-string",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i"
+            }
+          ],
+          "default": null,
+          "description": "Null or omitted means global; otherwise select an existing store ID or UUID."
+        }
+      }
+    },
+    {
+      "entity": "Tag",
+      "actions": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "actionFields": {
+        "create": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "color": {
+            "type": "color",
+            "nullable": true
+          }
+        },
+        "update": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "color": {
+            "type": "color",
+            "nullable": true
+          }
+        }
+      },
+      "fields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "color": {
+          "type": "color",
+          "nullable": true
+        }
+      },
+      "deletePreviewFields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "color": {
+          "type": "color",
+          "nullable": true
+        }
+      }
+    },
+    {
+      "entity": "Product",
+      "actions": [
+        "create",
+        "update"
+      ],
+      "actionFields": {
+        "create": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true,
+            "trimExact": true,
+            "disallowLessThan": true
+          },
+          "description": {
+            "type": "utf8-string",
+            "maxBytes": 65535,
+            "nullable": true,
+            "disallowHtmlTags": true
+          },
+          "status": {
+            "type": "enum",
+            "values": [
+              "active",
+              "inactive"
+            ]
+          },
+          "store": {
+            "type": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "patternFlags": "i",
+            "nullable": true,
+            "default": null,
+            "description": "Omit or pass null for a global product; otherwise pass an existing store UUID."
+          },
+          "category": {
+            "type": "positive-id",
+            "nullable": true,
+            "mustBeEnabled": true,
+            "mustMatchProductStore": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "recommendationLevel": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "isSoldout": {
+            "type": "boolean"
+          }
+        },
+        "update": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": false,
+            "nonEmpty": true,
+            "trimExact": true,
+            "disallowLessThan": true
+          },
+          "description": {
+            "type": "utf8-string",
+            "maxBytes": 65535,
+            "nullable": true,
+            "disallowHtmlTags": true
+          },
+          "status": {
+            "type": "enum",
+            "values": [
+              "active",
+              "inactive"
+            ]
+          },
+          "category": {
+            "type": "positive-id",
+            "nullable": true,
+            "mustBeEnabled": true,
+            "mustMatchProductStore": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "recommendationLevel": {
+            "type": "integer",
+            "minimum": -2147483648,
+            "maximum": 2147483647
+          },
+          "isSoldout": {
+            "type": "boolean"
+          }
+        }
+      },
+      "fields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": false,
+          "nonEmpty": true,
+          "trimExact": true,
+          "disallowLessThan": true
+        },
+        "description": {
+          "type": "utf8-string",
+          "maxBytes": 65535,
+          "nullable": true,
+          "disallowHtmlTags": true
+        },
+        "status": {
+          "type": "enum",
+          "values": [
+            "active",
+            "inactive"
+          ]
+        },
+        "store": {
+          "type": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "patternFlags": "i",
+          "nullable": true,
+          "default": null,
+          "description": "Omit or pass null for a global product; otherwise pass an existing store UUID."
+        },
+        "category": {
+          "type": "positive-id",
+          "nullable": true,
+          "mustBeEnabled": true,
+          "mustMatchProductStore": true
+        },
+        "sortOrder": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "recommendationLevel": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "isSoldout": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "entity": "StorePrinting",
+      "description": "Update the five fixed automatic order-printing cases on the exact stored Store identified by numeric ID or UUID. Only update is supported; settings roots and unrelated settings fields are not accepted.",
+      "actions": [
+        "update"
+      ],
+      "actionFields": {
+        "update": {
+          "order": {
+            "type": "object",
+            "nullable": false,
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+              },
+              "deviceUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "templateUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "copies": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+              }
+            },
+            "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: order for the exact stored Store."
+          },
+          "perItem": {
+            "type": "object",
+            "nullable": false,
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+              },
+              "deviceUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "templateUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "copies": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+              }
+            },
+            "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: perItem for the exact stored Store."
+          },
+          "filteredList": {
+            "type": "object",
+            "nullable": false,
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+              },
+              "deviceUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "templateUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "copies": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+              }
+            },
+            "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: filteredList for the exact stored Store."
+          },
+          "fullList": {
+            "type": "object",
+            "nullable": false,
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+              },
+              "deviceUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "templateUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "copies": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+              }
+            },
+            "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: fullList for the exact stored Store."
+          },
+          "settlement": {
+            "type": "object",
+            "nullable": false,
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+              },
+              "deviceUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "templateUuid": {
+                "type": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "patternFlags": "i",
+                "nullable": true,
+                "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+              },
+              "copies": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+              }
+            },
+            "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: settlement for the exact stored Store."
+          }
+        }
+      },
+      "fields": {
+        "order": {
+          "type": "object",
+          "nullable": false,
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+            },
+            "deviceUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "templateUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "copies": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+            }
+          },
+          "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: order for the exact stored Store."
+        },
+        "perItem": {
+          "type": "object",
+          "nullable": false,
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+            },
+            "deviceUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "templateUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "copies": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+            }
+          },
+          "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: perItem for the exact stored Store."
+        },
+        "filteredList": {
+          "type": "object",
+          "nullable": false,
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+            },
+            "deviceUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "templateUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "copies": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+            }
+          },
+          "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: filteredList for the exact stored Store."
+        },
+        "fullList": {
+          "type": "object",
+          "nullable": false,
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+            },
+            "deviceUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "templateUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "copies": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+            }
+          },
+          "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: fullList for the exact stored Store."
+        },
+        "settlement": {
+          "type": "object",
+          "nullable": false,
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether this fixed automatic order-printing case is enabled for FUTURE orders only."
+            },
+            "deviceUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer device, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "templateUuid": {
+              "type": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "patternFlags": "i",
+              "nullable": true,
+              "description": "Canonical UUID of an existing printer template, or null to clear it. Initial partial patches may omit it so the backend merges the stored reference; an explicit null with enabled true is rejected. An effective restored case requires it, non-null, when enabled is true."
+            },
+            "copies": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Copies for this case from 1 through 100; the backend effective configuration defaults to 1."
+            }
+          },
+          "description": "FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider. Case: settlement for the exact stored Store."
+        }
+      }
+    },
+    {
+      "entity": "ProductPrinting",
+      "description": "Update only kitchenPrinterEnable on the exact stored Product identified by numeric ID or UUID. Only update is supported; arbitrary settings, metadata, and other fields are not accepted.",
+      "actions": [
+        "update"
+      ],
+      "actionFields": {
+        "update": {
+          "kitchenPrinterEnable": {
+            "type": "boolean",
+            "description": "FUTURE automatic kitchen-list printing for this exact stored Product only. FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider."
+          }
+        }
+      },
+      "fields": {
+        "kitchenPrinterEnable": {
+          "type": "boolean",
+          "description": "FUTURE automatic kitchen-list printing for this exact stored Product only. FUTURE automatic order printing configuration only: this changes stored settings for orders processed after the change. It never prints now, never creates a print job, and never contacts a printer provider."
+        }
+      }
+    }
+  ],
+  "batchCapabilities": [
+    {
+      "entity": "Counter",
+      "actions": [
+        "create"
+      ],
+      "actionFields": {
+        "create": {
+          "storeUuid": {
+            "type": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "patternFlags": "i",
+            "requiredOnCreate": true
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 50,
+            "requiredOnCreate": true,
+            "nonEmpty": true,
+            "trimForValidation": true
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "requiredOnCreate": true,
+            "nonEmpty": true,
+            "trimForValidation": true
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "nullable": true
+          },
+          "sort": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "fields": {
+        "storeUuid": {
+          "type": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "patternFlags": "i",
+          "requiredOnCreate": true
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 50,
+          "requiredOnCreate": true,
+          "nonEmpty": true,
+          "trimForValidation": true
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120,
+          "requiredOnCreate": true,
+          "nonEmpty": true,
+          "trimForValidation": true
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "nullable": true
+        },
+        "sort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "entity": "Tag",
+      "actions": [
+        "create"
+      ],
+      "actionFields": {
+        "create": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 255,
+            "requiredOnCreate": true,
+            "nonEmpty": true
+          },
+          "color": {
+            "type": "color",
+            "nullable": true
+          }
+        }
+      },
+      "fields": {
+        "name": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 255,
+          "requiredOnCreate": true,
+          "nonEmpty": true
+        },
+        "color": {
+          "type": "color",
+          "nullable": true
+        }
+      }
+    }
+  ]
+}

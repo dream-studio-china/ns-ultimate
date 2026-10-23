@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import previewPolicy from '../adapters/ns-ultimate/admin/preview-policy.mjs'
+import { readFileSync } from 'node:fs'
 import { mutationCapabilities } from './support/capability-fixture.mjs'
 import { createMutationHost } from '../src/mutation-host.js'
 import { createAssistantTools } from '../src/tools.js'
@@ -13,7 +13,6 @@ const calls = () => {
 }
 
 test('approved business groups expose only scoped actions and fields', () => {
-  assert.deepEqual(Object.keys(previewPolicy), ['Counter'])
   assert.deepEqual(mutationCapabilities.map(item => item.entity), ['Content', 'Counter', 'Store', 'Category', 'ProductCategory', 'Tag', 'Product', 'Specification', 'StorePrinting', 'ProductPrinting'])
   const policy = Object.fromEntries(mutationCapabilities.map(item => [item.entity, item]))
   assert.deepEqual(policy.Counter.actions, ['create', 'update', 'delete'])
@@ -25,6 +24,25 @@ test('approved business groups expose only scoped actions and fields', () => {
   assert.deepEqual(Object.keys(policy.Content.fields), ['title', 'body', 'category', 'tags', 'metadata', 'sortOrder'])
   assert.equal(Object.hasOwn(policy.Store.fields, 'settings'), false)
   assert.equal(Object.hasOwn(policy.Product.fields, 'settings'), false)
+})
+
+test('composed host no longer declares the Counter name-only local preview pilot', () => {
+  const source = readFileSync(new URL('../../../integration/admin/agent-host.js', import.meta.url), 'utf8')
+  assert.equal(source.includes('preview-policy'), false)
+  assert.equal(source.includes('getWritePreviewPolicy'), false)
+})
+
+test('composed host refreshes policy before commit and uses epoch-aware effective identity', () => {
+  const source = readFileSync(new URL('../../../integration/admin/agent-host.js', import.meta.url), 'utf8')
+  assert.match(source, /async commitRecordChange\(operationId, signal\)[\s\S]*?refreshForCommit\(signal\)/)
+  assert.match(source, /async commitRecordBatch\(operationId, signal\)[\s\S]*?refreshForCommit\(signal\)/)
+  assert.match(source, /ensureFreshCommitCapability/)
+  assert.match(source, /refreshCatalog: requestSignal => capabilityRuntime\.refresh\(\{ signal: requestSignal \}\)/)
+  assert.match(source, /getRuntimeEpoch: \(\) => capabilityRuntime\.epoch/)
+  assert.match(source, /getProjectionEpoch: \(\) => projectionGeneration/)
+  assert.match(source, /componentBindings: scalarComponentBindings/)
+  assert.match(source, /schemaFormResolver: createSchemaForm/)
+  assert.match(source, /routeAvailability: registeredRoutes\(\)/)
 })
 
 test('valid create/update/delete proposals transport only after per-action validation', async() => {

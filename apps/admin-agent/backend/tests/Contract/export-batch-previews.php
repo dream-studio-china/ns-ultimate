@@ -23,12 +23,15 @@ use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagBatchCreateAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentBatchOperation;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
+use NsUltimate\Apps\AdminAgent\Backend\Policy\AdminConfigurationPolicy;
+use NsUltimate\Apps\AdminAgent\Backend\Service\AdminCrudControllerBridge;
 use NsUltimate\Apps\AdminAgent\Backend\Service\BatchAgentOperationService;
 use NsUltimate\Apps\AdminAgent\Backend\Service\BatchCreateAdapterRegistry;
 use NsUltimate\Business\Common\Service\TagWriteService;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Service\CounterWriteService;
 use NsUltimate\Integration\Backend\Kernel;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Core\Authorization\AccessDecision;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
@@ -37,6 +40,14 @@ try {
     $kernel->boot();
     $container = $kernel->getContainer();
     $em = $container->get('doctrine')->getManager();
+    $bridge = $container->get(AdminCrudControllerBridge::class);
+    // Legacy preview exporter: test-only synthetic manifest; the runtime batch
+    // gate in production still uses the real generated policy.
+    $policy = \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy();
+    $bridge->installHarnessContext(
+        Request::create('http://localhost/api/v1/manage/agent/batch-operations', 'POST'),
+        (new \App\Identity\Entity\User())->setRoles(['ROLE_ADMIN']),
+    );
     $connection = $em->getConnection();
     $params = $connection->getParams();
     $database = (string) ($params['path'] ?? '');
@@ -53,9 +64,10 @@ try {
     $buildService = static fn (EntityManagerInterface $manager): BatchAgentOperationService => new BatchAgentOperationService(
         $manager,
         new BatchCreateAdapterRegistry([
-            new TagBatchCreateAdapter(new TagMutationAdapter($manager, $auth, new TagWriteService($manager))),
-            new CounterBatchCreateAdapter(new CounterMutationAdapter($manager, $auth, new CounterWriteService($manager))),
+            new TagBatchCreateAdapter(new TagMutationAdapter($manager, $auth, new TagWriteService($manager), $bridge)),
+            new CounterBatchCreateAdapter(new CounterMutationAdapter($manager, $auth, new CounterWriteService($manager), $bridge)),
         ]),
+        $policy,
     );
     $service = $buildService($em);
     $doctrine = $container->get('doctrine');
@@ -341,5 +353,55 @@ try {
     fwrite(STDERR, 'Batch preview fixture export failed: '.get_class($error).' '.$error->getMessage());
     exit(1);
 } finally {
+    if (isset($policyPath)) @unlink($policyPath);
     $kernel->shutdown();
+}
+
+/** @return array{0: AdminConfigurationPolicy, 1: string} */
+function nsAdminAgentBatchFixturePolicy(): array
+{
+    $fields = [
+        'Tag' => ['name', 'slug', 'color'],
+        'Counter' => ['storeUuid', 'code', 'name', 'capacity', 'sort', 'metadata', 'enabled'],
+    ];
+    $entities = [];
+    foreach ($fields as $name => $properties) {
+        $actions = [];
+        foreach (['create', 'update'] as $action) {
+            $actions[$action] = [
+                'configured' => true,
+                'fields' => array_map(static fn (string $property): array => ['property' => $property], $properties),
+            ];
+        }
+        $actions['delete'] = ['configured' => true, 'fields' => []];
+        $entities[] = ['key' => $name, 'name' => $name, 'actions' => $actions];
+    }
+    $payload = [
+        'schemaVersion' => AdminConfigurationPolicy::SCHEMA_VERSION,
+        'source' => AdminConfigurationPolicy::SOURCE,
+        'entities' => $entities,
+        'semanticCapabilities' => [],
+    ];
+    $revision = hash('sha256', json_encode(
+        nsAdminAgentBatchFixtureCanonicalize($payload),
+        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+    ));
+    $path = tempnam(sys_get_temp_dir(), 'ns-agent-batch-fixture-policy-');
+    if ($path === false) throw new RuntimeException('Unable to create a disposable batch policy manifest.');
+    file_put_contents($path, json_encode(
+        ['revision' => $revision, ...$payload],
+        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+    ));
+
+    return [new AdminConfigurationPolicy($path), $path];
+}
+
+function nsAdminAgentBatchFixtureCanonicalize(mixed $value): mixed
+{
+    if (!is_array($value)) return $value;
+    if (array_is_list($value)) return array_map(nsAdminAgentBatchFixtureCanonicalize(...), $value);
+    ksort($value, SORT_STRING);
+    foreach ($value as $key => $item) $value[$key] = nsAdminAgentBatchFixtureCanonicalize($item);
+
+    return $value;
 }

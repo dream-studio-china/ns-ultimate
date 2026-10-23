@@ -2,18 +2,27 @@ import inflectFactory from 'i'
 import adminConfig from './config'
 import request from '@/utils/request'
 import router from '@/router'
-import previewPolicy from '../../apps/admin-agent/adapters/ns-ultimate/admin/preview-policy.mjs'
 import { createNsUltimateMutationRuntime } from '../../apps/admin-agent/adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { scalarComponentBindings, semanticCapabilityBindings } from '../../apps/admin-agent/adapters/ns-ultimate/admin/config-bindings.mjs'
 import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/inspection.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createMutationHost } from '../../apps/admin-agent/src/mutation-host.js'
 import { createBatchMutationHost } from '../../apps/admin-agent/src/batch-mutation-host.js'
 import { API_PREFIX, apiPath } from '@/api/prefix'
+import { createSchemaForm } from '@/utils/json-schema-form'
 import { buildCapabilityCatalog, formatAdminReadError, prepareRecordQuery, sanitizeRecordResults } from '../../apps/admin-agent/src/capabilities.js'
 import { buildAdminPageCatalog, resolveAdminNavigation } from '../../apps/admin-agent/src/navigation.js'
+import {
+  buildAdminConfigProjection,
+  combineCapabilityRevision,
+  createAdminConfigCapabilitySource,
+  ensureFreshCommitCapability
+} from '../../apps/admin-agent/src/admin-config-policy.js'
 
 const inflect = inflectFactory(true)
 const defaultPrefix = apiPath(API_PREFIX, 'manage')
+const parameterize = name => inflect.dasherize(inflect.underscore(inflect.pluralize(name)))
+
 const adminPages = buildAdminPageCatalog(adminConfig.routes)
 const adminNavigation = adminPages.map(page => {
   const entity = Object.keys(adminConfig.entities).find(key => {
@@ -28,8 +37,6 @@ const accessibleNavigation = () => {
   return adminNavigation.filter(page => names.has(page.key))
 }
 
-const parameterize = name => inflect.dasherize(inflect.underscore(inflect.pluralize(name)))
-
 export function createAdminAgentHost() {
   const getCatalog = operations => buildCapabilityCatalog(adminConfig.entities, operations, { parameterize, defaultPrefix })
   const inspectRecordConfiguration = createRecordInspection({
@@ -38,38 +45,143 @@ export function createAdminAgentHost() {
     isRecordPageAvailable: entity => accessibleNavigation().some(page => page.entity === entity)
   })
 
+  const buildProjection = () => buildAdminConfigProjection(adminConfig, {
+    defaultPrefix,
+    parameterize,
+    semanticBindings: semanticCapabilityBindings,
+    componentBindings: scalarComponentBindings,
+    schemaFormResolver: createSchemaForm,
+    routeAvailability: registeredRoutes()
+  })
+  let projection = buildProjection()
+  let projectionGeneration = 0
+  let generationRevision = projection.revision
+  const refreshProjection = () => {
+    const next = buildProjection()
+    projection = next
+    if (next.revision !== generationRevision) {
+      generationRevision = next.revision
+      projectionGeneration += 1
+    }
+    return projection
+  }
+
   // The runtime catalog is scoped to this host instance (one admin session).
   // It is initialized before model tool generation and never shared globally.
   const capabilityRuntime = createNsUltimateMutationRuntime({
     request,
     path: `${defaultPrefix}/agent/capabilities`
   })
-  const singleSource = {
+
+  // One opaque effective identity is shared by the invalidation event, the
+  // capability source used by transports, and their in-flight snapshot guard.
+  // Runtime epoch catches failure/recovery ABA even when the catalog hash
+  // returns to the same value; projection generation changes only with the
+  // effective config projection or a failure event, never on a same-revision
+  // forced refresh.
+  const effectiveIdentity = () => combineCapabilityRevision(
+    capabilityRuntime.revision,
+    projection.revision,
+    capabilityRuntime.epoch,
+    projectionGeneration
+  )
+  const capabilityListeners = new Set()
+  let publishedIdentity
+  let publishedError
+  let publishedEpoch = 0
+  const publishEffectiveCapability = ({ error = '' } = {}) => {
+    if (error && error !== publishedError) projectionGeneration += 1
+    const identity = effectiveIdentity()
+    if (identity === publishedIdentity && error === publishedError) return
+    const previousRevision = publishedIdentity ?? null
+    publishedIdentity = identity
+    publishedError = error
+    publishedEpoch += 1
+    const event = Object.freeze({ epoch: publishedEpoch, revision: identity, previousRevision, error })
+    for (const listener of [...capabilityListeners]) {
+      try { listener(event) } catch { /* UI listeners must not break the transport. */ }
+    }
+  }
+  const unsubscribeRuntime = capabilityRuntime.subscribe(event => {
+    publishEffectiveCapability({ error: event.error || '' })
+  })
+
+  // Tools and transports share these memoized, narrowed instances. A changed
+  // effective identity produces a new instance set.
+  const singleSource = createAdminConfigCapabilitySource({
+    getProjection: () => projection,
     getCapabilities: () => capabilityRuntime.current?.capabilities ?? [],
-    getRevision: () => capabilityRuntime.revision
-  }
-  const batchSource = {
+    getRuntimeRevision: () => capabilityRuntime.revision,
+    getRuntimeEpoch: () => capabilityRuntime.epoch,
+    getProjectionEpoch: () => projectionGeneration
+  })
+  const batchSource = createAdminConfigCapabilitySource({
+    getProjection: () => projection,
     getCapabilities: () => capabilityRuntime.current?.batchCapabilities ?? [],
-    getRevision: () => capabilityRuntime.revision
-  }
+    getRuntimeRevision: () => capabilityRuntime.revision,
+    getRuntimeEpoch: () => capabilityRuntime.epoch,
+    getProjectionEpoch: () => projectionGeneration
+  })
   const mutationHost = createMutationHost(request, `${defaultPrefix}/agent/operations`, singleSource)
   const batchMutationHost = createBatchMutationHost(request, `${defaultPrefix}/agent/batch-operations`, batchSource)
-  const ensureCapabilities = signal => capabilityRuntime.ensure({ signal })
+  const ensureCapabilities = async signal => {
+    // Configuration may be replaced by the host while a session is open. A
+    // policy-bearing prepare/restore therefore refreshes the projection before
+    // using the cached runtime snapshot; config-only revisions still emit the
+    // same invalidation boundary as a server revision.
+    refreshProjection()
+    const current = await capabilityRuntime.ensure({ signal })
+    publishEffectiveCapability({ error: capabilityRuntime.status.error })
+    return current
+  }
+  const refreshForCommit = signal => ensureFreshCommitCapability({
+    getIdentity: effectiveIdentity,
+    refreshProjection,
+    refreshCatalog: requestSignal => capabilityRuntime.refresh({ signal: requestSignal }),
+    signal,
+    onRefreshed: () => publishEffectiveCapability({ error: capabilityRuntime.status.error })
+  })
 
   return {
     ...mutationHost,
     ...batchMutationHost,
 
+    async commitRecordChange(operationId, signal) {
+      // Force a fresh server catalog and effective projection before the POST.
+      // A stale/changed identity is a definitive pre-send conflict, never an
+      // ambiguous unknown outcome. Status/history methods remain untouched.
+      await refreshForCommit(signal)
+      return mutationHost.commitRecordChange(operationId, signal)
+    },
+    async commitRecordBatch(operationId, signal) {
+      await refreshForCommit(signal)
+      return batchMutationHost.commitRecordBatch(operationId, signal)
+    },
+
     async initializeAgentCapabilities(signal) {
-      // Each user turn re-reads the account-filtered revision before deriving
-      // tools. A changed revision is published through onCapabilityChange so
-      // existing pending UI is invalidated instead of reused under new policy.
+      // Rebuild the effective-config projection before re-reading the
+      // account-filtered runtime revision. Both revisions participate in tool
+      // derivation and invalidation; the backend runtime remains the current
+      // execution/security authority.
+      refreshProjection()
       await capabilityRuntime.refresh({ signal })
+      publishEffectiveCapability({ error: capabilityRuntime.status.error })
       return capabilityRuntime.current
     },
-    getCapabilityStatus() { return capabilityRuntime.status },
-    getCapabilityRevision() { return capabilityRuntime.revision },
-    onCapabilityChange(listener) { return capabilityRuntime.subscribe(listener) },
+    getCapabilityStatus() {
+      return {
+        ...capabilityRuntime.status,
+        projectionRevision: projection.revision,
+        projectionGeneration
+      }
+    },
+    getCapabilityRevision() { return effectiveIdentity() },
+    getAdminConfigProjection() { return projection },
+    onCapabilityChange(listener) {
+      if (typeof listener !== 'function') return () => {}
+      capabilityListeners.add(listener)
+      return () => capabilityListeners.delete(listener)
+    },
 
     // Both preparation and preview recovery require the current compiled
     // catalog. If initialization failed, these fail closed rather than
@@ -91,7 +203,6 @@ export function createAdminAgentHost() {
       return batchMutationHost.restoreRecordBatch(operationId, signal)
     },
 
-    getWritePreviewPolicy() { return previewPolicy },
     getCatalog,
     getInspectionPolicy() { return recordInspectionPolicy },
     inspectRecordConfiguration,
@@ -138,6 +249,8 @@ export function createAdminAgentHost() {
       return sanitizeRecordResults(records, query, catalog)
     },
     dispose() {
+      unsubscribeRuntime()
+      capabilityListeners.clear()
       capabilityRuntime.dispose()
     }
   }

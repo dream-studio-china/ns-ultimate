@@ -24,13 +24,27 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
+require_once dirname(__DIR__, 2).'/Support/AdminConfigurationTestManifest.php';
+
 final class ProductPrintingMutationTest extends IntegrationWebTestCase
 {
     use DatabaseBootstrapTrait;
 
     private const URL = '/api/v1/manage/agent/operations';
+    private ?string $testManifest = null;
 
-    protected function setUp(): void { $this->bootTestDatabase(); self::ensureKernelShutdown(); }
+    protected function setUp(): void {
+        $this->testManifest = \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::install();
+        $this->bootTestDatabase();
+        self::ensureKernelShutdown();
+    }
+
+    protected function tearDown(): void {
+        if ($this->testManifest !== null) {
+            \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::restore($this->testManifest);
+            $this->testManifest = null;
+        }
+    }
     protected static function getKernelClass(): string { return 'NsUltimate\\Integration\\Backend\\Kernel'; }
 
     public function testValidUpdatePreservesOtherProductSettingsIncludingSaleTimes(): void
@@ -317,7 +331,7 @@ final class ProductPrintingMutationTest extends IntegrationWebTestCase
         $container = self::getContainer();
         $em = $container->get(EntityManagerInterface::class);
         $checker ??= new SwitchableProductPrintingAuthorization();
-        return [new AgentOperationService($em, new MutationAdapterRegistry([new ProductPrintingMutationAdapter($em, $container->get(ValidatorInterface::class), $checker)])), $em];
+        return [new AgentOperationService($em, new MutationAdapterRegistry([new ProductPrintingMutationAdapter($em, $container->get(ValidatorInterface::class), $checker)]), \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy()), $em];
     }
 
     /**

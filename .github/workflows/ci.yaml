@@ -36,6 +36,9 @@ jobs:
       - name: Install admin dependencies
         run: npm ci --prefix core/crud-admin
 
+      - name: Generate trusted admin agent manifest
+        run: node integration/admin/export-agent-manifest-cli.mjs
+
       - name: Install backend dependencies
         run: composer install --working-dir=core/crud-skeleton --no-interaction --prefer-dist --no-progress --no-scripts
 
