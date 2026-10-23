@@ -208,7 +208,7 @@ final class CapabilitySchemas
     {
         return [
             'title' => self::string(255, true),
-            'body' => self::nullableString(20000),
+            'body' => self::nullableString(32000),
             'category' => ['type' => 'positive-id', 'nullable' => true],
             'tags' => ['type' => 'positive-id-list', 'maxItems' => 50],
             'metadata' => [

@@ -205,7 +205,7 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         self::assertSame(['title', 'body', 'category', 'tags'], array_keys($content));
         self::assertTrue($content['title']['requiredOnCreate']);
         self::assertTrue($content['title']['nonEmpty']);
-        self::assertSame(20000, $content['body']['maxBytes']);
+        self::assertSame(32000, $content['body']['maxBytes']);
         self::assertSame(50, $content['tags']['maxItems']);
         self::assertArrayNotHasKey('metadata', $content);
         self::assertArrayNotHasKey('sortOrder', $content);

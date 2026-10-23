@@ -4,6 +4,7 @@ export default {
   'Resize assistant': 'Resize assistant',
   'Assistant navigation': 'Assistant navigation',
   'Record read failed': 'Record read failed',
+  'Change preparation failed: {reason}': 'Change preparation failed: {reason}',
   'Read-only record: {entity} {identifier}': 'Read-only record: {entity} {identifier}',
   'Body': 'Body',
   'Some fields were omitted or truncated to keep the record read bounded.': 'Some fields were omitted or truncated to keep the record read bounded.',

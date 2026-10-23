@@ -4,6 +4,7 @@ export default {
   'Resize assistant': '调整助手窗口大小',
   'Assistant navigation': '助手导航',
   'Record read failed': '读取记录失败',
+  'Change preparation failed: {reason}': '变更准备失败：{reason}',
   'Read-only record: {entity} {identifier}': '只读记录：{entity} {identifier}',
   'Body': '正文',
   'Some fields were omitted or truncated to keep the record read bounded.': '为保持读取结果有界，部分字段已省略或截断。',

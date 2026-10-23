@@ -116,7 +116,7 @@ final class ContentMutationAdapter implements MutationAdapter
         foreach ($changes as $field => $value) {
             $valid = match ($field) {
                 'title' => is_string($value) && trim($value) !== '' && mb_strlen($value) <= 255,
-                'body' => $value === null || (is_string($value) && strlen($value) <= 20000),
+                'body' => $value === null || (is_string($value) && strlen($value) <= 32000),
                 'category' => $value === null || (is_int($value) && $value > 0),
                 'tags' => is_array($value) && array_is_list($value) && count($value) <= 50 && array_all($value, static fn ($id): bool => is_int($id) && $id > 0),
                 'metadata' => $value === null || (is_array($value) && ($value === [] || !array_is_list($value)) && strlen(json_encode($value, JSON_THROW_ON_ERROR)) <= 8000),

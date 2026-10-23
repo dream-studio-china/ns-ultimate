@@ -22,7 +22,7 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 24
+const EXPECTED_CASE_COUNT = 25
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
@@ -2971,6 +2971,38 @@ const CASES = [
     }
   },
   {
+    name: 'a rejected single-record preparation shows the bounded server reason without committing',
+    async run(ctx) {
+      const host = createSyntheticHost({
+        writeCapabilities: [{
+          entity: 'Content',
+          actions: ['update'],
+          actionFields: { update: { title: { type: 'string' } } },
+          fields: { title: { type: 'string' } }
+        }],
+        prepareChange: async() => {
+          throw Object.assign(new Error('Request failed with status code 400'), {
+            response: { status: 400, data: { message: '<b>Invalid Content field: body.</b>' } }
+          })
+        }
+      })
+      const provider = ctx.createProvider()
+      provider.enqueueToolCall('prepare_record_change', {
+        entity: 'Content', action: 'update', identifier: '12', changes: { title: 'Too long' }
+      })
+      provider.enqueueText('The proposal was rejected.')
+      const agent = await ctx.mount({ host, provider })
+      sendText(agent, 'Update the article body.')
+      await provider.waitForRequests(2, ctx)
+      await waitForIdle(agent)
+      includes(agent.shadow.textContent, 'Change preparation failed', 'The rejection should be shown in the UI')
+      includes(agent.shadow.textContent, 'Invalid Content field: body.', 'The bounded server reason should be visible')
+      excludes(agent.shadow.textContent, '<b>', 'The server reason must be displayed as plain text')
+      equal(Boolean(findButton(agent.shadow, /^Confirm and save$/)), false, 'A rejected preparation must not render a confirmation card')
+      return { reasonShown: true, confirmationRendered: false }
+    }
+  },
+  {
     name: 'bounded record reads render body text without HTML and pass only the fixed fields to the model',
     async run(ctx) {
       const sentinel = '<img src=x onerror="window.__nsReadXss=1">Record body sentinel'
@@ -3267,7 +3299,7 @@ async function executeAcceptance({
 let mainExecution = null
 
 /**
- * Run the main 24-case browser acceptance suite once per fixture page.
+ * Run the main 25-case browser acceptance suite once per fixture page.
  */
 export function runBrowserAcceptance(options = {}) {
   let execution

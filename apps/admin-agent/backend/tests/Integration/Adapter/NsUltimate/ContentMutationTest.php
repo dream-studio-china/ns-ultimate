@@ -134,7 +134,7 @@ final class ContentMutationTest extends IntegrationWebTestCase
             ['title' => 'Bad', 'metadata' => ['featured' => 'yes']],
             ['title' => 'Bad', 'metadata' => ['secret' => 'not allowed']],
             ['title' => 'Bad', 'category' => 2147483647], ['title' => 'Bad', 'tags' => [2147483647]],
-            ['title' => 'Bad', 'sortOrder' => '3'], ['title' => 'Bad', 'body' => str_repeat('x', 20001)],
+            ['title' => 'Bad', 'sortOrder' => '3'], ['title' => 'Bad', 'body' => str_repeat('x', 32001)],
         ] as $changes) {
             $client->jsonRequest('POST', self::URL, ['entity' => 'Content', 'action' => 'create', 'changes' => $changes]);
             self::assertResponseStatusCodeSame(400);

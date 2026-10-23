@@ -9,6 +9,36 @@ import {
   prepareBatchRequest
 } from './import-workbench.js'
 
+// Preserve a bounded, display-safe server reason instead of masking every
+// preparation failure behind one generic message. Server errors already reach
+// the same authenticated browser session; never include stack traces or URLs.
+function prepareFailure(error) {
+  const response = error?.response
+  const status = Number.isInteger(response?.status) ? response.status : null
+  const payload = response?.data
+  const raw = typeof payload === 'string'
+    ? payload
+    : typeof payload?.message === 'string'
+      ? payload.message
+      : typeof payload?.detail === 'string'
+        ? payload.detail
+        : typeof error?.message === 'string'
+          ? error.message
+          : ''
+  const detail = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400)
+  const failureType = status === 401 || status === 403 ? 'authorization'
+    : status === 404 ? 'not-found'
+      : status === 409 || error?.code === 'proposal_conflict' ? 'conflict'
+        : status === 400 || status === 422 ? 'validation'
+          : !status && /unsupported change|invalid change|missing required change|changes must be|changes are required|deletion does not accept|identifier|not enabled|not available/i.test(detail) ? 'validation'
+            : 'request-failed'
+  return {
+    error: detail || 'The server rejected the preparation.',
+    failureType,
+    ...(status === null ? {} : { status })
+  }
+}
+
 function describeBatchPolicy(entities) {
   return entities.map(item => ({
     entity: item.entity,
@@ -296,6 +326,12 @@ export async function executeAssistantTool({ call, catalog, navigation = [], man
     if (typeof host?.prepareRecordChange !== 'function') return { error: 'Change preparation is unavailable.' }
     try {
       const input = JSON.parse(call.function.arguments || '')
+      // Models commonly emit a numeric database ID as a JSON number. Normalize
+      // only exact positive safe integers; every other identifier stays invalid.
+      if (input && typeof input === 'object' && !Array.isArray(input)
+        && Number.isSafeInteger(input.identifier) && input.identifier > 0) {
+        input.identifier = String(input.identifier)
+      }
       const preview = await host.prepareRecordChange(input, signal)
       assertActive()
       if (signal?.aborted) return { error: 'The operation was cancelled.' }
@@ -304,8 +340,9 @@ export async function executeAssistantTool({ call, catalog, navigation = [], man
       // Execution identifiers and full before/after values stay in the host/UI boundary.
       return { prepared: true, saved: false, entity: preview.entity, action: preview.action, identifier: preview.identifier,
         affectedRecords: 1, message: 'Awaiting explicit UI confirmation. No target data has been changed.' }
-    } catch {
-      return { error: 'Change preparation failed. Check the displayed server error, permissions and field values. Nothing was submitted for execution.' }
+    } catch (error) {
+      if (signal?.aborted || error?.name === 'AbortError') return { error: 'The operation was cancelled.', failureType: 'cancelled' }
+      return prepareFailure(error)
     }
   }
   if (call.function.name === 'inspect_record_configuration') {
@@ -360,6 +397,7 @@ export async function executeAssistantTool({ call, catalog, navigation = [], man
     if (typeof args.entity !== 'string' || !Object.hasOwn(recordReadPolicy || {}, args.entity)) {
       return { error: 'This entity has no approved record read.' }
     }
+    if (Number.isSafeInteger(args.identifier) && args.identifier > 0) args.identifier = String(args.identifier)
     if (typeof args.identifier !== 'string') return { error: 'Record identifiers must be a positive numeric ID or UUID.' }
     if (typeof host?.readRecord !== 'function') return { error: 'Record reading is not available.' }
     assertActive()

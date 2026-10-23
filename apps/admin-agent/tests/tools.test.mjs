@@ -79,6 +79,45 @@ test('declares fixed record reads only for host policy entities', () => {
   assert.equal(withoutPolicy.includes('read_record'), false)
 })
 
+test('normalizes numeric target IDs and surfaces bounded preparation errors', async() => {
+  const calls = []
+  const host = {
+    prepareRecordChange: async(input) => {
+      calls.push(input)
+      if (input.changes?.title === 'invalid') {
+        throw Object.assign(new Error('Request failed with status code 400'), {
+          response: { status: 400, data: { message: '<b>Invalid Content field: body.</b>' } }
+        })
+      }
+      if (input.changes?.title === 'forbidden') {
+        throw Object.assign(new Error('Request failed with status code 403'), {
+          response: { status: 403, data: { message: 'Content management requires ROLE_ADMIN.' } }
+        })
+      }
+      return { saved: false, differences: [], entity: 'Content', action: 'update', identifier: '12' }
+    }
+  }
+  const args = { catalog, host, operations: [], writeCapabilities: [{ entity: 'Content', actions: ['update'], actionFields: { update: { title: { type: 'string' } } } }] }
+  const prepared = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'prepare_record_change', arguments: JSON.stringify({ entity: 'Content', action: 'update', identifier: 12, changes: { title: 'ok' } }) } }
+  })
+  assert.equal(prepared.prepared, true)
+  assert.equal(calls[0].identifier, '12')
+
+  const invalid = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'prepare_record_change', arguments: JSON.stringify({ entity: 'Content', action: 'update', identifier: '12', changes: { title: 'invalid' } }) } }
+  })
+  assert.deepEqual(invalid, { error: 'Invalid Content field: body.', failureType: 'validation', status: 400 })
+
+  const forbidden = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'prepare_record_change', arguments: JSON.stringify({ entity: 'Content', action: 'update', identifier: '12', changes: { title: 'forbidden' } }) } }
+  })
+  assert.deepEqual(forbidden, { error: 'Content management requires ROLE_ADMIN.', failureType: 'authorization', status: 403 })
+})
+
 test('reads one exact record through the host and audits metadata only', async() => {
   const calls = []
   const audits = []

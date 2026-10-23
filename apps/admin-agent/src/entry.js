@@ -1603,6 +1603,9 @@ export function mountAdminAgent(host = {}) {
           if (call.function.name === 'prepare_record_batch' && result?.error && result.failureType !== 'cancelled') {
             appendMessage('assistant', t('Batch preview failed: {reason}', { reason: batchFailureText(result.failureType) }), 'error')
           }
+          if (call.function.name === 'prepare_record_change' && result?.error && result.failureType !== 'cancelled') {
+            appendMessage('assistant', t('Change preparation failed: {reason}', { reason: result.error }), 'error')
+          }
           if (call.function.name === 'inspect_record_configuration') appendInspectionResult(result)
           if (call.function.name === 'navigate_admin_page') {
             if (result.navigated) {
