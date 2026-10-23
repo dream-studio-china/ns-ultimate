@@ -12,6 +12,7 @@ import { createToolLoopGuard } from './tool-loop-guard.js'
 import { createPreparedChange } from './prepared-change.js'
 import { buildDocumentQuery, loadKnowledgeArticles, selectKnowledgeContext } from './knowledge.js'
 import { mountOperationHistory } from './operation-history.js'
+import { mountImportWorkbench } from './import-workbench.js'
 import {
   ATTACHMENT_ACCEPT,
   MAX_RENDERED_ATTACHMENT_IMAGES,
@@ -47,6 +48,7 @@ const css = `
  .hidden{display:none!important}.header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e7ebf1;font-weight:700}.header small{display:block;color:#697586;font-weight:400}.buttons{display:flex;gap:7px}.icon{border:0;background:transparent;padding:7px;cursor:pointer;color:#475467;font-size:18px}.messages{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}.message{white-space:pre-wrap;overflow-wrap:anywhere;border-radius:12px;padding:10px 12px;max-width:95%;background:#f2f4f7;color:#263244}.message.user{align-self:flex-end;background:#e9efff}.message.error{background:#fff0f0;color:#a11}.markdown p,.markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{margin:0 0 8px}.markdown>:last-child{margin-bottom:0}.markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{line-height:1.3}.markdown h1{font-size:1.35em}.markdown h2{font-size:1.2em}.markdown h3{font-size:1.08em}.markdown ul,.markdown ol{margin:0 0 8px;padding-left:22px}.markdown li+li{margin-top:3px}.markdown blockquote{margin:0 0 8px;padding:2px 0 2px 10px;border-left:3px solid #cbd5e1;color:#536174}.markdown pre{margin:0 0 8px;padding:10px;border-radius:8px;background:#182230;color:#e4e7ec;overflow:auto;white-space:pre}.markdown pre code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.markdown :not(pre)>code{padding:1px 4px;border-radius:4px;background:#e6eaf0;font:0.92em ui-monospace,SFMono-Regular,Menlo,monospace}.markdown a{color:#315efb;text-decoration:underline;overflow-wrap:anywhere}.markdown hr{border:0;border-top:1px solid #d0d5dd;margin:4px 0 8px}.markdown table{display:block;width:100%;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:0 0 8px;font-size:.95em}.markdown th,.markdown td{padding:6px 9px;border:1px solid #d0d5dd;text-align:left;vertical-align:top}.markdown th{background:#f2f4f7;font-weight:650}.markdown tr:nth-child(even) td{background:#fafbfc}.status{font-size:12px;color:#667085;padding:0 14px}.composer{padding:12px;border-top:1px solid #e7ebf1;display:grid;gap:8px}.composer textarea{font:inherit;resize:vertical;min-height:64px;max-height:150px;border:1px solid #cfd7e3;border-radius:9px;padding:10px}.composer.drop-active{outline:2px dashed #315efb;outline-offset:-4px}.attachments{display:flex;flex-wrap:wrap;gap:8px}.attachments.hidden{display:none}.attachment{position:relative;display:flex;align-items:flex-start;gap:8px;max-width:100%;background:#f8fafc;border:1px solid #e1e7ef;border-radius:9px;padding:6px 8px}.attachment img.thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #d0d5dd;background:#fff}.attachment-meta{display:grid;min-width:0;gap:1px}.attachment-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}.attachment-meta small{color:#667085;font-size:11px}.attachment-warning{color:#b54708!important}.attachment .icon{padding:1px 5px;font-size:16px;align-self:flex-start}.attachment-notice{font-size:11px;padding:8px}.settings label.checkbox{display:flex;flex-direction:row;align-items:center;gap:8px;font-size:12px;color:#475467}.settings label.checkbox input{width:auto;padding:0}.settings label.checkbox small{color:#667085}.message .message-attachments{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.message .message-image{max-width:180px;max-height:180px;border-radius:8px;display:block;border:1px solid #d0d5dd}.message .message-file{font-size:12px;background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:3px 6px}.row{display:flex;gap:8px;flex-wrap:wrap}.button{border:0;border-radius:8px;background:#315efb;color:white;padding:8px 13px;font:inherit;cursor:pointer}.button.secondary{background:#eef2f7;color:#344054}.button:disabled{opacity:.55;cursor:not-allowed}.settings{position:absolute;inset:52px 0 0;background:white;padding:16px;overflow:auto;display:flex;flex-direction:column;gap:10px}.settings label{display:grid;gap:4px;color:#475467;font-size:12px}.settings input{font:inherit;padding:9px;border:1px solid #cfd7e3;border-radius:8px}.notice{font-size:12px;color:#667085;background:#f8fafc;border-radius:8px;padding:10px}.empty{color:#667085;text-align:center;margin:auto 10px}
   .message.result{max-width:100%;font-size:12px}.result>strong{display:block;margin-bottom:7px}.result-actions{margin:0 0 7px}.result table{display:block;width:100%;max-width:100%;overflow:auto;border-collapse:collapse;margin:0;font-size:inherit}.result th,.result td{padding:5px 7px;border:1px solid #d0d5dd;text-align:left;vertical-align:top}.result th{background:#e7ebf1;font-weight:650}.result-note{display:block;color:#667085;margin-top:5px}.message.sources{font-size:12px}.sources>strong{display:block;margin-bottom:4px}.sources ul{margin:0;padding-left:18px}.sources li+li{margin-top:3px}.sources a{color:#315efb;text-decoration:underline}
  .operation-history{flex:1;overflow:auto;padding:14px}.operation-history .message{max-width:100%;margin-top:10px;white-space:normal;overflow-wrap:anywhere}
+ .import-workbench{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}.import-workbench label{display:grid;gap:4px;color:#475467;font-size:12px}.import-workbench select,.import-workbench input[type=text]{font:inherit;padding:7px;border:1px solid #cfd7e3;border-radius:7px;min-width:0}.import-workbench label.checkbox{display:flex;flex-direction:row;align-items:flex-start;gap:8px}.import-workbench label.checkbox input{width:auto;margin-top:3px}.import-workbench .notice{margin:0}.import-workbench .message{margin:0;max-width:100%;white-space:normal}.import-workbench .message p{margin:4px 0 0}.import-mapping,.import-preview{display:grid;gap:8px;padding:10px;border:1px solid #e1e7ef;border-radius:9px;background:#f8fafc}.import-table{max-width:100%;overflow:auto;border:1px solid #e1e7ef;border-radius:9px}.import-table table,.import-preview table{border-collapse:collapse;font-size:12px;width:100%}.import-table th,.import-table td,.import-preview th,.import-preview td{padding:5px 7px;border:1px solid #d0d5dd;text-align:left;vertical-align:top}.import-table th,.import-preview th{background:#e7ebf1;font-weight:650;white-space:nowrap}.import-table input{width:100%;min-width:110px}.import-preview table{display:block;overflow:auto}
  @media(max-width:540px){.launcher{right:14px;bottom:14px}.panel{inset:8px;width:auto;height:auto;bottom:70px}}
 `
 
@@ -165,7 +167,8 @@ export function mountAdminAgent(host = {}) {
   const sendRow = element('div', { class: 'row' })
   const activityButton = element('button', { class: 'button secondary', type: 'button' }, t('Read activity'))
   const historyButton = element('button', { class: 'button secondary', type: 'button' }, t('Operations'))
-  sendRow.append(attachButton, activityButton)
+  const importButton = element('button', { class: 'button secondary', type: 'button', 'aria-expanded': 'false' }, t('Import'))
+  sendRow.append(attachButton, importButton, activityButton)
   if (typeof host.listRecordChanges === 'function') sendRow.append(historyButton)
   sendRow.append(send)
   composer.append(attachmentNotice, attachmentList, fileInput, input, sendRow)
@@ -228,6 +231,28 @@ export function mountAdminAgent(host = {}) {
     for (const invalidate of pendingChanges) invalidate()
     pendingChanges.clear()
   }
+  const importLockWatchers = new Set()
+  const historyLockedControls = new Set()
+  function syncHistoryLock(locked) {
+    if (locked) {
+      for (const control of operationHistory.node.querySelectorAll('button')) {
+        if (!control.disabled) {
+          control.disabled = true
+          historyLockedControls.add(control)
+        }
+      }
+      return
+    }
+    for (const control of historyLockedControls) control.disabled = false
+    historyLockedControls.clear()
+  }
+  function syncImportLock() {
+    const locked = importWorkbench.blocksNewTask()
+    syncHistoryLock(locked)
+    clearButton.disabled = writeInFlight || recoveryInFlight || unresolvedWrite || locked
+    syncAttachmentControls()
+    for (const watcher of [...importLockWatchers]) watcher(locked)
+  }
 
   const attachmentErrorKeys = {
     too_many: 'Too many attachments (maximum {count}).',
@@ -288,10 +313,14 @@ export function mountAdminAgent(host = {}) {
     }
   }
   function syncAttachmentControls() {
-    const disabled = loading || attachmentBusy || unresolvedWrite
+    const importLocked = importWorkbench.blocksNewTask()
+    const disabled = loading || attachmentBusy || unresolvedWrite || importLocked
     attachButton.disabled = disabled
     fileInput.disabled = disabled
     send.disabled = disabled
+    // The Import control stays available so the user can reopen the workbench
+    // and explicitly check an unresolved batch outcome.
+    importButton.disabled = loading || attachmentBusy || unresolvedWrite || !importWorkbench.available
   }
   async function readSelectedFiles(files) {
     if (disposed || loading || attachmentBusy) return
@@ -673,17 +702,32 @@ export function mountAdminAgent(host = {}) {
     let valid = true
     const invalidate = () => {
       valid = false
+      importLockWatchers.delete(syncCardLock)
       change.invalidate()
       confirm.disabled = true
       discard.disabled = true
       recover.disabled = true
       note.textContent = t('Preview invalidated. Request a new preview before submitting.')
     }
+    const syncCardLock = locked => {
+      if (!valid || disposed) return
+      if (locked) {
+        confirm.disabled = true
+        discard.disabled = true
+        recover.disabled = true
+        return
+      }
+      confirm.disabled = change.state !== 'ready'
+      discard.disabled = !['ready', 'conflicted'].includes(change.state)
+      recover.disabled = false
+    }
     pendingChanges.add(invalidate)
+    importLockWatchers.add(syncCardLock)
+    syncCardLock(importWorkbench.blocksNewTask())
     const renderOutcome = result => {
       if (!valid || disposed) return
       unresolvedWrite = result.state === 'unknown'
-      confirm.disabled = result.state !== 'ready'
+      confirm.disabled = importWorkbench.blocksNewTask() || result.state !== 'ready'
       recover.classList.toggle('hidden', result.state !== 'unknown')
       note.textContent = result.state === 'succeeded' ? t('Saved successfully. The server recorded the operation.')
         : result.state === 'unknown' ? t('Outcome unknown. Cancellation does not undo a submitted write. Check the outcome before attempting another operation.')
@@ -707,13 +751,15 @@ export function mountAdminAgent(host = {}) {
           writeInFlight = false
           setBusy(false)
           if (valid) {
-            recover.disabled = false
-            discard.disabled = !['ready', 'conflicted'].includes(change.state)
+            const locked = importWorkbench.blocksNewTask()
+            recover.disabled = locked
+            discard.disabled = locked || !['ready', 'conflicted'].includes(change.state)
           }
         }
       }
     }
     confirm.addEventListener('click', () => {
+      if (importWorkbench.blocksNewTask()) return
       if (!valid || loading || change.state !== 'ready') return
       const accepted = preview.action === 'delete'
         ? window.prompt(t('Type DELETE {id} to permanently delete this {entity} record.', { id: preview.identifier, entity: preview.entity })) === `DELETE ${preview.identifier}`
@@ -721,9 +767,11 @@ export function mountAdminAgent(host = {}) {
       if (accepted) run(signal => change.submit(true, signal))
     })
     recover.addEventListener('click', () => {
+      if (importWorkbench.blocksNewTask()) return
       if (valid && !loading) run(signal => change.recover(signal))
     })
     discard.addEventListener('click', () => {
+      if (importWorkbench.blocksNewTask()) return
       if (!valid || loading || !['ready', 'conflicted'].includes(change.state)) return
       invalidate()
       pendingChanges.delete(invalidate)
@@ -748,6 +796,9 @@ export function mountAdminAgent(host = {}) {
   }
   const clearSessionSecrets = () => {
     operationHistory.reset()
+    importWorkbench.reset({ force: true })
+    importWorkbench.node.classList.add('hidden')
+    importButton.setAttribute('aria-expanded', 'false')
     invalidateChanges()
     taskGeneration += 1
     attachmentGeneration += 1
@@ -773,6 +824,13 @@ export function mountAdminAgent(host = {}) {
   }
   function clearConversation() {
     if (writeInFlight || recoveryInFlight || unresolvedWrite) return
+    if (importWorkbench.blocksNewTask()) {
+      status.textContent = t('Resolve the bulk import outcome before clearing the conversation.')
+      return
+    }
+    importWorkbench.reset()
+    importWorkbench.node.classList.add('hidden')
+    importButton.setAttribute('aria-expanded', 'false')
     invalidateChanges()
     taskGeneration += 1
     attachmentGeneration += 1
@@ -800,6 +858,8 @@ export function mountAdminAgent(host = {}) {
   }
   function showReadActivity() {
     operationHistory.node.classList.add('hidden')
+    importWorkbench.node.classList.add('hidden')
+    importButton.setAttribute('aria-expanded', 'false')
     messagesNode.classList.remove('hidden')
     if (!readActivity.length) {
       appendMessage('assistant', t('No read queries in this session yet.'))
@@ -907,7 +967,7 @@ export function mountAdminAgent(host = {}) {
   activityButton.addEventListener('click', showReadActivity)
   const operationHistory = mountOperationHistory(document, host, {
     t,
-    canInteract: () => !disposed && !loading && !unresolvedWrite,
+    canInteract: () => !disposed && !loading && !unresolvedWrite && !importWorkbench.blocksNewTask(),
     onBusy: (value, controller) => {
       recoveryInFlight = value
       if (value) activeController = controller
@@ -921,8 +981,34 @@ export function mountAdminAgent(host = {}) {
       appendMessage('assistant', t('Restored the original pending operation. Review all values and confirm again. Its expiry has not been extended.'))
     }
   })
+  const importWorkbench = mountImportWorkbench(document, host, {
+    t,
+    canInteract: () => !disposed && !loading && !unresolvedWrite && !writeInFlight && !recoveryInFlight,
+    onStateChange: syncImportLock,
+    onClose: () => {
+      messagesNode.classList.remove('hidden')
+      operationHistory.node.classList.add('hidden')
+      importButton.setAttribute('aria-expanded', 'false')
+    }
+  })
+  importButton.addEventListener('click', () => {
+    if (loading || unresolvedWrite || writeInFlight || recoveryInFlight) return
+    if (!importWorkbench.isOpen()) {
+      importWorkbench.open()
+      messagesNode.classList.add('hidden')
+      operationHistory.node.classList.add('hidden')
+      settings.classList.add('hidden')
+      importButton.setAttribute('aria-expanded', 'true')
+      return
+    }
+    importWorkbench.close()
+    messagesNode.classList.remove('hidden')
+    importButton.setAttribute('aria-expanded', 'false')
+  })
   historyButton.addEventListener('click', () => {
     if (loading || unresolvedWrite) return
+    importWorkbench.node.classList.add('hidden')
+    importButton.setAttribute('aria-expanded', 'false')
     const opening = operationHistory.node.classList.toggle('hidden') === false
     messagesNode.classList.toggle('hidden', opening)
     settings.classList.add('hidden')
@@ -936,6 +1022,10 @@ export function mountAdminAgent(host = {}) {
   composer.addEventListener('submit', async event => {
     event.preventDefault()
     if (loading || unresolvedWrite || attachmentBusy) return
+    if (importWorkbench.blocksNewTask()) {
+      status.textContent = t('Resolve the bulk import outcome before starting another task.')
+      return
+    }
     try {
       syncSettingsFromForm()
     } catch (error) {
@@ -977,6 +1067,9 @@ export function mountAdminAgent(host = {}) {
       if (disposed || generation !== taskGeneration || controller.signal.aborted) throw new Error('The assistant task was cancelled because the admin session changed.')
     }
     invalidateChanges()
+    importWorkbench.reset()
+    importWorkbench.node.classList.add('hidden')
+    importButton.setAttribute('aria-expanded', 'false')
     operationHistory.node.classList.add('hidden')
     messagesNode.classList.remove('hidden')
     input.value = ''
@@ -1134,7 +1227,9 @@ export function mountAdminAgent(host = {}) {
     }
   })
 
-  panel.append(header, messagesNode, operationHistory.node, status, composer, settings)
+  panel.append(header, messagesNode, operationHistory.node, importWorkbench.node, status, composer, settings)
+  importButton.disabled = !importWorkbench.available
+  importButton.title = importWorkbench.available ? t('Bulk create import') : t('Bulk import is unavailable in this host.')
   shadow.append(style, launcher, panel)
   document.body.append(hostElement)
   try { navigation = typeof host.getNavigationCatalog === 'function' ? host.getNavigationCatalog() : [] } catch { navigation = [] }
@@ -1144,6 +1239,7 @@ export function mountAdminAgent(host = {}) {
   return () => {
     disposed = true
     operationHistory.dispose()
+    importWorkbench.dispose()
     clearSessionSecrets()
     window.removeEventListener('pagehide', clearSessionSecrets)
     operations = []

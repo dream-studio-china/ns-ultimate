@@ -22,10 +22,15 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 13
+const EXPECTED_CASE_COUNT = 21
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
+const BATCH_PATH = '/api/v1/manage/agent/batch-operations'
+const BATCH_OPERATION_ID = 'c'.repeat(64)
+const BATCH_STORE_UUID = '550e8400-e29b-41d4-a716-446655440001'
+const BATCH_STORE_UUID_INPUT = BATCH_STORE_UUID.toUpperCase()
+const BATCH_EXPIRES_OFFSET_MS = 300000
 
 const OPENAPI_DOCUMENT = {
   openapi: '3.0.0',
@@ -170,6 +175,20 @@ function ok(condition, message) {
 
 function equal(actual, expected, message) {
   if (actual !== expected) throw new Error(`${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`)
+}
+
+function deepEqual(actual, expected, message) {
+  const actualJson = canonicalJson(actual)
+  const expectedJson = canonicalJson(expected)
+  if (actualJson !== expectedJson) throw new Error(`${message}: expected ${expectedJson}, received ${actualJson}`)
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(item => canonicalJson(item)).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
 }
 
 function includes(value, needle, message) {
@@ -756,7 +775,8 @@ function createSyntheticHost({
   knowledgeFactory = () => [],
   query = null,
   writeCapabilities = [],
-  prepareChange = null
+  prepareChange = null,
+  batchHost = null
 } = {}) {
   const catalog = {
     key,
@@ -811,6 +831,12 @@ function createSyntheticHost({
         total: 0,
         hasMore: false
       })
+    }
+  }
+  if (batchHost) {
+    for (const method of ['getBatchCreateCapabilities', 'prepareRecordBatch', 'restoreRecordBatch', 'commitRecordBatch', 'getRecordBatchStatus', 'cancelRecordBatch']) {
+      if (typeof batchHost[method] !== 'function') continue
+      host[method] = (...args) => batchHost[method](...args)
     }
   }
   return host
@@ -1002,6 +1028,431 @@ function pasteImages(agent, files) {
 
 function makeFile(name, content, type = 'text/plain') {
   return new File([content], name, { type, lastModified: 1700000000000 })
+}
+
+function findButton(root, matcher) {
+  const matches = typeof matcher === 'function'
+    ? matcher
+    : text => matcher instanceof RegExp ? matcher.test(text) : text === matcher
+  return [...root.querySelectorAll('button')].find(button => matches(button.textContent.trim(), button)) || null
+}
+
+/**
+ * Activate a potentially gated control. A disabled form control cannot be
+ * clicked by a user or by HTMLElement.click(), but dispatching a click event
+ * still reaches its listeners. This verifies the action-time guard rather than
+ * relying on the disabled attribute alone.
+ */
+function activateGuardedControl(ctx, control) {
+  ctx.check()
+  const disabled = control.disabled === true
+  if (disabled) {
+    control.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+  } else {
+    control.click()
+  }
+  ctx.check()
+  return disabled ? 'dispatchEvent' : 'click'
+}
+
+function findSelect(root, label) {
+  return [...root.querySelectorAll('select')].find(select => select.getAttribute('aria-label') === label) || null
+}
+
+function importWorkbenchNode(shadow) {
+  return shadow.querySelector('section.import-workbench')
+}
+
+function openImportWorkbench(ctx, agent) {
+  ctx.check()
+  const button = [...agent.shadow.querySelectorAll('form.composer button')]
+    .find(control => control.hasAttribute('aria-expanded')) || null
+  ok(button, 'The Import control was not rendered in the composer.')
+  ok(!button.disabled, 'The Import control must be enabled for a host with batch capabilities.')
+  button.click()
+  ctx.check()
+  const workbench = importWorkbenchNode(agent.shadow)
+  ok(workbench, 'The import workbench section was not rendered.')
+  ok(!workbench.classList.contains('hidden'), 'The import workbench did not open.')
+  equal(button.getAttribute('aria-expanded'), 'true', 'The Import control should announce the open workbench')
+  return { button, workbench }
+}
+
+function setImportEntity(ctx, workbench, entity) {
+  ctx.check()
+  const select = findSelect(workbench, 'Import entity')
+  ok(select, 'The import entity selector was not rendered.')
+  select.value = entity
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+  ctx.check()
+  const refreshed = findSelect(workbench, 'Import entity')
+  equal(refreshed?.value, entity, `The import entity should be ${entity}`)
+}
+
+function chooseImportFile(ctx, workbench, file) {
+  ctx.check()
+  const input = workbench.querySelector('input[type="file"]')
+  ok(input, 'The import file input was not rendered.')
+  const transfer = new DataTransfer()
+  transfer.items.add(file)
+  input.files = transfer.files
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  ctx.check()
+}
+
+function setImportMapping(ctx, workbench, field, columnIndex) {
+  ctx.check()
+  const select = findSelect(workbench, `Map ${field}`)
+  ok(select, `The mapping selector for ${field} was not rendered.`)
+  select.value = String(columnIndex)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+  ctx.check()
+}
+
+function importCellInput(workbench, rowIndex, columnIndex, columnCount) {
+  const inputs = [...workbench.querySelectorAll('.import-table input')]
+  return inputs[rowIndex * columnCount + columnIndex] || null
+}
+
+function editImportCell(ctx, workbench, rowIndex, columnIndex, columnCount, value) {
+  ctx.check()
+  const input = importCellInput(workbench, rowIndex, columnIndex, columnCount)
+  ok(input, `The import cell ${rowIndex + 1}:${columnIndex + 1} was not rendered.`)
+  input.value = value
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  ctx.check()
+}
+
+async function waitForImportTable(agent, rowCount, columnCount) {
+  await agent.ctx.waitFor(() => {
+    const workbench = importWorkbenchNode(agent.shadow)
+    const inputs = workbench ? workbench.querySelectorAll('.import-table input') : []
+    return inputs.length === rowCount * columnCount
+  }, { root: agent.shadow, label: 'local import table' })
+  agent.assertActive()
+}
+
+function installFetchCounter(ctx) {
+  const current = window.fetch
+  let calls = 0
+  subscribeCaseProperty(ctx, window, 'fetch', (...args) => {
+    calls += 1
+    return current(...args)
+  })
+  return { get calls() { return calls } }
+}
+
+function batchTimestamp(offsetMs = 0) {
+  const date = new Date(Date.now() + offsetMs)
+  const pad = value => String(value).padStart(2, '0')
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}+00:00`
+}
+
+function buildBatchPreview(input, {
+  operationId = BATCH_OPERATION_ID,
+  expiresAt = batchTimestamp(BATCH_EXPIRES_OFFSET_MS)
+} = {}) {
+  const rows = input.rows.map((row, index) => ({
+    row: index + 1,
+    title: String(row.name ?? `Row ${index + 1}`),
+    identifier: null,
+    differences: Object.entries(row).map(([property, after]) => ({ property, before: null, after }))
+  }))
+  return {
+    operationId,
+    entity: input.entity,
+    action: 'create',
+    title: `Create ${rows.length} ${input.entity} record${rows.length === 1 ? '' : 's'}`,
+    affectedRecords: rows.length,
+    expiresAt,
+    rows,
+    saved: false
+  }
+}
+
+function buildBatchReceipt(preparedInput, {
+  operationId = BATCH_OPERATION_ID,
+  status = 'succeeded',
+  verified = false,
+  expiresAt = null
+} = {}) {
+  const rows = preparedInput?.rows || []
+  const fields = [...new Set(rows.flatMap(row => Object.keys(row)))]
+  const results = status === 'succeeded'
+    ? rows.map((row, index) => ({ row: index + 1, identifier: String(101 + index) }))
+    : []
+  return {
+    operationId,
+    entity: preparedInput?.entity || 'Tag',
+    action: 'create',
+    status,
+    rowCount: rows.length,
+    fields,
+    results,
+    createdAt: batchTimestamp(-1000),
+    expiresAt: expiresAt || batchTimestamp(BATCH_EXPIRES_OFFSET_MS),
+    completedAt: status === 'pending' ? null : batchTimestamp(0),
+    ...(verified ? { verified: true } : {})
+  }
+}
+
+/**
+ * Synthetic batch backend behind the real createBatchMutationHost. It validates
+ * and serializes the actual fixed-route transport while returning canonical
+ * previews and receipts shaped exactly like the backend contract. No HTTP call
+ * leaves this page.
+ */
+function createSyntheticBatchBackend({
+  operationId = BATCH_OPERATION_ID,
+  commitOutcome = 'succeeded',
+  statusOutcome = 'pending',
+  mutatePreview = null,
+  mutateCommitReceipt = null,
+  commitDeferred = null
+} = {}) {
+  const calls = []
+  let preparedInput = null
+  let preview = null
+  let pendingCommitReceipt = null
+  const operationPath = `${BATCH_PATH}/${operationId}`
+
+  const makeReceipt = (status, verified = false) => buildBatchReceipt(preparedInput, {
+    operationId,
+    status,
+    verified,
+    expiresAt: preview?.expiresAt || null
+  })
+
+  const request = {
+    async post(path, body) {
+      calls.push({ method: 'POST', path, body })
+      if (path === BATCH_PATH) {
+        preparedInput = body
+        preview = buildBatchPreview(body, { operationId })
+        if (typeof mutatePreview === 'function') preview = mutatePreview(preview, body)
+        return { data: preview }
+      }
+      if (path === `${operationPath}/commit`) {
+        const success = makeReceipt('succeeded', true)
+        const receipt = commitOutcome === 'uncertain'
+          ? makeReceipt('pending')
+          : typeof mutateCommitReceipt === 'function' ? mutateCommitReceipt(success) : success
+        if (commitDeferred) {
+          pendingCommitReceipt = receipt
+          return { data: await commitDeferred.promise }
+        }
+        return { data: receipt }
+      }
+      if (path === `${operationPath}/cancel`) return { data: makeReceipt('cancelled') }
+      throw new Error(`Unexpected synthetic batch POST ${path}`)
+    },
+    async get(path) {
+      calls.push({ method: 'GET', path })
+      if (path === `${operationPath}/preview`) return { data: preview }
+      if (path === operationPath) return { data: makeReceipt(statusOutcome) }
+      if (path === BATCH_PATH) return { data: { items: [], page: 1, hasMore: false } }
+      throw new Error(`Unexpected synthetic batch GET ${path}`)
+    }
+  }
+
+  return {
+    request,
+    calls,
+    get preparedInput() { return preparedInput },
+    get preview() { return preview },
+    count(method, path) {
+      return calls.filter(call => call.method === method && call.path === path).length
+    },
+    prepareCount() { return this.count('POST', BATCH_PATH) },
+    commitCount() { return this.count('POST', `${operationPath}/commit`) },
+    cancelCount() { return this.count('POST', `${operationPath}/cancel`) },
+    statusCount() { return this.count('GET', operationPath) },
+    restoreCount() { return this.count('GET', `${operationPath}/preview`) },
+    resolveCommit() {
+      ok(commitDeferred && pendingCommitReceipt, 'No context-owned deferred batch commit is pending.')
+      const receipt = pendingCommitReceipt
+      pendingCommitReceipt = null
+      commitDeferred.resolve(receipt)
+    }
+  }
+}
+
+async function loadBatchModules(ctx) {
+  const [batchModule, capabilityModule] = await Promise.all([
+    ctx.guard(import('../../src/batch-mutation-host.js'), 'real batch transport import'),
+    ctx.guard(import('../../adapters/ns-ultimate/admin/mutation-capabilities.mjs'), 'real batch capability import')
+  ])
+  ctx.check()
+  return {
+    createBatchMutationHost: batchModule.createBatchMutationHost,
+    mutationCapabilities: capabilityModule.default
+  }
+}
+
+function installConfirm(ctx, accepted = true) {
+  let calls = 0
+  subscribeCaseProperty(ctx, window, 'confirm', () => {
+    calls += 1
+    return accepted
+  })
+  return { get calls() { return calls } }
+}
+
+function buildSingleRecordPreview({ name = 'Single interleaving preview value' } = {}) {
+  return {
+    operationId: 'e'.repeat(64),
+    entity: 'SyntheticRecords',
+    action: 'update',
+    identifier: '1',
+    title: 'Synthetic interleaving record',
+    affectedRecords: 1,
+    expiresAt: batchTimestamp(BATCH_EXPIRES_OFFSET_MS),
+    differences: [{ property: 'name', label: 'Name', before: 'old synthetic value', after: name }],
+    saved: false
+  }
+}
+
+function createInterleavedHost(batchHost, preview) {
+  const calls = { prepare: 0, list: 0, restore: 0, commit: 0, status: 0, cancel: 0 }
+  const host = createSyntheticHost({
+    writeCapabilities: [{
+      entity: 'SyntheticRecords',
+      actions: ['update'],
+      actionFields: { update: ['name'] },
+      fields: ['name']
+    }],
+    prepareChange(input) {
+      calls.prepare += 1
+      return preview
+    },
+    batchHost
+  })
+  host.listRecordChanges = async() => {
+    calls.list += 1
+    return {
+      items: [{
+        operationId: preview.operationId,
+        entity: preview.entity,
+        action: preview.action,
+        status: 'pending',
+        identifier: preview.identifier,
+        createdAt: batchTimestamp(-1000),
+        expiresAt: preview.expiresAt
+      }],
+      page: 1,
+      hasMore: false
+    }
+  }
+  host.restoreRecordChange = async operationId => {
+    calls.restore += 1
+    equal(operationId, preview.operationId, 'The restored operation identity should match the single proposal')
+    return preview
+  }
+  host.commitRecordChange = async operationId => {
+    calls.commit += 1
+    return { operationId, status: 'succeeded' }
+  }
+  host.getRecordChangeStatus = async operationId => {
+    calls.status += 1
+    return { operationId, status: 'pending' }
+  }
+  host.cancelRecordChange = async() => { calls.cancel += 1 }
+  return { host, calls }
+}
+
+async function prepareSingleRecordPreview(ctx, agent, provider, preview) {
+  provider.enqueueToolCall('prepare_record_change', {
+    entity: preview.entity,
+    action: preview.action,
+    identifier: preview.identifier,
+    changes: { name: preview.differences[0].after }
+  })
+  provider.enqueueText('Synthetic single-record preview answer.')
+  sendText(agent, 'Prepare a single synthetic record change for interleaving.')
+  await provider.waitForRequests(2, ctx)
+  await waitForIdle(agent)
+  await agent.ctx.waitFor(() => Boolean(findButton(agent.shadow, /^Confirm and save$/)), {
+    root: agent.shadow,
+    label: 'single prepared change card'
+  })
+  agent.assertActive()
+}
+
+async function preloadOperationHistory(ctx, agent) {
+  const button = findButton(agent.shadow, /^Operations$/)
+  ok(button && !button.disabled, 'The Operations control was not available for the preloaded history.')
+  button.click()
+  ctx.check()
+  const history = agent.shadow.querySelector('section.operation-history')
+  ok(history, 'The operation history section was not rendered.')
+  await agent.ctx.waitFor(() => Boolean(findButton(history, /^Restore preview$/)), {
+    root: agent.shadow,
+    label: 'preloaded pending operation'
+  })
+  button.click()
+  ctx.check()
+  ok(history.classList.contains('hidden'), 'The preloaded operation history should close before interleaving.')
+  ok(!agent.shadow.querySelector('.messages').classList.contains('hidden'), 'Messages should be visible after closing history.')
+}
+
+function openOperationHistory(ctx, agent) {
+  const button = findButton(agent.shadow, /^Operations$/)
+  ok(button && !button.disabled, 'The Operations control was not available during batch interleaving.')
+  button.click()
+  ctx.check()
+  return agent.shadow.querySelector('section.operation-history')
+}
+
+async function prepareBatchFromCsv(ctx, agent, {
+  entity = 'Tag',
+  fileName,
+  content,
+  columns,
+  mapping,
+  rowCount,
+  storeUuid = ''
+} = {}) {
+  const { workbench } = openImportWorkbench(ctx, agent)
+  setImportEntity(ctx, workbench, entity)
+  if (entity === 'Counter') {
+    const storeInput = workbench.querySelector('input[placeholder="Store UUID"]')
+    ok(storeInput, 'The explicit Counter Store UUID control was not rendered.')
+    storeInput.value = storeUuid
+    storeInput.dispatchEvent(new Event('change', { bubbles: true }))
+    ctx.check()
+  }
+  chooseImportFile(ctx, workbench, makeFile(fileName, content, 'text/csv'))
+  await waitForImportTable(agent, rowCount, columns.length)
+  mapping.forEach((field, index) => setImportMapping(ctx, workbench, field, index))
+  const prepare = findButton(workbench, /^Prepare preview$/)
+  ok(prepare && !prepare.disabled, 'The interleaving batch preview should be preparable.')
+  prepare.click()
+  await agent.ctx.waitFor(() => Boolean(importWorkbenchNode(agent.shadow)?.querySelector('.import-preview table')), {
+    root: agent.shadow,
+    label: 'interleaving batch preview'
+  })
+  return workbench
+}
+
+function confirmAndCommitBatch(ctx, workbench, rowCount) {
+  const confirm = workbench.querySelector('.import-preview label.checkbox input[type="checkbox"]')
+  ok(confirm, 'The batch review confirmation control was not rendered.')
+  confirm.click()
+  const commit = findButton(workbench, new RegExp(`^Create ${rowCount} records$`))
+  ok(commit && !commit.disabled, 'The batch create control should be enabled after confirmation.')
+  commit.click()
+  ctx.check()
+}
+
+function closeImportWorkbench(ctx, agent) {
+  const workbench = importWorkbenchNode(agent.shadow)
+  ok(workbench, 'The import workbench was not rendered before Back.')
+  const back = findButton(workbench, /^Back$/)
+  ok(back, 'The import workbench Back control was not rendered.')
+  back.click()
+  ctx.check()
+  ok(workbench.classList.contains('hidden'), 'The import workbench should be hidden after Back.')
+  ok(!agent.shadow.querySelector('.messages').classList.contains('hidden'), 'Back should reveal the existing messages.')
 }
 
 async function makePngFile(ctx, name) {
@@ -1649,6 +2100,614 @@ const CASES = [
       stopOnce()
       return { syntheticMemoryCookies: true, remountedOnTokenChange: true }
     }
+  },
+  {
+    name: 'real local CSV import prepares edited canonical rows and commits once from an explicit click',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const backend = createSyntheticBatchBackend()
+      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, mutationCapabilities)
+      const agent = await ctx.mount({ host: createSyntheticHost({ batchHost }), provider })
+      const fetchCounter = installFetchCounter(ctx)
+      const { workbench } = openImportWorkbench(ctx, agent)
+      setImportEntity(ctx, workbench, 'Tag')
+      chooseImportFile(ctx, workbench, makeFile(
+        'acceptance-tags.csv',
+        'Name,Slug,Color\nNorth,north,#112233\nSouth,south,\n',
+        'text/csv'
+      ))
+      await waitForImportTable(agent, 2, 3)
+      equal(fetchCounter.calls, 0, 'Selecting and parsing a local CSV must not use fetch')
+      equal(provider.requests.length, 0, 'Selecting and parsing a local CSV must not contact the provider')
+      equal(state.docsRequests > 0, true, 'The synthetic API catalog should already be loaded')
+      const docsAtSelection = state.docsRequests
+
+      setImportMapping(ctx, workbench, 'Name', 0)
+      setImportMapping(ctx, workbench, 'Slug', 1)
+      setImportMapping(ctx, workbench, 'Color', 2)
+      editImportCell(ctx, workbench, 0, 0, 3, 'North edited')
+      editImportCell(ctx, workbench, 1, 2, 3, '#445566')
+      equal(fetchCounter.calls, 0, 'Mapping and editing must stay local')
+      equal(state.docsRequests, docsAtSelection, 'Local import work must not reload API documentation')
+      equal(provider.requests.length, 0, 'Mapping and editing must not contact the provider')
+
+      const prepareButton = findButton(workbench, /^Prepare preview$/)
+      ok(prepareButton, 'The Prepare preview control was not rendered.')
+      ok(!prepareButton.disabled, 'The Prepare preview control should be enabled for a complete mapping.')
+      prepareButton.click()
+      await agent.ctx.waitFor(() => Boolean(importWorkbenchNode(agent.shadow)?.querySelector('.import-preview table')), {
+        root: agent.shadow,
+        label: 'canonical batch preview'
+      })
+      agent.assertActive()
+
+      equal(backend.prepareCount(), 1, 'Exactly one batch prepare request should be sent')
+      const preparedBody = backend.calls.find(call => call.method === 'POST' && call.path === BATCH_PATH)?.body
+      deepEqual(preparedBody, {
+        entity: 'Tag',
+        action: 'create',
+        rows: [
+          { name: 'North edited', slug: 'north', color: '#112233' },
+          { name: 'South', slug: 'south', color: '#445566' }
+        ]
+      }, 'The prepared input must preserve the mapped and edited canonical rows')
+      equal(preparedBody.rows.length, 2, 'The prepared batch must contain exactly two rows')
+      equal(backend.preview?.affectedRecords, 2, 'The canonical preview must report the same row count')
+      includes(workbench.textContent, 'Batch preview — not saved', 'The complete preview should be shown before any save')
+      equal(workbench.querySelectorAll('.import-preview table tr').length, 3, 'The preview table should render a header and two canonical rows')
+      includes(workbench.querySelector('.import-preview table').textContent, 'North edited', 'The preview should show the edited canonical value')
+      equal(backend.commitCount(), 0, 'Preparing must not commit the batch')
+      equal(backend.statusCount(), 0, 'Preparing must not query a commit outcome')
+
+      const confirm = workbench.querySelector('.import-preview label.checkbox input[type="checkbox"]')
+      ok(confirm, 'The explicit review confirmation control was not rendered.')
+      equal(confirm.checked, false, 'Confirmation must start unchecked')
+      confirm.click()
+      const commitButton = findButton(workbench, /^Create 2 records$/)
+      ok(commitButton, 'The explicit create control was not rendered after confirmation.')
+      ok(!commitButton.disabled, 'The create control should be enabled only after explicit confirmation')
+      commitButton.click()
+      await agent.ctx.waitFor(() => importWorkbenchNode(agent.shadow)?.textContent.includes('Created 2 records.'), {
+        root: agent.shadow,
+        label: 'batch success receipt'
+      })
+      agent.assertActive()
+
+      equal(backend.commitCount(), 1, 'One human click must produce exactly one commit request')
+      equal(backend.prepareCount(), 1, 'Committing must not prepare another batch')
+      equal(backend.statusCount(), 0, 'A successful commit must not need an outcome check')
+      equal(provider.requests.length, 0, 'Bulk import must never call the model provider')
+      equal(fetchCounter.calls, 0, 'Bulk import must not use browser fetch with the synthetic transport')
+      await flushMicrotasks(ctx, 12)
+      equal(backend.commitCount(), 1, 'No automatic retry may follow a successful commit')
+      excludes(readPreferencesString(), 'North edited', 'Imported row values must not be persisted in preferences')
+      return {
+        importedRows: preparedBody.rows.length,
+        previewRows: backend.preview.affectedRecords,
+        prepareCalls: backend.prepareCount(),
+        commitCalls: backend.commitCount(),
+        providerRequests: provider.requests.length,
+        fetchCalls: fetchCounter.calls
+      }
+    }
+  },
+  {
+    name: 'real local Counter CSV keeps one explicit canonical Store UUID on every prepared row',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const backend = createSyntheticBatchBackend()
+      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, mutationCapabilities)
+      const agent = await ctx.mount({ host: createSyntheticHost({ batchHost }), provider })
+      const fetchCounter = installFetchCounter(ctx)
+      const { workbench } = openImportWorkbench(ctx, agent)
+      setImportEntity(ctx, workbench, 'Counter')
+
+      const storeInput = workbench.querySelector('input[placeholder="Store UUID"]')
+      ok(storeInput, 'The explicit Counter Store UUID control was not rendered.')
+      storeInput.value = BATCH_STORE_UUID_INPUT
+      storeInput.dispatchEvent(new Event('change', { bubbles: true }))
+      ctx.check()
+
+      chooseImportFile(ctx, workbench, makeFile(
+        'acceptance-counters.csv',
+        'Code,Name\n A01 , Window \n A02 , Door \n',
+        'text/csv'
+      ))
+      await waitForImportTable(agent, 2, 2)
+      equal(fetchCounter.calls, 0, 'Parsing a local Counter CSV must not use fetch')
+      equal(provider.requests.length, 0, 'Parsing a local Counter CSV must not contact the provider')
+
+      setImportMapping(ctx, workbench, 'Code', 0)
+      setImportMapping(ctx, workbench, 'Name', 1)
+      const prepareButton = findButton(workbench, /^Prepare preview$/)
+      ok(prepareButton && !prepareButton.disabled, 'A complete Counter mapping should allow preview preparation.')
+      prepareButton.click()
+      await agent.ctx.waitFor(() => Boolean(importWorkbenchNode(agent.shadow)?.querySelector('.import-preview table')), {
+        root: agent.shadow,
+        label: 'Counter batch preview'
+      })
+      agent.assertActive()
+
+      equal(backend.prepareCount(), 1, 'Exactly one Counter prepare request should be sent')
+      const preparedBody = backend.calls.find(call => call.method === 'POST' && call.path === BATCH_PATH)?.body
+      deepEqual(preparedBody, {
+        entity: 'Counter',
+        action: 'create',
+        rows: [
+          { storeUuid: BATCH_STORE_UUID, code: 'A01', name: 'Window' },
+          { storeUuid: BATCH_STORE_UUID, code: 'A02', name: 'Door' }
+        ]
+      }, 'Every Counter row must carry the same explicit canonical Store UUID')
+      const scopes = new Set(preparedBody.rows.map(row => row.storeUuid))
+      equal(scopes.size, 1, 'A Counter batch must use exactly one Store scope')
+      equal([...scopes][0], BATCH_STORE_UUID, 'The explicit Store UUID must be canonicalized, never inferred')
+      equal(backend.preview?.affectedRecords, 2, 'The Counter preview count must match the submitted rows')
+      equal(backend.commitCount(), 0, 'Preparing a Counter batch must not commit it')
+      equal(provider.requests.length, 0, 'Counter import must never call the model provider')
+      equal(fetchCounter.calls, 0, 'Counter import must not use browser fetch with the synthetic transport')
+      return {
+        storeScopes: scopes.size,
+        rows: preparedBody.rows.length,
+        prepareCalls: backend.prepareCount(),
+        providerRequests: provider.requests.length
+      }
+    }
+  },
+  {
+    name: 'editing an imported row after preview invalidates and cancels the prepared proposal',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const backend = createSyntheticBatchBackend()
+      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, mutationCapabilities)
+      const agent = await ctx.mount({ host: createSyntheticHost({ batchHost }), provider })
+      const fetchCounter = installFetchCounter(ctx)
+      const { workbench } = openImportWorkbench(ctx, agent)
+      setImportEntity(ctx, workbench, 'Tag')
+      chooseImportFile(ctx, workbench, makeFile(
+        'acceptance-invalidation.csv',
+        'Name,Slug\nAlpha,alpha\n',
+        'text/csv'
+      ))
+      await waitForImportTable(agent, 1, 2)
+      setImportMapping(ctx, workbench, 'Name', 0)
+      setImportMapping(ctx, workbench, 'Slug', 1)
+      const prepareButton = findButton(workbench, /^Prepare preview$/)
+      ok(prepareButton && !prepareButton.disabled, 'The initial proposal should be preparable.')
+      prepareButton.click()
+      await agent.ctx.waitFor(() => Boolean(importWorkbenchNode(agent.shadow)?.querySelector('.import-preview')), {
+        root: agent.shadow,
+        label: 'initial prepared proposal'
+      })
+      equal(backend.prepareCount(), 1, 'The initial proposal should use one prepare request')
+      equal(backend.cancelCount(), 0, 'No proposal should be cancelled before the edit')
+
+      editImportCell(ctx, workbench, 0, 0, 2, 'Alpha changed')
+      await agent.ctx.waitFor(() => !importWorkbenchNode(agent.shadow)?.querySelector('.import-preview'), {
+        root: agent.shadow,
+        label: 'invalidated proposal removal'
+      })
+      agent.assertActive()
+      equal(backend.cancelCount(), 1, 'Editing must explicitly cancel the prepared proposal')
+      equal(backend.commitCount(), 0, 'Invalidating a proposal must never commit it')
+      equal(provider.requests.length, 0, 'Editing must not contact the provider')
+
+      const refreshedPrepare = findButton(workbench, /^Prepare preview$/)
+      ok(refreshedPrepare && !refreshedPrepare.disabled, 'A fresh proposal should be preparable after the edit.')
+      refreshedPrepare.click()
+      await agent.ctx.waitFor(() => Boolean(importWorkbenchNode(agent.shadow)?.querySelector('.import-preview table')), {
+        root: agent.shadow,
+        label: 'refreshed prepared proposal'
+      })
+      equal(backend.prepareCount(), 2, 'The refreshed proposal should use a new prepare request')
+      const refreshedBody = backend.calls.filter(call => call.method === 'POST' && call.path === BATCH_PATH).at(-1)?.body
+      equal(refreshedBody.rows[0].name, 'Alpha changed', 'The refreshed input must include the edited value')
+      includes(importWorkbenchNode(agent.shadow).querySelector('.import-preview table').textContent, 'Alpha changed', 'The refreshed preview must show the edited value')
+      equal(fetchCounter.calls, 0, 'Invalidation and refresh must stay local to the synthetic transport')
+      return {
+        cancelledPreparedProposal: backend.cancelCount() === 1,
+        prepareCalls: backend.prepareCount(),
+        commitCalls: backend.commitCount(),
+        providerRequests: provider.requests.length
+      }
+    }
+  },
+  {
+    name: 'an uncertain batch commit blocks retry until an explicit outcome check restores the proposal',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const backend = createSyntheticBatchBackend({ commitOutcome: 'uncertain', statusOutcome: 'pending' })
+      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, mutationCapabilities)
+      const agent = await ctx.mount({ host: createSyntheticHost({ batchHost }), provider })
+      const fetchCounter = installFetchCounter(ctx)
+      const { workbench } = openImportWorkbench(ctx, agent)
+      setImportEntity(ctx, workbench, 'Tag')
+      chooseImportFile(ctx, workbench, makeFile(
+        'acceptance-uncertain.csv',
+        'Name,Slug\nGamma,gamma\n',
+        'text/csv'
+      ))
+      await waitForImportTable(agent, 1, 2)
+      setImportMapping(ctx, workbench, 'Name', 0)
+      setImportMapping(ctx, workbench, 'Slug', 1)
+      const prepare = findButton(workbench, /^Prepare preview$/)
+      ok(prepare && !prepare.disabled, 'The uncertain-commit proposal should be preparable.')
+      prepare.click()
+      await agent.ctx.waitFor(() => Boolean(importWorkbenchNode(agent.shadow)?.querySelector('.import-preview')), {
+        root: agent.shadow,
+        label: 'uncertain commit proposal'
+      })
+
+      const confirm = workbench.querySelector('.import-preview label.checkbox input[type="checkbox"]')
+      ok(confirm, 'The explicit confirmation control was not rendered.')
+      confirm.click()
+      const commit = findButton(workbench, /^Create 1 records$/)
+      ok(commit && !commit.disabled, 'The explicit commit control should be enabled after confirmation.')
+      commit.click()
+      await agent.ctx.waitFor(() => Boolean(findButton(importWorkbenchNode(agent.shadow), /^Check outcome$/)), {
+        root: agent.shadow,
+        label: 'unknown outcome controls'
+      })
+      await flushMicrotasks(ctx, 12)
+      agent.assertActive()
+      equal(backend.commitCount(), 1, 'An uncertain commit must have been attempted exactly once')
+      equal(backend.statusCount(), 0, 'An uncertain commit must not trigger an automatic status request')
+      equal(backend.restoreCount(), 0, 'An uncertain commit must not automatically restore or retry')
+      ok(!findButton(workbench, /^Create 1 records$/), 'No retry control may remain after an unknown outcome')
+      includes(workbench.textContent, 'Outcome unknown.', 'The workbench must explain the unresolved outcome')
+
+      const check = findButton(workbench, /^Check outcome$/)
+      ok(check && !check.disabled, 'The explicit outcome check should be available.')
+      check.click()
+      await agent.ctx.waitFor(() => importWorkbenchNode(agent.shadow)?.textContent.includes('The server reports this batch as pending.'), {
+        root: agent.shadow,
+        label: 'restored pending proposal'
+      })
+      agent.assertActive()
+      equal(backend.statusCount(), 1, 'One explicit click must perform exactly one status request')
+      equal(backend.restoreCount(), 1, 'One explicit status check may restore the same proposal once')
+      equal(backend.commitCount(), 1, 'Checking the outcome must never retry the commit')
+      const restoredConfirm = workbench.querySelector('.import-preview label.checkbox input[type="checkbox"]')
+      ok(restoredConfirm, 'The restored proposal must require confirmation again.')
+      equal(restoredConfirm.checked, false, 'A restored proposal must not be pre-confirmed')
+      const restoredCommit = findButton(workbench, /^Create 1 records$/)
+      ok(restoredCommit, 'The restored proposal should expose an explicit create control.')
+      ok(restoredCommit.disabled, 'The restored create control must stay disabled until confirmation')
+      await flushMicrotasks(ctx, 12)
+      equal(backend.commitCount(), 1, 'No automatic retry may follow the explicit outcome check')
+      equal(provider.requests.length, 0, 'Batch recovery must never call the model provider')
+      equal(fetchCounter.calls, 0, 'Batch recovery must not use browser fetch with the synthetic transport')
+      return {
+        commitCalls: backend.commitCount(),
+        statusCalls: backend.statusCount(),
+        restoreCalls: backend.restoreCount(),
+        restoredAwaitingConfirmation: restoredConfirm.checked === false
+      }
+    }
+  },
+  {
+    name: 'a malformed canonical batch preview renders no confirmation or commit control',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const backend = createSyntheticBatchBackend({
+        mutatePreview: preview => ({ ...preview, affectedRecords: preview.affectedRecords + 1 })
+      })
+      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, mutationCapabilities)
+      const agent = await ctx.mount({ host: createSyntheticHost({ batchHost }), provider })
+      const fetchCounter = installFetchCounter(ctx)
+      const { workbench } = openImportWorkbench(ctx, agent)
+      setImportEntity(ctx, workbench, 'Tag')
+      chooseImportFile(ctx, workbench, makeFile(
+        'acceptance-malformed.csv',
+        'Name,Slug\nDelta,delta\n',
+        'text/csv'
+      ))
+      await waitForImportTable(agent, 1, 2)
+      setImportMapping(ctx, workbench, 'Name', 0)
+      setImportMapping(ctx, workbench, 'Slug', 1)
+      const prepare = findButton(workbench, /^Prepare preview$/)
+      ok(prepare && !prepare.disabled, 'The malformed-preview attempt should be preparable.')
+      prepare.click()
+      await agent.ctx.waitFor(() => importWorkbenchNode(agent.shadow)?.textContent.includes('The batch preview could not be prepared. Nothing was confirmed.'), {
+        root: agent.shadow,
+        label: 'malformed preview rejection'
+      })
+      agent.assertActive()
+      equal(importWorkbenchNode(agent.shadow).querySelectorAll('.import-preview').length, 0, 'A malformed preview must not render a preview panel')
+      equal(importWorkbenchNode(agent.shadow).querySelectorAll('.import-preview input[type="checkbox"]').length, 0, 'A malformed preview must not render confirmation')
+      ok(!findButton(importWorkbenchNode(agent.shadow), /^Create 1 records$/), 'A malformed preview must not render a create control')
+      equal(backend.prepareCount(), 1, 'The malformed preview should be rejected after one prepare request')
+      equal(backend.commitCount(), 0, 'A malformed preview must never reach commit')
+      equal(provider.requests.length, 0, 'A malformed preview must not contact the provider')
+      equal(fetchCounter.calls, 0, 'A malformed preview must not trigger browser fetch')
+      return {
+        previewPanels: 0,
+        confirmationControls: 0,
+        prepareCalls: backend.prepareCount(),
+        commitCalls: backend.commitCount()
+      }
+    }
+  },
+  {
+    name: 'disposal and remount suppress a delayed prepared batch preview',
+    async run(ctx) {
+      const lateSentinel = 'LATE_BATCH_PREVIEW_SENTINEL_7d31'
+      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const capabilitySource = createBatchMutationHost({
+        async post() { throw new Error('The capability source must not transport.') },
+        async get() { throw new Error('The capability source must not transport.') }
+      }, BATCH_PATH, mutationCapabilities)
+      const started = ctx.deferred('deferred batch prepare start')
+      const late = ctx.deferred('late batch preview')
+      let submitted = null
+      let commitCalls = 0
+      const deferredBatchHost = {
+        getBatchCreateCapabilities: () => capabilitySource.getBatchCreateCapabilities(),
+        prepareRecordBatch(input) {
+          submitted = input
+          started.resolve(input)
+          // Deliberately ignore AbortSignal so the test observes whether the UI
+          // generation guard, not transport cancellation, suppresses the preview.
+          return late.promise
+        },
+        async restoreRecordBatch() { throw new Error('Unexpected restore in the delayed batch case.') },
+        async commitRecordBatch() {
+          commitCalls += 1
+          return buildBatchReceipt(submitted, { verified: true })
+        },
+        async getRecordBatchStatus() { throw new Error('Unexpected status in the delayed batch case.') },
+        async cancelRecordBatch() {}
+      }
+
+      const providerA = ctx.createProvider()
+      const agentA = await ctx.mount({ host: createSyntheticHost({ batchHost: deferredBatchHost }), provider: providerA })
+      const fetchCounter = installFetchCounter(ctx)
+      const { workbench } = openImportWorkbench(ctx, agentA)
+      setImportEntity(ctx, workbench, 'Tag')
+      chooseImportFile(ctx, workbench, makeFile(
+        'acceptance-late-batch.csv',
+        `Name,Slug\n${lateSentinel},late-batch\n`,
+        'text/csv'
+      ))
+      await waitForImportTable(agentA, 1, 2)
+      setImportMapping(ctx, workbench, 'Name', 0)
+      setImportMapping(ctx, workbench, 'Slug', 1)
+      findButton(workbench, /^Prepare preview$/).click()
+      await ctx.wait(started.promise, 'deferred batch prepare start')
+
+      const detachedShadow = agentA.shadow
+      agentA.dispose()
+      const providerB = ctx.createProvider()
+      const agentB = await ctx.mount({ provider: providerB })
+      const fetchCallsAfterRemount = fetchCounter.calls
+      late.resolve(buildBatchPreview(submitted))
+      await ctx.wait(late.promise, 'late batch preview resolution')
+      await flushMicrotasks(ctx, 16)
+      ctx.check()
+
+      excludes(detachedShadow.textContent, lateSentinel, 'The disposed agent must not render the late batch preview')
+      equal(detachedShadow.querySelectorAll('.import-preview').length, 0, 'The disposed agent must not keep a late preview panel')
+      excludes(agentB.shadow.textContent, lateSentinel, 'A remounted agent must not render the old batch preview')
+      equal(agentB.shadow.querySelectorAll('.import-preview').length, 0, 'A remounted agent must not contain the old preview panel')
+      equal(commitCalls, 0, 'A late preview must never commit')
+      equal(providerA.requests.length, 0, 'Preparing a local batch must not contact the provider')
+      equal(providerB.requests.length, 0, 'A remounted session must not contact the provider because of a late batch preview')
+      equal(fetchCounter.calls, fetchCallsAfterRemount, 'A late batch preview must not trigger browser fetch')
+      return {
+        latePreviewSuppressed: true,
+        disposedPreviewPanels: 0,
+        remountedPreviewPanels: 0,
+        commitCalls
+      }
+    }
+  },
+  {
+    name: 'batch submitting then Back blocks single confirm and history restore until the batch resolves',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const singlePreview = buildSingleRecordPreview({ name: 'Single preview survives an in-flight batch' })
+      const commitDeferred = ctx.deferred('deferred batch commit')
+      const backend = createSyntheticBatchBackend({ commitDeferred })
+      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, mutationCapabilities)
+      const { host, calls } = createInterleavedHost(batchHost, singlePreview)
+      const agent = await ctx.mount({ host, provider })
+      installConfirm(ctx, true)
+      await prepareSingleRecordPreview(ctx, agent, provider, singlePreview)
+      const providerRequestsBeforeBatch = provider.requests.length
+      await preloadOperationHistory(ctx, agent)
+      equal(calls.list, 1, 'The pending single operation should be listed once before interleaving')
+
+      const workbench = await prepareBatchFromCsv(ctx, agent, {
+        fileName: 'acceptance-interleave-submitting.csv',
+        content: 'Name,Slug\nInterleave submitting,interleave-submitting\n',
+        columns: ['Name', 'Slug'],
+        mapping: ['Name', 'Slug'],
+        rowCount: 1
+      })
+      confirmAndCommitBatch(ctx, workbench, 1)
+      await agent.ctx.waitFor(() => importWorkbenchNode(agent.shadow)?.textContent.includes('Creating records…'), {
+        root: agent.shadow,
+        label: 'batch submitting state'
+      })
+      equal(backend.commitCount(), 1, 'The batch commit should be in flight before Back')
+      equal(calls.commit, 0, 'No single record commit should exist before interleaving')
+
+      closeImportWorkbench(ctx, agent)
+      const singleConfirm = findButton(agent.shadow, /^Confirm and save$/)
+      ok(singleConfirm, 'The prior single confirmation should be visible after Back.')
+      const singleActivation = activateGuardedControl(ctx, singleConfirm)
+      await flushMicrotasks(ctx, 12)
+      equal(calls.commit, 0, 'A single record confirmation must not call the host while a batch is submitting')
+
+      const history = openOperationHistory(ctx, agent)
+      await flushMicrotasks(ctx, 12)
+      await agent.ctx.waitFor(() => Boolean(findButton(history, /^Restore preview$/)), {
+        root: agent.shadow,
+        label: 'pending operation restore control during batch'
+      })
+      const restore = findButton(history, /^Restore preview$/)
+      ok(restore, 'The prior history restore control should be visible during batch submitting.')
+      const restoreActivation = activateGuardedControl(ctx, restore)
+      await flushMicrotasks(ctx, 12)
+      equal(calls.restore, 0, 'Operation history restore must not call the host while a batch is submitting')
+      const historyButton = findButton(agent.shadow, /^Operations$/)
+      ok(historyButton, 'The Operations control should remain available to close history.')
+      historyButton.click()
+      ctx.check()
+
+      backend.resolveCommit()
+      await agent.ctx.waitFor(() => importWorkbenchNode(agent.shadow)?.textContent.includes('Created 1 records.'), {
+        root: agent.shadow,
+        label: 'resolved batch success receipt'
+      })
+      const normalConfirm = findButton(agent.shadow, /^Confirm and save$/)
+      ok(normalConfirm && !normalConfirm.disabled, 'The single confirmation should be usable after the batch resolves.')
+      normalConfirm.click()
+      await agent.ctx.waitFor(() => calls.commit === 1, {
+        root: agent.shadow,
+        label: 'single commit after batch resolution'
+      })
+      await flushMicrotasks(ctx, 12)
+      equal(calls.commit, 1, 'Exactly one single record commit may run after the batch resolves')
+      equal(backend.commitCount(), 1, 'Resolving the batch must not retry its commit')
+      equal(backend.statusCount(), 0, 'A successful batch commit should not need a status request')
+      equal(provider.requests.length, providerRequestsBeforeBatch, 'Batch interleaving must not dispatch another provider request')
+      return {
+        blockedSingleCommitCalls: 0,
+        blockedRestoreCalls: 0,
+        singleConfirmActivation: singleActivation,
+        restoreActivation,
+        commitCalls: backend.commitCount(),
+        singleCommitCalls: calls.commit,
+        providerRequests: provider.requests.length
+      }
+    }
+  },
+  {
+    name: 'a same-identity mismatched batch receipt stays unknown and blocks single and history actions',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const singlePreview = buildSingleRecordPreview({ name: 'Single preview survives an unknown batch' })
+      const backend = createSyntheticBatchBackend({
+        statusOutcome: 'succeeded',
+        mutateCommitReceipt: receipt => ({
+          ...receipt,
+          entity: 'Counter',
+          rowCount: 1,
+          fields: ['storeUuid'],
+          results: [{ row: 1, identifier: '9001' }],
+          expiresAt: batchTimestamp(BATCH_EXPIRES_OFFSET_MS + 60000)
+        })
+      })
+      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, mutationCapabilities)
+      const { host, calls } = createInterleavedHost(batchHost, singlePreview)
+      const agent = await ctx.mount({ host, provider })
+      installConfirm(ctx, true)
+      await prepareSingleRecordPreview(ctx, agent, provider, singlePreview)
+      const providerRequestsBeforeBatch = provider.requests.length
+      await preloadOperationHistory(ctx, agent)
+
+      const workbench = await prepareBatchFromCsv(ctx, agent, {
+        fileName: 'acceptance-interleave-mismatch.csv',
+        content: 'Name,Slug\nInterleave mismatch,interleave-mismatch\nSecond mismatch,second-mismatch\n',
+        columns: ['Name', 'Slug'],
+        mapping: ['Name', 'Slug'],
+        rowCount: 2
+      })
+      confirmAndCommitBatch(ctx, workbench, 2)
+      await agent.ctx.waitFor(() => {
+        const node = importWorkbenchNode(agent.shadow)
+        return Boolean(findButton(node, /^Check outcome$/))
+          || node.textContent.includes('Created 2 records.')
+          || node.textContent.includes('Outcome unknown.')
+      }, {
+        root: agent.shadow,
+        label: 'mismatched batch receipt resolution'
+      })
+      agent.assertActive()
+      const outcomeControl = findButton(workbench, /^Check outcome$/)
+      if (!outcomeControl) {
+        if (workbench.textContent.includes('Created 2 records.')) {
+          throw new Error('A same-ID receipt with different entity, count, fields and expiry was presented as success instead of unknown')
+        }
+        throw new Error('A mismatched batch receipt did not expose an explicit recovery control after remaining unknown')
+      }
+      equal(backend.commitCount(), 1, 'The mismatched receipt should follow exactly one commit request')
+      equal(backend.statusCount(), 0, 'A mismatched receipt must not trigger an automatic status request')
+      equal(backend.restoreCount(), 0, 'A mismatched receipt must not automatically restore or retry')
+      includes(workbench.textContent, 'Outcome unknown.', 'A same-ID receipt with different metadata must remain unknown')
+      excludes(workbench.textContent, 'Created 2 records.', 'A mismatched receipt must not be presented as success')
+
+      closeImportWorkbench(ctx, agent)
+      const singleConfirm = findButton(agent.shadow, /^Confirm and save$/)
+      ok(singleConfirm, 'The prior single confirmation should be visible after Back.')
+      const singleActivation = activateGuardedControl(ctx, singleConfirm)
+      await flushMicrotasks(ctx, 12)
+      equal(calls.commit, 0, 'A single record confirmation must not call the host while the batch outcome is unknown')
+
+      const history = openOperationHistory(ctx, agent)
+      await flushMicrotasks(ctx, 12)
+      await agent.ctx.waitFor(() => Boolean(findButton(history, /^Restore preview$/)), {
+        root: agent.shadow,
+        label: 'pending operation restore control during unknown batch'
+      })
+      const restore = findButton(history, /^Restore preview$/)
+      ok(restore, 'The prior history restore control should be visible during an unknown batch outcome.')
+      const restoreActivation = activateGuardedControl(ctx, restore)
+      await flushMicrotasks(ctx, 12)
+      equal(calls.restore, 0, 'Operation history restore must not call the host while the batch outcome is unknown')
+      const historyButton = findButton(agent.shadow, /^Operations$/)
+      ok(historyButton, 'The Operations control should remain available to close history.')
+      historyButton.click()
+      ctx.check()
+
+      const importButton = [...agent.shadow.querySelectorAll('form.composer button')]
+        .find(control => control.hasAttribute('aria-expanded'))
+      ok(importButton && !importButton.disabled, 'The Import control should remain available after Back.')
+      importButton.click()
+      ctx.check()
+      const reopened = importWorkbenchNode(agent.shadow)
+      ok(reopened && !reopened.classList.contains('hidden'), 'The import workbench should reopen for an explicit outcome check.')
+      const check = findButton(reopened, /^Check outcome$/)
+      ok(check && !check.disabled, 'The explicit outcome check should be available.')
+      check.click()
+      await agent.ctx.waitFor(() => importWorkbenchNode(agent.shadow)?.textContent.includes('Created 2 records.'), {
+        root: agent.shadow,
+        label: 'explicit batch outcome resolution'
+      })
+      equal(backend.statusCount(), 1, 'One explicit click must perform exactly one status request')
+      equal(backend.restoreCount(), 0, 'A successful status result should not restore the preview')
+      equal(backend.commitCount(), 1, 'Checking the mismatched outcome must never retry the commit')
+
+      closeImportWorkbench(ctx, agent)
+      const normalConfirm = findButton(agent.shadow, /^Confirm and save$/)
+      ok(normalConfirm && !normalConfirm.disabled, 'The single confirmation should be usable after the batch resolves.')
+      normalConfirm.click()
+      await agent.ctx.waitFor(() => calls.commit === 1, {
+        root: agent.shadow,
+        label: 'single commit after unknown batch resolution'
+      })
+      await flushMicrotasks(ctx, 12)
+      equal(calls.commit, 1, 'Exactly one single record commit may run after the batch resolves')
+      equal(backend.commitCount(), 1, 'The resolved batch must not retry its commit')
+      equal(provider.requests.length, providerRequestsBeforeBatch, 'Batch outcome recovery must not dispatch another provider request')
+      return {
+        mismatchedReceiptUnknown: true,
+        blockedSingleCommitCalls: 0,
+        blockedRestoreCalls: 0,
+        singleConfirmActivation: singleActivation,
+        restoreActivation,
+        statusCalls: backend.statusCount(),
+        commitCalls: backend.commitCount(),
+        singleCommitCalls: calls.commit
+      }
+    }
   }
 ]
 
@@ -1660,7 +2719,10 @@ function writeStandardLimitations(results) {
     'The closed shadow root is forced open only for inspection during the run; production source and its shadow mode are unchanged.',
     'Session switching uses the real integration monitor with synthetic in-memory cookies. It is not real authentication, a real account switch, or evidence about backend authorization.',
     'Provider and read-query results are synthetic. This does not establish live-provider compatibility, backend read authorization, delayed authenticated-read behavior against a real backend, or database concurrency.',
-    'The deferred FileReader case suppresses AbortController.signal delivery so a late read can complete after clear; the application generation guard, not signal delivery, is the behavior under test.'
+    'The deferred FileReader case suppresses AbortController.signal delivery so a late read can complete after clear; the application generation guard, not signal delivery, is the behavior under test.',
+    'Bulk import acceptance parses real local CSV bytes in the browser and drives the mounted workbench through the real createBatchMutationHost and shared mutation capability policy with a synthetic request object. It does not establish real backend persistence, server authorization, database concurrency, or file upload behavior.',
+    'The delayed batch-preview case uses a synthetic equivalent host whose capability descriptor comes from the real batch transport. It establishes UI disposal suppression, not backend cancellation or storage semantics.',
+    'Batch/single interleaving cases use synthetic single-record and batch hosts to verify action-time UI gating. They do not establish backend authorization, real record persistence, or that an independently submitted single-record write would succeed.'
   ]
   for (const text of [...standard, ...state.limitations]) {
     if (!results.limitations.includes(text)) results.limitations.push(text)
@@ -1867,7 +2929,7 @@ async function executeAcceptance({
 let mainExecution = null
 
 /**
- * Run the main 13-case browser acceptance suite once per fixture page.
+ * Run the main 21-case browser acceptance suite once per fixture page.
  */
 export function runBrowserAcceptance(options = {}) {
   let execution
