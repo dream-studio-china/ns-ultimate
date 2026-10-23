@@ -45,6 +45,22 @@ Subsequent StorePrinting shared/independent-proposal and account-dependency MySQ
 
 The authenticated local browser and configured live model also completed one synthetic Tag lifecycle: exact-slug absence check, create preparation and UI confirmation, read-back, name/color update preparation and UI confirmation, read-back, then deletion preparation and the exact `DELETE 1` confirmation phrase. All three cards reported success. A final exact-slug query returned zero records without truncation, confirming cleanup of the synthetic tag. No other business records were changed in this acceptance. This representative lifecycle does not establish browser coverage for every package, role or recovery path; the earlier Counter recovery/cancellation evidence remains separate.
 
+## Write capability ownership
+
+The authenticated backend capability catalog owns write descriptions; the frontend compiles validators and model-tool descriptions from the same session-local runtime snapshot. It does not contain a second handwritten field table and does not fall back to a bundled policy if catalog loading fails. Mutation capability discovery is separate from record-level authorization, which is rechecked on the backend for each operation.
+
+The host refreshes the catalog before each user turn and uses a short in-memory cache for other accesses. A changed revision or failed refresh revokes pending confirmation permissions, but preserves submitting/unknown operations, their locks and outcome-check controls. Status recovery does not require metadata; returning to confirmation requires a successful current-policy preview restoration. Session disposal aborts catalog requests and ignores late results. Unsupported schema versions, rule operands or regex patterns disable writes rather than being guessed or evaluated dynamically.
+
+For the Tag/Counter pilot, reusable business write services provide field schemas and shared operations. The app explicitly allowlists which actions and fields the assistant may use, so changing an existing allowed field rule flows into the catalog, while adding a new domain field does not automatically expose it. Complex host-specific safety semantics remain explicit adapters; the other entities' descriptions are centralized backend app policies, not automatically inferred business contracts.
+
+Ordinary Tag administration retains its existing controller and serializer behavior. Counter administration reuses only the compatible Store existence lookup; its established validation/coercion remains unchanged. Agent single/batch writes share the new services, but retain additional app-owned restrictions such as requiring an active Counter Store. This is a bounded extraction, not a claim that all normal-admin and agent validation has been unified.
+
+When extending assistant writes, update the authoritative business schema or backend app policy, explicitly opt in new fields/actions, and run the catalog export/drift and real-preview contract tests. Generated test fixtures are test resources, not production fallbacks. Catalog revisions fingerprint descriptors only; they are not persisted semantic-policy versions on proposals. Existing server restore/commit revalidation still applies.
+
+Regenerate the catalog fixture with the command documented in `tests/fixtures/capabilities/README.md` after an intentional descriptor change, then run `tests/backend-capability-catalog.integration.mjs` to compare it with the real backend export. Adding a new rule type still requires support in the generic frontend compiler; dynamic metadata does not make arbitrary business semantics executable.
+
+Deploy the corresponding backend catalog endpoint with this frontend and clear composed backend caches after service-registration changes. This refactor needs no new database migration. An older/unavailable backend leaves writes disabled rather than falling back to stale client policy. Batch receipt tracking currently retains per-operation policy references until its session host is released; those references contain schemas, not submitted row values.
+
 ## Batch-create file import
 
 Attach a TXT, CSV, XLSX or DOCX file with the normal attachment control and tell the assistant what to create, then press **Send**. There is no separate Import button or field-mapping wizard. The assistant interprets the supplied content and prepares a server-validated Tag or Counter batch; ambiguous entities, missing required values or Store references require clarification, not invented identifiers. Counter batches require one existing active Store UUID; numeric Store IDs are not accepted. Each batch contains 1–20 rows of one entity. Names are not a uniqueness key: Tag slugs and Counter codes within the same Store must not conflict.
@@ -139,7 +155,7 @@ await page.waitForFunction(() => Boolean(window.__NS_ADMIN_AGENT_ACCEPTANCE__?.p
 const result = await page.evaluate(() => window.__NS_ADMIN_AGENT_ACCEPTANCE__.promise)
 ```
 
-Require `ok === true`, all 21 cases passed, no failures/skips, empty setup/cleanup/blocked-request errors, `descriptorsRestored === true` and `isolationRetained === false`. The suite includes attachment-to-model batch preparation, Office-to-text parsing, explicit confirmation, ambiguous-outcome recovery and single/batch-write interleavings. Do not interpret successful loading alone as a passing run. Module syntax can be checked with `node --check apps/admin-agent/tests/browser/browser-acceptance.mjs`, but that does not execute browser tests.
+Require `ok === true`, all 22 cases passed, no failures/skips, empty setup/cleanup/blocked-request errors, `descriptorsRestored === true` and `isolationRetained === false`. The suite includes attachment-to-model batch preparation, Office-to-text parsing, explicit confirmation, ambiguous-outcome recovery, single/batch-write interleavings and catalog-refresh recovery. Do not interpret successful loading alone as a passing run. Module syntax can be checked with `node --check apps/admin-agent/tests/browser/browser-acceptance.mjs`, but that does not execute browser tests.
 
 Negative safety checks use the fixture URL with `?autorun=0`. In a separate fresh context for **each** check, import `browser-acceptance.mjs` relative to the fixture and call `runBrowserAcceptanceProductionGuardSelfCheck()`, `runBrowserAcceptancePatchabilitySelfCheck()` or `runBrowserAcceptanceTimeoutSelfCheck({ caseTimeoutMs: 300 })`. Each outer self-check must return `ok: true`; its inner acceptance run is expected to reject setup or fail on timeout, not pass the positive suite. Close every test context afterward. If any run reports retained isolation or cleanup failure, discard the context instead of navigating it to an application page.
 
@@ -149,6 +165,7 @@ The harness replaces storage with memory before mounting, intercepts network ent
 npm test --prefix apps/admin-agent
 node --test apps/admin-agent/tests/backend-preview-contract.integration.mjs
 node --test apps/admin-agent/tests/backend-batch-preview-contract.integration.mjs
+node --test apps/admin-agent/tests/backend-capability-catalog.integration.mjs
 node --test integration/admin/*.test.mjs
 php -d memory_limit=512M core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml
 npm run build --prefix core/crud-admin -- --config ../../integration/admin/vite.config.ts
