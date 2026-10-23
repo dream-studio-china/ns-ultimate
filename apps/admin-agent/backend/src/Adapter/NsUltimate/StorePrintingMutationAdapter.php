@@ -11,6 +11,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityNotFoundException;
 use NsUltimate\Apps\AdminAgent\Backend\Contract\MutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
+use NsUltimate\Business\Printer\Entity\PrinterAccount;
 use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -107,7 +108,10 @@ final class StorePrintingMutationAdapter implements MutationAdapter
         ];
     }
 
-    /** @return array<string, array<string, mixed>> */
+    /**
+     * @param array<string, mixed> $changes
+     * @return array<string, array<string, mixed>>
+     */
     private function normalize(array $changes): array
     {
         if ($changes === [] || array_is_list($changes) || array_diff(array_keys($changes), self::CASES) !== []) {
@@ -153,7 +157,11 @@ final class StorePrintingMutationAdapter implements MutationAdapter
         return strtolower($value);
     }
 
-    /** @return array{0: array<string, mixed>, 1: array<string, mixed>} */
+    /**
+     * @param array<string, mixed> $settings
+     * @param array<string, array<string, mixed>> $patch
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
     private function merge(array $settings, array $patch, bool $commit): array
     {
         $printing = $this->printingOf($settings, $commit);
@@ -179,13 +187,16 @@ final class StorePrintingMutationAdapter implements MutationAdapter
             throw $this->invalid($commit, 'Stored Store settings are malformed. Use the standard editor.', $error);
         }
         if ($settings === null) return [];
-        if (!is_array($settings) || ($settings !== [] && array_is_list($settings))) {
+        if ($settings !== [] && array_is_list($settings)) {
             throw $this->invalid($commit, 'Stored Store settings are malformed. Use the standard editor.');
         }
         return $settings;
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $settings
+     * @return array<string, mixed>
+     */
     private function printingOf(array $settings, bool $commit): array
     {
         if (!array_key_exists('printing', $settings)) return [];
@@ -273,11 +284,13 @@ final class StorePrintingMutationAdapter implements MutationAdapter
     {
         $newDevice = array_key_exists('deviceUuid', $patch) && $patch['deviceUuid'] !== null;
         $newTemplate = array_key_exists('templateUuid', $patch) && $patch['templateUuid'] !== null;
-        $device = $newDevice ? $this->device($case['deviceUuid'], $store, $commit) : null;
-        $template = $newTemplate ? $this->template($case['templateUuid'], $commit) : null;
-        if (($newDevice || $newTemplate) && $case['deviceUuid'] !== null && $case['templateUuid'] !== null) {
-            $device ??= $this->findDevice($case['deviceUuid']);
-            $template ??= $this->findTemplate($case['templateUuid']);
+        $deviceUuid = $case['deviceUuid'];
+        $templateUuid = $case['templateUuid'];
+        $device = $newDevice && $deviceUuid !== null ? $this->device($deviceUuid, $store, $commit) : null;
+        $template = $newTemplate && $templateUuid !== null ? $this->template($templateUuid, $commit) : null;
+        if (($newDevice || $newTemplate) && $deviceUuid !== null && $templateUuid !== null) {
+            $device ??= $this->findDevice($deviceUuid);
+            $template ??= $this->findTemplate($templateUuid);
             if ($device !== null && $template !== null && $device->getKind() !== $template->getKind()) {
                 throw $this->invalid($commit, 'The printer device and template kinds must match.');
             }
@@ -461,7 +474,10 @@ final class StorePrintingMutationAdapter implements MutationAdapter
         $this->refreshEntities($templates, false);
     }
 
-    /** @param array<string, mixed> $printing @return list<PrinterDevice> */
+    /**
+     * @param array<string, mixed> $printing
+     * @return list<PrinterDevice>
+     */
     private function collectDevices(array $printing): array
     {
         $devices = [];
@@ -473,7 +489,10 @@ final class StorePrintingMutationAdapter implements MutationAdapter
         return array_values($devices);
     }
 
-    /** @param list<PrinterDevice> $devices @return list<\NsUltimate\Business\Printer\Entity\PrinterAccount> */
+    /**
+     * @param list<PrinterDevice> $devices
+     * @return list<PrinterAccount>
+     */
     private function collectAccounts(array $devices, bool $commit): array
     {
         $accounts = [];
@@ -487,7 +506,10 @@ final class StorePrintingMutationAdapter implements MutationAdapter
         return array_values($accounts);
     }
 
-    /** @param array<string, mixed> $printing @return list<PrinterTemplate> */
+    /**
+     * @param array<string, mixed> $printing
+     * @return list<PrinterTemplate>
+     */
     private function collectTemplates(array $printing): array
     {
         $templates = [];
@@ -500,17 +522,18 @@ final class StorePrintingMutationAdapter implements MutationAdapter
     }
 
     /**
-     * @param array<int, object> $entities
-     * @return list<object>
+     * @template T of PrinterDevice|PrinterAccount|PrinterTemplate
+     * @param array<int, T> $entities
+     * @return list<T>
      */
     private function sortEntities(array $entities): array
     {
         $entities = array_values($entities);
-        usort($entities, static fn(object $left, object $right): int => [get_class($left), (int) $left->getId()] <=> [get_class($right), (int) $right->getId()]);
+        usort($entities, static fn(PrinterDevice|PrinterAccount|PrinterTemplate $left, PrinterDevice|PrinterAccount|PrinterTemplate $right): int => [get_class($left), (int) $left->getId()] <=> [get_class($right), (int) $right->getId()]);
         return $entities;
     }
 
-    /** @param list<object> $entities */
+    /** @param list<PrinterDevice|PrinterAccount|PrinterTemplate> $entities */
     private function lockAndRefreshEntities(array $entities): void
     {
         foreach ($entities as $entity) {
@@ -523,7 +546,7 @@ final class StorePrintingMutationAdapter implements MutationAdapter
         }
     }
 
-    /** @param list<object> $entities */
+    /** @param list<PrinterDevice|PrinterAccount|PrinterTemplate> $entities */
     private function refreshEntities(array $entities, bool $commit): void
     {
         foreach ($entities as $entity) {
@@ -541,7 +564,11 @@ final class StorePrintingMutationAdapter implements MutationAdapter
         throw new BadRequestHttpException('Store must be active to change printing settings.');
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $settings
+     * @param array<string, mixed> $dependencies
+     * @return array<string, mixed>
+     */
     private function snapshot(Store $store, array $settings, array $dependencies): array
     {
         return [
@@ -550,6 +577,7 @@ final class StorePrintingMutationAdapter implements MutationAdapter
         ];
     }
 
+    /** @param array<string, mixed> $snapshot */
     private function hash(array $snapshot): string
     {
         return hash('sha256', json_encode($this->canonicalize($snapshot), JSON_THROW_ON_ERROR));

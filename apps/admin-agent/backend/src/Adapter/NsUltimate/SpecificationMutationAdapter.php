@@ -33,19 +33,21 @@ final class SpecificationMutationAdapter implements MutationAdapter
         $target = $create ? null : $this->find($identifier);
         $changes = $this->normalize($changes, $create);
         $productId = $changes['productId'];
-        if (!$create && $target->getProduct()?->getId() !== $productId) throw new BadRequestHttpException('Specification does not belong to productId.');
+        if ($target !== null && $target->getProduct()?->getId() !== $productId) throw new BadRequestHttpException('Specification does not belong to productId.');
         $product = $this->loadProduct($productId);
         $this->assertProductAvailable($product, false);
         $scope = $this->productSnapshot($product);
         $before = $target === null ? null : $this->snapshot($target);
         if ($before !== null && $before['isDeleted']) throw new BadRequestHttpException('Deleted Specifications cannot be changed.');
-        $after = $create
+        $after = $before === null
             ? ['productId'=>$productId,'name'=>$changes['name'],'price'=>$changes['price'],'status'=>$changes['status'] ?? 'active','sort'=>$changes['sort'] ?? 0]
             : array_replace($before, $changes);
         $diff=[];
         foreach (self::FIELDS as $field) if (array_key_exists($field, $changes) && ($create || ($before[$field] ?? null) !== ($after[$field] ?? null))) $diff[]=['property'=>$field,'before'=>$before[$field] ?? null,'after'=>$after[$field] ?? null];
         $beforeHash = $this->hash(['product'=>$scope, 'specification'=>$before]);
-        return ['identifier'=>$target ? (string)$target->getId() : null,'title'=>$this->title($product, $after['name'], $target?->getId()),
+        $titleName = $changes['name'] ?? $before['name'] ?? null;
+        if ($titleName === null) throw new BadRequestHttpException('Specification name is required.');
+        return ['identifier'=>$target ? (string)$target->getId() : null,'title'=>$this->title($product, $titleName, $target?->getId()),
             'beforeHash'=>$beforeHash,'changes'=>$changes,'differences'=>$diff];
     }
     public function execute(string $action, ?string $identifier, string $beforeHash, array $changes): array
@@ -76,6 +78,10 @@ final class SpecificationMutationAdapter implements MutationAdapter
         $actual=$this->snapshot($target); unset($expected['id'],$actual['id']);
         return ['identifier'=>(string)$target->getId(),'verified'=>$actual===$expected];
     }
+    /**
+     * @param array<string, mixed> $c
+     * @return array<string, mixed>
+     */
     private function normalize(array $c,bool $create):array
     {
         if (array_diff(array_keys($c),self::FIELDS) || !isset($c['productId'])) throw new BadRequestHttpException('Only productId, name, price, status and sort are supported.');
@@ -101,12 +107,14 @@ final class SpecificationMutationAdapter implements MutationAdapter
         if ($category!==null) $this->em->refresh($category,LockMode::PESSIMISTIC_WRITE);
     }
     private function find(?string $id,bool $lock=false):Specification { if($id===null||!preg_match('/^[1-9][0-9]{0,9}$/D',$id)||(int)$id>2147483647) throw new BadRequestHttpException('An exact signed 32-bit numeric Specification ID is required.'); $s=$this->em->find(Specification::class,(int)$id,$lock?LockMode::PESSIMISTIC_WRITE:null); if(!$s instanceof Specification) throw new NotFoundHttpException('Specification not found.'); return $s; }
+    /** @return array{id: int|null, uuid: string, productId: int|null, name: string, price: int, status: string, sort: int, isDeleted: bool} */
     private function snapshot(Specification $s):array
     {
         $product=$s->getProduct();
         return ['id'=>$s->getId(),'uuid'=>$s->getUuid(),'productId'=>$product?->getId(),'name'=>$s->getName(),'price'=>$s->getPrice(),
             'status'=>$s->getStatus(),'sort'=>$s->getSort(),'isDeleted'=>$s->getIsDeleted()];
     }
+    /** @return array<string, mixed> */
     private function productSnapshot(Product $product): array
     {
         $store=$product->getStore();
@@ -128,5 +136,6 @@ final class SpecificationMutationAdapter implements MutationAdapter
         return sprintf('[Product #%d; Specification #%s; %s] %s', $product->getId(), $specificationId ?? 'new',
             $product->getStore() === null ? 'Store global' : 'Store '.$product->getStore()->getUuid(), $specificationName);
     }
+    /** @param array<string, mixed>|null $s */
     private function hash(?array $s):string { return hash('sha256',json_encode($s,JSON_THROW_ON_ERROR)); }
 }

@@ -62,6 +62,10 @@ final class StoreMutationAdapter implements MutationAdapter
         }
         return ['identifier'=>$id, 'verified'=>true];
     }
+    /**
+     * @param array<string, mixed> $changes
+     * @return array<string, mixed>
+     */
     private function normalize(array $changes): array
     {
         if ($changes === [] || array_diff(array_keys($changes), self::FIELDS) !== []) throw new BadRequestHttpException('Only Store name, contact, and address may be updated.');
@@ -73,16 +77,20 @@ final class StoreMutationAdapter implements MutationAdapter
         foreach (self::FIELDS as $field) if (array_key_exists($field, $changes)) $ordered[$field] = $changes[$field];
         return $ordered;
     }
+    /**
+     * @param array<string, array{type: string, max: int, min?: int, pattern?: string, email?: bool}> $schema
+     * @return array<array-key, mixed>|null
+     */
     private function validateObject(mixed $value, string $field, array $schema): ?array
     {
         if ($value === null) return null;
         if (!is_array($value) || array_is_list($value) && $value !== []) throw new BadRequestHttpException($field.' must be a structured object or null.');
         foreach ($value as $key => $item) {
-            if (!isset($schema[$key])) throw new BadRequestHttpException('Unknown '.$field.' field.');
+            if (!is_string($key) || !isset($schema[$key])) throw new BadRequestHttpException('Unknown '.$field.' field.');
             $rule = $schema[$key];
             $valid = match ($rule['type']) {
                 'string' => is_string($item) && mb_strlen($item) <= $rule['max'] && (!isset($rule['min']) || mb_strlen($item) >= $rule['min']) && (!isset($rule['pattern']) || preg_match($rule['pattern'], $item) === 1) && (!isset($rule['email']) || filter_var($item, FILTER_VALIDATE_EMAIL) !== false),
-                'number' => (is_float($item) || is_int($item)) && $item >= $rule['min'] && $item <= $rule['max'],
+                'number' => (is_float($item) || is_int($item)) && isset($rule['min']) && $item >= $rule['min'] && $item <= $rule['max'],
                 'array' => is_array($item) && array_is_list($item) && count($item) <= $rule['max'] && count(array_unique($item, SORT_REGULAR)) === count($item) && array_reduce($item, static fn(bool $ok, mixed $v): bool => $ok && is_string($v) && mb_strlen($v) >= 1 && mb_strlen($v) <= 30, true),
                 default => false,
             };
@@ -91,16 +99,24 @@ final class StoreMutationAdapter implements MutationAdapter
         if ($field === 'address' && (array_key_exists('latitude', $value) xor array_key_exists('longitude', $value))) throw new BadRequestHttpException('address latitude and longitude must be provided together.');
         return $this->canonicalize($value);
     }
-    /** Explicit contact/address proposal replaces only its named keys; no full stored blob is included in previews. */
+    /**
+     * Explicit contact/address proposal replaces only its named keys; no full stored blob is included in previews.
+     *
+     * @param array<string, mixed>|null $current
+     * @param array<string, mixed>|null $proposal
+     * @return array<string, mixed>|null
+     */
     private function merge(?array $current, ?array $proposal): ?array
     {
         if ($proposal === null) return null;
         return array_replace($current ?? [], $proposal);
     }
+    /** @return array<string, array{type: string, max: int, min?: int, pattern?: string, email?: bool}> */
     private static function contactSchema(): array
     {
         return ['phone'=>['type'=>'string','max'=>20,'pattern'=>'/^(\+?[0-9\- ]{7,20}|1[3-9][0-9]{9})$/D'],'managerPhone'=>['type'=>'string','max'=>20,'pattern'=>'/^(\+?[0-9\- ]{7,20}|1[3-9][0-9]{9})$/D'],'email'=>['type'=>'string','max'=>255,'email'=>true],'managerEmail'=>['type'=>'string','max'=>255,'email'=>true],'managerName'=>['type'=>'string','min'=>1,'max'=>40],'managerUserUuid'=>['type'=>'string','max'=>36,'pattern'=>'/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iD'],'wechat'=>['type'=>'string','max'=>64],'serviceHours'=>['type'=>'string','max'=>100],'subTitle'=>['type'=>'string','min'=>1,'max'=>100],'tags'=>['type'=>'array','max'=>20]];
     }
+    /** @return array<string, array{type: string, max: int, min?: int, pattern?: string, email?: bool}> */
     private static function addressSchema(): array
     {
         return ['province'=>['type'=>'string','min'=>1,'max'=>40],'city'=>['type'=>'string','min'=>1,'max'=>40],'district'=>['type'=>'string','min'=>1,'max'=>40],'street'=>['type'=>'string','min'=>1,'max'=>100],'detail'=>['type'=>'string','min'=>1,'max'=>255],'building'=>['type'=>'string','max'=>100],'floor'=>['type'=>'string','max'=>40],'postalCode'=>['type'=>'string','max'=>20,'pattern'=>'/^[0-9A-Za-z\- ]{3,20}$/D'],'formattedAddress'=>['type'=>'string','max'=>255],'latitude'=>['type'=>'number','min'=>-90,'max'=>90],'longitude'=>['type'=>'number','min'=>-180,'max'=>180],'geohash'=>['type'=>'string','max'=>12,'pattern'=>'/^[0-9bcdefghjkmnpqrstuvwxyz]{1,12}$/D'],'poiId'=>['type'=>'string','max'=>64]];
@@ -111,8 +127,11 @@ final class StoreMutationAdapter implements MutationAdapter
         $entity = ctype_digit($id) ? $this->em->find(Store::class, (int)$id, $lock ? LockMode::PESSIMISTIC_WRITE : null) : $this->em->getRepository(Store::class)->findOneBy(['uuid'=>strtolower($id)]);
         if (!$entity instanceof Store) throw new NotFoundHttpException('Store not found.'); return $entity;
     }
+    /** @return array<string, mixed> */
     private function snapshot(Store $store): array { return ['id'=>$store->getId(),'uuid'=>$store->getUuid(),'name'=>$store->getName(),'contact'=>$store->getContact(),'address'=>$store->getAddress()]; }
+    /** @param array<string, mixed> $snapshot */
     private function hash(array $snapshot): string { return hash('sha256', json_encode($this->canonicalize($snapshot), JSON_THROW_ON_ERROR)); }
+    /** @return ($value is array ? array<array-key, mixed> : mixed) */
     private function canonicalize(mixed $value): mixed
     {
         if (!is_array($value)) return $value;

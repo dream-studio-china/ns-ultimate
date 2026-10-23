@@ -106,7 +106,10 @@ final class ProductPrintingMutationAdapter implements MutationAdapter
         return ['identifier' => (string) $product->getId(), 'verified' => $this->canonicalize($actual) === $this->canonicalize($expected)];
     }
 
-    /** @return array<string, bool> */
+    /**
+     * @param array<string, mixed> $changes
+     * @return array<string, bool>
+     */
     private function normalize(array $changes): array
     {
         if ($changes === [] || array_is_list($changes) || array_diff(array_keys($changes), [self::FIELD]) !== []
@@ -124,7 +127,7 @@ final class ProductPrintingMutationAdapter implements MutationAdapter
             throw $this->invalid($commit, 'Stored Product settings are malformed. Use the standard editor.', $error);
         }
         if ($settings === null) return [];
-        if (!is_array($settings) || ($settings !== [] && array_is_list($settings))) {
+        if ($settings !== [] && array_is_list($settings)) {
             throw $this->invalid($commit, 'Stored Product settings are malformed. Use the standard editor.');
         }
         return $settings;
@@ -178,7 +181,10 @@ final class ProductPrintingMutationAdapter implements MutationAdapter
         }
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $settings
+     * @return array<string, mixed>
+     */
     private function snapshot(Product $product, array $settings): array
     {
         $store = $product->getStore();
@@ -193,6 +199,7 @@ final class ProductPrintingMutationAdapter implements MutationAdapter
         ];
     }
 
+    /** @param array<string, mixed> $snapshot */
     private function hash(array $snapshot): string
     {
         return hash('sha256', json_encode($this->canonicalize($snapshot), JSON_THROW_ON_ERROR));

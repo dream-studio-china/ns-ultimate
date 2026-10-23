@@ -24,6 +24,14 @@ final class CategoryMutationAdapter implements MutationAdapter
 {
     private const FIELDS = ['name', 'slug', 'description', 'parent', 'sortOrder', 'enabled'];
 
+    /** @var array<class-string, string> */
+    private const REFERENCE_FIELDS = [
+        Category::class => 'parent',
+        Content::class => 'category',
+        Picture::class => 'category',
+        Media::class => 'category',
+    ];
+
     public function __construct(private readonly EntityManagerInterface $em, private readonly AuthorizationCheckerInterface $authorization) {}
     public function entityKey(): string { return 'Category'; }
     public function authorize(string $action, ?string $identifier): void
@@ -35,20 +43,26 @@ final class CategoryMutationAdapter implements MutationAdapter
     public function prepare(string $action, ?string $identifier, array $changes): array
     {
         $this->authorize($action, $identifier);
-        $target = $action === 'create' ? null : $this->find($identifier);
-        if ($action === 'delete') $this->assertUnreferenced($target);
+        if ($action === 'delete') {
+            $target = $this->find($identifier);
+            $this->assertUnreferenced($target);
+        } else {
+            $target = $action === 'create' ? null : $this->find($identifier);
+        }
         $normalized = $action === 'delete' ? [] : $this->normalize($changes, $action === 'create');
         $before = $target ? $this->snapshot($target) : null;
-        $after = $action === 'delete' ? null : ($before ?? ['name' => '', 'slug' => '', 'description' => null, 'parent' => null, 'sortOrder' => 0, 'enabled' => true]);
-        if ($action !== 'delete') $after = array_replace($after, $normalized);
+        $after = null;
         if ($action !== 'delete') {
+            $after = array_replace($before ?? ['name' => '', 'slug' => '', 'description' => null, 'parent' => null, 'sortOrder' => 0, 'enabled' => true], $normalized);
             $this->validateParent($after['parent'], $target);
             $this->assertUniqueSlug($after['slug'], $target?->getId());
         }
         $fields = $action === 'delete' ? self::FIELDS : array_values(array_intersect(self::FIELDS, array_keys($normalized)));
         $differences = [];
         foreach ($fields as $field) if ($action !== 'update' || ($before[$field] ?? null) !== ($after[$field] ?? null)) $differences[] = ['property' => $field, 'before' => $before[$field] ?? null, 'after' => $after[$field] ?? null];
-        return ['identifier' => $target ? (string) $target->getId() : null, 'title' => $before['name'] ?? $after['name'], 'beforeHash' => $this->hash($before), 'changes' => $normalized, 'differences' => $differences];
+        $title = $before['name'] ?? null;
+        if ($title === null && $after !== null) $title = $after['name'] ?? null;
+        return ['identifier' => $target ? (string) $target->getId() : null, 'title' => $title, 'beforeHash' => $this->hash($before), 'changes' => $normalized, 'differences' => $differences];
     }
 
     public function execute(string $action, ?string $identifier, string $beforeHash, array $changes): array
@@ -83,6 +97,10 @@ final class CategoryMutationAdapter implements MutationAdapter
         return ['identifier' => (string) $target->getId(), 'verified' => array_intersect_key($this->snapshot($target), array_fill_keys(self::FIELDS, true)) === $expected];
     }
 
+    /**
+     * @param array<string, mixed> $changes
+     * @return array<string, mixed>
+     */
     private function normalize(array $changes, bool $create): array
     {
         if ($changes === [] || array_diff(array_keys($changes), self::FIELDS) !== [] || ($create && (!isset($changes['name']) || !isset($changes['slug'])))) throw new BadRequestHttpException('Invalid Category fields.');
@@ -100,6 +118,7 @@ final class CategoryMutationAdapter implements MutationAdapter
         if (array_key_exists('parent', $changes) && $changes['parent'] !== null) $changes['parent'] = $this->findId($changes['parent']);
         return array_replace(array_intersect_key(['name'=>null,'slug'=>null,'description'=>null,'parent'=>null,'sortOrder'=>null,'enabled'=>null], $changes), $changes);
     }
+    /** @param array<string, mixed> $changes */
     private function apply(Category $target, array $changes): void
     {
         if (array_key_exists('name', $changes)) $target->setName($changes['name']);
@@ -118,7 +137,10 @@ final class CategoryMutationAdapter implements MutationAdapter
     private function findId(mixed $id): int
     {
         $entity = is_int($id) ? $this->em->find(Category::class, $id) : (ctype_digit($id) ? $this->em->find(Category::class, (int) $id) : $this->em->getRepository(Category::class)->findOneBy(['uuid' => strtolower($id)]));
-        if (!$entity instanceof Category) throw new BadRequestHttpException('Category parent not found.'); return $entity->getId();
+        if (!$entity instanceof Category) throw new BadRequestHttpException('Category parent not found.');
+        $parentId = $entity->getId();
+        if ($parentId === null) throw new BadRequestHttpException('Category parent is not stored.');
+        return $parentId;
     }
     private function validateParent(?int $parent, ?Category $target, bool $lockParent = false): void
     {
@@ -126,23 +148,29 @@ final class CategoryMutationAdapter implements MutationAdapter
         if ($target && $target->getId() === $parent) throw new BadRequestHttpException('A category cannot be its own parent.');
         $seen = []; $cursor = $this->em->find(Category::class, $parent, $lockParent ? LockMode::PESSIMISTIC_READ : null);
         if (!$cursor instanceof Category) throw new BadRequestHttpException('Category parent no longer exists.');
-        while ($cursor instanceof Category) { $id = $cursor->getId(); if (isset($seen[$id]) || ($target && $id === $target->getId())) throw new BadRequestHttpException('Category parent would create a cycle.'); if (count($seen) >= 10000) throw new BadRequestHttpException('Category hierarchy exceeds the safe traversal limit.'); $seen[$id] = true; $cursor = $cursor->getParent(); }
+        while ($cursor instanceof Category) {
+            $id = $cursor->getId();
+            if ($id === null) throw new BadRequestHttpException('Category hierarchy contains an unsaved parent.');
+            if (isset($seen[$id]) || ($target && $id === $target->getId())) throw new BadRequestHttpException('Category parent would create a cycle.');
+            if (count($seen) >= 10000) throw new BadRequestHttpException('Category hierarchy exceeds the safe traversal limit.');
+            $seen[$id] = true; $cursor = $cursor->getParent();
+        }
     }
     private function assertUniqueSlug(string $slug, ?int $id): void { $other = $this->em->getRepository(Category::class)->findOneBy(['slug' => $slug]); if ($other && $other->getId() !== $id) throw new BadRequestHttpException('Category slug is already in use.'); }
     private function assertUnreferenced(Category $target, bool $lockReferences = false): void
     {
         $id = $target->getId();
-        $classes = [Category::class => 'parent', Content::class => 'category', Picture::class => 'category', Media::class => 'category'];
-        foreach ($classes as $class => $field) {
+        if ($id === null) throw new BadRequestHttpException('Category is not stored.');
+        foreach (self::REFERENCE_FIELDS as $class => $field) {
             $referenced = $lockReferences ? $this->hasLockedReference($class, $field, $id) : $this->em->getRepository($class)->count([$field => $id]) > 0;
             if ($referenced) throw new BadRequestHttpException('Category is referenced and cannot be deleted.');
         }
     }
+    /** @param class-string $class */
     private function hasLockedReference(string $class, string $field, int $id): bool
     {
-        $metadata = $this->em->getClassMetadata($class);
         $alias = 'reference';
-        $query = $this->em->createQuery(sprintf('SELECT %s FROM %s %s WHERE %s.%s = :target', $alias, $metadata->getName(), $alias, $alias, $field))
+        $query = $this->em->createQuery(sprintf('SELECT %s FROM %s %s WHERE %s.%s = :target', $alias, $class, $alias, $alias, $field))
             ->setParameter('target', $id)->setMaxResults(1)->setLockMode(LockMode::PESSIMISTIC_WRITE);
         return $query->getOneOrNullResult() !== null;
     }
@@ -155,6 +183,8 @@ final class CategoryMutationAdapter implements MutationAdapter
     {
         try { $callback(); } catch (BadRequestHttpException $error) { throw new ProposalConflictException($message, $error); }
     }
+    /** @return array<string, mixed> */
     private function snapshot(Category $e): array { return ['id'=>$e->getId(),'uuid'=>$e->getUuid(),'name'=>$e->getName(),'slug'=>$e->getSlug(),'description'=>$e->getDescription(),'parent'=>$e->getParent()?->getId(),'sortOrder'=>$e->getSortOrder(),'enabled'=>$e->isEnabled()]; }
+    /** @param array<string, mixed>|null $snapshot */
     private function hash(?array $snapshot): string { return hash('sha256', json_encode($snapshot, JSON_THROW_ON_ERROR)); }
 }

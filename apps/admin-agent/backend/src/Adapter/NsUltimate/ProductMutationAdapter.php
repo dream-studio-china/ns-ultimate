@@ -78,6 +78,10 @@ final class ProductMutationAdapter implements MutationAdapter
         return ['identifier'=>(string)$target->getId(), 'verified'=>$actual === $expected];
     }
 
+    /**
+     * @param array<string, mixed> $c
+     * @return array<string, mixed>
+     */
     private function normalize(array $c, bool $create): array
     {
         if (!$c || array_diff(array_keys($c), self::FIELDS)) throw new BadRequestHttpException('Unsupported or empty Product changes.');
@@ -100,6 +104,7 @@ final class ProductMutationAdapter implements MutationAdapter
         return $canonical;
     }
 
+    /** @param array<string, mixed> $c */
     private function apply(Product $p, array $c, bool $create, bool $lock): void
     {
         $store = $create ? null : $p->getStore();
@@ -119,12 +124,12 @@ final class ProductMutationAdapter implements MutationAdapter
             case 'isSoldout': $p->setIsSoldout($v); break;
             case 'category':
                 $category = $v === null ? null : $this->findCategory($v, $lock);
-                if ($v !== null && (!$category->isEnabled() || $category->getStore()?->getId() !== $store?->getId())) throw new BadRequestHttpException('Category must be enabled and belong to the exact Product store scope (global for a global Product).');
+                if ($category !== null && (!$category->isEnabled() || $category->getStore()?->getId() !== $store?->getId())) throw new BadRequestHttpException('Category must be enabled and belong to the exact Product store scope (global for a global Product).');
                 $p->setCategory($category); break;
         }
     }
 
-    private function findStore(string $uuid, bool $lock): ?Store
+    private function findStore(string $uuid, bool $lock): Store
     {
         $store=$this->em->getRepository(Store::class)->findOneBy(['uuid'=>$uuid]);
         if (!$store instanceof Store) throw new BadRequestHttpException('Store not found.');
@@ -156,6 +161,7 @@ final class ProductMutationAdapter implements MutationAdapter
         $p = $this->em->find(CoreProduct::class, (int)$id, $lock ? LockMode::PESSIMISTIC_WRITE : null);
         if (!$p instanceof Product) throw new NotFoundHttpException('Product not found.'); return $p;
     }
+    /** @return array<string, mixed> */
     private function snapshot(Product $p): array
     {
         $specifications = array_map(static fn($s)=>$s->getId(), $p->getSpecifications()->toArray());
@@ -165,6 +171,7 @@ final class ProductMutationAdapter implements MutationAdapter
             'metadata'=>$p->getMetadata(),'settings'=>$p->getSettings(),'sortOrder'=>$p->getSortOrder(),
             'recommendationLevel'=>$p->getRecommendationLevel(),'isSoldout'=>$p->isSoldout(),'specifications'=>$specifications];
     }
+    /** @return array<string, mixed> */
     private function scopeSnapshot(Product $product): array
     {
         $store=$product->getStore(); $category=$product->getCategory();
@@ -178,5 +185,6 @@ final class ProductMutationAdapter implements MutationAdapter
         return sprintf('[Product #%s; %s] %s', $product->getId() ?? 'new',
             $store === null ? 'Store global' : 'Store '.$store->getUuid(), $product->getName());
     }
+    /** @param array<string, mixed>|null $s */
     private function hash(?array $s): string { return hash('sha256', json_encode($s, JSON_THROW_ON_ERROR)); }
 }
