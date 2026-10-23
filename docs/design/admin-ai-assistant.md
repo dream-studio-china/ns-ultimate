@@ -22,7 +22,7 @@ Configuration is the ordinary entity/action/field whitelist. Agent policy contai
 - `apps/admin-agent/adapters/ns-ultimate/admin/`: project-owned component bindings, read policies and curated knowledge.
 - `integration/admin/`: composition with existing config, metadata, request and router APIs.
 - Existing business/core backend: normal CRUD authorization and validation, unchanged by this redesign.
-- `apps/admin-agent/backend/`: legacy receipt mappings/migrations and explicit payload-retirement command only; no active assistant HTTP APIs.
+- `integration/backend/legacy-migrations/admin-agent/` and `integration/backend/migrations/`: preserved migration identities and the forward table-retirement migration; no assistant backend package, entity mappings or services remain.
 
 New ordinary form fields do not require PHP capability descriptors, mutation adapters, generated manifests or a duplicated frontend whitelist. Unsupported uploads, custom actions and embedded managers need an actual host flow; they are reported as unsupported rather than silently guessed.
 
@@ -34,6 +34,6 @@ Preview and confirmation remain accidental-action safeguards. Browser restrictio
 
 ## Compatibility and rollout
 
-Retired assistant capability/operation endpoints have no write compatibility fallback. Clear backend caches when deploying; explicitly retire legacy pending proposal payloads with `app:admin-agent:prune`. Keep historical migrations, table mappings and receipts until a separately authorized retention migration is designed. Do not drop tables or erase historical metadata as part of frontend cleanup.
+Retired assistant capability/operation endpoints have no write compatibility fallback. With no live deployment requiring receipt retention, retirement explicitly drops both legacy tables through a project migration. Original migration classes move to integration without changing version identities; mappings, services and the pruning command are removed with the Agent backend package. Clear backend caches and run the normal project migrations. The deletion is irreversible and does not affect browser chat history or business tables.
 
 See the [contract](../contracts/admin-agent.md) for current guarantees and limitations, the [app guide](../../apps/admin-agent/README.md) for workflows, and dated session records for historical verification. Results for the previous adapter-based backend do not establish behavior of the config-driven CRUD path.

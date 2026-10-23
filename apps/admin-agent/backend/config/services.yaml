@@ -1,7 +1,0 @@
-services:
-    _defaults:
-        autowire: true
-        autoconfigure: true
-
-    # Legacy data cleanup only. No assistant HTTP mutation services remain.
-    NsUltimate\Apps\AdminAgent\Backend\Command\PruneAgentOperationsCommand: ~

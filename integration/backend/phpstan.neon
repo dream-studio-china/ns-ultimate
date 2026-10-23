@@ -6,7 +6,6 @@ parameters:
     level: 8
     paths:
         - ../../business/backend
-        - ../../apps/admin-agent/backend/src
     excludePaths:
         analyse:
             - ../../business/backend/*/tests/**

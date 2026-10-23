@@ -46,13 +46,13 @@ Operations and their values live only in the current host's memory. History cont
 
 The former `/api/v1/manage/agent/capabilities`, `/agent/operations` and `/agent/batch-operations` routes are removed. PHP capability tables, mutation adapters, controller dispatch bridges, registries and operation execution services are retired. The SSR manifest export and its Vite/CI generation step are also removed. No compatibility endpoint can execute old proposals.
 
-Historical migrations and operation entity mappings remain to avoid losing migration identities or making schema tools propose dropping existing receipt tables. They are not used for new assistant writes. Existing deployments should clear backend caches, then explicitly run:
+The entire `apps/admin-agent/backend/` package, entity mappings, translations, service/autoload registration and pruning command are removed. The system was not live when this retirement was authorized; historical proposals and receipts do not need retention. Project migration `NsUltimate\Integration\Backend\Migrations\Version20261024120000` permanently drops `admin_agent_operation` and `admin_agent_batch_operation`, including every status and payload. Clear backend caches and apply the normal project migrations:
 
 ```sh
-php integration/backend/bin/console app:admin-agent:prune
+php integration/backend/bin/console doctrine:migrations:migrate --no-interaction
 ```
 
-The retained cleanup command cancels **all legacy pending proposals**, erases their payloads and preserves historical receipt metadata. It skips absent tables and can be rerun. No environment data is cleaned or migrated automatically by this code change. Existing receipts remain database records, not accessible through the retired assistant HTTP API; retention and backups remain operator responsibilities.
+The two original migrations now live under `integration/backend/legacy-migrations/admin-agent/`, with their original class namespaces/version identifiers unchanged. This is migration history, not a backend runtime package: existing development databases recognize applied versions, and a fresh migration chain creates then drops the retired tables. The forward retirement migration tolerates absent tables and is explicitly irreversible; rollback cannot recover deleted records. Business tables and migration metadata are retained. No environment database is migrated automatically by this source change.
 
 ## Navigation
 

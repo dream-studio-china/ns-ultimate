@@ -18,4 +18,4 @@ The current [contract](../contracts/admin-agent.md) is authoritative for capabil
 
 The old Agent capability/operation endpoints, generated manifest and per-entity PHP adapters are removed. Session-only operations do not provide durable receipts, server deduplication, transactional batches or atomic optimistic locking. Earlier verification of the retired adapter protocol must not be presented as verification of this implementation.
 
-Historical migration identities and receipt mappings remain. An explicit cleanup command retires pending legacy proposals without dropping tables or historical receipts. See [the retirement procedure](../contracts/admin-agent.md#operation-history-and-legacy-retirement).
+Historical migration identities remain in integration, but the assistant backend package and entity mappings are removed. An explicitly authorized forward migration irreversibly drops both proposal/receipt tables. See [the retirement procedure](../contracts/admin-agent.md#operation-history-and-legacy-retirement).

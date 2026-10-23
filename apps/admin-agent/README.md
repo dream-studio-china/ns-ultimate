@@ -28,13 +28,13 @@ Operations are current-session memory only. Refresh, sign-out and session dispos
 
 Timeouts and other ambiguous submission failures stay unknown. Checking the local outcome cannot reconstruct a server receipt or prove success from matching current data. Inspect the ordinary admin page manually and never automatically retry. Unknown operations keep the confirmation/write lock. Cancel/discard cannot undo a request already sent.
 
-Old assistant HTTP operation/capability routes are removed. Historical table mappings and migrations remain only to preserve deployed data and migration history. After deploying and clearing backend caches, existing installations should explicitly run:
+The entire assistant backend package and old HTTP operation/capability routes are removed. After clearing backend caches, apply project migrations to permanently drop both retired proposal/receipt tables:
 
 ```sh
-php integration/backend/bin/console app:admin-agent:prune
+php integration/backend/bin/console doctrine:migrations:migrate --no-interaction
 ```
 
-This cancels legacy pending proposals and erases their values, without deleting historical receipts. It skips absent tables. No migration or data cleanup runs automatically.
+This irreversibly deletes all legacy assistant proposals and receipts. Original migration identities are retained under the integration legacy-migrations directory, not in an Agent backend package. No migration runs automatically. See the [retirement contract](../../docs/contracts/admin-agent.md#operation-history-and-legacy-retirement).
 
 ## Batch-create file import
 
@@ -61,7 +61,7 @@ Read queries and exact Content/Page body reads retain their separate bounded pol
 - `src/`: generic assistant and config-driven local mutation host.
 - `adapters/ns-ultimate/admin/`: scalar component bindings, read policies and curated knowledge.
 - `integration/admin/agent-host.js`: existing admin request/router/metadata composition.
-- `backend/`: legacy mappings/migrations and data-retirement command, not active CRUD execution.
+- No assistant backend package remains; integration owns only legacy migration history and the table-retirement migration.
 
 See the [design](../../docs/design/admin-ai-assistant.md) and [contract](../../docs/contracts/admin-agent.md).
 
