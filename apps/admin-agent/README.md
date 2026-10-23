@@ -47,19 +47,27 @@ The authenticated local browser and configured live model also completed one syn
 
 ## Write capability ownership
 
-The authenticated backend capability catalog owns write descriptions; the frontend compiles validators and model-tool descriptions from the same session-local runtime snapshot. It does not contain a second handwritten field table and does not fall back to a bundled policy if catalog loading fails. Mutation capability discovery is separate from record-level authorization, which is rechecked on the backend for each operation.
+Effective crud-admin configuration is the first write-capability boundary. A shared pure projector feeds frontend tools/transports and a trusted private backend manifest. The backend catalog combines that configured membership with supported safety constraints and current authorization; a registered adapter cannot enable an absent configured entity/action/field. The frontend compiles validators and model-tool descriptions from the same session-local narrowed snapshot. There is no bundled production fallback, browser-supplied manifest or duplicate handwritten form table. Discovery is separate from record-level authorization, which remains enforced by the backend.
 
 The host refreshes the catalog before each user turn and uses a short in-memory cache for other accesses. A changed revision or failed refresh revokes pending confirmation permissions, but preserves submitting/unknown operations, their locks and outcome-check controls. Status recovery does not require metadata; returning to confirmation requires a successful current-policy preview restoration. Session disposal aborts catalog requests and ignores late results. Unsupported schema versions, rule operands or regex patterns disable writes rather than being guessed or evaluated dynamically.
 
-For the Tag/Counter pilot, reusable business write services provide field schemas and shared operations. The app explicitly allowlists which actions and fields the assistant may use, so changing an existing allowed field rule flows into the catalog, while adding a new domain field does not automatically expose it. Complex host-specific safety semantics remain explicit adapters; the other entities' descriptions are centralized backend app policies, not automatically inferred business contracts.
+For Tag/Counter, adapters retain preview/safety checks but persistence reuses the ordinary admin controller pipeline through an audited in-process bridge. It does not bypass controller validation by writing entities directly. Other entity adapters and existing field rules remain transitional or specialized support constraints. Adding a configured field makes it a candidate, not permission to invent unsupported execution or bypass high-risk exclusions. Complex custom operations still need a proven binding; arbitrary callbacks are not executed to discover capabilities.
 
 Ordinary Tag administration retains its existing controller and serializer behavior. Counter administration reuses only the compatible Store existence lookup; its established validation/coercion remains unchanged. Agent single/batch writes share the new services, but retain additional app-owned restrictions such as requiring an active Counter Store. This is a bounded extraction, not a claim that all normal-admin and agent validation has been unified.
 
 When extending assistant writes, update the authoritative business schema or backend app policy, explicitly opt in new fields/actions, and run the catalog export/drift and real-preview contract tests. Generated test fixtures are test resources, not production fallbacks. Catalog revisions fingerprint descriptors only; they are not persisted semantic-policy versions on proposals. Existing server restore/commit revalidation still applies.
 
-Regenerate the catalog fixture with the command documented in `tests/fixtures/capabilities/README.md` after an intentional descriptor change, then run `tests/backend-capability-catalog.integration.mjs` to compare it with the real backend export. Adding a new rule type still requires support in the generic frontend compiler; dynamic metadata does not make arbitrary business semantics executable.
+Generate the trusted configuration artifact before backend tests or standalone catalog export:
 
-Deploy the corresponding backend catalog endpoint with this frontend and clear composed backend caches after service-registration changes. This refactor needs no new database migration. An older/unavailable backend leaves writes disabled rather than falling back to stale client policy. Batch receipt tracking currently retains per-operation policy references until its session host is released; those references contain schemas, not submitted row values.
+```sh
+node integration/admin/export-agent-manifest-cli.mjs
+```
+
+The generated `var/admin-agent/admin-manifest.json` is ignored and private, not a maintained source configuration or public static asset. The composed Vite build/dev plugin regenerates it; Docker copies it from the admin build into the PHP app and CI generates it before backend checks. Backend readers reload it rather than caching it for a worker lifetime. Missing/invalid metadata disables new writes but not existing outcome/status recovery.
+
+Regenerate the test-only catalog fixture with the command documented in `tests/fixtures/capabilities/README.md` after an intentional descriptor change, then run `tests/backend-capability-catalog.integration.mjs` to compare it with the real backend export. Adding a new rule type still requires support in the generic frontend compiler; configuration metadata does not make arbitrary business semantics executable.
+
+Deploy the corresponding backend catalog endpoint with this frontend and clear composed backend caches after service-registration changes. This refactor needs no new database migration. An older/unavailable backend leaves writes disabled rather than falling back to stale client policy. Single/batch transports retain at most 256 proposal-policy metadata entries per host, not submitted values. An evicted or otherwise unknown proposal must be restored under current policy before confirmation; status/cancel/history remain available without that retention.
 
 ## Batch-create file import
 

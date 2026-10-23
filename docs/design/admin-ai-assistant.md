@@ -31,6 +31,8 @@ The design is based on the following repository behavior:
 
 There is no verified, universal assistant bridge for all current pages. Configuration includes functions, custom components, dynamic visibility, and nested workflows; it is not a complete serializable action specification. Actual OpenAPI coverage must also be checked against the running deployment.
 
+Supported packages are not independent execution grants. The effective configuration now bounds the authenticated catalog through a shared projection and private generated manifest; current configuration omits Specification's unsupported nested context and Content metadata/sort-order writes. Tag/Counter persistence reuses fixed ordinary-controller bindings. Remaining specialized adapters and field descriptors are transitional support constraints, not a second source that may enable missing configured capabilities. See the operation contract for the current intersection.
+
 The repository's core-edit authorization gate continues to apply. Future migration into core requires separate explicit authorization and review; this document does not authorize core edits.
 
 ## 3. Architecture and ownership
@@ -88,6 +90,12 @@ An assistant mount must be idempotent, occur only in an authenticated admin cont
 Use effective admin configuration for read/query/navigation discovery. Write descriptions come from the authenticated, explicitly filtered backend capability catalog, not a duplicate frontend field table. The generic frontend validates the versioned metadata and compiles one session-local snapshot for tools, previews and transport validation. Unavailable or unsupported write metadata fails closed without disabling read-only chat. Use OpenAPI for API knowledge and approved read queries, not to manufacture executable write capabilities.
 
 The Tag/Counter pilot reuses business-service field schemas through app-owned action/field allowlists. Other write descriptors remain explicit backend app policies. New business fields are default-denied; discovery does not grant permissions. Specialized preview/operational safety semantics remain in host adapters rather than being inferred from Doctrine mappings. Delete-preview metadata is separate from writable fields. Catalog revisions describe the current serialized snapshot and do not introduce persisted semantic-policy versions for existing proposals.
+
+### Configuration-first convergence
+
+The approved next direction is to use effective crud-admin configuration as the first boundary for assistant mutations as well as reads. A supported standard form/action is the discovery source; agent policy may only narrow its entities, actions and fields. Unsupported custom components, callbacks or nested operation contexts need an existing safe binding rather than speculative inference. Knowledge documents never grant execution rights.
+
+The backend catalog and existing execution adapters remain a transitional implementation, not a second intended management system. Replace duplicated write execution only after the existing configured controller path, its validation/hooks and the proposal transaction/recovery contract have been verified together. Do not equate filtering frontend metadata with having completed execution-path reuse. In particular, independent HTTP row submissions cannot replace an atomic batch. Core and ordinary business behavior must remain unchanged while converging.
 
 The backend also exposes `GET /system/entities` and `GET /system/entities/{entityName}` with Doctrine field metadata and translations. The assistant deliberately does not call them at runtime. They return every mapped entity, including internal token/outbox entities, and expose sensitive properties such as encrypted credential blobs; in the current deployment they also answer without authentication. They describe only top-level Doctrine fields, so they do not cover the nested JSON settings or template layout keys that actually limit current answers. Where such metadata is useful, it belongs in a build- or test-time check against known entities and fields, never as an unfiltered context source and never as a permission signal.
 
