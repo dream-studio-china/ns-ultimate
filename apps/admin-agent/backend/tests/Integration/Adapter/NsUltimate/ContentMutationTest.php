@@ -76,7 +76,7 @@ final class ContentMutationTest extends IntegrationWebTestCase
         self::assertSame([], $em->find(AgentOperation::class, $preview['operationId'])->getChanges());
     }
 
-    public function testUpdateDeleteAndConflictAreBoundToExactSnapshot(): void
+    public function testUpdateAndConflictAreBoundToExactSnapshotWhileDeleteIsRejected(): void
     {
         $client = self::createAuthenticatedClient();
         $created = $this->post($client, '/api/v1/manage/contents', ['title' => 'Original']);
@@ -98,13 +98,12 @@ final class ContentMutationTest extends IntegrationWebTestCase
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         self::assertSame('Agent update', $em->find(CoreContent::class, $created['id'])->getTitle());
 
-        $delete = $this->post($client, self::URL, ['action' => 'delete', 'identifier' => $created['uuid']]);
-        self::assertSame('delete', $delete['action']);
-        self::assertNotEmpty($delete['differences']);
-        $receipt = $this->post($client, self::URL.'/'.$delete['operationId'].'/commit', ['confirmed' => true]);
-        self::assertTrue($receipt['verified']);
-        $em = $client->getContainer()->get(EntityManagerInterface::class);
-        self::assertNull($em->find(CoreContent::class, $created['id']));
+        $operationsBeforeDelete = $em->getRepository(AgentOperation::class)->count([]);
+        $client->jsonRequest('POST', self::URL, ['action' => 'delete', 'identifier' => $created['uuid']]);
+        self::assertResponseStatusCodeSame(400);
+        self::assertSame($operationsBeforeDelete, $em->getRepository(AgentOperation::class)->count([]),
+            'A prohibited assistant delete must not create a proposal.');
+        self::assertNotNull($em->find(CoreContent::class, $created['id']));
     }
 
     public function testDeletedTargetReturnsAnExplicitConflictWithoutExecutingTheProposal(): void

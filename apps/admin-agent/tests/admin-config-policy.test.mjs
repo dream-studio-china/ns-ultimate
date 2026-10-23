@@ -356,6 +356,16 @@ test('runtime intersection filters actions and fields and keeps one instance set
   assert.notEqual(source.getCapabilities(), afterProjection)
 })
 
+test('agent delete allowlist narrows configured and backend delete capabilities', async () => {
+  const { isAgentActionAllowed } = await import('../src/write-policy.js')
+  assert.equal(isAgentActionAllowed('Tag', 'delete'), true)
+  assert.equal(isAgentActionAllowed('Category', 'delete'), true)
+  for (const entity of ['Content', 'User', 'Store', 'Product', 'Counter', 'Wallet']) {
+    assert.equal(isAgentActionAllowed(entity, 'delete'), false, `${entity} deletion must remain unavailable to the assistant`)
+  }
+  assert.equal(isAgentActionAllowed('Content', 'update'), true)
+})
+
 test('required runtime fields excluded by config close the action; discovery alone is not executable', () => {
   const config = {
     entities: {

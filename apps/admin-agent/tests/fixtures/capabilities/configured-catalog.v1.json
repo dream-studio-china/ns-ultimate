@@ -1,13 +1,12 @@
 {
   "schemaVersion": 1,
-  "revision": "6c95ec6b925704382eddf1f3c56c7a953a850538d94bcaa485697fb554be5b41",
+  "revision": "a478efe90991b9d15f577ec627b34cf142cfc7c8e8109f8d64ce8a9e9a86b4a6",
   "capabilities": [
     {
       "entity": "Content",
       "actions": [
         "create",
-        "update",
-        "delete"
+        "update"
       ],
       "actionFields": {
         "create": {
@@ -73,57 +72,13 @@
           "type": "positive-id-list",
           "maxItems": 50
         }
-      },
-      "deletePreviewFields": {
-        "title": {
-          "type": "string",
-          "maxLength": 255,
-          "requiredOnCreate": true,
-          "nonEmpty": true
-        },
-        "body": {
-          "type": "utf8-string",
-          "maxBytes": 20000,
-          "nullable": true
-        },
-        "category": {
-          "type": "positive-id",
-          "nullable": true
-        },
-        "tags": {
-          "type": "positive-id-list",
-          "maxItems": 50
-        },
-        "metadata": {
-          "type": "object",
-          "nullable": true,
-          "additionalProperties": false,
-          "properties": {
-            "featured": {
-              "type": "boolean"
-            },
-            "layout": {
-              "type": "enum",
-              "values": [
-                "article",
-                "landing"
-              ]
-            }
-          }
-        },
-        "sortOrder": {
-          "type": "integer",
-          "minimum": -2147483648,
-          "maximum": 2147483647
-        }
       }
     },
     {
       "entity": "Counter",
       "actions": [
         "create",
-        "update",
-        "delete"
+        "update"
       ],
       "actionFields": {
         "create": {
@@ -194,42 +149,6 @@
         }
       },
       "fields": {
-        "storeUuid": {
-          "type": "uuid",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-          "patternFlags": "i",
-          "requiredOnCreate": true
-        },
-        "code": {
-          "type": "string",
-          "maxLength": 50,
-          "requiredOnCreate": false,
-          "nonEmpty": true,
-          "trimForValidation": true
-        },
-        "name": {
-          "type": "string",
-          "maxLength": 120,
-          "requiredOnCreate": false,
-          "nonEmpty": true,
-          "trimForValidation": true
-        },
-        "capacity": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2147483647,
-          "nullable": true
-        },
-        "sort": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 2147483647
-        },
-        "enabled": {
-          "type": "boolean"
-        }
-      },
-      "deletePreviewFields": {
         "storeUuid": {
           "type": "uuid",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",

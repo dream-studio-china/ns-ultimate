@@ -7,6 +7,7 @@ namespace NsUltimate\Apps\AdminAgent\Backend\Capability;
 use NsUltimate\Apps\AdminAgent\Backend\Contract\BatchCreateAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Contract\MutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Policy\AdminConfigurationPolicy;
+use NsUltimate\Apps\AdminAgent\Backend\Policy\AgentMutationPolicy;
 use NsUltimate\Apps\AdminAgent\Backend\Service\BatchCreateAdapterRegistry;
 use NsUltimate\Apps\AdminAgent\Backend\Service\MutationAdapterRegistry;
 use NsUltimate\Business\Common\Service\TagWriteService;
@@ -178,6 +179,9 @@ final class CapabilityCatalog
         $actions = [];
         $actionFields = [];
         foreach ($descriptor['actions'] as $action) {
+            if (!AgentMutationPolicy::allows($entity, $action)) {
+                continue;
+            }
             $manifestAction = $manifestActions[$action] ?? null;
             if (!is_array($manifestAction) || ($manifestAction['configured'] ?? false) !== true) {
                 continue;

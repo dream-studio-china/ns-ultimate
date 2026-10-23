@@ -130,6 +130,28 @@ test('lists registered pages and opens only allowlisted pages or safe record det
   assert.equal(calls.length, 1)
 })
 
+test('offers only host-resolved standard-admin links for prohibited assistant deletions', async() => {
+  const navigation = [{ key: 'UserList', title: 'Users', path: '/user/list', entity: 'User' }]
+  const manualDeletePages = [{ key: 'UserList', title: 'Users', entity: 'User' }]
+  const offered = []
+  const host = { getAdminNavigationLink: (key, identifier) => ({ href: identifier ? `/user/${identifier}/detail` : '/user/list' }) }
+  const tools = createAssistantTools(catalog, navigation, {}, [], {}, [], manualDeletePages)
+  assert.ok(tools.some(tool => tool.function.name === 'offer_admin_navigation'))
+  const result = await executeAssistantTool({
+    call: { type: 'function', function: { name: 'offer_admin_navigation', arguments: '{"page":"UserList","identifier":"12"}' } },
+    catalog, navigation, manualDeletePages, host, operations: [],
+    onNavigationLink: link => offered.push(link)
+  })
+  assert.deepEqual(result, { offered: true, page: 'Users' })
+  assert.deepEqual(offered, [{ title: 'Users', href: '/user/12/detail', identifier: '12' }])
+
+  const rejected = await executeAssistantTool({
+    call: { type: 'function', function: { name: 'offer_admin_navigation', arguments: '{"page":"UserList","identifier":"../../evil"}' } },
+    catalog, navigation, manualDeletePages, host, operations: []
+  })
+  assert.match(rejected.error, /positive numeric ID or UUID/)
+})
+
 test('declares a create-only batch tool only for explicit host batch capabilities', () => {
   const withoutBatch = createAssistantTools(catalog).map(tool => tool.function.name)
   assert.equal(withoutBatch.includes('prepare_record_batch'), false)

@@ -123,8 +123,8 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         );
 
         $expectedActions = [
-            'Content' => ['create', 'update', 'delete'],
-            'Counter' => ['create', 'update', 'delete'],
+            'Content' => ['create', 'update'],
+            'Counter' => ['create', 'update'],
             'Store' => ['update'],
             'Category' => ['create', 'update', 'delete'],
             'ProductCategory' => ['create', 'update', 'delete'],
@@ -209,11 +209,8 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         self::assertSame(50, $content['tags']['maxItems']);
         self::assertArrayNotHasKey('metadata', $content);
         self::assertArrayNotHasKey('sortOrder', $content);
-        self::assertSame(
-            ['title', 'body', 'category', 'tags', 'metadata', 'sortOrder'],
-            array_keys($byEntity['Content']['deletePreviewFields']),
-            'Delete preview metadata remains the full safe explicit preview policy.',
-        );
+        self::assertArrayNotHasKey('deletePreviewFields', $byEntity['Content']);
+        self::assertArrayHasKey('deletePreviewFields', $byEntity['Category']);
 
         $store = $byEntity['Store']['actionFields']['update'];
         self::assertSame(['name', 'contact', 'address'], array_keys($store));
@@ -345,7 +342,7 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
     public function testDeleteOnlyCapabilitySerializesAnEmptyActionFieldObject(): void
     {
         $deleteOnly = new class implements MutationAdapter {
-            public function entityKey(): string { return 'Content'; }
+            public function entityKey(): string { return 'Category'; }
             public function authorize(string $action, ?string $identifier): void
             {
                 if ($action !== 'delete') throw new AccessDeniedException('Denied.');
@@ -359,8 +356,7 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         self::assertSame(['delete'], $result['capabilities'][0]['actions']);
         self::assertInstanceOf(\stdClass::class, $result['capabilities'][0]['actionFields']);
         self::assertInstanceOf(\stdClass::class, $result['capabilities'][0]['fields']);
-        self::assertSame(CapabilitySchemas::forEntity('Content')['fields'], $result['capabilities'][0]['deletePreviewFields']);
-        self::assertSame(['title', 'body', 'category', 'tags', 'metadata', 'sortOrder'], array_keys($result['capabilities'][0]['deletePreviewFields']));
+        self::assertSame(CapabilitySchemas::forEntity('Category')['fields'], $result['capabilities'][0]['deletePreviewFields']);
         self::assertFalse(property_exists($result['capabilities'][0]['actionFields'], 'delete'));
         $encoded = $catalog->encode($result);
         self::assertStringContainsString('"actionFields":{}', $encoded);
@@ -384,7 +380,7 @@ final class CapabilityCatalogTest extends IntegrationWebTestCase
         }
 
         $deleteOnly = new class implements MutationAdapter {
-            public function entityKey(): string { return 'Content'; }
+            public function entityKey(): string { return 'Category'; }
             public function authorize(string $action, ?string $identifier): void
             {
                 if ($action !== 'delete') throw new AccessDeniedException('Denied.');
@@ -404,8 +400,8 @@ import { compileCapabilityCatalogResponse } from '$moduleUrl'
 const payload = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'))
 const compiled = compileCapabilityCatalogResponse(payload)
 const descriptor = compiled.capabilities[0]
-if (!descriptor || descriptor.entity !== 'Content' || descriptor.actions.length !== 1 || descriptor.actions[0] !== 'delete') {
-  throw new Error('Expected a delete-only Content capability.')
+if (!descriptor || descriptor.entity !== 'Category' || descriptor.actions.length !== 1 || descriptor.actions[0] !== 'delete') {
+  throw new Error('Expected a delete-only Category capability.')
 }
 if (Object.keys(descriptor.actionFields).length !== 0 || Object.keys(descriptor.fields).length !== 0) {
   throw new Error('Delete-only write field maps must stay empty.')

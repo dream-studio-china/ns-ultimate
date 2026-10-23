@@ -15,7 +15,7 @@ const calls = () => {
 test('approved business groups expose only scoped actions and fields', () => {
   assert.deepEqual(mutationCapabilities.map(item => item.entity), ['Content', 'Counter', 'Store', 'Category', 'ProductCategory', 'Tag', 'Product', 'Specification', 'StorePrinting', 'ProductPrinting'])
   const policy = Object.fromEntries(mutationCapabilities.map(item => [item.entity, item]))
-  assert.deepEqual(policy.Counter.actions, ['create', 'update', 'delete'])
+  assert.deepEqual(policy.Counter.actions, ['create', 'update'])
   assert.deepEqual(policy.Store.actions, ['update'])
   assert.deepEqual(policy.Product.actions, ['create', 'update'])
   assert.deepEqual(policy.Specification.actions, ['create', 'update'])
@@ -30,6 +30,11 @@ test('composed host no longer declares the Counter name-only local preview pilot
   const source = readFileSync(new URL('../../../integration/admin/agent-host.js', import.meta.url), 'utf8')
   assert.equal(source.includes('preview-policy'), false)
   assert.equal(source.includes('getWritePreviewPolicy'), false)
+})
+
+test('composed host exposes the admin main-area bounds to the panel layout', () => {
+  const source = readFileSync(new URL('../../../integration/admin/agent-host.js', import.meta.url), 'utf8')
+  assert.match(source, /getCatalog,\s*\n\s*getMainAreaBounds\(\) \{[\s\S]*?querySelector\('\.app-main'\)[\s\S]*?getBoundingClientRect\(\)/)
 })
 
 test('composed host refreshes policy before commit and uses epoch-aware effective identity', () => {
@@ -51,7 +56,6 @@ test('valid create/update/delete proposals transport only after per-action valid
     ['Counter', 'create', { storeUuid: uuid, code: 'C-1', name: 'Counter', capacity: null, sort: 0, enabled: true }],
     ['Counter', 'create', { storeUuid: uuid.toUpperCase(), code: 'C-2', name: 'Upper UUID', capacity: 1 }],
     ['Counter', 'update', { name: 'Renamed', capacity: 8, enabled: false }],
-    ['Counter', 'delete', undefined],
     ['Store', 'update', { name: 'Shop', contact: { managerName: 'Front desk', phone: '+33123456789' }, address: { city: 'Paris' } }],
     ['Category', 'create', { name: 'Food', slug: 'food', description: 'é'.repeat(32767), parent: null, sortOrder: 0, enabled: true }],
     ['Category', 'update', { name: 'Meals' }],
@@ -71,7 +75,6 @@ test('valid create/update/delete proposals transport only after per-action valid
     ['Specification', 'update', { productId: 4, price: 1200 }],
     ['Content', 'create', { title: 'Draft' }],
     ['Content', 'update', { body: null }],
-    ['Content', 'delete', undefined]
   ]
   for (const [entity, action, changes] of entries) await host.prepareRecordChange({ entity, action, ...(action === 'create' ? {} : { identifier: '12' }), ...(changes === undefined ? {} : { changes }) })
   assert.equal(requests.length, entries.length)
@@ -121,8 +124,11 @@ test('all seven groups reject invalid bounds, nested unknown/prototype values, a
   const symbolInput = { entity: 'Content', action: 'delete', identifier: '12' }
   symbolInput[Symbol('unexpected')] = true
   await assert.rejects(host.prepareRecordChange(symbolInput), /not enabled/)
-  for (const entity of ['Content', 'Counter', 'Category', 'ProductCategory', 'Tag']) {
+  for (const entity of ['Category', 'ProductCategory', 'Tag']) {
     await assert.rejects(host.prepareRecordChange({ entity, action: 'delete', identifier: '12', changes: { productId: 1 } }), /Changes contain unsupported/)
+  }
+  for (const entity of ['Content', 'Counter', 'User', 'Wallet']) {
+    await assert.rejects(host.prepareRecordChange({ entity, action: 'delete', identifier: '12' }), /not enabled/)
   }
   await assert.rejects(host.prepareRecordChange({ entity: 'Store', action: 'update', identifier: '12', changes: JSON.parse('{"contact":{"__proto__":{"polluted":true}}}') }), /Changes contain unsupported/)
   assert.equal(requests.length, 0)
@@ -146,11 +152,11 @@ test('unknown and disabled restored previews never reach the UI; allowed diffs a
 test('Content mutation compatibility and unknown nested fields remain rejected', async() => {
   const { host, requests } = calls()
   await host.prepareRecordChange({ entity: 'Content', action: 'create', changes: { title: 'Draft', metadata: { featured: true, layout: 'article' } } })
-  await host.prepareRecordChange({ entity: 'Content', action: 'delete', identifier: '12' })
+  await assert.rejects(host.prepareRecordChange({ entity: 'Content', action: 'delete', identifier: '12' }), /not enabled/)
   await assert.rejects(host.prepareRecordChange({ entity: 'Content', action: 'create', changes: { body: 'Missing title' } }), /Changes contain unsupported/)
   await assert.rejects(host.prepareRecordChange({ entity: 'Content', action: 'update', identifier: '12', changes: { unexpected: true } }), /Changes contain unsupported/)
   await assert.rejects(host.prepareRecordChange({ entity: 'Content', action: 'create', changes: { title: 'Draft', metadata: { arbitrary: true } } }), /Changes contain unsupported/)
-  assert.equal(requests.length, 2)
+  assert.equal(requests.length, 1)
 })
 
 test('write tool advertises per-entity supported actions and per-action input scope', () => {

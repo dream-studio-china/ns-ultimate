@@ -72,7 +72,7 @@ final class ProductMutationTest extends IntegrationWebTestCase
         }
         $deny = $this->createStub(AuthorizationCheckerInterface::class); $deny->method('isGranted')->willReturn(false);
         $deniedService = new AgentOperationService($em,new MutationAdapterRegistry([new ProductMutationAdapter($em,self::getContainer()->get(ValidatorInterface::class),$deny)]),\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
-        foreach ([['action'=>'update','identifier'=>'999999999','changes'=>['name'=>'X']],['action'=>'create','changes'=>['name'=>'New','store'=>$store->getUuid()]],['action'=>'delete','identifier'=>'999999999']] as $proposal) {
+        foreach ([['action'=>'update','identifier'=>'999999999','changes'=>['name'=>'X']],['action'=>'create','changes'=>['name'=>'New','store'=>$store->getUuid()]]] as $proposal) {
             try { $deniedService->prepare('agent-test',['entity'=>'Product',...$proposal]); self::fail('Non-admin was allowed.'); }
             catch (AccessDeniedException) { self::assertTrue(true); }
         }

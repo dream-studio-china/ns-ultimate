@@ -8,6 +8,7 @@ import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createMutationHost } from '../../apps/admin-agent/src/mutation-host.js'
 import { createBatchMutationHost } from '../../apps/admin-agent/src/batch-mutation-host.js'
+import { AGENT_DELETE_ALLOWLIST } from '../../apps/admin-agent/src/write-policy.js'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import { createSchemaForm } from '@/utils/json-schema-form'
 import { buildCapabilityCatalog, formatAdminReadError, prepareRecordQuery, sanitizeRecordResults } from '../../apps/admin-agent/src/capabilities.js'
@@ -204,10 +205,43 @@ export function createAdminAgentHost() {
     },
 
     getCatalog,
+    getMainAreaBounds() {
+      return document.querySelector('.app-main')?.getBoundingClientRect() ?? null
+    },
     getInspectionPolicy() { return recordInspectionPolicy },
     inspectRecordConfiguration,
     getKnowledgeArticles() { return knowledgeArticles },
     getNavigationCatalog() { return accessibleNavigation() },
+    getManualDeleteNavigationCatalog() {
+      return accessibleNavigation().filter(page => {
+        if (!page.entity) return false
+        const entity = projection.entities.find(item => item.name === page.entity)
+        if (entity?.actions?.delete?.configured !== true) return false
+        const capability = mutationHost.getWriteCapabilities().find(item => item.entity === page.entity)
+        const assistantCanDelete = AGENT_DELETE_ALLOWLIST.includes(page.entity) && capability?.actions?.includes('delete')
+        return !assistantCanDelete
+      })
+    },
+    getAdminNavigationLink(pageKey, identifier) {
+      const page = accessibleNavigation().find(item => item.key === pageKey)
+      if (!page) return null
+      let safeIdentifier = null
+      if (identifier !== undefined && identifier !== null && identifier !== '') {
+        try { resolveAdminNavigation(accessibleNavigation(), pageKey, identifier) }
+        catch { return null }
+        safeIdentifier = String(identifier)
+      }
+      const names = registeredRoutes()
+      if (safeIdentifier && page.entity && names.has(`${page.entity}Detail`)) {
+        const detail = router.resolve({ name: `${page.entity}Detail`, params: { id: safeIdentifier } })
+        if (detail.matched.length && detail.href.startsWith('/') && !detail.href.startsWith('//')) {
+          return { href: detail.href, view: 'detail', entity: page.entity }
+        }
+      }
+      const list = router.resolve({ name: page.key })
+      if (!list.matched.length || !list.href.startsWith('/') || list.href.startsWith('//')) return null
+      return { href: list.href, view: 'list', entity: page.entity ?? null }
+    },
     async navigateAdminPage(pageKey, identifier) {
       const target = resolveAdminNavigation(adminPages, pageKey, identifier)
       const route = router.resolve(target.path)

@@ -59,7 +59,7 @@ final class SpecificationMutationTest extends IntegrationWebTestCase
         catch (BadRequestHttpException) { self::assertSame($countBefore,$em->getRepository(Specification::class)->count([])); }
         $deny=$this->createStub(AuthorizationCheckerInterface::class);$deny->method('isGranted')->willReturn(false);
         $deniedService=new AgentOperationService($em,new MutationAdapterRegistry([new SpecificationMutationAdapter($em,$deny)]),\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::legacyPolicy());
-        foreach ([['action'=>'create','changes'=>['productId'=>$product->getId(),'name'=>'X','price'=>1]],['action'=>'update','identifier'=>'999999','changes'=>['productId'=>$product->getId(),'name'=>'X']],['action'=>'delete','identifier'=>'999999']] as $proposal) {
+        foreach ([['action'=>'create','changes'=>['productId'=>$product->getId(),'name'=>'X','price'=>1]],['action'=>'update','identifier'=>'999999','changes'=>['productId'=>$product->getId(),'name'=>'X']]] as $proposal) {
             try { $deniedService->prepare('spec-test',['entity'=>'Specification',...$proposal]); self::fail('Non-admin was allowed.'); }
             catch (\Symfony\Component\Security\Core\Exception\AccessDeniedException) { self::assertTrue(true); }
         }

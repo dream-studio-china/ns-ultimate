@@ -73,7 +73,7 @@ final class ContentRecoveryTest extends IntegrationWebTestCase
         self::assertSame(1, $em->getRepository(AgentOperation::class)->count([]));
     }
 
-    public function testUnchangedUpdateAndDeleteRestoreFullDiffsAndStillRequireCommit(): void
+    public function testUnchangedUpdateRestoresFullDiffAndDeleteIsRejected(): void
     {
         $client = self::createAuthenticatedClient();
         $target = $this->request($client, 'POST', '/api/v1/manage/contents', ['title' => 'Before', 'body' => '<p>Existing body</p>']);
@@ -81,13 +81,12 @@ final class ContentRecoveryTest extends IntegrationWebTestCase
             'identifier' => $target['uuid'], 'changes' => ['title' => 'After']]);
         self::assertSame($update, $this->request($client, 'GET', self::URL.'/'.$update['operationId'].'/preview'));
         $this->request($client, 'POST', self::URL.'/'.$update['operationId'].'/commit', ['confirmed' => true]);
-        $delete = $this->request($client, 'POST', self::URL, ['entity' => 'Content', 'action' => 'delete', 'identifier' => (string) $target['id']]);
-        self::assertSame($delete, $this->request($client, 'GET', self::URL.'/'.$delete['operationId'].'/preview'));
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         self::assertSame('After', $em->find(Content::class, $target['id'])->getTitle());
-        $receipt = $this->request($client, 'POST', self::URL.'/'.$delete['operationId'].'/commit', ['confirmed' => true]);
-        self::assertSame('succeeded', $receipt['status']);
-        self::assertTrue($receipt['verified']);
+        $client->jsonRequest('POST', self::URL, ['entity' => 'Content', 'action' => 'delete', 'identifier' => (string) $target['id']]);
+        self::assertResponseStatusCodeSame(400);
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        self::assertSame('After', $em->find(Content::class, $target['id'])->getTitle());
     }
 
     public function testExpiryIsReportedBeforePruningAndExpiredOrCancelledProposalsCannotBeRestored(): void
