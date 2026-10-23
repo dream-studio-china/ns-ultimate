@@ -270,5 +270,14 @@ export default {
   'The batch preview was cancelled.': '批次预览已取消。',
   'The preview request failed. Nothing was saved.': '预览请求失败，未保存任何内容。',
   'Resolve the pending batch outcome before starting another task.': '请先处理待确认的批次结果，再开始其他任务。',
-  'Resolve the pending batch outcome before clearing the conversation.': '请先处理待确认的批次结果，再清空对话。'
+  'Resolve the pending batch outcome before clearing the conversation.': '请先处理待确认的批次结果，再清空对话。',
+  'Record-change and batch tools are unavailable because the server capability catalog could not be loaded safely. Read-only questions still work.': '无法安全加载服务器能力目录，因此记录变更和批次工具不可用。只读问答仍可继续使用。',
+  'Record-change and batch tools are unavailable because this assistant does not support the server capability catalog version. Read-only questions still work.': '当前助手不支持服务器能力目录的版本，因此记录变更和批次工具不可用。只读问答仍可继续使用。',
+  'The server capability catalog changed. Existing previews were invalidated; request a fresh preview.': '服务器能力目录已更改，现有预览已失效；请重新请求预览。',
+  'The server capability catalog changed. Existing previews were invalidated; unfinished operations remain visible for outcome checks.': '服务器能力目录已更改，现有预览已失效；未完成的操作仍会保留，以便查询执行结果。',
+  'Capability policy changed. Check the outcome; do not retry automatically.': '能力策略已更改。请查询执行结果，不要自动重试。',
+  'Capability policy changed while submission is in progress. Wait for the outcome.': '提交进行中时能力策略已更改。请等待执行结果。',
+  'The outcome is unknown and the capability policy changed. Check the outcome; do not retry automatically.': '执行结果暂不确定且能力策略已更改。请查询执行结果，不要自动重试。',
+  'Capability policy changed. The batch outcome remains unresolved; check the outcome. Do not retry automatically.': '能力策略已更改，批次执行结果仍不确定；请查询执行结果，不要自动重试。',
+  'Capability policy changed while the batch submission is in progress. Wait for the outcome.': '批次提交进行中时能力策略已更改。请等待执行结果。'
 }

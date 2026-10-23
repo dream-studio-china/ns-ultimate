@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import capabilities from '../adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { batchCapabilities as capabilities } from './support/capability-fixture.mjs'
 import { createBatchMutationHost } from '../src/batch-mutation-host.js'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))

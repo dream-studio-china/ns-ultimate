@@ -7,6 +7,8 @@
  * that do not match the backend protocol before they can reach the UI.
  */
 
+import { resolveCapabilitySource } from './mutation-host.js'
+
 const BATCH_ENTITIES = Object.freeze(['Tag', 'Counter'])
 const MAX_ROWS = 20
 const REQUEST_TIMEOUT = 60000
@@ -22,33 +24,43 @@ const PREVIEW_ROW_KEYS = new Set(['row', 'title', 'identifier', 'differences'])
 const PREVIEW_DIFFERENCE_KEYS = new Set(['property', 'before', 'after', 'changed', 'label'])
 const RECEIPT_KEYS = new Set(['operationId', 'entity', 'action', 'status', 'rowCount', 'fields', 'results', 'createdAt', 'expiresAt', 'completedAt', 'verified'])
 const RECEIPT_STATUSES = new Set(['pending', 'succeeded', 'cancelled', 'expired'])
+const SAFE_FIELD_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/
+const UNSAFE_FIELD_NAMES = new Set(['__proto__', 'prototype', 'constructor'])
+const MAX_RECEIPT_FIELDS = 32
 
 export function createBatchMutationHost(request, path, capabilities = []) {
-  const entries = buildEntries(capabilities)
+  const readState = () => resolveCapabilitySource(capabilities)
+  const readEntries = () => buildEntries(readState().capabilities)
+  // Retain the policy that prepared/restored an operation so receipt recovery
+  // can validate field correspondence after write authority is revoked.
+  const retained = new Map()
 
   const operationPath = operationId => {
     if (typeof operationId !== 'string' || !OPERATION_ID_PATTERN.test(operationId)) throw new TypeError('Invalid operation identifier.')
     return `${path}/${operationId}`
   }
 
+  const assertSameRevision = before => {
+    if (!before.revision) return
+    if (readState().revision !== before.revision) {
+      const error = new TypeError('The host capability catalog changed. Request a fresh batch preview.')
+      error.code = 'capabilities_changed'
+      throw error
+    }
+  }
+
   return {
     getBatchCreateCapabilities() {
+      const entries = readEntries()
       return BATCH_ENTITIES.flatMap(entity => {
         const entry = entries.get(entity)
-        if (!entry) return []
-        const capability = entry.capability
-        return [Object.freeze({
-          entity,
-          actions: Object.freeze(['create']),
-          actionFields: Object.freeze({ create: entry.fields }),
-          fields: entry.fields,
-          validateChanges: (changes, action) => action === 'create' && capability.validateChanges(changes, 'create'),
-          validatePreview: preview => capability.validatePreview(preview, capability)
-        })]
+        return entry ? [entry.capability] : []
       })
     },
 
     async prepareRecordBatch(input, signal) {
+      const sourceState = readState()
+      const entries = buildEntries(sourceState.capabilities)
       const prepared = prepareInput(input, entries)
       assertActive(signal)
       let response
@@ -58,10 +70,15 @@ export function createBatchMutationHost(request, path, capabilities = []) {
         throw batchError(error)
       }
       assertActive(signal)
-      return normalizePreview(response?.data, { entity: prepared.entity, submittedRows: prepared.rows, entries })
+      assertSameRevision(sourceState)
+      const preview = normalizePreview(response?.data, { entity: prepared.entity, submittedRows: prepared.rows, entries })
+      retained.set(preview.operationId, { entity: preview.entity, fields: entries.get(preview.entity).fields })
+      return preview
     },
 
     async restoreRecordBatch(operationId, signal) {
+      const sourceState = readState()
+      const entries = buildEntries(sourceState.capabilities)
       const target = operationPath(operationId)
       assertActive(signal)
       let response
@@ -71,10 +88,26 @@ export function createBatchMutationHost(request, path, capabilities = []) {
         throw batchError(error)
       }
       assertActive(signal)
-      return normalizePreview(response?.data, { operationId, entries })
+      assertSameRevision(sourceState)
+      const preview = normalizePreview(response?.data, { operationId, entries })
+      retained.set(preview.operationId, { entity: preview.entity, fields: entries.get(preview.entity).fields })
+      return preview
     },
 
     async commitRecordBatch(operationId, signal) {
+      const sourceState = readState()
+      const entries = buildEntries(sourceState.capabilities)
+      const retainedPolicy = retained.get(operationId)
+      // Commit is a mutation request: a previously prepared operation must
+      // still be enabled by the current write catalog. Status/cancel/read
+      // receipt recovery deliberately do not use the write catalog.
+      if (retainedPolicy && !entries.has(retainedPolicy.entity)) {
+        const error = new TypeError('This batch is not enabled for assistant mutations.')
+        // No commit request is sent. Mark it as a definitive conflict so the UI
+        // offers discard instead of treating it as an ambiguous server outcome.
+        error.code = 'proposal_conflict'
+        throw error
+      }
       const target = operationPath(operationId)
       assertActive(signal)
       let response
@@ -84,7 +117,7 @@ export function createBatchMutationHost(request, path, capabilities = []) {
         throw batchError(error)
       }
       assertActive(signal)
-      return normalizeReceipt(response?.data, { entries, operationId, requireVerified: true })
+      return normalizeReceipt(response?.data, { retained, operationId, requireVerified: true })
     },
 
     async getRecordBatchStatus(operationId, signal) {
@@ -97,7 +130,7 @@ export function createBatchMutationHost(request, path, capabilities = []) {
         throw batchError(error)
       }
       assertActive(signal)
-      return normalizeReceipt(response?.data, { entries, operationId })
+      return normalizeReceipt(response?.data, { retained, operationId })
     },
 
     async cancelRecordBatch(operationId) {
@@ -108,7 +141,7 @@ export function createBatchMutationHost(request, path, capabilities = []) {
       } catch (error) {
         throw batchError(error)
       }
-      return normalizeReceipt(response?.data, { entries, operationId })
+      return normalizeReceipt(response?.data, { retained, operationId })
     },
 
     async listRecordBatches(page = 1, signal) {
@@ -121,7 +154,7 @@ export function createBatchMutationHost(request, path, capabilities = []) {
         throw batchError(error)
       }
       assertActive(signal)
-      return normalizePage(response?.data, { page, entries })
+      return normalizePage(response?.data, { page, retained })
     }
   }
 }
@@ -298,12 +331,14 @@ function canonicalSubmittedValue(entity, field, value) {
   return value
 }
 
-function normalizeReceipt(receipt, { entries, operationId, requireVerified = false }) {
+function normalizeReceipt(receipt, { retained, operationId, requireVerified = false }) {
   if (!isPlainRecord(receipt) || hasUnsafeKeys(receipt)) throw new TypeError('Invalid batch receipt.')
   if (Object.keys(receipt).some(key => !RECEIPT_KEYS.has(key))) throw new TypeError('The batch receipt contains unsupported keys.')
   if (typeof receipt.operationId !== 'string' || !OPERATION_ID_PATTERN.test(receipt.operationId)) throw new TypeError('Invalid batch operation identifier.')
   if (operationId !== undefined && receipt.operationId !== operationId) throw new TypeError('The batch operation identity changed.')
-  if (typeof receipt.entity !== 'string' || !entries.has(receipt.entity)) throw new TypeError('The batch entity is not enabled.')
+  // Outcome/receipt recovery is deliberately independent of the current write
+  // capability catalog. The entity remains bounded to the fixed batch protocol.
+  if (typeof receipt.entity !== 'string' || !BATCH_ENTITIES.includes(receipt.entity)) throw new TypeError('The batch entity is not enabled.')
   if (receipt.action !== 'create') throw new TypeError('The batch action must be create.')
   if (!RECEIPT_STATUSES.has(receipt.status)) throw new TypeError('Invalid batch receipt status.')
   if (!Number.isInteger(receipt.rowCount) || receipt.rowCount < 1 || receipt.rowCount > MAX_ROWS) throw new TypeError('Invalid batch receipt row count.')
@@ -316,7 +351,8 @@ function normalizeReceipt(receipt, { entries, operationId, requireVerified = fal
   if (requireVerified && receipt.verified !== true) throw new TypeError('The batch commit was not verified.')
   if (!requireVerified && receipt.verified !== undefined) throw new TypeError('The batch receipt contains unsupported keys.')
 
-  const fields = normalizeFields(receipt.fields, entries.get(receipt.entity).fields)
+  const retainedPolicy = retained?.get(receipt.operationId)
+  const fields = normalizeFields(receipt.fields, retainedPolicy)
   const results = normalizeResults(receipt.results, receipt.status, receipt.rowCount)
 
   return {
@@ -334,11 +370,17 @@ function normalizeReceipt(receipt, { entries, operationId, requireVerified = fal
   }
 }
 
-function normalizeFields(fields, allowed) {
-  if (!Array.isArray(fields) || fields.length < 1 || fields.length > Object.keys(allowed).length) throw new TypeError('Invalid batch receipt fields.')
+function normalizeFields(fields, retainedPolicy) {
+  if (!Array.isArray(fields) || fields.length < 1 || fields.length > MAX_RECEIPT_FIELDS) throw new TypeError('Invalid batch receipt fields.')
   const seen = new Set()
   return fields.map(field => {
-    if (typeof field !== 'string' || !Object.hasOwn(allowed, field) || seen.has(field)) throw new TypeError('Invalid batch receipt fields.')
+    if (typeof field !== 'string' || !SAFE_FIELD_PATTERN.test(field) || UNSAFE_FIELD_NAMES.has(field) || seen.has(field)) {
+      throw new TypeError('Invalid batch receipt fields.')
+    }
+    // When this host retained the prepared/restored policy, require exact
+    // correspondence. Otherwise accept only protocol-bounded safe field names;
+    // never fall back to the current write catalog or a second field table.
+    if (retainedPolicy && !Object.hasOwn(retainedPolicy.fields, field)) throw new TypeError('Invalid batch receipt fields.')
     seen.add(field)
     return field
   })
@@ -366,7 +408,7 @@ function normalizeResults(results, status, rowCount) {
   })
 }
 
-function normalizePage(page, { page: expected, entries }) {
+function normalizePage(page, { page: expected, retained }) {
   if (!isPlainRecord(page) || hasUnsafeKeys(page)) throw new TypeError('Invalid batch page.')
   if (Object.keys(page).some(key => !['items', 'page', 'hasMore'].includes(key))) throw new TypeError('The batch page contains unsupported keys.')
   if (page.page !== expected || !Number.isInteger(page.page)) throw new TypeError('The batch page number changed.')
@@ -374,7 +416,7 @@ function normalizePage(page, { page: expected, entries }) {
   if (!Array.isArray(page.items) || page.items.length > MAX_ROWS) throw new TypeError('Invalid batch page items.')
   const seen = new Set()
   const items = page.items.map(item => {
-    const receipt = normalizeReceipt(item, { entries })
+    const receipt = normalizeReceipt(item, { retained })
     if (seen.has(receipt.operationId)) throw new TypeError('The batch page contains duplicate operations.')
     seen.add(receipt.operationId)
     return receipt

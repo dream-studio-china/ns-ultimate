@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import previewPolicy from '../adapters/ns-ultimate/admin/preview-policy.mjs'
-import mutationCapabilities from '../adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { mutationCapabilities } from './support/capability-fixture.mjs'
 import { createMutationHost } from '../src/mutation-host.js'
 import { createAssistantTools } from '../src/tools.js'
 

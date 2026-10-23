@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import mutationCapabilities from '../adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { batchCapabilities, mutationCapabilities } from './support/capability-fixture.mjs'
 import * as batchModule from '../src/batch-mutation-host.js'
 import { createBatchMutationHost } from '../src/batch-mutation-host.js'
 import { createAssistantTools } from '../src/tools.js'
@@ -30,7 +30,7 @@ function createTransport(handlers = {}) {
   return { request, calls }
 }
 
-function makeHost(handlers = {}, capabilities = mutationCapabilities) {
+function makeHost(handlers = {}, capabilities = batchCapabilities) {
   const transport = createTransport(handlers)
   return { host: createBatchMutationHost(transport.request, PATH, capabilities), calls: transport.calls }
 }
@@ -583,7 +583,7 @@ test('commits only with explicit confirmation and validates metadata-only receip
     receipt({ rowCount: 0, verified: true }),
     receipt({ rowCount: 21, verified: true }),
     receipt({ fields: [], verified: true }),
-    receipt({ fields: ['name', 'secret'], verified: true }),
+    receipt({ fields: ['name', '__proto__'], verified: true }),
     receipt({ fields: ['name', 'name', 'slug', 'color'], verified: true }),
     receipt({ fields: 'name', verified: true }),
     receipt({ createdAt: 'not-a-date', verified: true }),
@@ -632,7 +632,7 @@ test('reads status and cancel receipts without exposing proposal values', async(
     pendingReceipt({ operationId: OTHER_OPERATION_ID }),
     { ...pending, verified: true },
     { ...pending, results: [{ row: 1, identifier: '41' }] },
-    { ...pending, fields: ['name', 'secret'] },
+    { ...pending, fields: ['name', '__proto__'] },
     { ...pending, rows: tagInput.rows }
   ]) {
     const { host } = makeHost({ get: () => invalidReceipt })
@@ -734,8 +734,69 @@ test('aborts before transport and never accepts a response after caller cancella
   }
 })
 
-test('integration host uses the fixed batch route and shared mutation capabilities', () => {
+test('integration host uses the fixed routes and one compiled runtime capability catalog', () => {
   const source = readFileSync(new URL('../../../integration/admin/agent-host.js', import.meta.url), 'utf8')
   assert.match(source, /import \{ createBatchMutationHost \} from '\.\.\/\.\.\/apps\/admin-agent\/src\/batch-mutation-host\.js'/)
-  assert.match(source, /createBatchMutationHost\(request, `\$\{defaultPrefix\}\/agent\/batch-operations`, mutationCapabilities\)/)
+  assert.match(source, /createNsUltimateMutationRuntime\(\{/)
+  assert.match(source, /path: `\$\{defaultPrefix\}\/agent\/capabilities`/)
+  assert.match(source, /createMutationHost\(request, `\$\{defaultPrefix\}\/agent\/operations`, singleSource\)/)
+  assert.match(source, /createBatchMutationHost\(request, `\$\{defaultPrefix\}\/agent\/batch-operations`, batchSource\)/)
+  assert.match(source, /initializeAgentCapabilities/)
+  assert.match(source, /onCapabilityChange/)
+})
+
+test('status, cancel and receipt reads settle after write authority is removed', async() => {
+  let active = batchCapabilities
+  const source = {
+    getCapabilities: () => active,
+    getRevision: () => active.length ? 'a'.repeat(64) : 'b'.repeat(64)
+  }
+  const calls = []
+  const request = {
+    async get(path) {
+      calls.push(['get', path])
+      if (path === PATH) return { data: { items: [receipt()], page: 1, hasMore: false } }
+      if (path.endsWith('/preview')) return { data: tagPreview() }
+      return { data: pendingReceipt() }
+    },
+    async post(path) {
+      calls.push(['post', path])
+      if (path === PATH) return { data: tagPreview() }
+      if (path.endsWith('/commit')) return { data: receipt({ verified: true }) }
+      return { data: receipt({ status: 'cancelled', results: [], completedAt: COMPLETED_AT }) }
+    }
+  }
+  const host = createBatchMutationHost(request, PATH, source)
+  await host.prepareRecordBatch(tagInput)
+  active = []
+
+  // Status and cancel are read/outcome operations: they must not depend on the
+  // current write policy. The retained prepared policy still checks field
+  // correspondence for this operation.
+  assert.deepEqual(await host.getRecordBatchStatus(OPERATION_ID), pendingReceipt())
+  assert.deepEqual(await host.cancelRecordBatch(OPERATION_ID), receipt({ status: 'cancelled', results: [], completedAt: COMPLETED_AT }))
+  assert.deepEqual(await host.listRecordBatches(1), { items: [receipt()], page: 1, hasMore: false })
+
+  // Restore and commit are policy-bearing/mutation paths and fail closed.
+  await assert.rejects(host.restoreRecordBatch(OPERATION_ID), /not enabled/)
+  const commitPosts = calls.filter(([method, path]) => method === 'post' && path === `${PATH}/${OPERATION_ID}/commit`).length
+  await assert.rejects(host.commitRecordBatch(OPERATION_ID), /not enabled/)
+  assert.equal(calls.filter(([method, path]) => method === 'post' && path === `${PATH}/${OPERATION_ID}/commit`).length, commitPosts, 'A revoked write policy must reject before commit transport.')
+})
+
+test('receipt reads without retained history accept only bounded protocol field names', async() => {
+  const host = createBatchMutationHost({
+    async get() { return { data: receipt() } },
+    async post() { return { data: receipt({ status: 'cancelled', results: [], completedAt: COMPLETED_AT }) } }
+  }, PATH, [])
+  assert.deepEqual(await host.getRecordBatchStatus(OPERATION_ID), receipt())
+  assert.deepEqual(await host.cancelRecordBatch(OPERATION_ID), receipt({ status: 'cancelled', results: [], completedAt: COMPLETED_AT }))
+
+  for (const fields of [['name', 'not a field'], ['name', '__proto__'], ['name', 'name']]) {
+    const invalid = createBatchMutationHost({
+      async get() { return { data: receipt({ fields }) } },
+      async post() { throw new Error('Unexpected transport.') }
+    }, PATH, [])
+    await assert.rejects(invalid.getRecordBatchStatus(OPERATION_ID), /receipt fields/)
+  }
 })

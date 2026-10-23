@@ -5,7 +5,7 @@ import { createWritePreview } from '../src/write-preview.js'
 import { createMutationHost } from '../src/mutation-host.js'
 import { createAssistantTools, executeAssistantTool } from '../src/tools.js'
 import previewPolicy from '../adapters/ns-ultimate/admin/preview-policy.mjs'
-import mutationCapabilities from '../adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { mutationCapabilities } from './support/capability-fixture.mjs'
 
 const snapshots = new Map([['Counter', { observedAt: '2026-10-22T00:00:00Z', records: [{ id: 7, name: 'Before' }] }]])
 const input = { entity: 'Counter', identifier: '7', changes: { name: 'After' } }

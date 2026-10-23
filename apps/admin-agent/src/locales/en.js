@@ -248,5 +248,14 @@ export default {
   'The batch preview was cancelled.': 'The batch preview was cancelled.',
   'The preview request failed. Nothing was saved.': 'The preview request failed. Nothing was saved.',
   'Resolve the pending batch outcome before starting another task.': 'Resolve the pending batch outcome before starting another task.',
-  'Resolve the pending batch outcome before clearing the conversation.': 'Resolve the pending batch outcome before clearing the conversation.'
+  'Resolve the pending batch outcome before clearing the conversation.': 'Resolve the pending batch outcome before clearing the conversation.',
+  'Record-change and batch tools are unavailable because the server capability catalog could not be loaded safely. Read-only questions still work.': 'Record-change and batch tools are unavailable because the server capability catalog could not be loaded safely. Read-only questions still work.',
+  'Record-change and batch tools are unavailable because this assistant does not support the server capability catalog version. Read-only questions still work.': 'Record-change and batch tools are unavailable because this assistant does not support the server capability catalog version. Read-only questions still work.',
+  'The server capability catalog changed. Existing previews were invalidated; request a fresh preview.': 'The server capability catalog changed. Existing previews were invalidated; request a fresh preview.',
+  'The server capability catalog changed. Existing previews were invalidated; unfinished operations remain visible for outcome checks.': 'The server capability catalog changed. Existing previews were invalidated; unfinished operations remain visible for outcome checks.',
+  'Capability policy changed. Check the outcome; do not retry automatically.': 'Capability policy changed. Check the outcome; do not retry automatically.',
+  'Capability policy changed while submission is in progress. Wait for the outcome.': 'Capability policy changed while submission is in progress. Wait for the outcome.',
+  'The outcome is unknown and the capability policy changed. Check the outcome; do not retry automatically.': 'The outcome is unknown and the capability policy changed. Check the outcome; do not retry automatically.',
+  'Capability policy changed. The batch outcome remains unresolved; check the outcome. Do not retry automatically.': 'Capability policy changed. The batch outcome remains unresolved; check the outcome. Do not retry automatically.',
+  'Capability policy changed while the batch submission is in progress. Wait for the outcome.': 'Capability policy changed while the batch submission is in progress. Wait for the outcome.'
 }

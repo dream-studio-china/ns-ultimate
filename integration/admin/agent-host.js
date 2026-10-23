@@ -3,7 +3,7 @@ import adminConfig from './config'
 import request from '@/utils/request'
 import router from '@/router'
 import previewPolicy from '../../apps/admin-agent/adapters/ns-ultimate/admin/preview-policy.mjs'
-import mutationCapabilities from '../../apps/admin-agent/adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { createNsUltimateMutationRuntime } from '../../apps/admin-agent/adapters/ns-ultimate/admin/mutation-capabilities.mjs'
 import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/inspection.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createMutationHost } from '../../apps/admin-agent/src/mutation-host.js'
@@ -38,9 +38,59 @@ export function createAdminAgentHost() {
     isRecordPageAvailable: entity => accessibleNavigation().some(page => page.entity === entity)
   })
 
+  // The runtime catalog is scoped to this host instance (one admin session).
+  // It is initialized before model tool generation and never shared globally.
+  const capabilityRuntime = createNsUltimateMutationRuntime({
+    request,
+    path: `${defaultPrefix}/agent/capabilities`
+  })
+  const singleSource = {
+    getCapabilities: () => capabilityRuntime.current?.capabilities ?? [],
+    getRevision: () => capabilityRuntime.revision
+  }
+  const batchSource = {
+    getCapabilities: () => capabilityRuntime.current?.batchCapabilities ?? [],
+    getRevision: () => capabilityRuntime.revision
+  }
+  const mutationHost = createMutationHost(request, `${defaultPrefix}/agent/operations`, singleSource)
+  const batchMutationHost = createBatchMutationHost(request, `${defaultPrefix}/agent/batch-operations`, batchSource)
+  const ensureCapabilities = signal => capabilityRuntime.ensure({ signal })
+
   return {
-    ...createMutationHost(request, `${defaultPrefix}/agent/operations`, mutationCapabilities),
-    ...createBatchMutationHost(request, `${defaultPrefix}/agent/batch-operations`, mutationCapabilities),
+    ...mutationHost,
+    ...batchMutationHost,
+
+    async initializeAgentCapabilities(signal) {
+      // Each user turn re-reads the account-filtered revision before deriving
+      // tools. A changed revision is published through onCapabilityChange so
+      // existing pending UI is invalidated instead of reused under new policy.
+      await capabilityRuntime.refresh({ signal })
+      return capabilityRuntime.current
+    },
+    getCapabilityStatus() { return capabilityRuntime.status },
+    getCapabilityRevision() { return capabilityRuntime.revision },
+    onCapabilityChange(listener) { return capabilityRuntime.subscribe(listener) },
+
+    // Both preparation and preview recovery require the current compiled
+    // catalog. If initialization failed, these fail closed rather than
+    // falling back to a static policy.
+    async prepareRecordChange(input, signal) {
+      await ensureCapabilities(signal)
+      return mutationHost.prepareRecordChange(input, signal)
+    },
+    async restoreRecordChange(operationId, signal) {
+      await ensureCapabilities(signal)
+      return mutationHost.restoreRecordChange(operationId, signal)
+    },
+    async prepareRecordBatch(input, signal) {
+      await ensureCapabilities(signal)
+      return batchMutationHost.prepareRecordBatch(input, signal)
+    },
+    async restoreRecordBatch(operationId, signal) {
+      await ensureCapabilities(signal)
+      return batchMutationHost.restoreRecordBatch(operationId, signal)
+    },
+
     getWritePreviewPolicy() { return previewPolicy },
     getCatalog,
     getInspectionPolicy() { return recordInspectionPolicy },
@@ -86,6 +136,9 @@ export function createAdminAgentHost() {
       if (signal?.aborted) throw new Error('The read query was cancelled.')
       const records = response?.data
       return sanitizeRecordResults(records, query, catalog)
+    },
+    dispose() {
+      capabilityRuntime.dispose()
     }
   }
 }

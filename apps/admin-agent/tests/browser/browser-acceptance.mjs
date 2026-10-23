@@ -22,11 +22,12 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 21
+const EXPECTED_CASE_COUNT = 22
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
 const BATCH_PATH = '/api/v1/manage/agent/batch-operations'
+const CAPABILITY_PATH = '/api/v1/manage/agent/capabilities'
 const BATCH_OPERATION_ID = 'c'.repeat(64)
 const BATCH_STORE_UUID = '550e8400-e29b-41d4-a716-446655440001'
 const BATCH_STORE_UUID_INPUT = BATCH_STORE_UUID.toUpperCase()
@@ -54,6 +55,7 @@ const OPENAPI_DOCUMENT = {
 
 const state = {
   modules: null,
+  compiledCapabilityCatalog: null,
   storage: null,
   cookieJar: null,
   shadow: null,
@@ -786,6 +788,7 @@ function restoreIsolation() {
   state.storage = null
   state.cookieJar = null
   state.modules = null
+  state.compiledCapabilityCatalog = null
   state.shadow = null
   state.provider = null
   return errors
@@ -814,7 +817,8 @@ function createSyntheticHost({
   query = null,
   writeCapabilities = [],
   prepareChange = null,
-  batchHost = null
+  batchHost = null,
+  initializeCapabilities = null
 } = {}) {
   const catalog = {
     key,
@@ -840,6 +844,9 @@ function createSyntheticHost({
   }
   let resolveCatalog
   const catalogReady = new Promise(resolve => { resolveCatalog = resolve })
+  let capabilityEpoch = 1
+  let capabilityAnnounced = false
+  const capabilityListeners = new Set()
   const host = {
     catalogReady,
     getCatalog() {
@@ -855,6 +862,28 @@ function createSyntheticHost({
     getWritePreviewPolicy() { return {} },
     getWriteCapabilities() { return writeCapabilities },
     getInspectionPolicy() { return {} },
+    initializeAgentCapabilities(signal) {
+      const result = typeof initializeCapabilities === 'function' ? initializeCapabilities(signal) : Promise.resolve()
+      return Promise.resolve(result).then(value => {
+        if (!capabilityAnnounced) {
+          capabilityAnnounced = true
+          const event = { epoch: capabilityEpoch, revision: 'a'.repeat(64), previousRevision: null, error: '' }
+          for (const listener of [...capabilityListeners]) listener(event)
+        }
+        return value
+      })
+    },
+    onCapabilityChange(listener) {
+      if (typeof listener !== 'function') return () => {}
+      capabilityListeners.add(listener)
+      return () => capabilityListeners.delete(listener)
+    },
+    emitCapabilityChange({ revision = 'b'.repeat(64), error = '' } = {}) {
+      capabilityEpoch += 1
+      const event = { epoch: capabilityEpoch, revision: error ? null : revision, previousRevision: null, error }
+      for (const listener of [...capabilityListeners]) listener(event)
+    },
+    dispose() { capabilityListeners.clear() },
     prepareRecordChange(input, signal) {
       if (typeof prepareChange === 'function') return prepareChange(input, signal)
       return Promise.reject(new Error('Synthetic change preparation is unavailable for this host.'))
@@ -1344,14 +1373,22 @@ function createSyntheticBatchBackend({
 }
 
 async function loadBatchModules(ctx) {
-  const [batchModule, capabilityModule] = await Promise.all([
+  const [batchModule, capabilityModule, catalogModule, fixtureModule] = await Promise.all([
     ctx.guard(import('../../src/batch-mutation-host.js'), 'real batch transport import'),
-    ctx.guard(import('../../adapters/ns-ultimate/admin/mutation-capabilities.mjs'), 'real batch capability import')
+    ctx.guard(import('../../adapters/ns-ultimate/admin/mutation-capabilities.mjs'), 'real capability compiler import'),
+    ctx.guard(import('../../src/capability-catalog.js'), 'real capability runtime import'),
+    ctx.guard(import('../fixtures/capabilities/catalog.v1.json'), 'synthetic capability response import')
   ])
   ctx.check()
+  if (!state.compiledCapabilityCatalog) {
+    state.compiledCapabilityCatalog = capabilityModule.compileMutationCapabilities(fixtureModule.default)
+  }
   return {
     createBatchMutationHost: batchModule.createBatchMutationHost,
-    mutationCapabilities: capabilityModule.default
+    mutationCapabilities: state.compiledCapabilityCatalog.batchCapabilities,
+    compileMutationCapabilities: capabilityModule.compileMutationCapabilities,
+    createCapabilityCatalogRuntime: catalogModule.createCapabilityCatalogRuntime,
+    catalogResponse: fixtureModule.default
   }
 }
 
@@ -1384,8 +1421,8 @@ function createInterleavedHost(batchHost, preview) {
     writeCapabilities: [{
       entity: 'SyntheticRecords',
       actions: ['update'],
-      actionFields: { update: ['name'] },
-      fields: ['name']
+      actionFields: { update: { name: { type: 'string', maxLength: 120 } } },
+      fields: { name: { type: 'string', maxLength: 120 } }
     }],
     prepareChange(input) {
       calls.prepare += 1
@@ -2098,6 +2135,164 @@ const CASES = [
     }
   },
   {
+    name: 'single ambiguous writes survive catalog refresh and keep outcome recovery available',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const preview = buildSingleRecordPreview({ name: 'Policy single sentinel' })
+      const commitDeferred = ctx.deferred('single ambiguous commit')
+      let mode = 'first-deferred'
+      let commitCalls = 0
+      let statusCalls = 0
+      let restoreCalls = 0
+      const host = createSyntheticHost({
+        writeCapabilities: [{
+          entity: 'SyntheticRecords',
+          actions: ['update'],
+          actionFields: { update: { name: { type: 'string', maxLength: 120 } } },
+          fields: { name: { type: 'string', maxLength: 120 } }
+        }],
+        prepareChange: () => preview,
+        initializeCapabilities() { return Promise.resolve() }
+      })
+      host.commitRecordChange = async() => {
+        commitCalls += 1
+        if (mode === 'first-deferred') return commitDeferred.promise
+        if (mode === 'second-unknown') throw new Error('The synthetic commit outcome is unknown.')
+        return { status: 'succeeded' }
+      }
+      host.getRecordChangeStatus = async() => {
+        statusCalls += 1
+        return {
+          operationId: preview.operationId,
+          status: mode === 'first-unknown' ? 'succeeded' : 'pending'
+        }
+      }
+      host.restoreRecordChange = async() => {
+        restoreCalls += 1
+        if (mode === 'second-pending-fail' && restoreCalls === 1) {
+          host.emitCapabilityChange({ error: 'unavailable' })
+          throw new Error('The synthetic capability catalog is unavailable.')
+        }
+        return preview
+      }
+      host.listRecordChanges = async() => ({ items: [], page: 1, hasMore: false })
+      const agent = await ctx.mount({ host, provider })
+      installConfirm(ctx, true)
+
+      provider.enqueueToolCall('prepare_record_change', {
+        entity: 'SyntheticRecords',
+        action: 'update',
+        identifier: '1',
+        changes: { name: 'Policy single sentinel' }
+      })
+      provider.enqueueText('Prepared the first synthetic change.')
+      sendText(agent, 'Prepare the first synthetic policy change.')
+      await provider.waitForRequests(2, ctx)
+      await waitForIdle(agent)
+      const firstConfirm = findEnabledButton(agent.shadow, /^Confirm and save$/)
+      ok(firstConfirm, 'The first synthetic confirmation should be available.')
+      firstConfirm.click()
+      await agent.ctx.waitFor(() => commitCalls === 1, { root: agent.shadow, label: 'first synthetic commit start' })
+      agent.host.emitCapabilityChange({ error: 'unavailable' })
+      await flushMicrotasks(ctx, 12)
+      includes(agent.shadow.textContent, 'Capability policy changed while submission is in progress.', 'A policy change during submission must be explained without hiding the operation.')
+      ok(agent.controls.input.disabled, 'An in-flight write must keep the composer locked after a policy change.')
+      const lockedHistory = findButton(agent.shadow, /^Operations$/)
+      ok(lockedHistory?.disabled, 'Operation history must remain locked while the write is submitting.')
+      const hiddenRecovery = findButton(agent.shadow, /^Check outcome$/)
+      ok(hiddenRecovery?.classList.contains('hidden'), 'Check outcome must stay hidden while the write is submitting.')
+
+      commitDeferred.reject(new Error('The synthetic connection was lost.'))
+      await agent.ctx.waitFor(() => {
+        const recovery = findEnabledButton(agent.shadow, /^Check outcome$/)
+        return Boolean(recovery) && !recovery.classList.contains('hidden')
+      }, { root: agent.shadow, label: 'single unknown outcome control' })
+      await flushMicrotasks(ctx, 12)
+      equal(commitCalls, 1, 'The ambiguous single write must not retry automatically.')
+      ok(agent.controls.input.disabled, 'An unresolved single write must keep the composer locked.')
+      ok(findButton(agent.shadow, /^Operations$/)?.disabled, 'An unresolved single write must keep operation history locked.')
+      includes(agent.shadow.textContent, 'The outcome is unknown and the capability policy changed.', 'The unknown outcome must remain visible after a policy change.')
+
+      mode = 'first-unknown'
+      const firstRecovery = findEnabledButton(agent.shadow, /^Check outcome$/)
+      ok(firstRecovery, 'The first outcome check should be enabled.')
+      firstRecovery.click()
+      await agent.ctx.waitFor(() => !agent.controls.input.disabled && statusCalls === 1, {
+        root: agent.shadow,
+        label: 'single succeeded status before preview'
+      })
+      equal(restoreCalls, 0, 'A succeeded status must resolve the outcome without restoring a preview.')
+      includes(agent.shadow.textContent, 'Saved successfully', 'The succeeded status should be rendered as the known outcome.')
+      equal(commitCalls, 1, 'A status check must never retry the commit.')
+
+      mode = 'second-unknown'
+      provider.enqueueToolCall('prepare_record_change', {
+        entity: 'SyntheticRecords',
+        action: 'update',
+        identifier: '1',
+        changes: { name: 'Policy single sentinel' }
+      })
+      provider.enqueueText('Prepared the second synthetic change.')
+      sendText(agent, 'Prepare the second synthetic policy change.')
+      await provider.waitForRequests(4, ctx)
+      await waitForIdle(agent)
+      const secondConfirm = findEnabledButton(agent.shadow, /^Confirm and save$/)
+      ok(secondConfirm, 'The second synthetic confirmation should be available.')
+      secondConfirm.click()
+      await agent.ctx.waitFor(() => commitCalls === 2 && Boolean(findEnabledButton(agent.shadow, /^Check outcome$/)), {
+        root: agent.shadow,
+        label: 'second unknown single outcome'
+      })
+      agent.host.emitCapabilityChange({ error: 'unavailable' })
+      await flushMicrotasks(ctx, 12)
+      ok(agent.controls.input.disabled, 'A policy change must not unlock an unresolved single write.')
+      ok(findButton(agent.shadow, /^Operations$/)?.disabled, 'A policy change must not unlock operation history for an unresolved single write.')
+
+      mode = 'second-pending-fail'
+      const failedRecovery = findEnabledButton(agent.shadow, /^Check outcome$/)
+      ok(failedRecovery, 'The unresolved outcome check should still be enabled after refresh failure.')
+      failedRecovery.click()
+      await agent.ctx.waitFor(() => statusCalls === 2 && restoreCalls === 1, {
+        root: agent.shadow,
+        label: 'single pending status with failed preview restore'
+      })
+      await agent.ctx.waitFor(() => Boolean(findEnabledButton(agent.shadow, /^Check outcome$/)), {
+        root: agent.shadow,
+        label: 'single recovery retry after metadata failure'
+      })
+      ok(agent.controls.input.disabled, 'A failed preview restore must not unlock the ambiguous write.')
+      equal(commitCalls, 2, 'A failed preview restore must not retry the commit.')
+
+      mode = 'second-pending-ok'
+      const retryRecovery = findEnabledButton(agent.shadow, /^Check outcome$/)
+      ok(retryRecovery, 'The outcome check must remain available for an explicit retry.')
+      retryRecovery.click()
+      await agent.ctx.waitFor(() => Boolean(findEnabledButton(agent.shadow, /^Confirm and save$/)) && statusCalls === 3 && restoreCalls === 2, {
+        root: agent.shadow,
+        label: 'single confirmation after current-policy restore'
+      })
+      const retryConfirm = findEnabledButton(agent.shadow, /^Confirm and save$/)
+      ok(retryConfirm, 'A successful current-policy restore should permit a fresh explicit confirmation.')
+      retryConfirm.click()
+      await agent.ctx.waitFor(() => !agent.controls.input.disabled && commitCalls === 3, {
+        root: agent.shadow,
+        label: 'single confirmation after recovery retry'
+      })
+      includes(agent.shadow.textContent, 'Saved successfully', 'The retried confirmation should render the final server outcome.')
+
+      const detached = agent.shadow
+      agent.dispose()
+      equal(detached.host.isConnected, false, 'Session disposal must remove the agent and its recovery cards.')
+      return {
+        ambiguousCommitCalls: 2,
+        statusCalls,
+        restoreCalls,
+        succeededBeforePreview: true,
+        recoveryRetry: true
+      }
+    }
+  },
+  {
     name: 'a real CSV attachment reaches the model only on Send and the model-prepared Tag rows stay unsaved until human confirmation',
     async run(ctx) {
       const provider = ctx.createProvider()
@@ -2335,10 +2530,38 @@ const CASES = [
     name: 'an uncertain batch commit never retries automatically and restores an unconfirmed proposal only after an explicit outcome check',
     async run(ctx) {
       const provider = ctx.createProvider()
-      const { createBatchMutationHost, mutationCapabilities } = await loadBatchModules(ctx)
+      const { createBatchMutationHost, compileMutationCapabilities, createCapabilityCatalogRuntime, catalogResponse } = await loadBatchModules(ctx)
       const backend = createSyntheticBatchBackend({ commitOutcome: 'uncertain', statusOutcome: 'pending' })
-      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, mutationCapabilities)
+      let catalogPayload = catalogResponse
+      const runtime = createCapabilityCatalogRuntime({
+        request: {
+          async get(path) {
+            if (path !== CAPABILITY_PATH) throw new Error(`Unexpected catalog route: ${path}`)
+            return { data: catalogPayload }
+          }
+        },
+        path: CAPABILITY_PATH,
+        compile: compileMutationCapabilities
+      })
+      await runtime.ensure()
+      const batchSource = {
+        getCapabilities: () => runtime.current?.batchCapabilities ?? [],
+        getRevision: () => runtime.revision
+      }
+      const batchHost = createBatchMutationHost(backend.request, BATCH_PATH, batchSource)
       const agent = await ctx.mount({ host: createSyntheticHost({ batchHost }), provider })
+      const unsubscribeRuntime = runtime.subscribe(event => {
+        agent.host.emitCapabilityChange({ revision: event.revision || 'b'.repeat(64), error: event.error })
+      })
+      ctx.addDispose(() => { unsubscribeRuntime(); runtime.dispose() })
+      const revokeCapabilities = async() => {
+        catalogPayload = { schemaVersion: 1, revision: 'b'.repeat(64), capabilities: [], batchCapabilities: [] }
+        await runtime.refresh()
+      }
+      const restoreCapabilities = async() => {
+        catalogPayload = catalogResponse
+        await runtime.refresh()
+      }
       const fetchCounter = installFetchCounter(ctx)
       installConfirm(ctx, true)
       assertNoLegacyImportUi(agent)
@@ -2372,22 +2595,46 @@ const CASES = [
       const retry = findBatchCommitButton(agent.shadow)
       ok(!retry || retry.disabled, 'No enabled retry control may remain after an unknown outcome')
 
-      const check = findButton(findBatchCard(agent.shadow), /^Check outcome$/)
-      ok(check && !check.disabled, 'The explicit outcome check should be available.')
+      await revokeCapabilities()
+      await flushMicrotasks(ctx, 12)
+      equal(agent.host.getBatchCreateCapabilities().length, 0, 'Revoked write authority must remove batch descriptors.')
+      const afterPolicyChange = findEnabledButton(agent.shadow, /^Check outcome$/)
+      ok(afterPolicyChange, 'A batch policy change must preserve the outcome check for an unknown commit.')
+      ok(agent.controls.clearButton.disabled, 'A batch policy change must keep the ambiguous-write lock while the outcome is unknown.')
+      equal(backend.commitCount(), 1, 'A batch policy change must not retry the commit.')
+
+      const check = findEnabledButton(agent.shadow, /^Check outcome$/)
+      ok(check && !check.disabled, 'The explicit outcome check should be available after a policy change.')
       check.click()
       await agent.ctx.waitFor(() => {
-        if (backend.statusCount() !== 1) return false
+        if (backend.statusCount() !== 1 || backend.restoreCount() !== 1) return false
+        const stillUnknown = findBatchCard(agent.shadow)
+        return stillUnknown?.dataset.batchState === 'unknown' && Boolean(findEnabledButton(agent.shadow, /^Check outcome$/))
+      }, {
+        root: agent.shadow,
+        label: 'batch outcome check after metadata failure'
+      })
+      equal(backend.commitCount(), 1, 'A failed preview restore must not retry the batch commit.')
+      ok(agent.controls.clearButton.disabled, 'A failed batch preview restore must not unlock the ambiguous-write lock.')
+
+      await restoreCapabilities()
+      await flushMicrotasks(ctx, 12)
+      const retryCheck = findEnabledButton(agent.shadow, /^Check outcome$/)
+      ok(retryCheck, 'The batch outcome check must remain available for an explicit retry.')
+      retryCheck.click()
+      await agent.ctx.waitFor(() => {
+        if (backend.statusCount() !== 2 || backend.restoreCount() !== 2) return false
         const restored = findBatchCard(agent.shadow)
         if (!restored || restored.dataset.batchState !== 'ready') return false
         const restoredCheckbox = restored.querySelector('input[type="checkbox"]')
         return Boolean(restoredCheckbox) && restoredCheckbox.checked === false
       }, {
         root: agent.shadow,
-        label: 'restored pending batch proposal'
+        label: 'restored pending batch proposal after retry'
       })
       agent.assertActive()
-      equal(backend.statusCount(), 1, 'One explicit click must perform exactly one status request')
-      equal(backend.restoreCount(), 1, 'One explicit status check may restore the same proposal once')
+      equal(backend.statusCount(), 2, 'Each explicit click must perform exactly one status request')
+      equal(backend.restoreCount(), 2, 'Each explicit restore attempt may reach the preview endpoint')
       equal(backend.commitCount(), 1, 'Checking the outcome must never retry the commit')
       const restoredCard = findBatchCard(agent.shadow)
       ok(restoredCard, 'The restored batch proposal must render again.')
@@ -2520,6 +2767,14 @@ const CASES = [
         label: 'in-flight model batch commit'
       })
       equal(calls.commit, 0, 'No single record commit should exist before interleaving')
+
+      agent.host.emitCapabilityChange({ error: 'unavailable' })
+      await flushMicrotasks(ctx, 12)
+      const submittingCard = findBatchCard(agent.shadow)
+      equal(submittingCard?.dataset.batchState, 'submitting', 'A batch commit must stay in its submitting state across a capability refresh.')
+      includes(agent.shadow.textContent, 'Capability policy changed while the batch submission is in progress.', 'A policy change during batch submission must be explained.')
+      ok(singleConfirm.disabled, 'A capability refresh must not re-enable a superseded single confirmation.')
+      ok(findButton(agent.shadow, /^Operations$/)?.disabled, 'A capability refresh must not unlock operation history during batch submission.')
 
       const singleActivation = activateGuardedControl(ctx, singleConfirm)
       await flushMicrotasks(ctx, 12)
@@ -2726,10 +2981,11 @@ function writeStandardLimitations(results) {
     'Session switching uses the real integration monitor with synthetic in-memory cookies. It is not real authentication, a real account switch, or evidence about backend authorization.',
     'Provider and read-query results are synthetic. This does not establish live-provider compatibility, backend read authorization, delayed authenticated-read behavior against a real backend, or database concurrency.',
     'The deferred FileReader case suppresses AbortController.signal delivery so a late read can complete after clear; the application generation guard, not signal delivery, is the behavior under test.',
-    'Bulk batch acceptance parses real local CSV and a standard SheetJS-generated XLSX workbook in the browser, sends only bounded parsed text through the ordinary attachment path, and drives the mounted model tool through the real createBatchMutationHost and shared mutation capability policy with a synthetic request object. It does not establish real backend persistence, server authorization, database concurrency, or server-side file upload behavior.',
+    'Bulk batch acceptance parses real local CSV and a standard SheetJS-generated XLSX workbook in the browser, sends only bounded parsed text through the ordinary attachment path, and drives the mounted model tool through the real createBatchMutationHost and the production capability compiler using a static synthetic capability response. It does not contact the capability endpoint and does not establish real backend persistence, server authorization, database concurrency, or server-side file upload behavior.',
     'The batch card is created by a synthetic provider tool call to prepare_record_batch. The test establishes the mounted UI, tool-to-transport contract, explicit human confirmation flow and receipt handling; it does not establish that a live model emits well-formed batch rows.',
     'The delayed model batch-preview case uses a synthetic equivalent host whose capability descriptor comes from the real batch transport. It establishes UI disposal suppression, not backend cancellation or storage semantics.',
-    'Single/batch interleaving cases prepare a single card and a batch in one synthetic model turn. The design keeps one pending proposal card: the newer batch card supersedes the single card. The tests verify that neither the invalidated single card nor the disabled operation-history entrance can start a single-record action while the batch is submitting or unknown, and that explicit history restore and confirmation work again after resolution. They do not establish backend authorization, real record persistence, or that an independently submitted single-record write would succeed.'
+    'Single/batch interleaving cases prepare a single card and a batch in one synthetic model turn. The design keeps one pending proposal card: the newer batch card supersedes the single card. The tests verify that neither the invalidated single card nor the disabled operation-history entrance can start a single-record action while the batch is submitting or unknown, and that explicit history restore and confirmation work again after resolution. They do not establish backend authorization, real record persistence, or that an independently submitted single-record write would succeed.',
+    'Capability-refresh recovery cases simulate revision and metadata failures through synthetic hosts. They verify that single and batch ambiguous writes retain their operation state, locks and explicit outcome controls, and that only a successful current-policy preview restore re-enables confirmation. They do not establish real server revision behavior or authenticated recovery.'
   ]
   for (const text of [...standard, ...state.limitations]) {
     if (!results.limitations.includes(text)) results.limitations.push(text)
@@ -2936,7 +3192,7 @@ async function executeAcceptance({
 let mainExecution = null
 
 /**
- * Run the main 21-case browser acceptance suite once per fixture page.
+ * Run the main 22-case browser acceptance suite once per fixture page.
  */
 export function runBrowserAcceptance(options = {}) {
   let execution

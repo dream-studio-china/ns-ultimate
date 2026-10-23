@@ -11,7 +11,7 @@ import {
   prepareBatchRequest
 } from '../src/import-workbench.js'
 import { createBatchMutationHost } from '../src/batch-mutation-host.js'
-import mutationCapabilities from '../adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { batchCapabilities as mutationCapabilities } from './support/capability-fixture.mjs'
 
 const OPERATION_ID = 'a'.repeat(64)
 const STORE_UUID = '550e8400-e29b-41d4-a716-446655440001'

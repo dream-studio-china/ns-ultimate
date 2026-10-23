@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import capabilities from '../adapters/ns-ultimate/admin/mutation-capabilities.mjs'
+import { mutationCapabilities as capabilities } from './support/capability-fixture.mjs'
 import { createMutationHost } from '../src/mutation-host.js'
 
 const root = fileURLToPath(new URL('../../..', import.meta.url))
