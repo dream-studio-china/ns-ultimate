@@ -25,7 +25,9 @@ use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentBatchOperation;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
 use NsUltimate\Apps\AdminAgent\Backend\Service\BatchAgentOperationService;
 use NsUltimate\Apps\AdminAgent\Backend\Service\BatchCreateAdapterRegistry;
+use NsUltimate\Business\Common\Service\TagWriteService;
 use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Service\CounterWriteService;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Component\Security\Core\Authorization\AccessDecision;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
@@ -51,8 +53,8 @@ try {
     $buildService = static fn (EntityManagerInterface $manager): BatchAgentOperationService => new BatchAgentOperationService(
         $manager,
         new BatchCreateAdapterRegistry([
-            new TagBatchCreateAdapter(new TagMutationAdapter($manager, $auth)),
-            new CounterBatchCreateAdapter(new CounterMutationAdapter($manager, $auth)),
+            new TagBatchCreateAdapter(new TagMutationAdapter($manager, $auth, new TagWriteService($manager))),
+            new CounterBatchCreateAdapter(new CounterMutationAdapter($manager, $auth, new CounterWriteService($manager))),
         ]),
     );
     $service = $buildService($em);

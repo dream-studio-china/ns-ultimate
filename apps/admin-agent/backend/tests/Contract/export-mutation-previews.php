@@ -31,6 +31,8 @@ use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StorePrintingMutationA
 use NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagMutationAdapter;
 use NsUltimate\Apps\AdminAgent\Backend\Service\AgentOperationService;
 use NsUltimate\Apps\AdminAgent\Backend\Service\MutationAdapterRegistry;
+use NsUltimate\Business\Common\Service\TagWriteService;
+use NsUltimate\Business\Counter\Service\CounterWriteService;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Common\Entity\Content;
 use NsUltimate\Business\Printer\Entity\PrinterAccount;
@@ -66,10 +68,10 @@ try {
     $buildService = static function (EntityManagerInterface $manager) use ($validator, $auth): AgentOperationService {
         return new AgentOperationService($manager, new MutationAdapterRegistry([
             new ContentMutationAdapter($manager, $validator, $auth),
-            new CounterMutationAdapter($manager, $auth),
+            new CounterMutationAdapter($manager, $auth, new CounterWriteService($manager)),
             new StoreMutationAdapter($manager, $auth),
             new CategoryMutationAdapter($manager, $auth),
-            new TagMutationAdapter($manager, $auth),
+            new TagMutationAdapter($manager, $auth, new TagWriteService($manager)),
             new ProductCategoryMutationAdapter($manager, $auth),
             new ProductMutationAdapter($manager, $validator, $auth),
             new SpecificationMutationAdapter($manager, $auth),

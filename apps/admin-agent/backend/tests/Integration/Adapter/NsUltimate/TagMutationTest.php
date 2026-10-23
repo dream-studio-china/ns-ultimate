@@ -9,6 +9,7 @@ use App\Common\Entity\Tag;
 use App\Tests\Integration\DatabaseBootstrapTrait;
 use App\Tests\Integration\IntegrationWebTestCase;
 use Doctrine\ORM\EntityManagerInterface;
+use NsUltimate\Business\Common\Service\TagWriteService;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 
 final class TagMutationTest extends IntegrationWebTestCase
@@ -58,6 +59,21 @@ final class TagMutationTest extends IntegrationWebTestCase
         $actor=(new \App\Identity\Entity\User())->setEmail('tag-revoked-admin@example.test')->setUsername('tag-revoked-admin')->setRoles(['ROLE_ADMIN']);$em=$client->getContainer()->get(EntityManagerInterface::class);$em->persist($actor);$em->flush();$token=$client->getContainer()->get(\App\Identity\Security\TokenManager::class)->createAccessToken($actor);
         $client->jsonRequest('POST',self::URL,['entity'=>'Tag','action'=>'create','changes'=>['name'=>'Revoked','slug'=>'revoked-tag']],['HTTP_AUTHORIZATION'=>'Bearer '.$token]);self::assertResponseIsSuccessful();$preview=json_decode((string)$client->getResponse()->getContent(),true,flags:JSON_THROW_ON_ERROR);$preview=$preview['data']??$preview;
         $em=$client->getContainer()->get(EntityManagerInterface::class);$em->find(\App\Identity\Entity\User::class,$actor->getId())->setRoles(['ROLE_USER']);$em->flush();$client->jsonRequest('POST',self::URL.'/'.$preview['operationId'].'/commit',['confirmed'=>true],['HTTP_AUTHORIZATION'=>'Bearer '.$token]);self::assertResponseStatusCodeSame(403);
+    }
+
+    public function testAdapterUsesSharedDomainFieldSchemaAndNormalization():void
+    {
+        $client=self::createAuthenticatedClient();
+        $service=$client->getContainer()->get(TagWriteService::class);
+        self::assertSame(['name','slug','color'],array_keys(TagWriteService::fieldSchema('create')));
+        $changes=['name'=>' Shared tag ','slug'=>'shared-adapter-tag','color'=>'#AbCdEf'];
+        $draft=$this->prepare($client,'create',null,$changes);
+        self::assertSame($service->normalize('create',$changes), array_column($draft['differences'],'after','property'));
+        $receipt=$this->commit($client,$draft);
+        self::assertTrue($receipt['verified']);
+        $em=$client->getContainer()->get(EntityManagerInterface::class);
+        $tag=$em->find(Tag::class,(int)$receipt['identifier']);
+        self::assertSame(' Shared tag ',$tag->getName());
     }
 
     private function prepare(KernelBrowser $client,string $action,?string $id,array $changes):array{$p=['entity'=>'Tag','action'=>$action,'changes'=>$changes];if($id!==null)$p['identifier']=$id;return $this->request($client,'POST',self::URL,$p);}

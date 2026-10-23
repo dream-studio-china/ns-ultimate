@@ -13,6 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
+use NsUltimate\Business\Counter\Service\CounterWriteService;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 
 final class CounterMutationTest extends IntegrationWebTestCase
@@ -397,6 +398,24 @@ final class CounterMutationTest extends IntegrationWebTestCase
             }
         }
         self::assertSame([], $em->find(AgentOperation::class, $preview['operationId'])->getChanges());
+    }
+
+    public function testAdapterUsesSharedDomainFieldSchemaAndNormalization(): void
+    {
+        $client = self::createAuthenticatedClient();
+        $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $store = new Store('shared-counter-store', 'Shared Counter Store');
+        $em->persist($store); $em->flush();
+        $service = $client->getContainer()->get(CounterWriteService::class);
+        self::assertSame(['storeUuid', 'code', 'name', 'capacity', 'sort', 'enabled'], array_keys(CounterWriteService::fieldSchema('create')));
+        $changes = ['storeUuid' => strtolower($store->getUuid()), 'code' => ' Shared Code ', 'name' => ' Shared Name ', 'capacity' => null, 'sort' => 1, 'enabled' => true];
+        $preview = $this->post($client, ['action' => 'create', 'changes' => $changes]);
+        self::assertSame($service->normalize('create', $changes), array_column($preview['differences'], 'after', 'property'));
+        $receipt = $this->commit($client, $preview['operationId']);
+        self::assertTrue($receipt['verified']);
+        $counter = $em->find(Counter::class, (int) $receipt['identifier']);
+        self::assertSame('Shared Code', $counter->getCode());
+        self::assertSame('Shared Name', $counter->getName());
     }
 
     private function post(KernelBrowser $client, array $payload): array

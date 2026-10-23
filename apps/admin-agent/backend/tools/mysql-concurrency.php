@@ -12,6 +12,7 @@ use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
 use NsUltimate\Apps\AdminAgent\Backend\Service\AgentOperationService;
 use NsUltimate\Apps\AdminAgent\Backend\Service\MutationAdapterRegistry;
 use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Service\CounterWriteService;
 use NsUltimate\Business\Printer\Entity\PrinterAccount;
 use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
@@ -145,7 +146,7 @@ try {
         $proposedCopies = $changes['order']['copies'] ?? null;
         $phase = nsAgentHarnessCounterPhase($action, (int) $workerIndex);
         $connectionId = (int) $em->getConnection()->fetchOne('SELECT CONNECTION_ID()');
-        $counterAdapter = nsAgentCountingAdapter(new CounterMutationAdapter($em, $auth), $em->getConnection(), $phase);
+        $counterAdapter = nsAgentCountingAdapter(new CounterMutationAdapter($em, $auth, new CounterWriteService($em)), $em->getConnection(), $phase);
         $categoryAdapter = nsAgentCountingAdapter(new CategoryMutationAdapter($em, $auth), $em->getConnection(), $phase);
         $productCategoryAdapter = nsAgentCountingAdapter(new ProductCategoryMutationAdapter($em, $auth), $em->getConnection(), $phase);
         $adapters = [$counterAdapter, $categoryAdapter, $productCategoryAdapter];
@@ -200,7 +201,7 @@ try {
     $auth = new class implements AuthorizationCheckerInterface {
         public function isGranted(mixed $attribute, mixed $subject = null, ?Symfony\Component\Security\Core\Authorization\AccessDecision $accessDecision = null): bool { return true; }
     };
-    $adapter = new CounterMutationAdapter($em, $auth);
+    $adapter = new CounterMutationAdapter($em, $auth, new CounterWriteService($em));
     $storePrintingAdapter = new StorePrintingMutationAdapter($em, $auth);
     $service = new AgentOperationService($em, new MutationAdapterRegistry([
         $adapter, new CategoryMutationAdapter($em, $auth), new ProductCategoryMutationAdapter($em, $auth), $storePrintingAdapter,
@@ -210,7 +211,7 @@ try {
     $resetOperationService = static function () use (&$em, $container, $auth): AgentOperationService {
         $em = $container->get('doctrine')->resetManager();
         return new AgentOperationService($em, new MutationAdapterRegistry([
-            new CounterMutationAdapter($em, $auth), new CategoryMutationAdapter($em, $auth),
+            new CounterMutationAdapter($em, $auth, new CounterWriteService($em)), new CategoryMutationAdapter($em, $auth),
             new ProductCategoryMutationAdapter($em, $auth), new StorePrintingMutationAdapter($em, $auth),
         ]));
     };
