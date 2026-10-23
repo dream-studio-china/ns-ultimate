@@ -5,6 +5,7 @@ import router from '@/router'
 import { createNsUltimateMutationRuntime } from '../../apps/admin-agent/adapters/ns-ultimate/admin/mutation-capabilities.mjs'
 import { scalarComponentBindings, semanticCapabilityBindings } from '../../apps/admin-agent/adapters/ns-ultimate/admin/config-bindings.mjs'
 import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/inspection.mjs'
+import { createRecordRead, recordReadPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/record-read.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createMutationHost } from '../../apps/admin-agent/src/mutation-host.js'
 import { createBatchMutationHost } from '../../apps/admin-agent/src/batch-mutation-host.js'
@@ -40,10 +41,16 @@ const accessibleNavigation = () => {
 
 export function createAdminAgentHost() {
   const getCatalog = operations => buildCapabilityCatalog(adminConfig.entities, operations, { parameterize, defaultPrefix })
+  const isRecordPageAvailable = entity => accessibleNavigation().some(page => page.entity === entity)
   const inspectRecordConfiguration = createRecordInspection({
     request,
     getCatalog,
-    isRecordPageAvailable: entity => accessibleNavigation().some(page => page.entity === entity)
+    isRecordPageAvailable
+  })
+  const readRecord = createRecordRead({
+    request,
+    getCatalog,
+    isRecordPageAvailable
   })
 
   const buildProjection = () => buildAdminConfigProjection(adminConfig, {
@@ -210,6 +217,8 @@ export function createAdminAgentHost() {
     },
     getInspectionPolicy() { return recordInspectionPolicy },
     inspectRecordConfiguration,
+    getRecordReadPolicy() { return recordReadPolicy },
+    readRecord,
     getKnowledgeArticles() { return knowledgeArticles },
     getNavigationCatalog() { return accessibleNavigation() },
     getManualDeleteNavigationCatalog() {

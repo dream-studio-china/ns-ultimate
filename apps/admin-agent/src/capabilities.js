@@ -3,15 +3,58 @@ const SENSITIVE_PROPERTY = /password|secret|token|private.?key|certificate|crede
 const GENERIC_SENSITIVE_PROPERTY = /^(value|metadata|config|payload|body|content|extradata)$/i
 const MAX_FILTERS = 5
 const MAX_PAGE = 100
-const MAX_LIMIT = 60
+const MAX_LIMIT = 100
 const MAX_SELECT_FIELDS = 30
-const MAX_RESULT_CHARACTERS = 8000
+const MAX_RESULT_CHARACTERS = 14000
+const FILTER_EXPRESSION = /^entity\.get([A-Za-z][A-Za-z0-9_]*)\(\)((?:\.[A-Za-z][A-Za-z0-9_]*\(\))*)\s*(==|>=|<=|>|<)\s*((?::value|':value'|":value"|datetime\.get\(":value"\)))$/
+const EXPRESSION_ACCESSOR = /\.([A-Za-z][A-Za-z0-9_]*)\(\)/g
+const EXPRESSION_OPERATORS = { '==': 'equals', '>=': 'gte', '<=': 'lte', '>': 'gt', '<': 'lt' }
 
 function safeProperty(property) {
   return typeof property === 'string'
     && SAFE_PROPERTY.test(property)
     && !SENSITIVE_PROPERTY.test(property)
     && !GENERIC_SENSITIVE_PROPERTY.test(property)
+}
+
+function safeFilterProperty(property) {
+  if (typeof property !== 'string') return false
+  const segments = property.split('.')
+  return segments.length >= 1 && segments.length <= 2 && segments.every(segment => safeProperty(segment))
+}
+
+function decapitalize(value) {
+  return value ? value[0].toLowerCase() + value.slice(1) : value
+}
+
+// Parse only the small set of static filter expressions used by crud-admin
+// configuration. The expression text is never evaluated or copied into the
+// catalog; only its validated getter path and comparison operator are used.
+function parseFilterExpression(expression) {
+  if (typeof expression !== 'string') return null
+  const match = FILTER_EXPRESSION.exec(expression.trim())
+  if (!match) return null
+  const path = [decapitalize(match[1])]
+  for (const accessor of match[2].matchAll(EXPRESSION_ACCESSOR)) {
+    const name = accessor[1]
+    path.push(decapitalize(name.startsWith('get') ? name.slice(3) : name))
+  }
+  return {
+    path,
+    operator: EXPRESSION_OPERATORS[match[3]],
+    dateValue: match[4].startsWith('datetime.')
+  }
+}
+
+function getterForPath(path) {
+  return `entity.get${path[0][0].toUpperCase()}${path[0].slice(1)}()${path.slice(1)
+    .map(segment => `.get${segment[0].toUpperCase()}${segment.slice(1)}()`).join('')}`
+}
+
+function relationKeyForPath(path) {
+  if (path.length < 2) return null
+  const tail = path[path.length - 1]
+  return tail === 'id' || tail === 'uuid' ? tail : null
 }
 
 function getProperty(field) {
@@ -54,8 +97,61 @@ function normalizeListColumns(columns = []) {
 function normalizeFilters(filters = {}, fields = []) {
   if (!filters || typeof filters !== 'object' || Array.isArray(filters)) return []
   return Object.entries(filters).flatMap(([property, definition]) => {
-    if (!safeProperty(property)) return []
-    const field = fields.find(item => item.property === property)
+    if (!safeFilterProperty(property)) return []
+    const segments = property.split('.')
+    const exactField = fields.find(item => item.property === property)
+    // A dotted filter addresses a related getter (for example category.id).
+    // Require its base property to be configured; do not execute its loader.
+    const baseField = segments.length === 2
+      ? fields.find(item => item.property === segments[0])
+      : null
+    if (segments.length === 2 && !baseField) return []
+    const field = exactField || baseField
+    const expression = definition && typeof definition === 'object'
+      ? parseFilterExpression(definition.expression)
+      : null
+    const compactProperty = property.replace(/\./g, '').toLowerCase()
+    if (expression && expression.path.join('').toLowerCase() !== compactProperty) return []
+
+    const label = String(typeof definition === 'string'
+      ? definition
+      : definition?.__label ?? definition?.label ?? field?.label ?? property).slice(0, 120)
+
+    if (segments.length === 2) {
+      const relationKey = segments[1] === 'id' || segments[1] === 'uuid' ? segments[1] : null
+      if (!relationKey) return []
+      if (expression && expression.operator !== 'equals') return []
+      if (!expression && definition && typeof definition === 'object' && definition.expression) return []
+      return [{
+        property,
+        label,
+        type: relationKey === 'id' ? 'integer' : 'text',
+        operator: 'equals',
+        operators: ['equals'],
+        options: [],
+        dynamicOptions: false,
+        relationValueKey: relationKey,
+        getter: getterForPath(expression?.path || segments)
+      }]
+    }
+
+    if (expression) {
+      const relationKey = relationKeyForPath(expression.path)
+      return [{
+        property,
+        label,
+        type: relationKey === 'id'
+          ? 'integer'
+          : definition && typeof definition.type === 'string' ? definition.type.slice(0, 50) : field?.type || (expression.dateValue ? 'datetime' : 'text'),
+        operator: expression.operator,
+        operators: [expression.operator],
+        options: [],
+        dynamicOptions: false,
+        relationValueKey: relationKey,
+        getter: getterForPath(expression.path)
+      }]
+    }
+
     if (typeof definition === 'function') return []
     if (definition && typeof definition === 'object' && definition.expression) return []
     const optionValues = definition && typeof definition === 'object'
@@ -76,13 +172,14 @@ function normalizeFilters(filters = {}, fields = []) {
         : ['equals']
     return [{
       property,
-      label: String(typeof definition === 'string' ? definition : definition?.__label ?? definition?.label ?? field?.label ?? property).slice(0, 120),
+      label,
       type: fieldType.slice(0, 50),
       operator: isInput ? 'contains' : 'equals',
       operators,
       options: optionValues.slice(0, 50),
       dynamicOptions: false,
-      relationValueKey: field?.relationValueKey || null
+      relationValueKey: field?.relationValueKey || null,
+      getter: getterForPath([property])
     }]
   })
 }
@@ -146,6 +243,7 @@ export function buildCapabilityCatalog(entities, operations, { parameterize, def
       fields,
       filters: filterFields,
       select: [...new Set(['id', 'uuid', ...listFields.map(field => field.property)])].slice(0, MAX_SELECT_FIELDS),
+      sortFields: [...new Set(['id', ...listFields.map(field => field.property)])].slice(0, MAX_SELECT_FIELDS),
       defaultOrder: normalizeDefaultOrder(config.list?.query, listFields)
     }
   }).filter(Boolean)
@@ -153,7 +251,7 @@ export function buildCapabilityCatalog(entities, operations, { parameterize, def
 
 export function prepareRecordQuery(input, catalog) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new TypeError('A record query object is required.')
-  if (Object.keys(input).some(key => !['entity', 'page', 'limit', 'filters'].includes(key))) throw new TypeError('The query contains unsupported parameters.')
+  if (Object.keys(input).some(key => !['entity', 'page', 'limit', 'filters', 'sort'].includes(key))) throw new TypeError('The query contains unsupported parameters.')
   const capability = catalog.find(item => item.key === input.entity)
   if (!capability?.readable || !capability.path) throw new Error('This entity has no approved, documented read endpoint.')
 
@@ -169,7 +267,8 @@ export function prepareRecordQuery(input, catalog) {
   const comparisonOperators = { contains: 'matches', equals: '==', gt: '>', gte: '>=', lt: '<', lte: '<=' }
   const expressions = filterInput.map(filter => {
     if (!filter || typeof filter !== 'object' || Array.isArray(filter) || !allowedFilters.has(filter.field)) {
-      throw new TypeError('A filter field is not allowed for this entity.')
+      const allowed = [...allowedFilters.keys()]
+      throw new TypeError(`A filter field is not allowed for this entity.${allowed.length ? ` Allowed filter fields: ${allowed.join(', ')}.` : ''}`)
     }
     if (Object.keys(filter).some(key => !['field', 'value', 'operator'].includes(key))) throw new TypeError('A filter contains unsupported parameters.')
     const definition = allowedFilters.get(filter.field)
@@ -208,9 +307,25 @@ export function prepareRecordQuery(input, catalog) {
         && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value)
       if (!validDate) throw new TypeError(`Filter value for ${filter.field} must be an ISO date or datetime.`)
     }
-    const getter = `entity.get${filter.field[0].toUpperCase()}${filter.field.slice(1)}()`
-    return `${getter} ${comparisonOperators[filterOperator]} ${JSON.stringify(value)}`
+    return `${definition.getter} ${comparisonOperators[filterOperator]} ${JSON.stringify(value)}`
   })
+
+  let order = capability.defaultOrder
+  let sort = null
+  if (input.sort !== undefined) {
+    if (!input.sort || typeof input.sort !== 'object' || Array.isArray(input.sort)
+      || Object.keys(input.sort).some(key => !['field', 'direction'].includes(key))) {
+      throw new TypeError('The sort contains unsupported parameters.')
+    }
+    const field = input.sort.field
+    const direction = input.sort.direction
+    if (typeof field !== 'string' || !Array.isArray(capability.sortFields) || !capability.sortFields.includes(field)) {
+      throw new TypeError('The sort field is not allowed for this entity.')
+    }
+    if (direction !== 'ASC' && direction !== 'DESC') throw new TypeError('The sort direction must be ASC or DESC.')
+    order = `entity.${field}|${direction}`
+    sort = { field, direction }
+  }
 
   // Do not push list_display into Doctrine's @select DSL. Admin display
   // configs may include virtual or computed columns, and not every entity
@@ -219,8 +334,8 @@ export function prepareRecordQuery(input, catalog) {
   // them to the model provider.
   const params = { page, limit }
   if (expressions.length) params['@filter'] = expressions.join(' && ')
-  if (capability.defaultOrder) params['@order'] = capability.defaultOrder
-  return { entity: capability.key, path: capability.path, params, limit, page, fields: capability.select }
+  if (order) params['@order'] = order
+  return { entity: capability.key, path: capability.path, params, limit, page, fields: capability.select, sort }
 }
 
 function safeValue(value) {
