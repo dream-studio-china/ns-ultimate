@@ -27,6 +27,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Controller\ControllerResolverInterface;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\HttpKernel;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
@@ -316,41 +317,27 @@ final class AdminCrudControllerBridgeTest extends IntegrationWebTestCase
         self::assertSame('pending', $em->find(AgentOperation::class, $preview['operationId'])?->getStatus());
     }
 
-    public function testDeletedCounterReinsertedByIdIsNotVerifiedAndRollsBack(): void
+    public function testCounterDeleteIsRejectedByAssistantPolicyBeforeBridgeDispatch(): void
     {
         [$service] = $this->administratorContext();
-        $doctrine = self::getContainer()->get('doctrine');
-        $em = $doctrine->getManager();
+        $em = self::getContainer()->get('doctrine')->getManager();
         $counter = (new \NsUltimate\Business\Counter\Entity\Counter())
             ->setStoreUuid('00000000-0000-4000-8000-000000000001')
-            ->setCode('bridge-reinsert')
-            ->setName('Reinsert counter');
+            ->setCode('bridge-policy-delete')
+            ->setName('Policy delete counter');
         $em->persist($counter);
         $em->flush();
-        $id = (string) $counter->getId();
-        $preview = $service->prepare('bridge-actor', [
-            'entity' => 'Counter', 'action' => 'delete', 'identifier' => $id, 'changes' => [],
-        ]);
-        $em->getConnection()->executeStatement(
-            "CREATE TRIGGER test_counter_reinsert AFTER DELETE ON counter BEGIN "
-            ."INSERT INTO counter (id, uuid, store_uuid, code, name, capacity, sort, metadata, enabled, created_at, updated_at) "
-            ."VALUES (OLD.id, OLD.uuid, OLD.store_uuid, OLD.code, OLD.name, OLD.capacity, OLD.sort, OLD.metadata, OLD.enabled, OLD.created_at, OLD.updated_at); END",
-        );
+        $operationsBeforeDelete = $em->getRepository(AgentOperation::class)->count([]);
         try {
-            try {
-                $service->commit('bridge-actor', $preview['operationId']);
-                self::fail('A reinserted Counter row must fail read-back verification.');
-            } catch (\RuntimeException) {
-            }
-            self::assertFalse($em->isOpen());
-        } finally {
-            $em = $doctrine->resetManager();
-            $em->getConnection()->executeStatement('DROP TRIGGER IF EXISTS test_counter_reinsert');
+            $service->prepare('bridge-actor', [
+                'entity' => 'Counter', 'action' => 'delete', 'identifier' => (string) $counter->getId(), 'changes' => [],
+            ]);
+            self::fail('Assistant policy must reject Counter deletion before bridge dispatch.');
+        } catch (BadRequestHttpException) {
         }
 
-        // The outer rollback restores the original row and must not leave a succeeded receipt.
-        self::assertSame(1, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM counter WHERE id = ?', [$id]));
-        self::assertSame('pending', $em->find(AgentOperation::class, $preview['operationId'])?->getStatus());
+        self::assertSame($operationsBeforeDelete, $em->getRepository(AgentOperation::class)->count([]), 'A rejected delete must not persist a proposal.');
+        self::assertInstanceOf(\NsUltimate\Business\Counter\Entity\Counter::class, $em->find(\NsUltimate\Business\Counter\Entity\Counter::class, $counter->getId()));
     }
 
     public function testManagerResetDuringSuccessfulDispatchAborts(): void

@@ -99,7 +99,7 @@ final class CounterMutationTest extends IntegrationWebTestCase
         }
     }
 
-    public function testCreateUpdateAndDeleteUseApprovedFieldsAndRejectUnsafeCases(): void
+    public function testCreateAndUpdateUseApprovedFieldsAndDeleteIsRejected(): void
     {
         $client = self::createAuthenticatedClient();
         $em = $client->getContainer()->get(EntityManagerInterface::class);
@@ -135,14 +135,17 @@ final class CounterMutationTest extends IntegrationWebTestCase
 
         $client->jsonRequest('POST', self::URL, ['entity'=>'Counter','action'=>'update','identifier'=>(string)$counter->getId(),'changes'=>['storeUuid'=>$otherStore->getUuid()]]);
         self::assertResponseStatusCodeSame(400);
-        $delete = $this->post($client, ['action'=>'delete', 'identifier'=>(string)$counter->getId(), 'changes'=>[]]);
-        $deleted = $this->commit($client, $delete['operationId']);
-        self::assertTrue($deleted['verified']);
+        $counterId = $counter->getId();
+        $operationsBeforeDelete = $em->getRepository(AgentOperation::class)->count([]);
+        $client->jsonRequest('POST', self::URL, ['entity'=>'Counter','action'=>'delete','identifier'=>(string)$counterId,'changes'=>[]]);
+        self::assertResponseStatusCodeSame(400);
+        self::assertSame($operationsBeforeDelete, $em->getRepository(AgentOperation::class)->count([]),
+            'A prohibited assistant delete must not create a proposal.');
         $em->clear();
-        self::assertNull($em->find(Counter::class, $counter->getId()));
+        self::assertInstanceOf(Counter::class, $em->find(Counter::class, $counterId));
     }
 
-    public function testDeleteRejectsOrderBinding(): void
+    public function testDeleteIsRejectedBeforePreviewEvenWhenOrderBound(): void
     {
         $client = self::createAuthenticatedClient();
         $em = $client->getContainer()->get(EntityManagerInterface::class);
@@ -152,23 +155,21 @@ final class CounterMutationTest extends IntegrationWebTestCase
         $em->persist($binding); $em->flush();
         $client->jsonRequest('POST', self::URL, ['entity'=>'Counter','action'=>'delete','identifier'=>(string)$counter->getId(),'changes'=>[]]);
         self::assertResponseStatusCodeSame(400);
+        $failure = json_decode((string) $client->getResponse()->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertStringContainsString('cannot delete', $failure['message']);
         self::assertInstanceOf(Counter::class, $em->find(Counter::class, $counter->getId()));
     }
 
-    public function testDeletePreviewShowsRemovalAndCommitConflictsOnNewBinding(): void
+    public function testDeleteIsRejectedBeforePreviewEvenWithLateBinding(): void
     {
         $client = self::createAuthenticatedClient();
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         $counter = (new Counter())->setStoreUuid('00000000-0000-4000-8000-000000000001')->setCode('late-binding')->setName('Delete Me');
         $em->persist($counter); $em->flush();
-        $preview = $this->post($client, ['action'=>'delete', 'identifier'=>(string)$counter->getId(), 'changes'=>[]]);
-        self::assertStringContainsString($counter->getStoreUuid(), $preview['title']);
-        self::assertSame(['storeUuid','code','name','capacity','sort','enabled'], array_column($preview['differences'], 'property'));
-        foreach ($preview['differences'] as $difference) self::assertNull($difference['after']);
         $binding = (new OrderCounter())->setTradeOrderUuid('00000000-0000-4000-8000-000000000098')->setStoreUuid($counter->getStoreUuid())->setCounter($counter);
         $em->persist($binding); $em->flush();
-        $client->jsonRequest('POST', self::URL.'/'.$preview['operationId'].'/commit', ['confirmed'=>true]);
-        self::assertResponseStatusCodeSame(409);
+        $client->jsonRequest('POST', self::URL, ['entity'=>'Counter','action'=>'delete','identifier'=>(string)$counter->getId(),'changes'=>[]]);
+        self::assertResponseStatusCodeSame(400);
         self::assertInstanceOf(Counter::class, $em->find(Counter::class, $counter->getId()));
     }
 
