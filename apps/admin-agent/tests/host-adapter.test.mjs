@@ -32,9 +32,12 @@ test('composed host no longer declares the Counter name-only local preview pilot
   assert.equal(source.includes('getWritePreviewPolicy'), false)
 })
 
-test('composed host exposes the admin main-area bounds to the panel layout', () => {
+test('composed host exposes the admin main-area bounds and bounded record reads', () => {
   const source = readFileSync(new URL('../../../integration/admin/agent-host.js', import.meta.url), 'utf8')
   assert.match(source, /getCatalog,\s*\n\s*getMainAreaBounds\(\) \{[\s\S]*?querySelector\('\.app-main'\)[\s\S]*?getBoundingClientRect\(\)/)
+  assert.match(source, /getRecordReadPolicy\(\) \{ return recordReadPolicy \}/)
+  assert.match(source, /createRecordRead\(\{[\s\S]*?isRecordPageAvailable/)
+  assert.match(source, /readRecord,/)
 })
 
 test('composed host refreshes policy before commit and uses epoch-aware effective identity', () => {

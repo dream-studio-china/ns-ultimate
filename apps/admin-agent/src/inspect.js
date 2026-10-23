@@ -171,7 +171,7 @@ export function assertDetailIdentity(record, identifier) {
   }
 }
 
-function normalizeDetailPath(path) {
+export function normalizeDetailPath(path) {
   if (typeof path !== 'string') return null
   const withoutTrailing = path.length > 1 ? path.replace(/\/$/, '') : path
   return withoutTrailing.replace(/\/\{[^/}]+\}$/, '/{id}')
@@ -207,9 +207,9 @@ export function prepareRecordInspection(input, { catalog, policy, operations }) 
 // Authenticated single-record GET over the admin client. GET only: no caller
 // URL, no method override, no body. Honors caller cancellation and fails
 // closed on timeout.
-export async function fetchInspectedRecord(request, path, { signal, timeoutMs = INSPECTION_TIMEOUT_MS } = {}) {
-  if (!request || typeof request.get !== 'function') throw new Error('Configuration inspection is unavailable.')
-  if (signal?.aborted) throw new Error('The configuration inspection was cancelled.')
+export async function fetchInspectedRecord(request, path, { signal, timeoutMs = INSPECTION_TIMEOUT_MS, label = 'Configuration inspection' } = {}) {
+  if (!request || typeof request.get !== 'function') throw new Error(`${label} is unavailable.`)
+  if (signal?.aborted) throw new Error(`The ${label.toLowerCase()} was cancelled.`)
   const controller = new AbortController()
   let timedOut = false
   const abortFromCaller = () => controller.abort(signal?.reason)
@@ -223,11 +223,11 @@ export async function fetchInspectedRecord(request, path, { signal, timeoutMs = 
     const response = await request.get(path, { signal: controller.signal, timeout: timeoutMs })
     return response?.data
   } catch (error) {
-    if (timedOut) throw new Error('The configuration inspection timed out after 30 seconds.')
+    if (timedOut) throw new Error(`The ${label.toLowerCase()} timed out after 30 seconds.`)
     if (error?.name === 'AbortError' || signal?.aborted || controller.signal.aborted) {
-      throw new Error('The configuration inspection was cancelled.')
+      throw new Error(`The ${label.toLowerCase()} was cancelled.`)
     }
-    throw new Error(formatAdminReadError(error).replace('Admin read query failed', 'Configuration inspection failed'))
+    throw new Error(formatAdminReadError(error).replace('Admin read query failed', `${label} failed`))
   } finally {
     clearTimeout(timeout)
     signal?.removeEventListener('abort', abortFromCaller)

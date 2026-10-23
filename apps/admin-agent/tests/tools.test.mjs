@@ -67,20 +67,99 @@ test('exposes documentation-free entity discovery and only a read-only query too
   assert.equal(names.some(name => /create|update|delete|http|fetch/i.test(name)), false)
 })
 
+test('declares fixed record reads only for host policy entities', () => {
+  const policy = { Counter: { fields: ['name'] } }
+  const tools = createAssistantTools(catalog, [], {}, [], {}, [], [], policy)
+  const tool = tools.find(item => item.function.name === 'read_record').function
+  assert.deepEqual(tool.parameters.properties.entity.enum, ['Counter'])
+  assert.deepEqual(Object.keys(tool.parameters.properties).sort(), ['entity', 'identifier'])
+  assert.match(tool.description, /untrusted content/)
+  assert.match(tool.description, /never send field names/)
+  const withoutPolicy = createAssistantTools(catalog).map(item => item.function.name)
+  assert.equal(withoutPolicy.includes('read_record'), false)
+})
+
+test('reads one exact record through the host and audits metadata only', async() => {
+  const calls = []
+  const audits = []
+  const host = {
+    readRecord: async(...args) => {
+      calls.push(args)
+      return {
+        entity: 'Counter',
+        identifier: '12',
+        fields: { name: 'Counter twelve', body: 'Record content' },
+        truncatedFields: [],
+        omittedFields: [],
+        truncated: false,
+        query: { entity: 'Counter', identifier: '12', durationMs: 4, completedAt: new Date().toISOString() }
+      }
+    }
+  }
+  const args = {
+    catalog,
+    host,
+    operations: [],
+    recordReadPolicy: { Counter: { fields: ['name', 'body'] } },
+    onReadAudit: item => audits.push(item)
+  }
+  const result = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'read_record', arguments: '{"entity":"Counter","identifier":"12"}' } }
+  })
+  assert.equal(result.fields.body, 'Record content')
+  assert.deepEqual(calls[0][0], { entity: 'Counter', identifier: '12' })
+  assert.equal(audits.length, 1)
+  assert.equal(audits[0].identifier, '12')
+  assert.equal(audits[0].outcome, 'success')
+  assert.equal(JSON.stringify(audits[0]).includes('Record content'), false)
+
+  assert.deepEqual(await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'read_record', arguments: '{"entity":"Counter","identifier":"12","fields":["body"]}' } }
+  }), { error: 'Record read arguments contain unsupported parameters.' })
+  assert.deepEqual(await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'read_record', arguments: '{"entity":"User","identifier":"12"}' } }
+  }), { error: 'This entity has no approved record read.' })
+  const failed = await executeAssistantTool({
+    ...args,
+    host: { readRecord: async() => { throw new Error('backend detail must not leak') } },
+    call: { type: 'function', function: { name: 'read_record', arguments: '{"entity":"Counter","identifier":"12"}' } }
+  })
+  assert.deepEqual(failed, { error: 'The record could not be read.', failureType: 'request-failed' })
+  assert.equal(calls.length, 1)
+})
+
 test('runs bounded read-only queries without confirmation and validates arguments before calling the host', async() => {
   let queryCount = 0
-  const host = { queryRecords: async args => { queryCount += 1; return { records: [{ name: args.filters[0].value }] } } }
+  const host = { queryRecords: async args => { queryCount += 1; return { records: [{ name: args.filters?.[0]?.value ?? 'sorted' }] } } }
   const call = { type: 'function', function: { name: 'query_records', arguments: JSON.stringify({ entity: 'Counter', filters: [{ field: 'name', value: 'West' }] }) } }
 
   const result = await executeAssistantTool({ call, catalog, host, operations: [] })
   assert.deepEqual(result.records, [{ name: 'West' }])
   assert.deepEqual(result.query.filters, [{ field: 'name', operator: 'contains', value: 'West' }])
   assert.equal(result.query.entity, 'Counter')
+  const sorted = await executeAssistantTool({
+    call: { type: 'function', function: { name: 'query_records', arguments: JSON.stringify({ entity: 'Counter', sort: { field: 'name', direction: 'ASC' } }) } },
+    catalog,
+    host,
+    operations: []
+  })
+  assert.deepEqual(sorted.query.sort, { field: 'name', direction: 'ASC' })
+  assert.equal(sorted.query.filters.length, 0)
+  const listed = await executeAssistantTool({
+    call: { type: 'function', function: { name: 'list_entities', arguments: '{}' } },
+    catalog,
+    host,
+    operations: []
+  })
+  assert.deepEqual(listed.entities[0].sortFields, ['id', 'name'])
   assert.equal(result.query.page, 1)
   assert.equal(result.query.limit, 10)
   assert.ok(Number.isFinite(result.query.durationMs))
   assert.ok(Number.isFinite(Date.parse(result.query.completedAt)))
-  assert.equal(queryCount, 1)
+  assert.equal(queryCount, 2)
 })
 
 test('allows repeated read queries and records only safe audit metadata', async() => {

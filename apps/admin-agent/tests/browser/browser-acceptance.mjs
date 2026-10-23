@@ -22,7 +22,7 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 23
+const EXPECTED_CASE_COUNT = 24
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
@@ -2971,6 +2971,42 @@ const CASES = [
     }
   },
   {
+    name: 'bounded record reads render body text without HTML and pass only the fixed fields to the model',
+    async run(ctx) {
+      const sentinel = '<img src=x onerror="window.__nsReadXss=1">Record body sentinel'
+      const host = createSyntheticHost()
+      const reads = []
+      host.getRecordReadPolicy = () => ({ syntheticRecords: { fields: ['name'] } })
+      host.readRecord = async(input) => {
+        reads.push(input)
+        return {
+          entity: 'SyntheticRecords',
+          identifier: input.identifier,
+          fields: { name: sentinel },
+          truncatedFields: [],
+          omittedFields: [],
+          truncated: false,
+          query: { entity: 'syntheticRecords', identifier: input.identifier, durationMs: 2, completedAt: new Date().toISOString() }
+        }
+      }
+      const provider = ctx.createProvider()
+      provider.enqueueToolCall('read_record', { entity: 'syntheticRecords', identifier: '12' })
+      provider.enqueueText('Record read complete.')
+      const agent = await ctx.mount({ host, provider })
+      sendText(agent, 'Read the synthetic record body.')
+      await provider.waitForRequests(2, ctx)
+      await waitForIdle(agent)
+      equal(reads.length, 1, 'Exactly one bounded record read should reach the host')
+      equal(reads[0].identifier, '12', 'The exact requested identifier must reach the host')
+      includes(agent.shadow.textContent, 'Record body sentinel', 'The record body should be shown in the UI')
+      equal(agent.shadow.querySelectorAll('.record-read img').length, 0, 'Record body must never be rendered as HTML')
+      equal(window.__nsReadXss, undefined, 'Record body HTML must not execute')
+      includes(JSON.stringify(provider.requests[1].body), 'Record body sentinel', 'The model must receive only the bounded tool result')
+      includes(JSON.stringify(provider.requests[1].body), 'SyntheticRecords', 'The tool result should retain safe entity metadata')
+      return { reads: reads.length, htmlRendered: false, bodyForwarded: true }
+    }
+  },
+  {
     name: 'layout controls expand to main bounds, restore the floating size and keep navigation and composer controls',
     async run(ctx) {
       const host = createSyntheticHost()
@@ -3231,7 +3267,7 @@ async function executeAcceptance({
 let mainExecution = null
 
 /**
- * Run the main 23-case browser acceptance suite once per fixture page.
+ * Run the main 24-case browser acceptance suite once per fixture page.
  */
 export function runBrowserAcceptance(options = {}) {
   let execution
