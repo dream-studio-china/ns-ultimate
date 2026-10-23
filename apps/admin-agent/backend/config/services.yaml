@@ -24,3 +24,10 @@ services:
     # field validation, authorization and uniqueness behavior.
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagBatchCreateAdapter: ~
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\CounterBatchCreateAdapter: ~
+
+    # Pilot business schemas are optional during composition so this package can boot without the
+    # business modules; when installed, the owning services supply the Tag/Counter field rules.
+    NsUltimate\Apps\AdminAgent\Backend\Capability\CapabilityCatalog:
+        arguments:
+            $tagWriteService: '@?NsUltimate\Business\Common\Service\TagWriteService'
+            $counterWriteService: '@?NsUltimate\Business\Counter\Service\CounterWriteService'

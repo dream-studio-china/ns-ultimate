@@ -29,4 +29,10 @@ final class BatchCreateAdapterRegistry
     {
         return $this->adapters[$entity] ?? throw new BadRequestHttpException('This entity is not enabled for assistant batch creation.');
     }
+
+    /** @return array<string, BatchCreateAdapter> Explicitly selected adapters keyed by entity. */
+    public function all(): array
+    {
+        return $this->adapters;
+    }
 }
