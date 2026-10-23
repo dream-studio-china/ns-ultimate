@@ -1,0 +1,95 @@
+<?php
+
+declare(strict_types=1);
+
+namespace NsUltimate\Apps\AdminAgent\Backend\Controller;
+
+use NsUltimate\Apps\AdminAgent\Backend\Contract\ActorIdentityProvider;
+use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
+use NsUltimate\Apps\AdminAgent\Backend\Service\BatchAgentOperationService;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+
+/** Explicit create-only batch endpoint; no generic adapter or action loop is exposed. */
+#[IsGranted('IS_AUTHENTICATED_FULLY')]
+#[Route('/agent/batch-operations', name: 'admin_agent_batch_')]
+final class BatchAgentOperationController extends AbstractController
+{
+    public function __construct(private readonly BatchAgentOperationService $operations, private readonly ActorIdentityProvider $identity) {}
+
+    #[Route('', name: 'prepare', methods: ['POST'])]
+    public function prepare(Request $request): JsonResponse
+    {
+        if (strlen($request->getContent()) > 40000) {
+            throw new BadRequestHttpException('Batch proposal exceeds 40 KB.');
+        }
+        $input = $request->toArray();
+
+        return $this->json($this->operations->prepare($this->actor(), $input), headers: ['Cache-Control' => 'no-store']);
+    }
+
+    #[Route('', name: 'recent', methods: ['GET'])]
+    public function recent(Request $request): JsonResponse
+    {
+        $query = $request->query->all();
+        $page = $query['page'] ?? '1';
+        $locale = $query['_locale'] ?? null;
+        // The authenticated admin client adds _locale to every request.
+        if (array_diff(array_keys($query), ['page', '_locale']) !== [] || !is_string($page) || !preg_match('/^(?:[1-9][0-9]?|100)$/D', $page)
+            || ($locale !== null && (!is_string($locale) || !preg_match('/^[A-Za-z][A-Za-z0-9_-]{0,34}$/D', $locale)))) {
+            throw new BadRequestHttpException('Only a page number between 1 and 100 and an optional locale are accepted.');
+        }
+
+        return $this->json($this->operations->recent($this->actor(), (int) $page), headers: ['Cache-Control' => 'no-store']);
+    }
+
+    #[Route('/{id}/preview', name: 'restore', methods: ['GET'], requirements: ['id' => '[a-f0-9]{64}'])]
+    public function restore(string $id): JsonResponse
+    {
+        try {
+            return $this->json($this->operations->restore($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+        } catch (ProposalConflictException) {
+            return $this->conflict();
+        }
+    }
+
+    #[Route('/{id}/commit', name: 'commit', methods: ['POST'], requirements: ['id' => '[a-f0-9]{64}'])]
+    public function commit(string $id, Request $request): JsonResponse
+    {
+        if ($request->toArray() !== ['confirmed' => true]) {
+            throw new BadRequestHttpException('Explicit confirmation is required; replacement payloads are not accepted.');
+        }
+        try {
+            return $this->json($this->operations->commit($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+        } catch (ProposalConflictException) {
+            // The transaction has rolled back before a definitive rejection is returned.
+            return $this->conflict();
+        }
+    }
+
+    #[Route('/{id}', name: 'status', methods: ['GET'], requirements: ['id' => '[a-f0-9]{64}'])]
+    public function status(string $id): JsonResponse
+    {
+        return $this->json($this->operations->status($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+    }
+
+    #[Route('/{id}/cancel', name: 'cancel', methods: ['POST'], requirements: ['id' => '[a-f0-9]{64}'])]
+    public function cancel(string $id): JsonResponse
+    {
+        return $this->json($this->operations->cancel($this->actor(), $id), headers: ['Cache-Control' => 'no-store']);
+    }
+
+    private function conflict(): JsonResponse
+    {
+        return $this->json(['error' => 'proposal_conflict', 'message' => 'The batch or one of its records changed. Discard this proposal and prepare a new preview.'], 409, ['Cache-Control' => 'no-store']);
+    }
+
+    private function actor(): string
+    {
+        return $this->identity->actorKey();
+    }
+}

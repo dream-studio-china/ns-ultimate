@@ -19,3 +19,8 @@ services:
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\SpecificationMutationAdapter: ~
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\StorePrintingMutationAdapter: ~
     NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ProductPrintingMutationAdapter: ~
+
+    # Explicit create-only batch selection; single-record adapters above remain the source of
+    # field validation, authorization and uniqueness behavior.
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\TagBatchCreateAdapter: ~
+    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\CounterBatchCreateAdapter: ~

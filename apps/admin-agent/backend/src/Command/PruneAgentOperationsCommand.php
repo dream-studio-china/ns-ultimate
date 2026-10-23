@@ -20,8 +20,13 @@ final class PruneAgentOperationsCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $count = $this->connection->executeStatement(
+        $count = (int) $this->connection->executeStatement(
             'UPDATE admin_agent_operation SET changes = ?, status = ?, completed_at = ? WHERE status = ? AND expires_at <= ?',
+            ['[]', 'expired', new \DateTimeImmutable(), 'pending', new \DateTimeImmutable()],
+            ['string', 'string', 'datetime_immutable', 'string', 'datetime_immutable'],
+        );
+        $count += (int) $this->connection->executeStatement(
+            'UPDATE admin_agent_batch_operation SET proposal_rows = ?, status = ?, completed_at = ? WHERE status = ? AND expires_at <= ?',
             ['[]', 'expired', new \DateTimeImmutable(), 'pending', new \DateTimeImmutable()],
             ['string', 'string', 'datetime_immutable', 'string', 'datetime_immutable'],
         );
