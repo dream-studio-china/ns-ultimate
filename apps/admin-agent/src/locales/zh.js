@@ -1,4 +1,8 @@
 export default {
+  'Expand to main area': '放大至主内容区',
+  'Restore floating window': '还原小窗口',
+  'Resize assistant': '调整助手窗口大小',
+  'Assistant navigation': '助手导航',
   'The record changed or was deleted. This proposal was not saved. Discard it and request a new preview.': '记录已变化或被删除，本次提案未保存。请丢弃此提案并重新生成预览。',
   'Operations': '操作记录',
   'Operations for this account': '当前账号的操作记录',

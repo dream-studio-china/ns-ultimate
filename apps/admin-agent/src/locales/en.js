@@ -1,4 +1,8 @@
 export default {
+  'Expand to main area': 'Expand to main area',
+  'Restore floating window': 'Restore floating window',
+  'Resize assistant': 'Resize assistant',
+  'Assistant navigation': 'Assistant navigation',
   'The record changed or was deleted. This proposal was not saved. Discard it and request a new preview.': 'The record changed or was deleted. This proposal was not saved. Discard it and request a new preview.',
   'Operations': 'Operations',
   'Operations for this account': 'Operations for this account',

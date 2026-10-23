@@ -1,6 +1,7 @@
 import { askProvider, normalizeChatEndpoint } from './provider.js'
 import { formatOperations, loadOpenApi, searchOpenApi } from './openapi.js'
 import { translate as t } from './i18n.js'
+import { mountPanelLayout } from './panel-layout.js'
 import { createAssistantTools, executeAssistantTool } from './tools.js'
 import { formatInspectionOmissions } from './inspection-display.js'
 import { DEFAULT_PREFS, readPreferences, savePreferences } from './preferences.js'
@@ -78,7 +79,8 @@ const css = `
   .message.result{max-width:100%;font-size:12px}.result>strong{display:block;margin-bottom:7px}.result-actions{margin:0 0 7px}.result table{display:block;width:100%;max-width:100%;overflow:auto;border-collapse:collapse;margin:0;font-size:inherit}.result th,.result td{padding:5px 7px;border:1px solid #d0d5dd;text-align:left;vertical-align:top}.result th{background:#e7ebf1;font-weight:650}.result-note{display:block;color:#667085;margin-top:5px}.message.sources{font-size:12px}.sources>strong{display:block;margin-bottom:4px}.sources ul{margin:0;padding-left:18px}.sources li+li{margin-top:3px}.sources a{color:#315efb;text-decoration:underline}
  .operation-history{flex:1;overflow:auto;padding:14px}.operation-history .message{max-width:100%;margin-top:10px;white-space:normal;overflow-wrap:anywhere}
  .batch-preview{max-width:100%;font-size:12px}.batch-preview>strong{display:block;margin-bottom:7px}.batch-preview p{margin:4px 0}.batch-preview table{display:block;width:100%;max-width:100%;overflow:auto;border-collapse:collapse;margin:7px 0;font-size:inherit}.batch-preview th,.batch-preview td{padding:5px 7px;border:1px solid #d0d5dd;text-align:left;vertical-align:top}.batch-preview th{background:#e7ebf1;font-weight:650}.batch-preview label.checkbox{display:flex;flex-direction:row;align-items:flex-start;gap:8px;margin:7px 0}.batch-preview label.checkbox input{width:auto;margin-top:3px}.batch-preview .batch-note{display:block;color:#667085;margin:5px 0}.batch-preview .batch-actions{display:flex;gap:7px;flex-wrap:wrap}
- @media(max-width:540px){.launcher{right:14px;bottom:14px}.panel{inset:8px;width:auto;height:auto;bottom:70px}}
+ .panel-body{display:flex;flex:1;min-height:0}.sidebar{display:flex;flex-direction:column;gap:8px;width:48px;flex-shrink:0;padding:12px 5px;border-right:1px solid #e7ebf1;background:#f8fafc}.sidebar .icon{display:flex;align-items:center;justify-content:center;border-radius:8px;width:36px;height:36px}.sidebar .icon:hover,.sidebar .icon[aria-pressed="true"]{background:#e9efff;color:#315efb}.workspace{position:relative;display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}.workspace .messages,.workspace .operation-history{min-height:0}.workspace .settings{inset:0}.send-row{justify-content:flex-end}.header{gap:8px;flex-shrink:0}.header>div:first-child{min-width:0}.header small{font-size:11px}.buttons{gap:2px;flex-shrink:0}.resize-handle{position:absolute;left:0;top:0;z-index:2;width:16px;height:16px;padding:0;border:0;background:linear-gradient(135deg,transparent 25%,#98a2b3 26%,#98a2b3 33%,transparent 34%,transparent 47%,#98a2b3 48%,#98a2b3 55%,transparent 56%);cursor:nwse-resize;touch-action:none}.icon svg{width:19px;height:19px;display:block}.icon:focus-visible,.resize-handle:focus-visible{outline:2px solid #315efb;outline-offset:-2px}
+ @media(max-width:540px){.launcher{right:14px;bottom:14px}.panel{inset:8px;width:auto;height:auto;bottom:70px}.header{padding:12px}.header small{display:none}}
 `
 
 async function decodeLocalImage({ bytes, mimeType, dataUrl, signal }) {
@@ -173,11 +175,24 @@ export function mountAdminAgent(host = {}) {
   const subtitle = element('small', {}, t('API docs, read queries, and user-confirmed changes'))
   title.append(subtitle)
   const headerButtons = element('div', { class: 'buttons' })
+  const iconButton = (label, path) => {
+    const button = element('button', { class: 'icon', type: 'button', title: t(label), 'aria-label': t(label) })
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) svg.setAttribute(key, value)
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    shape.setAttribute('d', path)
+    svg.append(shape)
+    button.append(svg)
+    return button
+  }
   const clearButton = element('button', { class: 'icon', type: 'button', title: t('Clear conversation'), 'aria-label': t('Clear conversation') }, '⌫')
   const cancelButton = element('button', { class: 'icon hidden', type: 'button', title: t('Cancel current task'), 'aria-label': t('Cancel current task') }, '■')
-  const settingsButton = element('button', { class: 'icon', type: 'button', title: t('Settings'), 'aria-label': t('Settings') }, '⚙')
+  const settingsButton = iconButton('Settings', 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z')
+  const expandButton = iconButton('Expand to main area', 'M8 3H3v5 M16 3h5v5 M21 16v5h-5 M8 21H3v-5')
+  expandButton.setAttribute('aria-pressed', 'false')
+  const resizeHandle = element('button', { class: 'resize-handle', type: 'button', title: t('Resize assistant'), 'aria-label': t('Resize assistant') })
   const closeButton = element('button', { class: 'icon', type: 'button', title: t('Close'), 'aria-label': t('Close') }, '×')
-  headerButtons.append(clearButton, cancelButton, settingsButton, closeButton)
+  headerButtons.append(clearButton, cancelButton, expandButton, closeButton)
   header.append(title, headerButtons)
   const messagesNode = element('div', { class: 'messages', 'aria-live': 'polite' })
   const empty = element('p', { class: 'empty' }, t('Configure a compatible OpenAI Chat Completions provider to ask about API docs and bounded read-only queries.'))
@@ -193,12 +208,14 @@ export function mountAdminAgent(host = {}) {
   const attachButton = element('button', { class: 'button secondary', type: 'button', 'aria-label': t('Attach files') }, `📎 ${t('Attach files')}`)
   const attachmentList = element('div', { class: 'attachments hidden', role: 'list', 'aria-label': t('Selected attachments') })
   const attachmentNotice = element('div', { class: 'notice attachment-notice' }, t('Attachments are sent to the configured provider only when you send the message; they are not stored in conversation history.'))
-  const sendRow = element('div', { class: 'row' })
-  const activityButton = element('button', { class: 'button secondary', type: 'button' }, t('Read activity'))
-  const historyButton = element('button', { class: 'button secondary', type: 'button' }, t('Operations'))
-  sendRow.append(attachButton, activityButton)
-  if (typeof host.listRecordChanges === 'function') sendRow.append(historyButton)
-  sendRow.append(send)
+  const sendRow = element('div', { class: 'row send-row' })
+  const activityButton = iconButton('Read activity', 'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6 M7 8h6 M7 11h4')
+  const historyButton = iconButton('Operations', 'M4 4h16v17H4z M8 2v4 M16 2v4 M8 11h8 M8 15h8')
+  const sidebar = element('nav', { class: 'sidebar', 'aria-label': t('Assistant navigation') })
+  sidebar.append(activityButton)
+  if (typeof host.listRecordChanges === 'function') sidebar.append(historyButton)
+  sidebar.append(settingsButton)
+  sendRow.append(attachButton, send)
   composer.append(attachmentNotice, attachmentList, fileInput, input, sendRow)
   input.addEventListener('keydown', event => handleComposerKeydown(event, input, () => composer.requestSubmit()))
   attachButton.addEventListener('click', () => fileInput.click())
@@ -1174,9 +1191,13 @@ export function mountAdminAgent(host = {}) {
     setBusy(false)
     messagesNode.replaceChildren(empty)
     operationHistory.node.classList.add('hidden')
+    historyButton.setAttribute('aria-pressed', 'false')
     messagesNode.classList.remove('hidden')
   }
   function showReadActivity() {
+    settings.classList.add('hidden')
+    settingsButton.setAttribute('aria-pressed', 'false')
+    historyButton.setAttribute('aria-pressed', 'false')
     operationHistory.node.classList.add('hidden')
     messagesNode.classList.remove('hidden')
     if (!readActivity.length) {
@@ -1252,7 +1273,15 @@ export function mountAdminAgent(host = {}) {
       status.textContent = error.message || t('Failed to load API documentation.')
     } finally { loadDocs.disabled = false }
   })
-  settingsButton.addEventListener('click', () => settings.classList.toggle('hidden'))
+  settingsButton.addEventListener('click', () => {
+    const opening = settings.classList.toggle('hidden') === false
+    settingsButton.setAttribute('aria-pressed', String(opening))
+    if (opening) {
+      operationHistory.node.classList.add('hidden')
+      messagesNode.classList.remove('hidden')
+      historyButton.setAttribute('aria-pressed', 'false')
+    }
+  })
   clearButton.addEventListener('click', clearConversation)
   cancelButton.addEventListener('click', () => {
     if (!activeController || activeController.signal.aborted) return
@@ -1294,6 +1323,7 @@ export function mountAdminAgent(host = {}) {
     },
     onRestore: preview => {
       operationHistory.node.classList.add('hidden')
+      historyButton.setAttribute('aria-pressed', 'false')
       messagesNode.classList.remove('hidden')
       appendPreparedChange(preview)
       appendMessage('assistant', t('Restored the original pending operation. Review all values and confirm again. Its expiry has not been extended.'))
@@ -1302,6 +1332,8 @@ export function mountAdminAgent(host = {}) {
   historyButton.addEventListener('click', () => {
     if (loading || unresolvedWrite || batchBlocksWrites()) return
     const opening = operationHistory.node.classList.toggle('hidden') === false
+    historyButton.setAttribute('aria-pressed', String(opening))
+    settingsButton.setAttribute('aria-pressed', 'false')
     messagesNode.classList.toggle('hidden', opening)
     settings.classList.add('hidden')
     if (opening) operationHistory.load()
@@ -1555,15 +1587,28 @@ export function mountAdminAgent(host = {}) {
     }
   })
 
-  panel.append(header, messagesNode, operationHistory.node, status, composer, settings)
+  const workspace = element('div', { class: 'workspace' })
+  workspace.append(messagesNode, operationHistory.node, status, composer, settings)
+  const panelBody = element('div', { class: 'panel-body' })
+  panelBody.append(sidebar, workspace)
+  panel.append(resizeHandle, header, panelBody)
   shadow.append(style, launcher, panel)
   document.body.append(hostElement)
+  const disposePanelLayout = mountPanelLayout(panel, resizeHandle, expandButton, {
+    getBounds: () => host.getMainAreaBounds?.(),
+    onExpanded: expanded => {
+      const label = t(expanded ? 'Restore floating window' : 'Expand to main area')
+      expandButton.title = label
+      expandButton.setAttribute('aria-label', label)
+    }
+  })
   try { navigation = typeof host.getNavigationCatalog === 'function' ? host.getNavigationCatalog() : [] } catch { navigation = [] }
   // Load the configured same-origin API reference on mount, so the assistant
   // is ready for documentation questions without an extra setup action.
   loadDocs.click()
   return () => {
     disposed = true
+    disposePanelLayout()
     unsubscribeCapabilities()
     operationHistory.dispose()
     activeBatchCard?.dispose()

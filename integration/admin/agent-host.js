@@ -205,6 +205,9 @@ export function createAdminAgentHost() {
     },
 
     getCatalog,
+    getMainAreaBounds() {
+      return document.querySelector('.app-main')?.getBoundingClientRect() ?? null
+    },
     getInspectionPolicy() { return recordInspectionPolicy },
     inspectRecordConfiguration,
     getKnowledgeArticles() { return knowledgeArticles },

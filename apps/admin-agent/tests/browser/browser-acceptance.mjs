@@ -22,7 +22,7 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 22
+const EXPECTED_CASE_COUNT = 23
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
@@ -924,7 +924,7 @@ function collectControls(shadow) {
     settings: shadow.querySelector('form.settings'),
     clearButton: icons[0],
     cancelButton: icons[1],
-    settingsButton: icons[2],
+    settingsButton: shadow.querySelector('.sidebar button[aria-label="Settings"]'),
     closeButton: icons[3]
   }
 }
@@ -1101,7 +1101,7 @@ function findButton(root, matcher) {
   const matches = typeof matcher === 'function'
     ? matcher
     : text => matcher instanceof RegExp ? matcher.test(text) : text === matcher
-  return [...root.querySelectorAll('button')].find(button => matches(button.textContent.trim(), button)) || null
+  return [...root.querySelectorAll('button')].find(button => matches(button.getAttribute('aria-label') || button.textContent.trim(), button)) || null
 }
 
 function findEnabledButton(root, matcher) {
@@ -2969,6 +2969,45 @@ const CASES = [
         singleCommitCalls: calls.commit
       }
     }
+  },
+  {
+    name: 'layout controls expand to main bounds, restore the floating size and keep navigation and composer controls',
+    async run(ctx) {
+      const host = createSyntheticHost()
+      host.listRecordChanges = async () => ({ items: [], page: 1, hasMore: false })
+      const bounds = { left: 24, top: 32, right: window.innerWidth - 24, bottom: window.innerHeight - 24 }
+      host.getMainAreaBounds = () => bounds
+      const agent = await ctx.mount({ host })
+      const labels = [...agent.shadow.querySelectorAll('.sidebar button')]
+        .map(button => button.getAttribute('aria-label'))
+      equal(labels.join(','), 'Read activity,Operations,Settings', 'Sidebar order or controls changed')
+      const composerButtons = [...agent.shadow.querySelectorAll('.send-row button')]
+        .map(button => button.textContent.trim())
+      equal(composerButtons.length, 2, 'The composer footer must keep only attach and send')
+      includes(composerButtons[0], 'Attach files', 'The attachment control is missing')
+      equal(composerButtons[1], 'Send', 'Send must be the last composer control')
+      const panel = agent.controls.panel
+      const handle = agent.shadow.querySelector('.resize-handle')
+      ok(handle, 'The floating resize handle was not rendered.')
+      const initial = panel.getBoundingClientRect()
+      const expand = agent.shadow.querySelector('[aria-label="Expand to main area"]')
+      ok(expand, 'The expand control was not rendered.')
+      expand.click()
+      const expanded = panel.getBoundingClientRect()
+      equal(expanded.left, bounds.left, 'Expanded left does not match the main area')
+      equal(expanded.top, bounds.top, 'Expanded top does not match the main area')
+      equal(expanded.width, bounds.right - bounds.left, 'Expanded width does not match the main area')
+      equal(expanded.height, bounds.bottom - bounds.top, 'Expanded height does not match the main area')
+      equal(handle.hidden, true, 'The resize handle must be hidden while expanded')
+      agent.shadow.querySelector('[aria-label="Restore floating window"]').click()
+      const restored = panel.getBoundingClientRect()
+      equal(restored.width, initial.width, 'Restoring must keep the original width')
+      equal(restored.height, initial.height, 'Restoring must keep the original height')
+      equal(handle.hidden, false, 'The resize handle must return when floating')
+      handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+      equal(panel.getBoundingClientRect().width, initial.width + 10, 'Keyboard resize must grow from the top-left edge')
+      return { sidebar: labels, composerButtons, expanded: true, restored: true, keyboardResize: true }
+    }
   }
 ]
 
@@ -3192,7 +3231,7 @@ async function executeAcceptance({
 let mainExecution = null
 
 /**
- * Run the main 22-case browser acceptance suite once per fixture page.
+ * Run the main 23-case browser acceptance suite once per fixture page.
  */
 export function runBrowserAcceptance(options = {}) {
   let execution
