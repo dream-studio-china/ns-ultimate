@@ -2,6 +2,8 @@
 
 Operational procedures for deploying and maintaining the composed application. These runbooks supplement, rather than replace, the architecture and deployment references.
 
+For upstream module concepts and module-level procedures, consult the [core runbooks](../../core/crud-skeleton/docs/runbooks/). They describe the standalone upstream application, not necessarily this deployment's entry points, defaults, enabled services, or app integrations. Use the project procedures below for the composed deployment and document only verified differences rather than copying upstream content. See [documentation ownership](../operations/documentation.md).
+
 - [Baota + Apache production deployment](baota-apache-production.md) ([简体中文](baota-apache-production.zh-cn.md)) — initial deployment on a Baota-managed Linux host with Apache 2, PHP 8.5-FPM, and MySQL.
 - [Release and rollback](release-and-rollback.md) ([简体中文](release-and-rollback.zh-cn.md)) — repeatable release-directory deployment, migrations, traffic switch, and rollback.
 - [Production incident triage](production-incident-triage.md) ([简体中文](production-incident-triage.zh-cn.md)) — diagnose common Composer, environment, `open_basedir`, permissions, database, and key failures.

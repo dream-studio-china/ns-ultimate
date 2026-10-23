@@ -1,6 +1,6 @@
 # Config-first admin AI assistant
 
-**Status: Read/query/navigation prototype and a user-confirmed single-record Content create/update/delete workflow are implemented. Operations use the app-owned preparation/commit protocol and explicitly selected host adapter with account binding, expiry, conflict checks and idempotent receipts; a database migration is required. Other entities remain read-only or preview-only. Client safeguards include field filtering, typed filters, single-request time/page limits, cancellation, loop protection and bounded provider context. Fine-grained backend field grants, cryptographically tamper-proof auditing, automatic/countdown submission and bulk operations remain unimplemented. Real-browser and production-database concurrency verification remain outstanding.**
+**Status: Read/query/navigation, curated host knowledge retrieval, user-confirmed single-record business mutations and bounded Tag/Counter batch creation are implemented through explicit host adapters. The approved business packages cover Content, Counter, Category/Tag, ProductCategory, Product, Specification and Store; exact actions, exclusions and field bounds are maintained in the [operation contract](../contracts/admin-agent.md#business-capability-packages). Product and Specification hard deletion remain blocked. Operations use the app-owned preparation/commit protocol with account binding, expiry, conflict checks and idempotent receipts. Client safeguards include field filtering, typed filters, cancellation, loop protection and bounded provider context. Fine-grained backend field grants, tamper-proof auditing, countdown submission and general batch update/delete remain unavailable. Bounded local browser/MySQL evidence and remaining validation gaps are recorded in the assistant README; these are not production-wide guarantees.**
 
 ## 1. Purpose and agreed scope
 
@@ -8,9 +8,9 @@ Build an assistant embedded in the admin web application. Package its generic fr
 
 The assistant can understand the API documentation, query approved read-only endpoints, and perform controlled operations through existing admin functionality. The model must not receive a general HTTP client, arbitrary JavaScript execution, or direct access to write endpoints.
 
-The initial implementation must not modify `core/` or `business/`. Minimal, explicit loading and host wiring may be added under `integration/admin/`. Changes to build, test, deployment, or CI configuration must be explicit rather than relying on discovery of a new directory.
+The initial implementation did not modify `core/` or `business/`. The subsequently approved Tag/Counter decoupling pilot adds reusable business write services without agent dependencies and preserves normal-admin compatibility; it does not authorize unrelated business changes. Core edits remain gated. Minimal, explicit loading and host wiring may be added under `integration/admin/`. Changes to build, test, deployment, or CI configuration must be explicit rather than relying on discovery of a new directory.
 
-Low-risk, single-record edits may submit automatically after a detailed advance notice and a five-second cancellation window. All other enabled mutations require explicit confirmation. Payments, refunds, permission changes, and security configuration changes are initially unavailable.
+Automatic/countdown submission is a future proposal and is not enabled. Current mutations require explicit user confirmation in the application UI. Payments, refunds, permission changes, and security configuration changes are unavailable unless separately implemented and authorized.
 
 This is an architecture and implementation specification, not a statement that the existing admin already exposes all required extension points. Read it alongside [architecture](architecture.md) and the [admin composition contract](../contracts/admin-composition.md).
 
@@ -27,8 +27,11 @@ The design is based on the following repository behavior:
 | `core/crud-admin/src/easyadmin/application/usecases/` | Contains reusable save, delete, batch-update, relation, and export logic. Calling a write use case alone does not establish that the complete admin UI flow was preserved. |
 | `core/crud-skeleton/config/routes/nelmio_api_doc.yaml` | Defines the human-facing `/api/doc` and machine-readable `/api/doc.json` routes. |
 | `business/admin/config/components/PrinterJobReprintAction.js` | Illustrates a custom operation whose behavior lives inside a component, not in a declarative action contract. |
+| `apps/admin-agent/adapters/ns-ultimate/admin/knowledge/` | Explicitly selected host guides are bundled into the frontend and retrieved locally; they do not grant capabilities or expose the rest of the repository documentation. |
 
 There is no verified, universal assistant bridge for all current pages. Configuration includes functions, custom components, dynamic visibility, and nested workflows; it is not a complete serializable action specification. Actual OpenAPI coverage must also be checked against the running deployment.
+
+Supported packages are not independent execution grants. The effective configuration now bounds the authenticated catalog through a shared projection and private generated manifest; current configuration omits Specification's unsupported nested context and Content metadata/sort-order writes. Tag/Counter persistence reuses fixed ordinary-controller bindings. Remaining specialized adapters and field descriptors are transitional support constraints, not a second source that may enable missing configured capabilities. See the operation contract for the current intersection.
 
 The repository's core-edit authorization gate continues to apply. Future migration into core requires separate explicit authorization and review; this document does not authorize core edits.
 
@@ -72,6 +75,8 @@ apps/admin-agent/
 
 These are responsibility boundaries, not a requirement to create empty directories or a framework before they are needed.
 
+The generic knowledge pipeline lives in `apps/admin-agent/src/knowledge.js`. Host articles are explicitly registered by the ns-ultimate adapter and exposed through the optional `getKnowledgeArticles()` host method. Retrieval is deterministic and bounded: long articles are chunked at paragraph and sentence boundaries, matched sections keep their heading, and host-provided English aliases expand the API-document query for non-English questions. Selected excerpts are labeled as untrusted reference data, while validated source paths are rendered as plain text rather than links. Knowledge does not modify the read catalog, navigation, mutation policy, or tool list. Article content is part of the browser-delivered application and must not contain secrets or internal-only material.
+
 Only the `crud-admin` adapter may depend on admin-specific configuration shapes, components, or imports. Generic assistant code must not import core internals, business modules, entity names, API prefixes, or the current repository layout. Host configuration supplies business policy and custom capabilities.
 
 Integration owns registration and translation of stable interfaces, not risk rules or business behavior. The adapter consumes the already composed configuration; it must not reimplement core/business merging. The loader must avoid an import cycle between composed configuration and assistant initialization.
@@ -82,7 +87,17 @@ An assistant mount must be idempotent, occur only in an authenticated admin cont
 
 ### 4.1 Sources of truth
 
-Use the effective admin configuration as the primary source of management capabilities. Use runtime metadata for field types and relation identifiers where configuration is incomplete. Use OpenAPI for API knowledge and approved read queries, not to manufacture executable write capabilities.
+Use effective admin configuration for read/query/navigation discovery. Write descriptions come from the authenticated, explicitly filtered backend capability catalog, not a duplicate frontend field table. The generic frontend validates the versioned metadata and compiles one session-local snapshot for tools, previews and transport validation. Unavailable or unsupported write metadata fails closed without disabling read-only chat. Use OpenAPI for API knowledge and approved read queries, not to manufacture executable write capabilities.
+
+The Tag/Counter pilot reuses business-service field schemas through app-owned action/field allowlists. Other write descriptors remain explicit backend app policies. New business fields are default-denied; discovery does not grant permissions. Specialized preview/operational safety semantics remain in host adapters rather than being inferred from Doctrine mappings. Delete-preview metadata is separate from writable fields. Catalog revisions describe the current serialized snapshot and do not introduce persisted semantic-policy versions for existing proposals.
+
+### Configuration-first convergence
+
+The approved next direction is to use effective crud-admin configuration as the first boundary for assistant mutations as well as reads. A supported standard form/action is the discovery source; agent policy may only narrow its entities, actions and fields. Unsupported custom components, callbacks or nested operation contexts need an existing safe binding rather than speculative inference. Knowledge documents never grant execution rights.
+
+The backend catalog and existing execution adapters remain a transitional implementation, not a second intended management system. Replace duplicated write execution only after the existing configured controller path, its validation/hooks and the proposal transaction/recovery contract have been verified together. Do not equate filtering frontend metadata with having completed execution-path reuse. In particular, independent HTTP row submissions cannot replace an atomic batch. Core and ordinary business behavior must remain unchanged while converging.
+
+The backend also exposes `GET /system/entities` and `GET /system/entities/{entityName}` with Doctrine field metadata and translations. The assistant deliberately does not call them at runtime. They return every mapped entity, including internal token/outbox entities, and expose sensitive properties such as encrypted credential blobs; in the current deployment they also answer without authentication. They describe only top-level Doctrine fields, so they do not cover the nested JSON settings or template layout keys that actually limit current answers. Where such metadata is useful, it belongs in a build- or test-time check against known entities and fields, never as an unfiltered context source and never as a permission signal.
 
 The capability catalog describes entities, field labels and types, available read filters, navigation targets, standard operations, and runtime support limitations. Capability discovery does not grant permission to execute.
 
@@ -197,7 +212,7 @@ Cancellation prevents future work. Once submission has started, cancelling the c
 
 ## 8. Risk policy, preview, and submission
 
-**Implemented generic workflow:** the app owns a shared operation lifecycle and `AgentOperation` entity for registered adapters. The current host enables Content create/update/delete through an app-owned ns-ultimate adapter explicitly selected by integration, only after explicit UI confirmation. The model has no submission tool. Operations bind owner, payload, expiry and idempotent execution; adapters reuse existing domain validation and own target conflict checks. Other entities remain read-only or preview-only. See the [contract and remaining limits](../contracts/admin-agent.md). The broader automatic/countdown and bulk policies below are still proposals, not enabled behavior.
+**Implemented generic workflow:** the app owns a shared operation lifecycle and `AgentOperation` entity for explicitly registered business adapters. The host's [business capability packages](../contracts/admin-agent.md#business-capability-packages) define the actual per-action field rules; all commits require explicit UI confirmation. The model has no submission tool. Operations bind owner, payload, expiry and idempotent execution; adapters reuse existing domain validation and own target conflict checks. Package approval never enables arbitrary JSON, external actions or generic CRUD fallbacks. The separate `preview_record_update` tool is local-only: it creates an unsaved preview and has no submission path. See the [contract and remaining limits](../contracts/admin-agent.md). The broader automatic/countdown and bulk policies below are still proposals, not enabled behavior.
 
 **Implemented operation recovery:** the UI can retrieve account-scoped metadata-only receipts after reload and explicitly restore an unexpired pending preview. Restoration rechecks permissions, canonical payload and the original target snapshot; it retains the operation ID and expiry and requires fresh confirmation. Recovery is not a model tool or automatic task resumption, stores no operation payload in browser persistence, and adds no schema migration. Real-backend browser and production concurrency validation remain outstanding.
 
@@ -268,7 +283,7 @@ Changing a provider, base URL, or model invalidates pending operations. Warn bef
 | Data | Default storage and handling |
 | --- | --- |
 | Provider identifier, model, base URL, UI preferences | Namespaced `localStorage`; never include credentials in URLs. |
-| API key | Memory only; clear on logout, lock, or reload. |
+| API key | Stored in namespaced browser `localStorage` by the current implementation; it persists across reloads until cleared. This is not a secure credential vault and is accessible to scripts on the same origin. |
 | Optional persistent API key | Authenticated encryption in IndexedDB, unlocked by a user passphrase. |
 | Conversation history | Memory by default; optional bounded IndexedDB persistence after consent. |
 | OpenAPI index/cache | Bounded IndexedDB cache with version, origin, expiry, and permission scope where relevant. |
@@ -308,7 +323,7 @@ Local history is a usability record, not tamper-resistant audit evidence. Existi
 
 ## 12. Verification and acceptance criteria
 
-Use deterministic fixtures and a fake provider for automated behavior tests; real LLM responses are not a correctness oracle. Suggested assistant scripts are `type-check`, `test`, and an appropriate build command, but these do not exist yet and must not be reported as runnable until implemented.
+Use deterministic fixtures and a fake provider for automated behavior tests; real LLM responses are not a correctness oracle. The assistant package currently provides `npm test --prefix apps/admin-agent`; there is no declared `type-check` script in that package. Use the integration build and backend test commands documented in the app README where relevant.
 
 | Test boundary | Required coverage |
 | --- | --- |

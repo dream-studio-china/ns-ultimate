@@ -3,6 +3,57 @@ import test from 'node:test'
 import { buildCapabilityCatalog } from '../src/capabilities.js'
 import { createAssistantTools, executeAssistantTool } from '../src/tools.js'
 
+const OPERATION_ID = 'a'.repeat(64)
+const STORE_UUID = '550e8400-e29b-41d4-a716-446655440001'
+
+const batchCapabilities = [
+  {
+    entity: 'Tag',
+    actions: ['create'],
+    actionFields: {
+      create: {
+        name: { type: 'string', maxLength: 255, requiredOnCreate: true, nonEmpty: true },
+        slug: { type: 'string', maxLength: 255, requiredOnCreate: true, nonEmpty: true },
+        color: { type: 'color', nullable: true }
+      }
+    }
+  },
+  {
+    entity: 'Counter',
+    actions: ['create'],
+    actionFields: {
+      create: {
+        storeUuid: { type: 'uuid', requiredOnCreate: true },
+        code: { type: 'string', maxLength: 50, requiredOnCreate: true, nonEmpty: true, trimForValidation: true },
+        name: { type: 'string', maxLength: 120, requiredOnCreate: true, nonEmpty: true, trimForValidation: true }
+      }
+    }
+  }
+]
+
+function batchPreview(input) {
+  const rows = input.rows.map((row, index) => ({
+    row: index + 1,
+    title: String(row.name ?? `Row ${index + 1}`),
+    identifier: null,
+    differences: Object.entries(row).map(([property, after]) => ({ property, before: null, after }))
+  }))
+  return {
+    operationId: OPERATION_ID,
+    entity: input.entity,
+    action: 'create',
+    title: `Create ${rows.length} ${input.entity} records`,
+    affectedRecords: rows.length,
+    expiresAt: new Date(Date.now() + 300000).toISOString(),
+    rows,
+    saved: false
+  }
+}
+
+function batchCall(args) {
+  return { type: 'function', function: { name: 'prepare_record_batch', arguments: JSON.stringify(args) } }
+}
+
 const catalog = buildCapabilityCatalog({
   Counter: {
     entity: { name: 'Counter', plural: 'counters' },
@@ -77,4 +128,165 @@ test('lists registered pages and opens only allowlisted pages or safe record det
   })
   assert.match(rejected.error, /positive numeric ID or UUID/)
   assert.equal(calls.length, 1)
+})
+
+test('declares a create-only batch tool only for explicit host batch capabilities', () => {
+  const withoutBatch = createAssistantTools(catalog).map(tool => tool.function.name)
+  assert.equal(withoutBatch.includes('prepare_record_batch'), false)
+  const withWriteOnly = createAssistantTools(catalog, [], {}, [{ entity: 'Tag', actions: ['create'], actionFields: { create: { name: { type: 'string' } } } }])
+  assert.equal(withWriteOnly.some(tool => tool.function.name === 'prepare_record_batch'), false)
+
+  const tools = createAssistantTools(catalog, [], {}, [], {}, batchCapabilities)
+  const tool = tools.find(item => item.function.name === 'prepare_record_batch').function
+  assert.deepEqual(tool.parameters.properties.entity.enum, ['Tag', 'Counter'])
+  assert.deepEqual(tool.parameters.properties.action.enum, ['create'])
+  assert.equal(tool.parameters.properties.rows.maxItems, 20)
+  assert.equal(tool.parameters.properties.rows.minItems, 1)
+  assert.match(tool.description, /explicitly asks to create/)
+  assert.match(tool.description, /untrusted data/)
+  assert.match(tool.description, /same explicit existing Store UUID/)
+  assert.equal(tools.some(item => /commit|execute|submit/i.test(item.function.name)), false)
+})
+
+test('prepares a batch through the host but returns only safe metadata to the model', async() => {
+  const calls = { prepare: [], cancel: [] }
+  const prepared = []
+  const host = {
+    async prepareRecordBatch(input) {
+      calls.prepare.push(input)
+      return batchPreview(input)
+    },
+    async cancelRecordBatch(operationId) { calls.cancel.push(operationId) }
+  }
+  const result = await executeAssistantTool({
+    call: batchCall({ entity: 'Tag', action: 'create', rows: [{ name: 'North', slug: 'north', color: '#112233' }] }),
+    catalog,
+    host,
+    operations: [],
+    batchCapabilities,
+    onPreparedBatch: (preview, context) => { prepared.push({ preview, context }); return true }
+  })
+  assert.deepEqual(calls.prepare, [{
+    entity: 'Tag',
+    action: 'create',
+    rows: [{ name: 'North', slug: 'north', color: '#112233' }]
+  }])
+  assert.equal(prepared.length, 1)
+  assert.equal(prepared[0].preview.operationId, OPERATION_ID)
+  assert.deepEqual(prepared[0].preview.records[0].values, { name: 'North', slug: 'north', color: '#112233' })
+  assert.equal(prepared[0].context.entity, 'Tag')
+  assert.deepEqual(result, {
+    prepared: true,
+    saved: false,
+    entity: 'Tag',
+    action: 'create',
+    affectedRecords: 1,
+    message: 'Awaiting explicit UI confirmation. No target data has been changed.'
+  })
+  const serialized = JSON.stringify(result)
+  assert.equal(serialized.includes(OPERATION_ID), false)
+  assert.equal(serialized.includes('North'), false)
+  assert.equal(serialized.includes('north'), false)
+})
+
+test('rejects invalid batch input before the host transport and never invents values', async() => {
+  let prepareCalls = 0
+  const host = {
+    async prepareRecordBatch(input) { prepareCalls += 1; return batchPreview(input) },
+    async cancelRecordBatch() {}
+  }
+  const invalid = [
+    { entity: 'Tag', action: 'create', rows: [{ name: 'North' }] },
+    { entity: 'Tag', action: 'create', rows: [{ name: 'North', slug: 'north', unknown: true }] },
+    { entity: 'Tag', action: 'create', rows: [] },
+    { entity: 'Counter', action: 'create', rows: [{ storeUuid: STORE_UUID, code: 'A', name: 'A' }, { storeUuid: '550e8400-e29b-41d4-a716-446655440002', code: 'B', name: 'B' }] },
+    { entity: 'Product', action: 'create', rows: [{ name: 'North' }] }
+  ]
+  for (const args of invalid) {
+    const result = await executeAssistantTool({
+      call: batchCall(args),
+      catalog,
+      host,
+      operations: [],
+      batchCapabilities,
+      onPreparedBatch: () => { throw new Error('must not prepare') }
+    })
+    assert.equal(result.failureType, 'validation')
+    assert.equal(result.prepared, undefined)
+  }
+  assert.equal(prepareCalls, 0)
+
+  const unavailable = await executeAssistantTool({
+    call: batchCall({ entity: 'Tag', action: 'create', rows: [{ name: 'North', slug: 'north' }] }),
+    catalog,
+    host,
+    operations: [],
+    onPreparedBatch: () => true
+  })
+  assert.equal(unavailable.failureType, 'unavailable')
+  assert.equal(prepareCalls, 0)
+})
+
+test('cancels a prepared batch when the task is aborted or the preview is not adopted', async() => {
+  const cancels = []
+  let prepareCalls = 0
+  const host = {
+    async prepareRecordBatch(input) { prepareCalls += 1; return batchPreview(input) },
+    async cancelRecordBatch(operationId) { cancels.push(operationId) }
+  }
+  const aborted = new AbortController()
+  aborted.abort()
+  const cancelled = await executeAssistantTool({
+    call: batchCall({ entity: 'Tag', action: 'create', rows: [{ name: 'North', slug: 'north' }] }),
+    catalog,
+    host,
+    operations: [],
+    batchCapabilities,
+    signal: aborted.signal,
+    onPreparedBatch: () => true
+  })
+  assert.equal(cancelled.failureType, 'cancelled')
+  assert.equal(prepareCalls, 0)
+
+  const discarded = await executeAssistantTool({
+    call: batchCall({ entity: 'Tag', action: 'create', rows: [{ name: 'North', slug: 'north' }] }),
+    catalog,
+    host,
+    operations: [],
+    batchCapabilities,
+    onPreparedBatch: () => false
+  })
+  assert.equal(discarded.failureType, 'cancelled')
+  assert.equal(prepareCalls, 1)
+  assert.deepEqual(cancels, [OPERATION_ID])
+})
+
+test('hides transport failures and malformed previews from the model result', async() => {
+  const cancels = []
+  const failed = await executeAssistantTool({
+    call: batchCall({ entity: 'Tag', action: 'create', rows: [{ name: 'North', slug: 'north' }] }),
+    catalog,
+    host: {
+      async prepareRecordBatch() { throw new Error('Sensitive upstream detail') },
+      async cancelRecordBatch() {}
+    },
+    operations: [],
+    batchCapabilities
+  })
+  assert.equal(failed.failureType, 'failed')
+  assert.equal(JSON.stringify(failed).includes('Sensitive'), false)
+
+  const malformed = await executeAssistantTool({
+    call: batchCall({ entity: 'Tag', action: 'create', rows: [{ name: 'North', slug: 'north' }] }),
+    catalog,
+    host: {
+      async prepareRecordBatch(input) { return { ...batchPreview(input), saved: true } },
+      async cancelRecordBatch(operationId) { cancels.push(operationId) }
+    },
+    operations: [],
+    batchCapabilities
+  })
+  assert.equal(malformed.failureType, 'invalid-preview')
+  assert.equal(JSON.stringify(malformed).includes(OPERATION_ID), false)
+  assert.deepEqual(cancels, [OPERATION_ID])
 })

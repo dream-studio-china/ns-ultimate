@@ -2,6 +2,8 @@
 
 本目录提供可按步骤执行的部署和运维流程，用于补充架构文档与部署参考。
 
+上游模块概念和模块级操作可参考 [core runbooks](../../core/crud-skeleton/docs/runbooks/)。它们面向上游独立应用，不一定适用于本项目的入口、默认配置、已启用服务或 app 集成。组合应用的部署请以本目录流程为准，只补充已核实的差异，不复制上游全文。另见[文档归属与维护规则](../operations/documentation.md)。
+
 - [宝塔 + Apache 生产部署](baota-apache-production.zh-cn.md) ([English](baota-apache-production.md)) — 在宝塔 Linux 主机上首次部署 Apache 2、PHP 8.5-FPM 和 MySQL。
 - [发布与回滚](release-and-rollback.zh-cn.md) ([English](release-and-rollback.md)) — 使用独立 release 目录、执行迁移、切换流量和回滚。
 - [生产故障排查](production-incident-triage.zh-cn.md) ([English](production-incident-triage.md)) — 排查 Composer、环境、`open_basedir`、权限、数据库和密钥问题。

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <link rel="icon" href="data:,">
+    <title>Admin agent isolated browser acceptance fixture</title>
+  </head>
+  <body data-ns-agent-acceptance="isolated-fixture">
+    <pre data-role="fixture-status">pending</pre>
+    <script type="module">
+      // The fixture owns no global and performs no DOM/storage write before the
+      // harness boot guard accepts this page. Negative regression contexts use
+      // ?autorun=0 and drive the exported guard/self-check helpers directly.
+      const params = new URLSearchParams(location.search)
+      if (params.get('autorun') !== '0') {
+        import('./browser-acceptance.mjs').then(({ bootBrowserAcceptanceFixture }) => {
+          return bootBrowserAcceptanceFixture()
+        }).catch(error => {
+          // A rejected guard must not mutate the page. Report only on the console.
+          console.error('[admin-agent acceptance] fixture boot rejected:', error?.message || error)
+        })
+      }
+    </script>
+  </body>
+</html>

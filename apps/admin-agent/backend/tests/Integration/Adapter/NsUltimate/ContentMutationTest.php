@@ -17,16 +17,29 @@ use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\Console\Tester\CommandTester;
 
+require_once dirname(__DIR__, 2).'/Support/AdminConfigurationTestManifest.php';
+
 final class ContentMutationTest extends IntegrationWebTestCase
 {
     use DatabaseBootstrapTrait;
 
     private const URL = '/api/v1/manage/agent/operations';
 
+    private ?string $testManifest = null;
+
     protected function setUp(): void
     {
+        $this->testManifest = \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::install();
         $this->bootTestDatabase();
         self::ensureKernelShutdown();
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->testManifest !== null) {
+            \NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::restore($this->testManifest);
+            $this->testManifest = null;
+        }
     }
 
     protected static function getKernelClass(): string
@@ -40,11 +53,13 @@ final class ContentMutationTest extends IntegrationWebTestCase
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         $count = $em->getRepository(CoreContent::class)->count([]);
         $preview = $this->post($client, self::URL, ['action' => 'create', 'changes' => [
-            'title' => 'Agent content', 'body' => '<script>untrusted text</script>',
-            'metadata' => ['featured' => true, 'layout' => 'article'], 'sortOrder' => 3,
+            'sortOrder' => 3, 'metadata' => ['featured' => true, 'layout' => 'article'],
+            'body' => '<script>untrusted text</script>', 'title' => 'Agent content',
         ]]);
         self::assertFalse($preview['saved']);
         self::assertSame(1, $preview['affectedRecords']);
+        self::assertSame(['title', 'body', 'metadata', 'sortOrder'], array_column($preview['differences'], 'property'),
+            'Differences follow the declared field order, not the request key order, so MySQL JSON key reordering cannot change a restored preview.');
         $em = $client->getContainer()->get(EntityManagerInterface::class);
         self::assertSame($count, $em->getRepository(CoreContent::class)->count([]));
 
@@ -159,8 +174,9 @@ final class ContentMutationTest extends IntegrationWebTestCase
     public function testExpiryCancellationAndAccountBinding(): void
     {
         $client = self::createAuthenticatedClient();
-        $preview = $this->post($client, self::URL, ['action' => 'create', 'changes' => ['title' => 'Expire']]);
         $em = $client->getContainer()->get(EntityManagerInterface::class);
+        $initialContentCount = $em->getRepository(CoreContent::class)->count([]);
+        $preview = $this->post($client, self::URL, ['action' => 'create', 'changes' => ['title' => 'Expire']]);
         $operation = $em->find(AgentOperation::class, $preview['operationId']);
         (new \ReflectionProperty(AgentOperation::class, 'expiresAt'))->setValue($operation, new \DateTimeImmutable('-1 minute'));
         $em->flush();
@@ -175,11 +191,13 @@ final class ContentMutationTest extends IntegrationWebTestCase
         self::assertSame([], $em->find(AgentOperation::class, $preview['operationId'])->getChanges());
         $client->jsonRequest('POST', self::URL.'/'.$preview['operationId'].'/commit', ['confirmed' => true]);
         self::assertResponseStatusCodeSame(409);
+        self::assertSame($initialContentCount, $em->getRepository(CoreContent::class)->count([]), 'An expired operation must never create its target.');
 
         $cancel = $this->post($client, self::URL, ['action' => 'create', 'changes' => ['title' => 'Cancel']]);
         $this->post($client, self::URL.'/'.$cancel['operationId'].'/cancel');
         $client->jsonRequest('POST', self::URL.'/'.$cancel['operationId'].'/commit', ['confirmed' => true]);
         self::assertResponseStatusCodeSame(409);
+        self::assertSame($initialContentCount, $em->getRepository(CoreContent::class)->count([]), 'A cancelled operation must never create its target.');
 
         $client->jsonRequest('GET', self::URL.'/'.$cancel['operationId']);
         self::assertResponseIsSuccessful();

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import coreViteConfig from '../../core/crud-admin/vite.config'
 import { watchBusinessAdmin } from './watch-business.mjs'
 import { adminAgentPlugin } from './agent-plugin.mjs'
+import { agentManifestPlugin } from './manifest-plugin.mjs'
 
 const integrationDir = path.dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = path.resolve(integrationDir, '../..')
@@ -40,7 +41,8 @@ export default (configEnv: { mode: string; command: string }) => {
     plugins: [
       ...(coreConfig.plugins ?? []),
       watchBusinessAdmin(businessAdmin),
-      adminAgentPlugin(path.join(repositoryRoot, 'apps/admin-agent/src/entry.js'))
+      adminAgentPlugin(path.join(repositoryRoot, 'apps/admin-agent/src/entry.js')),
+      agentManifestPlugin()
     ],
     resolve: {
       ...coreConfig.resolve,

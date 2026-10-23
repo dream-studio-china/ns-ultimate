@@ -83,6 +83,51 @@ test('a pending status permits only a new explicit confirmation and an aborted r
   assert.equal(calls, 1)
 })
 
+test('a successful late response after commit cancellation is terminal and never retries the write', async() => {
+  let commitSignal
+  let resolveCommit
+  let commits = 0
+  const change = createPreparedChange(preview, {
+    commitRecordChange: (_id, signal) => {
+      commits += 1
+      commitSignal = signal
+      return new Promise(resolve => { resolveCommit = resolve })
+    }
+  })
+  const controller = new AbortController()
+  const submission = change.submit(true, controller.signal)
+  assert.equal(commits, 1)
+  assert.equal(change.state, 'submitting')
+
+  controller.abort()
+  assert.equal(commitSignal.aborted, true)
+  resolveCommit({ status: 'succeeded' })
+  assert.equal((await submission).state, 'succeeded')
+  assert.equal((await change.submit(true)).state, 'succeeded')
+  assert.equal(commits, 1)
+})
+
+test('an aborted dispatched request that rejects remains unknown and requires status recovery', async() => {
+  let commits = 0
+  let checks = 0
+  const change = createPreparedChange(preview, {
+    commitRecordChange: (_id, signal) => new Promise((_resolve, reject) => {
+      commits += 1
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true })
+    }),
+    getRecordChangeStatus: async() => { checks += 1; return { status: 'succeeded' } }
+  })
+  const controller = new AbortController()
+  const submission = change.submit(true, controller.signal)
+  controller.abort()
+  assert.equal((await submission).state, 'unknown')
+  assert.equal((await change.submit(true)).state, 'unknown')
+  assert.equal(commits, 1)
+  assert.equal((await change.recover()).state, 'succeeded')
+  assert.equal(checks, 1)
+  assert.equal(commits, 1)
+})
+
 test('only an explicit conflict response invalidates submission without an outcome check or retry', async() => {
   for (const error of [
     { response: { status: 409, data: { error: 'proposal_conflict' } } },
@@ -92,7 +137,11 @@ test('only an explicit conflict response invalidates submission without an outco
     Object.assign(new Error('cancelled'), { name: 'AbortError' })
   ]) {
     let commits = 0
-    const host = createMutationHost({ post: async() => { commits += 1; throw error } }, '/operations')
+    const host = createMutationHost({
+      get: async() => ({ data: preview }),
+      post: async() => { commits += 1; throw error }
+    }, '/operations', [{ entity: 'Content', actions: ['create'] }])
+    await host.restoreRecordChange(preview.operationId)
     const change = createPreparedChange(preview, host)
     const expected = error.response?.status === 409 && error.response.data?.error === 'proposal_conflict' ? 'conflicted' : 'unknown'
     assert.equal((await change.submit(true)).state, expected)
@@ -109,15 +158,19 @@ test('only an explicit conflict response invalidates submission without an outco
 test('pending outcome revalidates the original preview and never re-enables a stale proposal', async() => {
   for (const conflict of [true, false]) {
     const requests = []
+    let allowInitialRestore = true
     const host = createMutationHost({
       post: async() => { requests.push('commit'); throw new Error('lost response') },
       get: async path => {
         requests.push(path.endsWith('/preview') ? 'preview' : 'status')
         if (!path.endsWith('/preview')) return { data: { status: 'pending' } }
+        if (allowInitialRestore) { allowInitialRestore = false; return { data: preview } }
         if (conflict) throw { response: { status: 409, data: { error: 'proposal_conflict' } } }
         return { data: preview }
       }
-    }, '/operations')
+    }, '/operations', [{ entity: 'Content', actions: ['create'] }])
+    await host.restoreRecordChange(preview.operationId)
+    requests.length = 0
     const change = createPreparedChange(preview, host)
     await change.submit(true)
     assert.equal((await change.recover()).state, conflict ? 'conflicted' : 'ready')

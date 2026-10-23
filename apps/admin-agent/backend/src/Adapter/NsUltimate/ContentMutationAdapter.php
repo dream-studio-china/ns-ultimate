@@ -54,7 +54,12 @@ final class ContentMutationAdapter implements MutationAdapter
             $after = null;
         }
         $differences = [];
-        foreach ($action === 'delete' ? self::FIELDS : array_keys($changes) as $field) {
+        // Emit differences in the adapter's declared field order rather than the
+        // caller's key order. MySQL's JSON type reorders object keys when stored,
+        // so relying on the incoming order makes restored previews differ from
+        // the original preview on MySQL while matching on SQLite.
+        $changedFields = $action === 'delete' ? self::FIELDS : array_intersect(self::FIELDS, array_keys($changes));
+        foreach ($changedFields as $field) {
             $old = $before[$field] ?? null;
             $new = $after[$field] ?? null;
             if ($action !== 'update' || $old !== $new) $differences[] = ['property' => $field, 'before' => $old, 'after' => $new];

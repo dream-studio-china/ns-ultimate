@@ -51,7 +51,8 @@ The architecture documentation describes boundaries and current integration beha
 - For frontend changes, use the scripts declared in `core/crud-admin/package.json` (for example, `npm run type-check`, `npm test`, or the appropriate build script). Respect its lockfile and local Node/npm requirements.
 - For backend changes, use the scripts and requirements declared in `core/crud-skeleton/composer.json` and its project documentation (for example, Composer checks and PHPUnit). Respect its PHP/Symfony requirements and configured test services.
 - For integration or business changes, run the relevant core checks plus tests that exercise the composition boundary. Add deterministic tests for behavior and important failure cases.
-- For documentation-only changes, review the affected content and relative links; do not run unrelated application suites.
+- Follow [documentation ownership and maintenance](docs/operations/documentation.md): update the authoritative source and affected contracts/runbooks, not every referring page. Keep `docs/README.md` a stable navigation hub; routine code changes do not require updating it.
+- For documentation-only changes, review the affected content and run `node scripts/check-doc-links.mjs`; do not run unrelated application suites.
 - Do not claim checks passed unless they were run. Report what was checked and what remains unverified. Review the final diff for accidental core changes, stale documentation, and sensitive data.
 
 ## 6. Git and collaboration

@@ -16,6 +16,7 @@ var/data/
 var/keys/
 var/local-dev/
 var/docker-dev/
+var/admin-agent/
 /integration/backend/public/admin
 
 # Editors / OS

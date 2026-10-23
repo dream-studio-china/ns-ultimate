@@ -12,8 +12,8 @@ use App\Core\View\DeleteApiViewMixin;
 use App\Core\View\DetailApiViewMixin;
 use App\Core\View\ListApiViewMixin;
 use App\Core\View\UpdateApiViewMixin;
-use App\Store\Repository\StoreRepository;
 use NsUltimate\Business\Counter\Service\CounterService;
+use NsUltimate\Business\Counter\Service\CounterWriteService;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -34,7 +34,7 @@ final class CounterController extends RestController
 
     public function __construct(
         protected readonly CounterService $service,
-        private readonly StoreRepository $storeRepository,
+        private readonly CounterWriteService $writes,
     )
     {
     }
@@ -46,7 +46,9 @@ final class CounterController extends RestController
         if (!is_string($content['storeUuid'] ?? null) || !UUID::is_valid($content['storeUuid'])) {
             throw new \InvalidArgumentException('storeUuid must be a valid UUID.');
         }
-        if ($this->storeRepository->findOneByUuid($content['storeUuid']) === null) {
+        // Shared existence-only lookup; the assistant adapter applies the active-store
+        // and locking policy separately.
+        if ($this->writes->findStore($content['storeUuid']) === null) {
             throw new \InvalidArgumentException('Store does not exist.');
         }
         return $this->validateCounterFields($content);

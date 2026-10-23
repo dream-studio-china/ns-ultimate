@@ -1,0 +1,31 @@
+# Assistant printing configuration and attachments — 2026-10-23
+
+## Scope and coordination
+
+The user resumed assistant printing configuration/reprint development and added image display and file input. Development and tests used `opencode-go/deepseek-v4.1-flash`; reviews retained `openai/gpt-6.1-sol`. The configuration and bounded attachment packages completed local validation below; external printing/reprint remains excluded.
+
+Printing source inspection established that Store printing configuration has only a frontend schema, Store settings writes replace the entire JSON object, and the current business reprint service immediately invokes an external provider with a fresh random task key. A normal assistant mutation must not call that service inside its database transaction.
+
+The user explicitly selected **no business-module edits** when offered the minimum business extension required for safely queued, deduplicated reprints. Assistant reprint therefore stays disabled. Core files are also outside the authorized edit scope. No actual printer/provider calls are permitted during this validation.
+
+The implementation package consists of app-owned `StorePrinting` and `ProductPrinting` update adapters, fixed frontend schemas and deterministic tests. Store patches cover the five existing print cases and preserve unrelated settings; Product patches cover only the kitchen-print flag. Saving configuration does not submit a job, but enabling rules changes future automatic-printing behavior and must be explained in the confirmation preview.
+
+The parallel attachment package adds local image previews and bounded chat-file input. Explicit sending, provider disclosure, model vision opt-in, unsupported-format rejection, safe rendering, bounded request size and session cleanup are enforced boundaries. Supported formats and limits are maintained in the [app workflow](../../apps/admin-agent/README.md#images-and-file-input).
+
+## Verification during implementation
+
+The coordinator reran the composed backend after the printing dependency fixes: 276 tests / 4,906 assertions passed. The disposable-SQLite backend-to-frontend contract test passed with 60 actual prepared/restored previews, 30 committed mutations, 22 entity/action combinations and 10 entities. Printing fixtures verify settings preservation and unchanged PrinterJob/PrinterOrderRequest counts. The test expansion, frontend printing policy, knowledge guides and final backend dependency fixes passed Sol review. Sol independently reran the 34 printing tests / 259 assertions and the full backend suite. This does not establish MySQL concurrency guarantees for the new printing adapters.
+
+An isolated browser context, synthetic files, a fake host and intercepted model responses verified text-file selection without provider calls, explicit sending with the current text, no raw attachment text in the next request or preferences, local PNG preview, rejection before provider dispatch with vision off, and one local image-data part after explicit vision enablement. Disposal removed the mounted assistant. No actual model provider, printer or development-database mutation was used for these checks. This is not a real account-switch or live-provider compatibility test.
+
+First-pass reviews identified and requested fixes for mandatory image decoding, rotated JPEG dimensions, remote image URLs at the provider boundary, derived byte counts, busy file-drop handling and cancellation of stale attachment batches. Backend review also reproduced stale printer-account dependency state; the fix refreshes devices before collecting their actual accounts and compares fingerprints only after dependency locks/refresh, with raw-SQL regression tests that retain the identity map. Test passes before these fixes are not treated as final review approval.
+
+The coordinator's mounted fake-host browser checks subsequently verified deferred knowledge cancellation with zero provider calls; cancel/resend with the old completion unable to unlock the new task; busy file-drop default prevention; deferred first-file read followed by clear/reselection, with only the old first file and the new file read; and disposal/remount with no old filename/content leakage or second old-file read. A deliberately late mocked stream chunk after cancellation did not display its token sentinel. These are bounded simulated lifecycle checks, not real dual-account, delayed authenticated-read-result or live-provider acceptance. Core frontend type checking also passed. Attachment lifecycle re-review found no blockers.
+
+## Final checks and remaining limits
+
+The coordinator reran the final frontend suite: **142 passed, zero failed**; admin integration: **60 passed**. The final composed production build, frontend type check, document-link check and diff whitespace check passed. Existing vendor deprecation/build warnings remain. All scoped Sol re-reviews passed, including raster container/frame boundaries and APNG rejection. The final source also passed a fresh-context browser PNG preview/send check: vision off made zero mocked provider calls; explicit vision enablement produced one image part; raw image data was absent from preferences. All synthetic browser contexts were closed and the original authenticated page was preserved.
+
+Raster validation rejects missing PNG image chunks/CRC failures, JPEG headers without scans, truncated WebP chunks and header-only WebP frames. Animated PNG/WebP/GIF is rejected. Successful browser decoding is still mandatory: structural validation does not claim to implement a full compressed-pixel codec or accept every uncommon JPEG/WebP variant. No parser dependencies were added.
+
+No actual model-provider request, printer call, print job or development-database write was performed for this package's acceptance. Provider/model image compatibility, real dual-account switching, production concurrency and delayed authenticated-read rendering remain unverified. PDF and binary document input, remote Markdown images, server file storage and record-media uploads are not implemented. Assistant reprint remains blocked by the explicit no-business-edit decision, not silently enabled through another endpoint.
