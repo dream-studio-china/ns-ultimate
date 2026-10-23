@@ -14,6 +14,7 @@
  */
 
 import { validateRuleValue } from './capability-validation.js'
+import { isAgentActionAllowed } from './write-policy.js'
 
 const PROJECTION_SCHEMA_VERSION = 1
 const STANDARD_ACTIONS = Object.freeze(['create', 'update', 'delete'])
@@ -1030,7 +1031,7 @@ function narrowCapability(capability, entity, semanticBinding, semanticTarget) {
     if (!allowedActions.has(action)) continue
     if (action === 'delete') {
       if (semanticBinding) continue
-      if (entity.actions.delete.configured) actions.push(action)
+      if (entity.actions.delete.configured && isAgentActionAllowed(capability.entity, action)) actions.push(action)
       continue
     }
     const runtimeFields = capability.actionFields?.[action]

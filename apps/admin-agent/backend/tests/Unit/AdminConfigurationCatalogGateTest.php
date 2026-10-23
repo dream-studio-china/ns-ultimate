@@ -35,15 +35,11 @@ final class AdminConfigurationCatalogGateTest extends TestCase
         $catalog = $this->catalog($policy);
         $content = $catalog->build()['capabilities'][0];
 
-        self::assertSame(['create', 'update', 'delete'], $content['actions']);
+        self::assertSame(['create', 'update'], $content['actions']);
         self::assertSame(['title', 'body'], array_keys($content['actionFields']['create']));
         self::assertSame(['title'], array_keys($content['actionFields']['update']));
         self::assertSame(['title', 'body'], array_keys($content['fields']));
-        self::assertSame(
-            ['title', 'body', 'category', 'tags', 'metadata', 'sortOrder'],
-            array_keys($content['deletePreviewFields']),
-            'Delete preview metadata is the full safe explicit policy, not a write grant.',
-        );
+        self::assertArrayNotHasKey('deletePreviewFields', $content);
         self::assertArrayNotHasKey('delete', $content['actionFields']);
     }
 
@@ -57,7 +53,7 @@ final class AdminConfigurationCatalogGateTest extends TestCase
         self::assertNotContains('create', $content['actions']);
         self::assertArrayNotHasKey('create', $content['actionFields']);
         self::assertContains('update', $content['actions']);
-        self::assertContains('delete', $content['actions']);
+        self::assertNotContains('delete', $content['actions']);
     }
 
     public function testEntityAbsentOrDeleteDisabledIsOmittedOrLosesDelete(): void

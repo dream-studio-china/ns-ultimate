@@ -9,6 +9,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Apps\AdminAgent\Backend\Entity\AgentOperation;
 use NsUltimate\Apps\AdminAgent\Backend\Exception\ProposalConflictException;
 use NsUltimate\Apps\AdminAgent\Backend\Policy\AdminConfigurationPolicy;
+use NsUltimate\Apps\AdminAgent\Backend\Policy\AgentMutationPolicy;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -42,6 +43,7 @@ final class AgentOperationService
         if ($input['action'] === 'delete' && $changes !== []) throw new BadRequestHttpException('Deletion cannot include field changes.');
 
         $adapter = $this->adapters->get($input['entity']);
+        AgentMutationPolicy::assertPrepareAllowed($input['entity'], $input['action']);
         $adapter->authorize($input['action'], $identifier);
         $this->configuration->assertPrepareAllowed($input['entity'], $input['action'], $changes);
         $draft = $adapter->prepare($input['action'], $identifier, $changes);
@@ -63,6 +65,7 @@ final class AgentOperationService
             $adapter = $this->adapters->get($operation->getEntityKey());
             $adapter->authorize($operation->getAction(), $operation->getTargetId());
             if ($operation->getStatus() === 'succeeded') return $operation->receipt();
+            AgentMutationPolicy::assertExistingProposalAllowed($operation->getEntityKey(), $operation->getAction());
             if ($operation->getStatus() !== 'pending' || $operation->getExpiresAt() <= new \DateTimeImmutable()) {
                 throw new ConflictHttpException('This operation is cancelled or expired. Prepare a new preview.');
             }
@@ -118,6 +121,7 @@ final class AgentOperationService
         return $this->em->wrapInTransaction(function () use ($actor, $id): array {
             $operation = $this->operation($actor, $id, true);
             $adapter = $this->adapters->get($operation->getEntityKey());
+            AgentMutationPolicy::assertExistingProposalAllowed($operation->getEntityKey(), $operation->getAction());
             $adapter->authorize($operation->getAction(), $operation->getTargetId());
             if ($operation->receipt()['status'] !== 'pending') throw new ConflictHttpException('Only an unexpired pending operation can be restored. Check its outcome.');
             $snapshot = $this->configuration->snapshot();

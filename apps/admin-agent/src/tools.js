@@ -25,7 +25,7 @@ function describeBatchPolicy(entities) {
   }))
 }
 
-export function createAssistantTools(catalog, navigation = [], previewPolicy = {}, writeCapabilities = [], inspectionPolicy = {}, batchCapabilities = []) {
+export function createAssistantTools(catalog, navigation = [], previewPolicy = {}, writeCapabilities = [], inspectionPolicy = {}, batchCapabilities = [], manualDeletePages = []) {
   const readable = catalog.filter(item => item.readable)
   const inspectable = Object.keys(inspectionPolicy || {}).filter(key => readable.some(item => item.key === key))
   const tools = [{
@@ -54,6 +54,24 @@ export function createAssistantTools(catalog, navigation = [], previewPolicy = {
           properties: {
             page: { type: 'string', enum: navigation.map(item => item.key) },
             identifier: { type: 'string', description: 'Optional positive numeric record ID or UUID; opens the record detail view.' }
+          },
+          required: ['page'],
+          additionalProperties: false
+        }
+      }
+    })
+  }
+  if (manualDeletePages.length) {
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'offer_admin_navigation',
+        description: `Offer a user-clickable link to the ordinary admin page when an assistant deletion is prohibited but the current admin configuration permits deletion. This does not navigate or delete. Use only after explaining that the assistant cannot delete this entity. Pages: ${JSON.stringify(manualDeletePages.map(page => ({ key: page.key, entity: page.entity })))}`,
+        parameters: {
+          type: 'object',
+          properties: {
+            page: { type: 'string', enum: manualDeletePages.map(item => item.key) },
+            identifier: { type: 'string', description: 'Optional exact numeric ID or UUID; if provided, offer the registered record detail route.' }
           },
           required: ['page'],
           additionalProperties: false
@@ -170,7 +188,7 @@ export function createAssistantTools(catalog, navigation = [], previewPolicy = {
   return tools
 }
 
-export async function executeAssistantTool({ call, catalog, navigation = [], previewPolicy = {}, snapshots = new Map(), host, operations, batchCapabilities = [], onReadAudit = () => {}, onPreparedChange = () => {}, onPreparedBatch = () => {}, signal, assertActive = () => {} }) {
+export async function executeAssistantTool({ call, catalog, navigation = [], manualDeletePages = [], previewPolicy = {}, snapshots = new Map(), host, operations, batchCapabilities = [], onReadAudit = () => {}, onPreparedChange = () => {}, onPreparedBatch = () => {}, onNavigationLink = () => {}, signal, assertActive = () => {} }) {
   if (!call || call.type !== 'function' || !call.function || typeof call.function.name !== 'string') {
     return { error: 'Unsupported tool call.' }
   }
@@ -324,6 +342,26 @@ export async function executeAssistantTool({ call, catalog, navigation = [], pre
     } catch (error) {
       return { error: error.message || 'The admin page could not be opened.' }
     }
+  }
+  if (call.function.name === 'offer_admin_navigation') {
+    let args
+    try { args = JSON.parse(call.function.arguments || '') } catch { return { error: 'Invalid navigation arguments.' } }
+    if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).some(key => !['page', 'identifier'].includes(key))) {
+      return { error: 'Navigation arguments contain unsupported parameters.' }
+    }
+    const page = manualDeletePages.find(item => item.key === args.page)
+    if (!page) return { error: 'This manual admin destination is not available.' }
+    try { resolveAdminNavigation(navigation, args.page, args.identifier) }
+    catch (error) { return { error: error.message || 'Navigation was rejected by policy.' } }
+    if (typeof host?.getAdminNavigationLink !== 'function') return { error: 'Admin navigation links are not available.' }
+    const link = host.getAdminNavigationLink(args.page, args.identifier)
+    if (!link || typeof link.href !== 'string' || !link.href.startsWith('/') || link.href.startsWith('//')
+      || /[\\?#\u0000-\u001f]/.test(link.href) || link.href.split('/').includes('..')) {
+      return { error: 'The admin page is not available to the current account.' }
+    }
+    assertActive()
+    onNavigationLink({ title: page.title, href: link.href, identifier: args.identifier || null })
+    return { offered: true, page: page.title }
   }
   if (call.function.name !== 'query_records') return { error: 'This tool is not available.' }
   let input
