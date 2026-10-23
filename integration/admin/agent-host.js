@@ -7,6 +7,7 @@ import mutationCapabilities from '../../apps/admin-agent/adapters/ns-ultimate/ad
 import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/inspection.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createMutationHost } from '../../apps/admin-agent/src/mutation-host.js'
+import { createBatchMutationHost } from '../../apps/admin-agent/src/batch-mutation-host.js'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import { buildCapabilityCatalog, formatAdminReadError, prepareRecordQuery, sanitizeRecordResults } from '../../apps/admin-agent/src/capabilities.js'
 import { buildAdminPageCatalog, resolveAdminNavigation } from '../../apps/admin-agent/src/navigation.js'
@@ -39,6 +40,7 @@ export function createAdminAgentHost() {
 
   return {
     ...createMutationHost(request, `${defaultPrefix}/agent/operations`, mutationCapabilities),
+    ...createBatchMutationHost(request, `${defaultPrefix}/agent/batch-operations`, mutationCapabilities),
     getWritePreviewPolicy() { return previewPolicy },
     getCatalog,
     getInspectionPolicy() { return recordInspectionPolicy },
