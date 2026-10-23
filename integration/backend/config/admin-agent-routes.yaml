@@ -1,4 +1,0 @@
-admin_agent:
-    resource: '../../../apps/admin-agent/backend/src/Controller/'
-    type: attribute
-    prefix: /api/v1/manage

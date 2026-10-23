@@ -10,7 +10,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-#[AsCommand(name: 'app:admin-agent:prune', description: 'Erase expired assistant proposal values while retaining execution metadata.')]
+#[AsCommand(name: 'app:admin-agent:prune', description: 'Retire legacy assistant proposals and erase their values, retaining execution metadata.')]
 final class PruneAgentOperationsCommand extends Command
 {
     public function __construct(private readonly Connection $connection)
@@ -20,17 +20,18 @@ final class PruneAgentOperationsCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $count = (int) $this->connection->executeStatement(
-            'UPDATE admin_agent_operation SET changes = ?, status = ?, completed_at = ? WHERE status = ? AND expires_at <= ?',
-            ['[]', 'expired', new \DateTimeImmutable(), 'pending', new \DateTimeImmutable()],
-            ['string', 'string', 'datetime_immutable', 'string', 'datetime_immutable'],
-        );
-        $count += (int) $this->connection->executeStatement(
-            'UPDATE admin_agent_batch_operation SET proposal_rows = ?, status = ?, completed_at = ? WHERE status = ? AND expires_at <= ?',
-            ['[]', 'expired', new \DateTimeImmutable(), 'pending', new \DateTimeImmutable()],
-            ['string', 'string', 'datetime_immutable', 'string', 'datetime_immutable'],
-        );
-        $output->writeln(sprintf('Erased %d expired proposal payload(s).', $count));
+        $count = 0;
+        foreach (['admin_agent_operation' => 'changes', 'admin_agent_batch_operation' => 'proposal_rows'] as $table => $column) {
+            if (!$this->connection->createSchemaManager()->tablesExist([$table])) {
+                continue;
+            }
+            $count += (int) $this->connection->executeStatement(
+                sprintf('UPDATE %s SET %s = ?, status = ?, completed_at = ? WHERE status = ?', $table, $column),
+                ['[]', 'cancelled', new \DateTimeImmutable(), 'pending'],
+                ['string', 'string', 'datetime_immutable', 'string'],
+            );
+        }
+        $output->writeln(sprintf('Retired %d legacy proposal(s). Historical receipts were retained.', $count));
         return Command::SUCCESS;
     }
 }

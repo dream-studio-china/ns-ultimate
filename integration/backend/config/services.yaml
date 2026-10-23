@@ -11,9 +11,3 @@ services:
     NsUltimate\Integration\Backend\Validator\JsonSchemaValidationListener:
         tags:
             - { name: doctrine.event_listener, event: onFlush, method: onFlush }
-
-    NsUltimate\Apps\AdminAgent\Backend\Contract\ActorIdentityProvider:
-        alias: NsUltimate\Integration\Backend\AdminAgentActorIdentity
-
-    # Explicitly enable the app-owned binding for this host; adapters are not auto-discovered.
-    NsUltimate\Apps\AdminAgent\Backend\Adapter\NsUltimate\ContentMutationAdapter: ~

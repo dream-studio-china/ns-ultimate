@@ -4,13 +4,10 @@
  * crud-admin configuration is the first capability boundary for the assistant.
  * This module never imports Vue, browser globals, request clients, or host
  * modules. It turns already-merged effective entity/route configuration into
- * serializable standard action metadata, then narrows a runtime capability
- * catalog so tools and transports use exactly the same instances.
+ * serializable standard action metadata for tools and CRUD transports.
  *
  * Configuration projection is not authorization. The authenticated backend
- * capability catalog remains the current execution authority; the returned
- * intersection is intentionally provisional until a trusted host execution
- * bridge replaces the separate mutation adapters.
+ * CRUD endpoints remain the execution and authorization authority.
  */
 
 import { validateRuleValue } from './capability-validation.js'
@@ -37,6 +34,11 @@ const TYPE_ALIASES = Object.freeze({
   textarea: 'string',
   email: 'string',
   code: 'string',
+  password: 'string',
+  float: 'number',
+  decimal: 'number',
+  smallint: 'integer',
+  bigint: 'integer',
   integer: 'integer',
   number: 'number',
   currency: 'number',
@@ -55,7 +57,7 @@ const TYPE_ALIASES = Object.freeze({
 
 // File/image/password controls need a dedicated host flow; they must not be
 // offered to the model as ordinary field writes.
-const UNSUPPORTED_FIELD_TYPES = new Set(['password', 'file', 'image', 'images', 'transfer'])
+const UNSUPPORTED_FIELD_TYPES = new Set(['file', 'image', 'images', 'transfer'])
 
 function isPlainRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -363,6 +365,7 @@ function fieldDisablePolicy(field) {
   let disabled = false
   for (const options of [field, field.field_options, field.type_options]) {
     if (!isPlainRecord(options)) continue
+    if (options.editable === false) disabled = true
     for (const key of ['disabled', 'readOnly', 'readonly']) {
       if (!Object.hasOwn(options, key) || options[key] === undefined) continue
       const parsed = policyBoolean(options[key])
@@ -589,8 +592,14 @@ function projectForm(form, entityLabel, unsupported, componentBindings, schemaFo
   const fields = []
   let wildcard = false
   for (const raw of form.fields) {
+    const previousUnsupported = unsupported.length
     const projected = projectField(raw, entityLabel, seen, unsupported, componentBindings, schemaFormResolver)
-    if (!projected) continue
+    if (!projected) {
+      if (isPlainRecord(raw) && raw.required === true) {
+        for (const item of unsupported.slice(previousUnsupported)) item.required = true
+      }
+      continue
+    }
     if (projected.wildcard) {
       wildcard = true
       continue

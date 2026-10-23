@@ -180,7 +180,7 @@ test('batch host inspection requires explicit batch capabilities and all five ho
       actionFields: { create: { code: { type: 'string', requiredOnCreate: true } } }
     }]
   })
-  assert.equal(missingStore.available, false)
+  assert.equal(missingStore.available, true)
 })
 
 test('model batch requests use only declared fields, canonical values and one explicit Counter store', () => {

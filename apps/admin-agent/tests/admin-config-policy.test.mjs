@@ -448,9 +448,8 @@ test('configured types, defaults, static options and relations are projected wit
   assert.deepEqual(fields.get('kind').options, [{ value: 'a', label: 'Alpha' }])
   assert.ok(fields.get('settings').nestedPaths.includes('printing.order'))
   assert.ok(fields.get('settings').sourcePaths.includes('settings.printing.order'))
-  assert.equal(fields.has('password'), false)
+  assert.equal(fields.get('password').type, 'string')
   assert.equal(fields.has('unsafeDefault'), false)
-  assert.ok(projection.unsupported.some(item => item.property === 'password' && item.reason === 'unsupported_type'))
   assert.ok(projection.unsupported.some(item => item.property === 'unsafeDefault' && item.reason === 'unsafe_default'))
 })
 

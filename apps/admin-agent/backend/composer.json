@@ -1,13 +1,12 @@
 {
     "name": "ns-ultimate/admin-agent-backend",
-    "description": "Embeddable Symfony operation lifecycle for the admin agent app; domain adapters are supplied by the host.",
+    "description": "Legacy admin-agent receipt mappings, migration history and explicit proposal retirement.",
     "type": "library",
     "require": {
         "php": ">=8.4",
         "doctrine/orm": "^3.6",
         "doctrine/migrations": "^3.9",
-        "symfony/framework-bundle": "^8.1",
-        "symfony/security-bundle": "^8.1"
+        "symfony/framework-bundle": "^8.1"
     },
     "autoload": {
         "psr-4": {

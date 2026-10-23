@@ -68,7 +68,7 @@ final class Kernel extends CoreKernel
         }
 
         $container->import(__DIR__.'/../config/services.yaml');
-        // Explicitly compose this app package; apps are not discovered as business modules.
+        // Retain legacy receipt mappings/migrations and explicit payload cleanup, not HTTP execution.
         $agentBackend = self::repositoryRoot().'/apps/admin-agent/backend';
         $container->import($agentBackend.'/config/services.yaml');
         $container->extension('doctrine', ['orm' => ['mappings' => ['AdminAgent' => [
@@ -78,6 +78,7 @@ final class Kernel extends CoreKernel
         $container->extension('doctrine_migrations', ['migrations_paths' => [
             'NsUltimate\\Apps\\AdminAgent\\Backend\\Migrations' => $agentBackend.'/migrations',
         ]]);
+        // Historical mapped entities still participate in metadata translation checks.
         $container->extension('framework', ['translator' => ['paths' => [$agentBackend.'/translations']]]);
         $projectTranslationDirectory = dirname(__DIR__).'/translations';
         if (is_dir($projectTranslationDirectory)) {
@@ -184,7 +185,6 @@ final class Kernel extends CoreKernel
         RouteImportGuard::import($routes, $configDir.'/{routes}/'.$this->getEnvironment().'/*.{php,yaml}');
         RouteImportGuard::import($routes, $configDir.'/routes/*.{php,yaml}');
         RouteImportGuard::import($routes, $configDir.'/routes.yaml');
-        RouteImportGuard::import($routes, __DIR__.'/../config/admin-agent-routes.yaml');
 
         $modules = $this->modules();
         foreach ($modules as $module) {

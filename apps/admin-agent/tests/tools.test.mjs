@@ -282,9 +282,9 @@ test('declares a create-only batch tool only for explicit host batch capabilitie
   assert.deepEqual(tool.parameters.properties.action.enum, ['create'])
   assert.equal(tool.parameters.properties.rows.maxItems, 20)
   assert.equal(tool.parameters.properties.rows.minItems, 1)
-  assert.match(tool.description, /explicitly asks to create/)
+  assert.match(tool.description, /explicitly requests these records/)
   assert.match(tool.description, /untrusted data/)
-  assert.match(tool.description, /same explicit existing Store UUID/)
+  assert.match(tool.description, /not atomically/)
   assert.equal(tools.some(item => /commit|execute|submit/i.test(item.function.name)), false)
 })
 

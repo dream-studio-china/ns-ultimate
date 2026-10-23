@@ -22,7 +22,7 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 25
+const EXPECTED_CASE_COUNT = 26
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
@@ -1680,6 +1680,78 @@ function contextCheckAfterReader(ctx) {
 
 const CASES = [
   {
+    name: 'config-driven local preview submits existing CRUD only after confirmation and reports session-only history',
+    async run(ctx) {
+      const [{ createConfigMutationHost }, { buildAdminConfigProjection }, { agentMutationPolicy }] = await Promise.all([
+        ctx.guard(import('../../src/config-mutation-host.js'), 'config-driven CRUD host'),
+        ctx.guard(import('../../src/admin-config-policy.js'), 'effective form projector'),
+        ctx.guard(import('../../adapters/ns-ultimate/admin/write-policy.mjs'), 'host mutation exceptions')
+      ])
+      const config = {
+        entities: { Page: { form: { fields: ['title', 'summary', { property: 'metadata', type: 'json' }] }, list: {} } },
+        routes: [{ name: 'PageList', path: '/pages/list' }]
+      }
+      const requests = []
+      const mutations = createConfigMutationHost({
+        policy: agentMutationPolicy,
+        getProjection: () => buildAdminConfigProjection(config),
+        request: {
+          get: async(path) => { requests.push(['GET', path]); return { data: { id: 7, title: 'Before', summary: 'Before summary', metadata: {} } } },
+          put: async(path, changes) => { requests.push(['PUT', path, changes]); return { data: { id: 7 } } }
+        }
+      })
+      const base = createSyntheticHost({ key: 'Page', name: 'Page' })
+      const host = { ...base, ...mutations,
+        getChatHistoryScope: () => 'acceptance-page-chat',
+        getNavigationCatalog: () => [{ key: 'PageList', entity: 'Page', title: 'Pages', path: '/pages/list' }],
+        getAdminNavigationLink: (key, identifier) => key === 'PageList'
+          ? { href: identifier ? `/pages/detail/${identifier}` : '/pages/list', view: identifier ? 'detail' : 'list' } : null,
+        dispose() { base.dispose(); mutations.dispose() }
+      }
+      const provider = ctx.createProvider()
+      provider.enqueueToolCall('prepare_record_change', { entity: 'Page', action: 'update', identifier: '7', changes: { summary: 'Configured field sentinel', metadata: { customKey: [1, true] } } })
+      provider.enqueueText('Review the local preview.')
+      installConfirm(ctx)
+      const agent = await ctx.mount({ host, provider })
+      sendText(agent, 'Update the page summary and metadata.')
+      await provider.waitForRequests(2, ctx)
+      await waitForIdle(agent)
+      equal(requests.filter(item => item[0] === 'PUT').length, 0, 'Preparation must not write')
+      includes(agent.shadow.textContent, 'Configured field sentinel', 'The configured new field must be previewed')
+      const confirm = findButton(agent.shadow, /^Confirm and save$/)
+      ok(confirm && !confirm.disabled, 'A config-driven confirmation must be available')
+      confirm.click()
+      await ctx.waitFor(() => agent.shadow.textContent.includes('recorded only in this browser session'), { root: agent.shadow, label: 'acknowledged CRUD save' })
+      equal(requests.filter(item => item[0] === 'PUT').length, 1, 'Explicit confirmation must write exactly once')
+      equal(requests.at(-1)[1], '/api/v1/manage/pages/7', 'The existing configured CRUD endpoint must be used')
+      equal(requests.at(-1)[2].summary, 'Configured field sentinel', 'The exact preview payload must be submitted')
+      equal(requests.some(item => item[1].includes('/agent/')), false, 'No retired Agent endpoint may be called')
+      const details = agent.shadow.querySelector('a.admin-navigation-link')
+      ok(details, 'An acknowledged update must render a record details link')
+      equal(details.getAttribute('href'), '/pages/detail/7', 'The details link must retain the host-provided href')
+      equal(details.getAttribute('rel'), 'noopener', 'The link must retain its navigation attributes')
+      let clickedHref = null
+      details.addEventListener('click', event => { clickedHref = event.currentTarget.getAttribute('href'); event.preventDefault() }, { once: true })
+      details.click()
+      equal(clickedHref, '/pages/detail/7', 'The details anchor must be clickable without submitting another write')
+      equal(requests.filter(item => item[0] === 'PUT').length, 1, 'Opening details must not repeat the write')
+      findButton(agent.shadow, /^Operations$/).click()
+      await ctx.waitFor(() => agent.shadow.textContent.includes('Reloading or signing out loses them'), { root: agent.shadow, label: 'session history warning' })
+      findButton(agent.shadow, /^Chat sessions$/).click()
+      const savedChat = findButton(agent.shadow, /^Update the page summary and metadata\.$/)
+      ok(savedChat, 'The sidebar must list the current saved chat')
+      findButton(agent.shadow, /^New chat$/).click()
+      equal(agent.shadow.querySelectorAll('a.admin-navigation-link').length, 0, 'A new chat must clear old executable cards and links')
+      findButton(agent.shadow, /^Chat sessions$/).click()
+      findButton(agent.shadow, /^Update the page summary and metadata\.$/).click()
+      includes(agent.shadow.textContent, 'Review the local preview.', 'Switching sessions must restore assistant text')
+      includes(agent.shadow.textContent, 'Previous actions and results are historical', 'Restored text must not claim current verification')
+      equal(agent.shadow.querySelectorAll('a.admin-navigation-link').length, 0, 'Restoring chat must not restore operation cards')
+      equal(requests.filter(item => item[0] === 'PUT').length, 1, 'Switching sessions must never replay writes')
+      return { existingCrud: true, confirmationRequired: true, sessionOnly: true }
+    }
+  },
+  {
     name: 'chooser selection renders locally without a provider request',
     async run(ctx) {
       const provider = ctx.createProvider()
@@ -3048,7 +3120,7 @@ const CASES = [
       const agent = await ctx.mount({ host })
       const labels = [...agent.shadow.querySelectorAll('.sidebar button')]
         .map(button => button.getAttribute('aria-label'))
-      equal(labels.join(','), 'Read activity,Operations,Settings', 'Sidebar order or controls changed')
+      equal(labels.join(','), 'Chat sessions,Read activity,Operations,Settings', 'Sidebar order or controls changed')
       const composerButtons = [...agent.shadow.querySelectorAll('.send-row button')]
         .map(button => button.textContent.trim())
       equal(composerButtons.length, 2, 'The composer footer must keep only attach and send')

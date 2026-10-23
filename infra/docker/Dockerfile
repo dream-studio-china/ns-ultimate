@@ -27,11 +27,10 @@ RUN composer install \
     --no-dev --no-scripts --no-interaction --no-progress --prefer-dist --no-autoloader
 
 COPY . /srv/app
-COPY --from=admin-build /workspace/var/admin-agent/admin-manifest.json /srv/app/var/admin-agent/admin-manifest.json
 RUN composer dump-autoload \
     --working-dir=/srv/app/core/crud-skeleton \
     --no-dev --no-scripts --no-interaction --optimize \
-    && mkdir -p /srv/app/var/cache/backend /srv/app/var/log/backend /srv/app/var/data /srv/app/var/admin-agent \
+    && mkdir -p /srv/app/var/cache/backend /srv/app/var/log/backend /srv/app/var/data \
         /srv/app/core/crud-skeleton/public/uploads \
     && chown -R www-data:www-data /srv/app/var /srv/app/core/crud-skeleton/public/uploads
 

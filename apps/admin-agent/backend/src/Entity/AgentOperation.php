@@ -6,7 +6,7 @@ namespace NsUltimate\Apps\AdminAgent\Backend\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 
-/** Durable pending proposal and minimal execution receipt; never exposed by generic CRUD. */
+/** Legacy receipt mapping retained for deployed data; no active assistant execution service uses it. */
 #[ORM\Entity]
 #[ORM\Table(name: 'admin_agent_operation')]
 final class AgentOperation

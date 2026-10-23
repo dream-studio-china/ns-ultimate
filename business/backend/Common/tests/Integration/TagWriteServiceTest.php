@@ -44,7 +44,7 @@ final class TagWriteServiceTest extends IntegrationWebTestCase
     public function testNormalizationAndValidationShareTheSchema(): void
     {
         self::bootKernel();
-        $service = self::getContainer()->get(TagWriteService::class);
+        $service = new TagWriteService(self::getContainer()->get(EntityManagerInterface::class));
 
         self::assertSame(
             ['name' => '  A tag  ', 'slug' => 'a-tag', 'color' => '#A1b2C3'],
@@ -72,8 +72,8 @@ final class TagWriteServiceTest extends IntegrationWebTestCase
     public function testLookupUniquenessUnusedCheckAndStagingDoNotFlush(): void
     {
         self::bootKernel();
-        $service = self::getContainer()->get(TagWriteService::class);
         $em = self::getContainer()->get(EntityManagerInterface::class);
+        $service = new TagWriteService($em);
         $tag = new Tag('Service tag', 'service-tag');
         $em->persist($tag);
         $em->flush();
