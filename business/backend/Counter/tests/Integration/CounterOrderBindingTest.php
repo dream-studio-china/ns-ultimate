@@ -17,6 +17,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
+use NsUltimate\Business\Counter\Entity\CounterSession;
+use NsUltimate\Business\Counter\Entity\OrderMerge;
 use NsUltimate\Business\Counter\Migrations\Version20261011020000;
 use NsUltimate\Integration\Backend\Kernel;
 use Psr\Log\NullLogger;
@@ -56,8 +58,12 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertInstanceOf(Route::class, $routes->get('app-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('manage-order-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('app-counter-orders-list'));
+        self::assertInstanceOf(Route::class, $routes->get('app-counter-orders-merge'));
+        self::assertInstanceOf(Route::class, $routes->get('store-counters-session-end'));
         self::assertContains(Counter::class, $entityNames);
         self::assertContains(OrderCounter::class, $entityNames);
+        self::assertContains(CounterSession::class, $entityNames);
+        self::assertContains(OrderMerge::class, $entityNames);
         foreach ([
             'business-counters-list' => '/manage/counters',
             'manage-order-counters-list' => '/manage/order-counters',
@@ -65,6 +71,8 @@ final class CounterOrderBindingTest extends KernelTestCase
             'store-order-counters-list' => '/store/{scopeId}/order-counters',
             'app-counters-list' => '/app/counters',
             'app-counter-orders-list' => '/app/counters/{counterUuid}/orders',
+            'app-counter-orders-merge' => '/app/counters/{counterUuid}/orders/merge',
+            'store-counters-session-end' => '/store/{scopeId}/counters/{counterUuid}/sessions/end',
         ] as $name => $path) {
             self::assertSame($path, $routes->get($name)?->getPath());
             self::assertSame('/api/v1'.$path, $routes->get('api-v1-'.$name)?->getPath());
@@ -124,7 +132,7 @@ final class CounterOrderBindingTest extends KernelTestCase
     {
         $schemaManager = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->createSchemaManager();
 
-        self::assertTrue($schemaManager->tablesExist(['counter', 'counter_order']));
+        self::assertTrue($schemaManager->tablesExist(['counter', 'counter_order', 'counter_session', 'counter_order_merge']));
         self::assertFalse($schemaManager->tablesExist(['business_counter', 'business_order_counter']));
     }
 
@@ -256,13 +264,14 @@ final class CounterOrderBindingTest extends KernelTestCase
         foreach ([$user, $store, $counter, $openOrder, $completedOrder, $yesterdayOrder] as $entity) {
             $entityManager->persist($entity);
         }
+        $entityManager->flush();
         foreach ([$openOrder, $completedOrder, $yesterdayOrder] as $order) {
             $entityManager->persist((new OrderCounter())
                 ->setTradeOrderUuid($order->getUuid())
                 ->setStoreUuid($store->getUuid())
                 ->setCounter($counter));
         }
-        $entityManager->flush();
+        $entityManager->wrapInTransaction(static function (): void {});
 
         $yesterday = (new \DateTimeImmutable('today', new \DateTimeZone($store->getTimezone())))
             ->modify('-1 day')
@@ -360,7 +369,7 @@ final class CounterOrderBindingTest extends KernelTestCase
         ]);
         $entityManager->persist($order);
         $entityManager->persist(new OrderStoreLifecycle($order->getUuid(), $storeUuid));
-        $entityManager->flush();
+        $entityManager->wrapInTransaction(static function (): void {});
 
         $bindings = $entityManager->getRepository(OrderCounter::class)->findBy(['tradeOrderUuid' => $order->getUuid()]);
         self::assertCount(2, $bindings);

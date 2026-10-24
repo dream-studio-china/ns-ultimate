@@ -52,6 +52,11 @@ final class Kernel extends CoreKernel
         $container->import($configDir.'/{packages}/'.$this->getEnvironment().'/*.{php,yaml}');
         $container->import($configDir.'/services.yaml');
         $container->import($configDir.'/{services}_'.$this->getEnvironment().'.yaml');
+        // Counter's terminal merge state is application composition, not a core workflow change.
+        $container->extension('framework', ['workflows' => ['order' => [
+            'places' => ['merged'],
+            'transitions' => ['merge' => ['from' => ['pending', 'confirmed'], 'to' => 'merged']],
+        ]]]);
 
         $businessRoot = self::repositoryRoot().'/business/backend';
         $builder->addResource(new GlobResource($businessRoot, '/*/src', true, true));

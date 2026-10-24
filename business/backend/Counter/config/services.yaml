@@ -1,0 +1,3 @@
+services:
+    App\Trade\Service\OrderServiceInterface:
+        alias: App\Trade\Service\OrderService

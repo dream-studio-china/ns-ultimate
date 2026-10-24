@@ -14,6 +14,9 @@ use App\Store\Entity\Store;
 use App\Store\Service\StoreServiceInterface;
 use App\Store\View\StoreScopedAuthorizationApiMixin;
 use NsUltimate\Business\Counter\Service\CounterService;
+use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Service\CounterSessionService;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -35,7 +38,33 @@ final class CounterController extends RestController
     public function __construct(
         protected readonly CounterService $service,
         private readonly StoreServiceInterface $storeService,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly CounterSessionService $sessions,
     ) {
+    }
+
+    #[Route('/{counterUuid}/sessions/end', name: 'session-end', methods: ['POST'], requirements: ['counterUuid' => '[0-9a-fA-F-]{36}'])]
+    public function endSessionAction(string $counterUuid): \Symfony\Component\HttpFoundation\Response
+    {
+        try {
+            $this->authorizeStoreAction('update');
+            $store = $this->storeForAuthorization();
+            $connection = $this->entityManager->getConnection();
+            $connection->beginTransaction();
+            $counter = $this->entityManager->getRepository(Counter::class)->findOneBy(['uuid' => $counterUuid, 'storeUuid' => $store->getUuid()]);
+            if (!$counter instanceof Counter) {
+                throw new \DomainException('Counter not found.');
+            }
+            $session = $this->sessions->end($counter);
+            $this->entityManager->flush();
+            $connection->commit();
+            return $this->success(['counterSessionUuid' => $session->getUuid()], 'Counter session ended');
+        } catch (\Throwable $error) {
+            if (isset($connection) && $connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+            return $this->warning($error->getMessage(), 400, '', 400);
+        }
     }
 
     /** @return array<string, mixed> */
