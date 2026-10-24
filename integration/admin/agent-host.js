@@ -13,6 +13,7 @@ import { createDeleteGuard } from '../../apps/admin-agent/adapters/ns-ultimate/a
 import { specialWrite } from '../../apps/admin-agent/adapters/ns-ultimate/admin/special-writes.mjs'
 import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/inspection.mjs'
 import { createRecordRead, recordReadPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/record-read.mjs'
+import { readCatalogPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/read-policy.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createConfigMutationHost } from '../../apps/admin-agent/src/config-mutation-host.js'
 import { buildAdminConfigProjection } from '../../apps/admin-agent/src/admin-config-policy.js'
@@ -67,11 +68,7 @@ export function createAdminAgentHost() {
     })
   }
   const getCatalog = operations => {
-    const catalog = buildCapabilityCatalog(Object.fromEntries(configuredEntities), operations, { parameterize, defaultPrefix })
-    // A documented collection endpoint is not enough: the model must not be
-    // offered a collection that has no page available to the current account.
-    const available = new Set(accessibleNavigation().flatMap(page => [page.entity, page.entityKey]).filter(Boolean))
-    return catalog.map(item => available.has(item.name) || available.has(item.key) ? item : { ...item, readable: false })
+    return buildCapabilityCatalog(Object.fromEntries(configuredEntities), operations, { parameterize, defaultPrefix, readPolicy: readCatalogPolicy })
   }
   const isRecordPageAvailable = entity => accessibleNavigation().some(page => page.entity === entity || page.entityKey === entity)
   const inspectRecordConfiguration = createRecordInspection({ request, getCatalog, isRecordPageAvailable })
@@ -167,7 +164,6 @@ export function createAdminAgentHost() {
     async queryRecords(input, operations, signal) {
       const catalog = getCatalog(operations)
       const query = prepareRecordQuery(input, catalog)
-      if (!isRecordPageAvailable(input.entity)) throw new Error('This collection is not available to the current account.')
       if (signal?.aborted) throw new Error('The read query was cancelled.')
       let response
       try { response = await request.get(query.path, { params: query.params, signal, timeout: 60000 }) }

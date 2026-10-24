@@ -8,4 +8,13 @@ export const recordReadPolicy = {
   Page: { fields: ['title', 'slug', 'status', 'body', 'publishedAt'] }
 }
 
+// Additional safe list projections and filters needed for relations that are
+// represented by nested manager endpoints rather than ordinary form fields.
+export const readCatalogPolicy = {
+  Specification: {
+    fields: [{ property: 'product.id', label: 'Product ID', type: 'integer' }],
+    filters: [{ property: 'product.id', label: 'Product ID', type: 'integer' }]
+  }
+}
+
 export default recordReadPolicy

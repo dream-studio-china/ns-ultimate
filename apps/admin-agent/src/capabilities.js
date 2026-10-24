@@ -86,6 +86,30 @@ function normalizeField(field, requiredByForm = false) {
   }
 }
 
+function normalizeReadPolicyFields(fields = []) {
+  if (!Array.isArray(fields)) return []
+  return fields.flatMap(field => {
+    const property = typeof field?.property === 'string' ? field.property : ''
+    const segments = property.split('.')
+    if (segments.length < 1 || segments.length > 2 || !segments.every(safeProperty)) return []
+    return [{ property, label: String(field.label || property).slice(0, 120), type: String(field.type || 'text').slice(0, 50), required: false, readOnly: true, relation: segments.length > 1, relationValueKey: segments.at(-1) === 'id' || segments.at(-1) === 'uuid' ? segments.at(-1) : null }]
+  })
+}
+
+function normalizeReadPolicyFilters(filters = []) {
+  if (!Array.isArray(filters)) return []
+  return filters.flatMap(filter => {
+    const property = typeof filter?.property === 'string' ? filter.property : ''
+    const segments = property.split('.')
+    if (segments.length !== 2 || !segments.every(safeProperty)) return []
+    const operator = filter.operator || 'equals'
+    if (!['equals'].includes(operator)) return []
+    const type = typeof filter.type === 'string' ? filter.type.slice(0, 50) : 'text'
+    const relationValueKey = segments.at(-1) === 'id' || segments.at(-1) === 'uuid' ? segments.at(-1) : null
+    return [{ property, label: String(filter.label || property).slice(0, 120), type, operator, operators: [operator], options: [], dynamicOptions: false, relationValueKey, getter: getterForPath(segments) }]
+  })
+}
+
 function normalizeListColumns(columns = []) {
   if (!Array.isArray(columns)) return []
   return columns.map(field => {
@@ -205,7 +229,7 @@ function normalizePrefix(prefix, defaultPrefix) {
   return normalized === manageRoot || normalized.startsWith(`${manageRoot}/`) ? normalized : null
 }
 
-export function buildCapabilityCatalog(entities, operations, { parameterize, defaultPrefix = '/api/v1/manage' } = {}) {
+export function buildCapabilityCatalog(entities, operations, { parameterize, defaultPrefix = '/api/v1/manage', readPolicy = {} } = {}) {
   if (!entities || typeof entities !== 'object' || typeof parameterize !== 'function') return []
   const getOperations = new Set((Array.isArray(operations) ? operations : [])
     .filter(operation => operation.method === 'GET')
@@ -232,8 +256,10 @@ export function buildCapabilityCatalog(entities, operations, { parameterize, def
         relationValueKey: existing.relationValueKey || field.relationValueKey
       } : field)
     }
+    const policyFields = normalizeReadPolicyFields(readPolicy?.[name]?.fields)
+    for (const field of policyFields) if (!fieldMap.has(field.property)) fieldMap.set(field.property, field)
     const fields = [...fieldMap.values()]
-    const filterFields = normalizeFilters(config.list?.list_filter, formFields)
+    const filterFields = [...normalizeFilters(config.list?.list_filter, formFields), ...normalizeReadPolicyFilters(readPolicy?.[name]?.filters)]
     const readable = Boolean(path && getOperations.has(path))
     return {
       key,
@@ -242,7 +268,7 @@ export function buildCapabilityCatalog(entities, operations, { parameterize, def
       readable,
       fields,
       filters: filterFields,
-      select: [...new Set(['id', 'uuid', ...listFields.map(field => field.property)])].slice(0, MAX_SELECT_FIELDS),
+      select: [...new Set(['id', 'uuid', ...listFields.map(field => field.property), ...policyFields.map(field => field.property)])].slice(0, MAX_SELECT_FIELDS),
       sortFields: [...new Set(['id', ...listFields.map(field => field.property)])].slice(0, MAX_SELECT_FIELDS),
       defaultOrder: normalizeDefaultOrder(config.list?.query, listFields)
     }
@@ -369,8 +395,14 @@ export function sanitizeRecordResults(records, query, catalog) {
     if (!record || typeof record !== 'object' || Array.isArray(record)) return {}
     const output = {}
     for (const key of fields) {
-      if (!safeProperty(key) && !['id', 'uuid'].includes(key)) continue
-      const value = safeValue(record[key])
+      const segments = key.split('.')
+      if (segments.length > 2 || !segments.every(segment => safeProperty(segment) || ['id', 'uuid'].includes(segment))) continue
+      let value = record
+      for (const segment of segments) {
+        if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.prototype.hasOwnProperty.call(value, segment)) { value = undefined; break }
+        value = value[segment]
+      }
+      value = safeValue(value)
       if (value !== undefined) output[key] = typeof value === 'string' ? value.slice(0, 300) : value
     }
     return output

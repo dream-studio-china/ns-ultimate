@@ -123,7 +123,7 @@ export function createAssistantTools(catalog, navigation = [], previewPolicy = {
       type: 'function',
       function: {
         name: 'query_records',
-        description: 'Read one bounded page from a documented admin collection. Call list_entities first and use only its filter and sort fields. Choose only the operator advertised for each configured filter: contains is substring matching, equals is exact matching, and numeric/date fields may allow comparisons. Results include pagination metadata when available. Do not fetch additional pages unless the user asks.',
+        description: 'Read one bounded page from any configured entity with a documented admin GET collection endpoint, even if it has no standalone admin page. Call list_entities first and use only its filter and sort fields. Choose only the operator advertised for each configured filter: contains is substring matching, equals is exact matching, and numeric/date fields may allow comparisons. Results include pagination metadata when available. Do not fetch additional pages unless the user asks.',
         parameters: {
           type: 'object',
           properties: {
