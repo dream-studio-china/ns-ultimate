@@ -165,6 +165,32 @@ test('supports static relation identifier filters without running option callbac
   assert.throws(() => prepareRecordQuery({ entity: 'Entry', filters: [{ field: 'category.id', value: '12' }] }, relationCatalog), /positive numeric ID/)
 })
 
+test('allows documented entities without a standalone page and exposes only policy-approved relation fields', () => {
+  const specCatalog = buildCapabilityCatalog({
+    Specification: {
+      entity: { name: 'Specification', plural: 'specifications' },
+      form: { fields: ['name', { property: 'price', type: 'integer' }, 'status', 'sort'] },
+      list: { list_display: ['id', 'name', 'price', 'status', 'sort'] }
+    }
+  }, [{ method: 'GET', path: '/api/v1/manage/specifications' }], {
+    parameterize,
+    readPolicy: {
+      Specification: {
+        fields: [{ property: 'product.id', label: 'Product ID', type: 'integer' }],
+        filters: [{ property: 'product.id', label: 'Product ID', type: 'integer' }]
+      }
+    }
+  })
+  const specification = specCatalog[0]
+  assert.equal(specification.readable, true)
+  assert.ok(specification.select.includes('product.id'))
+  assert.ok(specification.filters.some(filter => filter.property === 'product.id'))
+  const query = prepareRecordQuery({ entity: 'Specification', filters: [{ field: 'product.id', value: 42 }] }, specCatalog)
+  assert.equal(query.params['@filter'], 'entity.getProduct().getId() == 42')
+  const result = sanitizeRecordResults([{ id: 5, name: 'Large', product: { id: 42, email: 'blocked@example.test' }, secret: 'blocked' }], query, specCatalog)
+  assert.deepEqual(result.records, [{ id: 5, name: 'Large', 'product.id': 42 }])
+})
+
 test('restores configured Content filters without exposing body or dynamic options', () => {
   const loader = () => { throw new Error('Category option loaders must not execute.') }
   const contentCatalog = buildCapabilityCatalog({
