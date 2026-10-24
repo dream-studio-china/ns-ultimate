@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "a478efe90991b9d15f577ec627b34cf142cfc7c8e8109f8d64ce8a9e9a86b4a6",
+  "revision": "cfa053aca02ff56e9aa6570ade34df868ee27d49dad11abd4c08367006b5298f",
   "capabilities": [
     {
       "entity": "Content",
@@ -18,7 +18,7 @@
           },
           "body": {
             "type": "utf8-string",
-            "maxBytes": 20000,
+            "maxBytes": 32000,
             "nullable": true
           },
           "category": {
@@ -39,7 +39,7 @@
           },
           "body": {
             "type": "utf8-string",
-            "maxBytes": 20000,
+            "maxBytes": 32000,
             "nullable": true
           },
           "category": {
@@ -61,7 +61,7 @@
         },
         "body": {
           "type": "utf8-string",
-          "maxBytes": 20000,
+          "maxBytes": 32000,
           "nullable": true
         },
         "category": {

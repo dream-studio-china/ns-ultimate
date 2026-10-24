@@ -40,14 +40,11 @@ test('composed host exposes the admin main-area bounds and bounded record reads'
   assert.match(source, /readRecord,/)
 })
 
-test('composed host refreshes policy before commit and uses epoch-aware effective identity', () => {
+test('composed host derives write fields from form metadata without a server capability catalog', () => {
   const source = readFileSync(new URL('../../../integration/admin/agent-host.js', import.meta.url), 'utf8')
-  assert.match(source, /async commitRecordChange\(operationId, signal\)[\s\S]*?refreshForCommit\(signal\)/)
-  assert.match(source, /async commitRecordBatch\(operationId, signal\)[\s\S]*?refreshForCommit\(signal\)/)
-  assert.match(source, /ensureFreshCommitCapability/)
-  assert.match(source, /refreshCatalog: requestSignal => capabilityRuntime\.refresh\(\{ signal: requestSignal \}\)/)
-  assert.match(source, /getRuntimeEpoch: \(\) => capabilityRuntime\.epoch/)
-  assert.match(source, /getProjectionEpoch: \(\) => projectionGeneration/)
+  assert.match(source, /createConfigMutationHost\(\{ request, getProjection: refreshProjection, policy: agentMutationPolicy/)
+  assert.match(source, /CrudSkeletonAdapter/)
+  assert.equal(source.includes('/agent/capabilities'), false)
   assert.match(source, /componentBindings: scalarComponentBindings/)
   assert.match(source, /schemaFormResolver: createSchemaForm/)
   assert.match(source, /routeAvailability: registeredRoutes\(\)/)
@@ -165,7 +162,7 @@ test('Content mutation compatibility and unknown nested fields remain rejected',
 test('write tool advertises per-entity supported actions and per-action input scope', () => {
   const tool = createAssistantTools([], [], {}, mutationCapabilities).find(item => item.function.name === 'prepare_record_change').function
   assert.deepEqual(tool.parameters.properties.action.enum, ['create', 'update', 'delete'])
-  assert.match(tool.description, /never substitute fields between actions or assume an omitted action is allowed/)
+  assert.match(tool.description, /effective admin form/)
   assert.match(tool.description, /fieldsByAction/)
   assert.deepEqual(mutationCapabilities.find(item => item.entity === 'Product').actions, ['create', 'update'])
   assert.deepEqual(Object.keys(mutationCapabilities.find(item => item.entity === 'Specification').actionFields), ['create', 'update'])

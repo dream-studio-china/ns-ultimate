@@ -759,13 +759,11 @@ test('aborts before transport and never accepts a response after caller cancella
   }
 })
 
-test('integration host uses the fixed routes and one compiled runtime capability catalog', () => {
+test('integration host uses configured CRUD instead of the retired operation routes', () => {
   const source = readFileSync(new URL('../../../integration/admin/agent-host.js', import.meta.url), 'utf8')
-  assert.match(source, /import \{ createBatchMutationHost \} from '\.\.\/\.\.\/apps\/admin-agent\/src\/batch-mutation-host\.js'/)
-  assert.match(source, /createNsUltimateMutationRuntime\(\{/)
-  assert.match(source, /path: `\$\{defaultPrefix\}\/agent\/capabilities`/)
-  assert.match(source, /createMutationHost\(request, `\$\{defaultPrefix\}\/agent\/operations`, singleSource\)/)
-  assert.match(source, /createBatchMutationHost\(request, `\$\{defaultPrefix\}\/agent\/batch-operations`, batchSource\)/)
+  assert.match(source, /createConfigMutationHost/)
+  assert.equal(source.includes('/agent/operations'), false)
+  assert.equal(source.includes('/agent/batch-operations'), false)
   assert.match(source, /initializeAgentCapabilities/)
   assert.match(source, /onCapabilityChange/)
 })

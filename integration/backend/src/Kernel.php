@@ -68,17 +68,11 @@ final class Kernel extends CoreKernel
         }
 
         $container->import(__DIR__.'/../config/services.yaml');
-        // Explicitly compose this app package; apps are not discovered as business modules.
-        $agentBackend = self::repositoryRoot().'/apps/admin-agent/backend';
-        $container->import($agentBackend.'/config/services.yaml');
-        $container->extension('doctrine', ['orm' => ['mappings' => ['AdminAgent' => [
-            'type' => 'attribute', 'is_bundle' => false, 'dir' => $agentBackend.'/src/Entity',
-            'prefix' => 'NsUltimate\\Apps\\AdminAgent\\Backend\\Entity', 'alias' => 'AdminAgent',
-        ]]]]);
+        // Keep applied migration identities without retaining an assistant backend package.
         $container->extension('doctrine_migrations', ['migrations_paths' => [
-            'NsUltimate\\Apps\\AdminAgent\\Backend\\Migrations' => $agentBackend.'/migrations',
+            'NsUltimate\\Apps\\AdminAgent\\Backend\\Migrations' => dirname(__DIR__).'/legacy-migrations/admin-agent',
+            'NsUltimate\\Integration\\Backend\\Migrations' => dirname(__DIR__).'/migrations',
         ]]);
-        $container->extension('framework', ['translator' => ['paths' => [$agentBackend.'/translations']]]);
         $projectTranslationDirectory = dirname(__DIR__).'/translations';
         if (is_dir($projectTranslationDirectory)) {
             $container->extension('framework', [
@@ -184,7 +178,6 @@ final class Kernel extends CoreKernel
         RouteImportGuard::import($routes, $configDir.'/{routes}/'.$this->getEnvironment().'/*.{php,yaml}');
         RouteImportGuard::import($routes, $configDir.'/routes/*.{php,yaml}');
         RouteImportGuard::import($routes, $configDir.'/routes.yaml');
-        RouteImportGuard::import($routes, __DIR__.'/../config/admin-agent-routes.yaml');
 
         $modules = $this->modules();
         foreach ($modules as $module) {

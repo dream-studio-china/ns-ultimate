@@ -26,7 +26,6 @@ if (!is_file($integrationAutoloadFile)) {
 }
 require $integrationAutoloadFile;
 $classLoader->addPsr4('NsUltimate\\Integration\\Backend\\', __DIR__.'/src/');
-$classLoader->addPsr4('NsUltimate\\Apps\\AdminAgent\\Backend\\', $repositoryRoot.'/apps/admin-agent/backend/src/');
 $modules = NsUltimate\Integration\Backend\ModuleRegistry::discover($repositoryRoot.'/business/backend');
 foreach ($modules as $module) {
     $classLoader->addPsr4($module['namespace'], $module['path'].'/src/');

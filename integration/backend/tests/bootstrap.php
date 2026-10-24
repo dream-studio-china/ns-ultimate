@@ -19,10 +19,6 @@ foreach ([
 
 require dirname(__DIR__).'/bootstrap.php';
 
-// Shared test-only synthetic manifest helper for legacy adapter safety suites.
-require_once dirname(__DIR__, 3).'/apps/admin-agent/backend/tests/Integration/Support/AdminConfigurationTestManifest.php';
-\NsUltimate\Apps\AdminAgent\Backend\Tests\Integration\Support\AdminConfigurationTestManifest::install();
-
 register_shutdown_function(static function () use ($databaseFile, $accessLog): void {
     foreach ([$databaseFile, $databaseFile.'-journal', $databaseFile.'-wal', $databaseFile.'-shm', $accessLog] as $file) {
         if (is_file($file)) {

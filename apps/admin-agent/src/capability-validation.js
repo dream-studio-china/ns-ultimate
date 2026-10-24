@@ -612,6 +612,49 @@ export function validateChangesForAction(changes, fields, action) {
   })
 }
 
+function describeInvalidRuleValue(field, rule, value) {
+  if (value === null) return `${field} cannot be null`
+  if (rule.type === 'utf8-string' && typeof value === 'string'
+    && new TextEncoder().encode(value).length > rule.maxBytes) {
+    return `${field} exceeds ${rule.maxBytes} UTF-8 bytes`
+  }
+  if (rule.type === 'string' && typeof value === 'string' && [...value].length > rule.maxLength) {
+    return `${field} exceeds ${rule.maxLength} characters`
+  }
+  if (rule.type === 'positive-id' || rule.type === 'relation-id') return `${field} must be a positive numeric ID`
+  if (rule.type === 'positive-id-list') return `${field} must be a list of up to ${rule.maxItems} positive numeric IDs`
+  if (rule.type === 'uuid') return `${field} must be a UUID`
+  if (rule.type === 'boolean') return `${field} must be true or false`
+  if (rule.type === 'enum') return `${field} must be one of: ${rule.values.join(', ')}`
+  if (rule.type === 'color') return `${field} must be #RRGGBB`
+  return `${field} has an invalid value`
+}
+
+/** Explain a rejected change using field names and rule bounds, never values. */
+export function describeChangeRejection(changes, fields, action) {
+  if (!isPlainRecord(changes) || Object.keys(changes).length === 0) {
+    return 'Changes contain unsupported fields or values. Changes must be a non-empty object.'
+  }
+  const unknown = Object.keys(changes).filter(key => !Object.hasOwn(fields, key))
+  if (unknown.length) {
+    return `Changes contain unsupported fields or values. Unsupported change fields: ${unknown.join(', ')}.`
+  }
+  const invalid = Object.entries(changes)
+    .filter(([key, value]) => !validateRuleValue(fields[key], value))
+    .map(([key, value]) => describeInvalidRuleValue(key, fields[key], value))
+  if (invalid.length) {
+    return `Changes contain unsupported fields or values. Invalid change values: ${invalid.join('; ')}.`
+  }
+  const missing = Object.entries(fields)
+    .filter(([key, rule]) => (((action === 'create' && rule.requiredOnCreate) || (action === 'update' && rule.requiredOnUpdate))
+      && !Object.hasOwn(changes, key)))
+    .map(([key]) => key)
+  if (missing.length) {
+    return `Changes contain unsupported fields or values. Missing required change fields: ${missing.join(', ')}.`
+  }
+  return 'Changes contain unsupported fields or values.'
+}
+
 export function isExactTargetIdentifier(value) {
   return typeof value === 'string' && !/[\u0000-\u001f\u007f]/.test(value) && EXACT_TARGET_PATTERN.test(value)
 }

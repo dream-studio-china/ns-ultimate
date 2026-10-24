@@ -5,8 +5,7 @@
 ```text
 business/admin router + config ──> integration/admin config injection ──> core admin
 apps/admin-agent frontend ───────> integration/admin loader + host adapter ─> core admin
-apps/admin-agent operation backend <── app-owned host mutation adapters
-                 └──────────────> integration/backend explicit app wiring ─> core Symfony app
+apps/admin-agent confirmed writes ──> existing authenticated admin CRUD APIs
 business/backend modules ───────> integration/backend Kernel ──────────> core Symfony app
                                            ▲
                               infra/docker Nginx + PHP-FPM
@@ -28,7 +27,7 @@ Owns application packages. `apps/admin-agent/` is explicitly composed into the a
 
 ### `apps/admin-agent/`
 
-Contains the optional assistant's generic UI, provider/documentation processing, and Symfony operation lifecycle. One app-owned `AgentOperation` entity serves all registered mutation adapters; it does not create one operation table per business entity. Host-specific frontend policies live in `adapters/ns-ultimate/admin/`; backend bindings live in `backend/src/Adapter/NsUltimate/`, separate from generic code. Integration explicitly selects adapters, registers the namespace, services, routes, Doctrine mapping and migrations, and supplies account identity. No agent implementation is added to business modules or core; adapters reuse existing entities and validation. See the [assistant design](admin-ai-assistant.md), [app guide](../../apps/admin-agent/README.md), and [operation contract](../contracts/admin-agent.md).
+Contains the optional assistant's generic UI, provider/documentation processing and config-driven local preview/confirmation lifecycle. Host-specific component bindings and read policies live in `adapters/ns-ultimate/admin/`. Integration supplies effective admin configuration, metadata, request and navigation APIs. Confirmed writes reuse existing CRUD endpoints rather than duplicate domain validation in Agent PHP adapters. No assistant backend package or HTTP operation routes remain; integration retains the historical migration identities and owns the forward migration dropping the retired tables. No agent implementation is added to business modules or core. See the [assistant design](admin-ai-assistant.md), [app guide](../../apps/admin-agent/README.md), and [operation contract](../contracts/admin-agent.md).
 
 ### `integration/`
 

@@ -1,4 +1,5 @@
 /** Fixed-route transport with explicitly compiled host capabilities; never a general HTTP tool. */
+import { describeChangeRejection } from './capability-validation.js'
 
 const MAX_RETAINED_POLICIES = 256
 const OPERATION_ID_PATTERN = /^[a-f0-9]{64}$/
@@ -175,14 +176,28 @@ export function createMutationHost(request, path, capabilities = []) {
         || (input.action !== 'create' && (typeof input.identifier !== 'string' || !/^(?:[1-9]\d{0,14}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(input.identifier)))) {
         throw new TypeError('An exact target identifier is required for update/delete; create does not accept one.')
       }
+      const actionFields = capability.actionFields?.[input.action]
+        ?? (Array.isArray(capability.actions) && capability.actions.includes(input.action) ? capability.fields : undefined)
+      if (input.action === 'delete' && input.changes !== undefined) {
+        throw new TypeError('Changes contain unsupported fields or values. Deletion does not accept change fields.')
+      }
       if (input.changes !== undefined) {
-        if (!isPlainRecord(input.changes) || hasUnsafeKeys(input.changes)
-          || (capability.fields && Object.keys(input.changes).some(key => !Object.hasOwn(capability.fields, key)))
-          || (capability.validateChanges && !capability.validateChanges(input.changes, input.action))) {
+        if (!isPlainRecord(input.changes) || hasUnsafeKeys(input.changes)) {
+          throw new TypeError('Changes contain unsupported fields or values. Changes must be a non-empty plain object.')
+        }
+        if (isPlainRecord(actionFields)) {
+          const unknown = Object.keys(input.changes).filter(key => !Object.hasOwn(actionFields, key))
+          if (unknown.length) {
+            throw new TypeError(`Changes contain unsupported fields or values. Unsupported change fields: ${unknown.join(', ')}.`)
+          }
+          if (capability.validateChanges && !capability.validateChanges(input.changes, input.action)) {
+            throw new TypeError(describeChangeRejection(input.changes, actionFields, input.action))
+          }
+        } else if (capability.validateChanges && !capability.validateChanges(input.changes, input.action)) {
           throw new TypeError('Changes contain unsupported fields or values.')
         }
       } else if (capability.validateChanges && !capability.validateChanges(undefined, input.action)) {
-        throw new TypeError('Changes contain unsupported fields or values.')
+        throw new TypeError('Changes contain unsupported fields or values. Changes are required for this action.')
       }
       const response = await request.post(path, input, { signal, timeout: 60000 })
       assertSameIdentity(sourceState, capabilities)

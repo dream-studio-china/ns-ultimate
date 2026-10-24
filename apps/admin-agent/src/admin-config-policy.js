@@ -4,13 +4,10 @@
  * crud-admin configuration is the first capability boundary for the assistant.
  * This module never imports Vue, browser globals, request clients, or host
  * modules. It turns already-merged effective entity/route configuration into
- * serializable standard action metadata, then narrows a runtime capability
- * catalog so tools and transports use exactly the same instances.
+ * serializable standard action metadata for tools and CRUD transports.
  *
  * Configuration projection is not authorization. The authenticated backend
- * capability catalog remains the current execution authority; the returned
- * intersection is intentionally provisional until a trusted host execution
- * bridge replaces the separate mutation adapters.
+ * CRUD endpoints remain the execution and authorization authority.
  */
 
 import { validateRuleValue } from './capability-validation.js'
@@ -37,6 +34,11 @@ const TYPE_ALIASES = Object.freeze({
   textarea: 'string',
   email: 'string',
   code: 'string',
+  password: 'string',
+  float: 'number',
+  decimal: 'number',
+  smallint: 'integer',
+  bigint: 'integer',
   integer: 'integer',
   number: 'number',
   currency: 'number',
@@ -55,7 +57,7 @@ const TYPE_ALIASES = Object.freeze({
 
 // File/image/password controls need a dedicated host flow; they must not be
 // offered to the model as ordinary field writes.
-const UNSUPPORTED_FIELD_TYPES = new Set(['password', 'file', 'image', 'images', 'transfer'])
+const UNSUPPORTED_FIELD_TYPES = new Set(['file', 'image', 'images', 'transfer'])
 
 function isPlainRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -363,6 +365,7 @@ function fieldDisablePolicy(field) {
   let disabled = false
   for (const options of [field, field.field_options, field.type_options]) {
     if (!isPlainRecord(options)) continue
+    if (options.editable === false) disabled = true
     for (const key of ['disabled', 'readOnly', 'readonly']) {
       if (!Object.hasOwn(options, key) || options[key] === undefined) continue
       const parsed = policyBoolean(options[key])
@@ -414,18 +417,36 @@ function collectSchemaFormPaths(fields, prefix, action, schemaFormResolver, dept
     const disablePolicy = fieldDisablePolicy(field)
     if (!disablePolicy.ok) return false
     if (disablePolicy.disabled) continue
-    if (hasFieldCallback(field)) return false
-    if (Object.hasOwn(field, 'component') && field.component !== undefined && field.component !== null) return false
+    // Optional nested controls that the assistant cannot represent are omitted;
+    // a required unsupported control still blocks the whole form because its
+    // absence could not be inferred from a preview.
+    if (hasFieldCallback(field)) {
+      if (field.required === true) return false
+      continue
+    }
+    if (Object.hasOwn(field, 'component') && field.component !== undefined && field.component !== null) {
+      if (field.required === true) return false
+      continue
+    }
     const type = normalizeFieldType(field.type, Boolean(field.relation))
-    if (!type) return false
+    if (!type) {
+      if (field.required === true) return false
+      continue
+    }
     const path = prefix ? `${prefix}.${property}` : property
 
     if (type === 'object') {
       const schema = field.type_options?.schema
-      if (!isPlainRecord(schema)) return false
+      if (!isPlainRecord(schema)) {
+        if (field.required === true) return false
+        continue
+      }
       const configuredFields = field.type_options?.fields
       const resolved = resolveSchemaForm(schema, configuredFields, schemaFormResolver)
-      if (!resolved.ok) return false
+      if (!resolved.ok) {
+        if (field.required === true) return false
+        continue
+      }
       if (resolved.fields === null) {
         const descendants = collectNestedPaths(schema)
         if (!descendants.length) continue
@@ -514,6 +535,13 @@ function projectField(raw, entityLabel, seen, unsupported, componentBindings, sc
     unsupported.push({ ...entityLabel, feature: 'field', property, reason: 'unsafe_relation' })
     return null
   }
+  // The admin currency control stores minor units (for example cents). Keep the
+  // factor so the assistant can accept the same major-unit values a user sees.
+  const rawType = typeof raw.type === 'string' ? raw.type.toLowerCase() : ''
+  const configuredMultiplier = Number(raw.type_options?.multiplier)
+  const multiplier = type === 'number' && rawType === 'currency'
+    ? (Number.isFinite(configuredMultiplier) && configuredMultiplier > 0 ? configuredMultiplier : 100)
+    : null
   if (Object.hasOwn(raw, 'default_value') && !safeDefault(raw.default_value)) {
     unsupported.push({ ...entityLabel, feature: 'field', property, reason: 'unsafe_default' })
     return null
@@ -554,6 +582,8 @@ function projectField(raw, entityLabel, seen, unsupported, componentBindings, sc
     actions: Object.freeze(actions),
     relation: relation.relation,
     ...(component.present ? { componentName: component.componentName } : {}),
+    ...(multiplier ? { multiplier, currency: String(raw.type_options?.currency || 'CNY').toUpperCase() } : {}),
+    ...(isPlainRecord(raw.type_options?.schema) ? { schema: raw.type_options.schema } : {}),
     ...(Object.hasOwn(raw, 'default_value') ? { defaultValue: raw.default_value } : {}),
     ...(nestedPaths.size ? { nestedPaths: Object.freeze([...nestedPaths]) } : {}),
     ...(sourcePaths.size ? { sourcePaths: Object.freeze([...sourcePaths]) } : {}),
@@ -589,8 +619,14 @@ function projectForm(form, entityLabel, unsupported, componentBindings, schemaFo
   const fields = []
   let wildcard = false
   for (const raw of form.fields) {
+    const previousUnsupported = unsupported.length
     const projected = projectField(raw, entityLabel, seen, unsupported, componentBindings, schemaFormResolver)
-    if (!projected) continue
+    if (!projected) {
+      if (isPlainRecord(raw) && raw.required === true) {
+        for (const item of unsupported.slice(previousUnsupported)) item.required = true
+      }
+      continue
+    }
     if (projected.wildcard) {
       wildcard = true
       continue

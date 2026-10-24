@@ -79,6 +79,45 @@ test('declares fixed record reads only for host policy entities', () => {
   assert.equal(withoutPolicy.includes('read_record'), false)
 })
 
+test('normalizes numeric target IDs and surfaces bounded preparation errors', async() => {
+  const calls = []
+  const host = {
+    prepareRecordChange: async(input) => {
+      calls.push(input)
+      if (input.changes?.title === 'invalid') {
+        throw Object.assign(new Error('Request failed with status code 400'), {
+          response: { status: 400, data: { message: '<b>Invalid Content field: body.</b>' } }
+        })
+      }
+      if (input.changes?.title === 'forbidden') {
+        throw Object.assign(new Error('Request failed with status code 403'), {
+          response: { status: 403, data: { message: 'Content management requires ROLE_ADMIN.' } }
+        })
+      }
+      return { saved: false, differences: [], entity: 'Content', action: 'update', identifier: '12' }
+    }
+  }
+  const args = { catalog, host, operations: [], writeCapabilities: [{ entity: 'Content', actions: ['update'], actionFields: { update: { title: { type: 'string' } } } }] }
+  const prepared = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'prepare_record_change', arguments: JSON.stringify({ entity: 'Content', action: 'update', identifier: 12, changes: { title: 'ok' } }) } }
+  })
+  assert.equal(prepared.prepared, true)
+  assert.equal(calls[0].identifier, '12')
+
+  const invalid = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'prepare_record_change', arguments: JSON.stringify({ entity: 'Content', action: 'update', identifier: '12', changes: { title: 'invalid' } }) } }
+  })
+  assert.deepEqual(invalid, { error: 'Invalid Content field: body.', failureType: 'validation', status: 400 })
+
+  const forbidden = await executeAssistantTool({
+    ...args,
+    call: { type: 'function', function: { name: 'prepare_record_change', arguments: JSON.stringify({ entity: 'Content', action: 'update', identifier: '12', changes: { title: 'forbidden' } }) } }
+  })
+  assert.deepEqual(forbidden, { error: 'Content management requires ROLE_ADMIN.', failureType: 'authorization', status: 403 })
+})
+
 test('reads one exact record through the host and audits metadata only', async() => {
   const calls = []
   const audits = []
@@ -162,6 +201,32 @@ test('runs bounded read-only queries without confirmation and validates argument
   assert.equal(queryCount, 2)
 })
 
+test('pages the full configured entity catalog below the tool-result budget', async() => {
+  const large = Array.from({ length: 40 }, (_, index) => ({
+    key: `Entity${index}`,
+    name: `Entity${index}`,
+    readable: true,
+    fields: Array.from({ length: 20 }, (_, field) => ({ property: `field${field}`, label: `Field ${field}`, type: 'string', required: false })),
+    sortFields: Array.from({ length: 30 }, (_, field) => `field${field}`),
+    filters: Array.from({ length: 10 }, (_, field) => ({ property: `field${field}`, label: `Filter ${field}`, type: 'text', operator: 'contains', operators: ['contains', 'equals'], options: [], dynamicOptions: false }))
+  }))
+  const args = { catalog: large, host: {}, operations: [] }
+  let offset = 0
+  const seen = []
+  for (let page = 0; page < 20; page += 1) {
+    const result = await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: JSON.stringify(offset ? { offset } : {}) } } })
+    assert.ok(JSON.stringify(result).length <= 18000)
+    seen.push(...result.entities.map(item => item.name))
+    if (!result.hasMore) break
+    assert.ok(result.nextOffset > offset)
+    offset = result.nextOffset
+  }
+  assert.equal(seen.length, 40)
+  assert.equal(new Set(seen).size, 40)
+  const single = await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"entity":"Entity39"}' } } })
+  assert.deepEqual(single.entities.map(item => item.name), ['Entity39'])
+})
+
 test('allows repeated read queries and records only safe audit metadata', async() => {
   const audits = []
   const host = { queryRecords: async() => ({ records: [{ name: 'A' }, { name: 'B' }] }) }
@@ -178,7 +243,9 @@ test('allows repeated read queries and records only safe audit metadata', async(
 test('rejects unapproved tool names and malformed entity lists', async() => {
   const args = { catalog, host: {}, operations: [], budget: { count: 0 } }
   assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'delete_record', arguments: '{}' } } }), { error: 'This tool is not available.' })
-  assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"url":"https://example.test"}' } } }), { error: 'This tool takes no arguments.' })
+  assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"url":"https://example.test"}' } } }), { error: 'This tool accepts only an optional entity name and offset.' })
+  assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"offset":-1}' } } }), { error: 'The offset must be a non-negative integer.' })
+  assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"entity":"Missing"}' } } }), { error: 'No configured admin entity has that exact name.' })
 })
 
 test('lists registered pages and opens only allowlisted pages or safe record details', async() => {
@@ -243,9 +310,9 @@ test('declares a create-only batch tool only for explicit host batch capabilitie
   assert.deepEqual(tool.parameters.properties.action.enum, ['create'])
   assert.equal(tool.parameters.properties.rows.maxItems, 20)
   assert.equal(tool.parameters.properties.rows.minItems, 1)
-  assert.match(tool.description, /explicitly asks to create/)
+  assert.match(tool.description, /explicitly requests these records/)
   assert.match(tool.description, /untrusted data/)
-  assert.match(tool.description, /same explicit existing Store UUID/)
+  assert.match(tool.description, /not atomically/)
   assert.equal(tools.some(item => /commit|execute|submit/i.test(item.function.name)), false)
 })
 

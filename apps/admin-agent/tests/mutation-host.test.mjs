@@ -76,6 +76,28 @@ test('dynamic identity is opaque and falls back to the legacy revision', () => {
   assert.equal(resolveCapabilitySource({ getCapabilities: () => [], getIdentity: () => 'epoch:7', getRevision: () => 'r:1' }).identity, 'epoch:7')
 })
 
+test('change rejection names unsupported fields and bounded rule failures without posting', async() => {
+  const { host, calls } = transport(dynamicState())
+
+  await assert.rejects(
+    host.prepareRecordChange({ entity: 'Tag', action: 'update', identifier: '12', changes: { metadata: { x: 1 } } }),
+    /Unsupported change fields: metadata\./
+  )
+  await assert.rejects(
+    host.prepareRecordChange({ entity: 'Tag', action: 'update', identifier: '12', changes: { color: '#fff' } }),
+    /Invalid change values: color must be #RRGGBB\./
+  )
+  await assert.rejects(
+    host.prepareRecordChange({ entity: 'Content', action: 'update', identifier: '12', changes: { body: 'x'.repeat(32001) } }),
+    /Invalid change values: body exceeds 32000 UTF-8 bytes\./
+  )
+  await assert.rejects(
+    host.prepareRecordChange({ entity: 'Tag', action: 'delete', identifier: '12', changes: { color: '#123456' } }),
+    /Deletion does not accept change fields\./
+  )
+  assert.equal(calls.length, 0)
+})
+
 test('commit rejects a removed field with the same entity, action and identity without posting', async() => {
   const state = dynamicState()
   const { host, calls } = transport(state)

@@ -1,12 +1,2 @@
-/** Agent-specific exceptions to the effective admin configuration boundary. */
-export const AGENT_DELETE_ALLOWLIST = Object.freeze([
-  'Category',
-  'ProductCategory',
-  'Tag',
-  'Comment'
-])
-
-export function isAgentActionAllowed(entity, action) {
-  if (action !== 'delete') return true
-  return AGENT_DELETE_ALLOWLIST.includes(entity)
-}
+/** Compatibility export for legacy host-policy consumers. New hosts inject policy explicitly. */
+export { AGENT_DELETE_ALLOWLIST, isAgentActionAllowed, isAgentFieldAllowed } from '../adapters/ns-ultimate/admin/write-policy.mjs'

@@ -1,3 +1,5 @@
+import { safeJson } from './config-mutation-host.js'
+
 /**
  * Headless create-only batch proposal support.
  *
@@ -35,8 +37,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const PHP_TRIM_PATTERN = /^[ \t\n\r\0\x0B]+|[ \t\n\r\0\x0B]+$/g
 const OPERATION_ID_PATTERN = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_OPERATION_ID_LENGTH}}$`)
 const SAFE_PROPERTY = /^[A-Za-z][A-Za-z0-9_]*$/
-const BATCH_ENTITIES = Object.freeze(['Tag', 'Counter'])
-const SUPPORTED_RULE_TYPES = new Set(['string', 'utf8-string', 'integer', 'number', 'boolean', 'color', 'uuid', 'enum'])
+const SUPPORTED_RULE_TYPES = new Set(['json', 'string', 'utf8-string', 'integer', 'number', 'boolean', 'color', 'uuid', 'enum'])
 const PREVIEW_KEYS = new Set([
   'operationId', 'entity', 'action', 'title', 'affectedRecords',
   'expiresAt', 'rows', 'saved', 'warnings'
@@ -47,7 +48,7 @@ const BATCH_HOST_METHODS = Object.freeze([
   'getRecordBatchStatus', 'cancelRecordBatch'
 ])
 
-export { MAX_BATCH_ROWS, BATCH_ENTITIES }
+export { MAX_BATCH_ROWS }
 
 export class BatchRequestError extends Error {
   constructor(message) {
@@ -78,10 +79,12 @@ function fail(message) {
 }
 
 function sameScalar(left, right) {
+  if (left && typeof left === 'object' || right && typeof right === 'object') return JSON.stringify(left) === JSON.stringify(right)
   return left === right || (typeof left === 'number' && typeof right === 'number' && Number.isNaN(left) && Number.isNaN(right))
 }
 
 function isDisplayScalar(value) {
+  if (Array.isArray(value) || isPlainObject(value)) return safeJson(value)
   return value === null
     || typeof value === 'string'
     || typeof value === 'boolean'
@@ -114,7 +117,7 @@ function createFieldDescriptor(property, rule) {
 }
 
 function createEntityDescriptor(capability) {
-  if (!isPlainObject(capability) || !BATCH_ENTITIES.includes(capability.entity)) return null
+  if (!isPlainObject(capability) || !/^[A-Z][A-Za-z0-9]{0,63}$/.test(capability.entity)) return null
   if (!Array.isArray(capability.actions) || !capability.actions.includes('create')) return null
   const createFields = capability.actionFields?.create
   if (!isPlainObject(createFields) || hasUnsafeKeys(createFields) || Object.keys(createFields).length === 0) return null
@@ -123,10 +126,6 @@ function createEntityDescriptor(capability) {
     const field = createFieldDescriptor(property, rule)
     if (!field) return null
     fields.push(field)
-  }
-  if (capability.entity === 'Counter') {
-    const storeField = fields.find(field => field.property === 'storeUuid')
-    if (!storeField || storeField.rule.type !== 'uuid' || storeField.required !== true) return null
   }
   return { entity: capability.entity, fields }
 }
@@ -138,8 +137,7 @@ function createEntityDescriptor(capability) {
  */
 export function normalizeBatchCapabilities(capabilities) {
   if (!Array.isArray(capabilities)) return { available: false, reason: 'capabilities', entities: [] }
-  const entities = BATCH_ENTITIES.flatMap(entity => {
-    const capability = capabilities.find(item => isPlainObject(item) && item.entity === entity)
+  const entities = capabilities.flatMap(capability => {
     const descriptor = createEntityDescriptor(capability)
     return descriptor ? [descriptor] : []
   })
@@ -199,6 +197,9 @@ function validateFieldValue(rule, value, property) {
     fail(`Batch field "${property}" cannot be null.`)
   }
   switch (rule.type) {
+    case 'json':
+      if (!isDisplayScalar(value)) fail(`Batch field "${property}" must be a JSON value.`)
+      return value
     case 'string':
       return validateStringField(rule, value, property)
     case 'utf8-string': {
@@ -249,6 +250,7 @@ function validateRow(row, fields, index) {
   }
   for (const field of fields) {
     if (!Object.hasOwn(row, field.property)) {
+      if (Object.hasOwn(field.rule, 'default')) { values[field.property] = field.rule.default; continue }
       if (field.required) fail(`Batch field "${field.property}" is required.`)
       continue
     }
@@ -269,9 +271,7 @@ export function prepareBatchRequest(input, entities) {
   if (Object.keys(input).some(key => !['entity', 'action', 'rows'].includes(key))) {
     fail('The batch request contains unsupported parameters.')
   }
-  if (typeof input.entity !== 'string' || !BATCH_ENTITIES.includes(input.entity)) {
-    fail('Only Tag and Counter batches are enabled.')
-  }
+  if (typeof input.entity !== 'string') fail('A configured entity is required.')
   if (input.action !== 'create') fail('Only the create action is enabled for batches.')
   const descriptor = Array.isArray(entities) ? entities.find(item => item.entity === input.entity) : null
   if (!descriptor) fail('The selected entity is not enabled for batches.')
@@ -284,7 +284,7 @@ export function prepareBatchRequest(input, entities) {
     rows.push(validateRow(input.rows[index], descriptor.fields, index))
   }
   let storeUuid = ''
-  if (input.entity === 'Counter') {
+  if (input.entity === 'Counter' && descriptor.fields.some(field => field.property === 'storeUuid' && field.rule.type === 'uuid')) {
     const scope = rows[0].storeUuid
     if (typeof scope !== 'string' || !UUID_PATTERN.test(scope)) fail('Counter rows require one explicit Store UUID.')
     storeUuid = scope.toLowerCase()
@@ -332,7 +332,7 @@ function normalizePreviewRow(row, index, expected, fieldProperties, entity, stor
       throw new TypeError('The batch preview does not match the submitted rows.')
     }
   }
-  if (entity === 'Counter' && values.storeUuid !== storeUuid) throw new TypeError('The Counter batch store does not match.')
+  if (storeUuid && values.storeUuid !== storeUuid) throw new TypeError('The Counter batch store does not match.')
   return { row: index + 1, values }
 }
 
@@ -352,7 +352,6 @@ export function normalizePreparedBatch(preview, { entity, records, storeUuid = '
   if (typeof preview.title !== 'string' || !preview.title.trim() || [...preview.title].length > 1024) throw new TypeError('Invalid batch preview title.')
   if (!Number.isInteger(preview.affectedRecords) || preview.affectedRecords !== records.length) throw new TypeError('The batch preview row count changed.')
   if (!Array.isArray(preview.rows) || preview.rows.length !== records.length) throw new TypeError('The batch preview row count changed.')
-  if (entity === 'Counter' && !storeUuid) throw new TypeError('The Counter batch store is missing.')
   const fieldProperties = new Set(fields.map(field => field.property))
   const normalizedRecords = preview.rows.map((row, index) => normalizePreviewRow(row, index, records[index], fieldProperties, entity, storeUuid))
   const warnings = []
@@ -561,7 +560,8 @@ export function createBatchProposal(host = {}, {
       const value = await host.commitRecordBatch(preview.operationId, controller.signal)
       if (!isCurrent(token)) return false
       const status = normalizeBatchStatusReceipt(value, preview)
-      if (status === 'succeeded' && value.verified === true) {
+      if (host.operationHistoryScope === 'session' && value?.operationId === preview.operationId) receipt = { ...value }
+      if (status === 'succeeded' && (host.operationHistoryScope === 'session' || value.verified === true)) {
         phase = 'succeeded'
         receipt = { ...value }
         setErrors([])
@@ -603,6 +603,7 @@ export function createBatchProposal(host = {}, {
       const value = await host.getRecordBatchStatus(preview.operationId, controller.signal)
       if (!isCurrent(token)) return false
       const status = normalizeBatchStatusReceipt(value, preview)
+      if (host.operationHistoryScope === 'session' && value?.operationId === preview.operationId) receipt = { ...value }
       if (status === 'succeeded') {
         phase = 'succeeded'
         receipt = { ...value }

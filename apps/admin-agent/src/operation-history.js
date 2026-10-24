@@ -17,7 +17,9 @@ export function mountOperationHistory(document, host, { t, canInteract, onBusy, 
   })
   function render(state) {
     node.replaceChildren(make('strong', t('Operations for this account')),
-      make('p', t('Only your operations are shown. Restore a pending preview to review and confirm it again; writes are never retried automatically.')))
+      make('p', t(host.operationHistoryScope === 'session'
+        ? 'Operations exist only in this browser session. Reloading or signing out loses them. Unknown outcomes require manual inspection; writes are never retried automatically.'
+        : 'Only your operations are shown. Restore a pending preview to review and confirm it again; writes are never retried automatically.')))
     const button = (label, action) => {
       const control = make('button', t(label), 'button secondary')
       control.type = 'button'
@@ -40,7 +42,7 @@ export function mountOperationHistory(document, host, { t, canInteract, onBusy, 
         make('p', `${t('Created')}: ${receipt.createdAt} · ${t('Expires')}: ${receipt.expiresAt}`))
       const controls = make('div', '', 'row')
       controls.append(button('Check outcome', () => recovery.check(receipt.operationId)))
-      if (receipt.status === 'pending') controls.append(button('Restore preview', () => recovery.restore(receipt.operationId)))
+       if (receipt.status === 'pending' && !receipt.rowCount) controls.append(button('Restore preview', () => recovery.restore(receipt.operationId)))
       card.append(controls)
       node.append(card)
     }

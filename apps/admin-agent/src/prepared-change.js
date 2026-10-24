@@ -17,7 +17,9 @@ export function createPreparedChange(preview, host) {
       } catch (error) {
         // An aborted/timed-out request may already have committed. Never retry automatically.
         state = error?.code === 'proposal_conflict' ? 'conflicted' : 'unknown'
-        return { state }
+        const raw = error?.response?.data?.message ?? error?.response?.data?.detail ?? error?.message
+        const reason = typeof raw === 'string' ? raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400) : ''
+        return { state, reason }
       }
     },
     async recover(signal) {

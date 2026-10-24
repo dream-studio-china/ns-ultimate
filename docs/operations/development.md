@@ -57,22 +57,9 @@ make migrate
 
 Manual migrations retain Symfony's interactive confirmation. Migrations do not run during installation, restarts after successful setup, `make env-init`, or tests; first-time `make dev`/`make docker-dev` and each reset followed by startup are explicit setup flows. Do not point routine development setup or validation at production databases.
 
-## Optional MySQL verification for the admin agent
+## Admin agent persistence validation
 
-The composed PHPUnit bootstrap forces a temporary SQLite file, overriding `DATABASE_URL`; setting that variable alone does not run the suite on MySQL. SQLite does not reproduce MySQL JSON key ordering or InnoDB row-lock contention. Use the guarded opt-in harness below for the bounded MySQL scenarios it implements, against a **dedicated disposable schema**, never the development or production database. Schema creation/drop is destructive; do not bypass the harness's target checks or substitute a configured application schema.
-
-This verification is manual and outside CI. Do not commit credentials, generated schema names, or test tokens. Record results as dated evidence for the environment actually tested, not as a production concurrency guarantee.
-
-For opt-in operation concurrency and JSON-portability checks, use the app-owned harness:
-
-```sh
-php apps/admin-agent/backend/tools/mysql-concurrency.php --self-test
-php apps/admin-agent/backend/tools/mysql-concurrency.php
-```
-
-The self-test is connection-free. The live run loads local development connection configuration internally without printing credentials, requires an IP loopback target, and uses a newly generated disposable schema rather than the configured application schema. It rejects connection-target query overrides, verifies Doctrine's effective target and database identity before application writes, bounds worker execution, and requires verified schema cleanup for success. Counter and StorePrinting run four-worker same-proposal and stale-proposal races; Category and ProductCategory run crossed hierarchy-move races. Other checks cover persisted JSON restoration and printing dependency changes made through an independent connection. Per-worker private instrumentation counts committed adapter executions, not every attempted invocation, without introducing a shared counter-row lock before the adapter. Printing scenarios assert that no print jobs or order requests are created; no provider is invoked.
-
-This is direct operation-service/adapter validation with stubbed authorization, not an HTTP authentication, production-load or universal nonparticipating-writer test. Record the actual revision/environment and cleanup result; see the [follow-up acceptance record](../sessions/2026-10-23-admin-agent-follow-up-acceptance.md). Do not run it against production. Forced termination such as SIGKILL or host failure can prevent cleanup; an unverified cleanup is a failure and requires operator inspection of the reported disposable schema.
+The assistant now calls ordinary authenticated CRUD endpoints. Its former adapter-specific MySQL concurrency harness has been retired with the operation backend. Local preview rechecks are not atomic conflict protection, and batch creation is sequential rather than transactional. Validate backend permissions, domain rules and side effects through the owning CRUD APIs against an isolated test environment; never use production data for destructive validation. Earlier adapter-concurrency results are historical evidence only.
 
 ## Debugging and validation
 
@@ -99,7 +86,7 @@ make preview
 
 ### Admin AI assistant prototype
 
-The app under `apps/admin-agent/` is loaded by admin integration and enabled by default. Set `VITE_ADMIN_AGENT_ENABLED=false` in the integration admin environment to disable its UI. It supports API-documentation Q&A and config-backed read queries through an OpenAI Chat Completions-compatible provider, with a 60-row page limit and 60-second query timeout. Read queries do not require per-query confirmation. App-owned host adapters explicitly selected by integration can enable mutations with full previews and manual confirmation; no agent code is added to business modules or core. Before using mutations, review/apply the app operation migration and schedule `app:admin-agent:prune`. Disabling the UI does not disable authenticated backend routes. Provider settings and optional API keys persist in browser local storage. HTTPS is required except for localhost/private LAN providers; LAN HTTP is unencrypted. See the [app guide](../../apps/admin-agent/README.md), [operation contract](../contracts/admin-agent.md) and [design](../design/admin-ai-assistant.md).
+The app under `apps/admin-agent/` is loaded by admin integration and enabled by default. Set `VITE_ADMIN_AGENT_ENABLED=false` to disable its UI. Effective form configuration drives ordinary write capabilities, with agent-specific prohibitions and explicit confirmation; normal CRUD endpoints enforce authorization and business validation. Operation history is session-only and batch creation can partially succeed. The Agent backend package and its HTTP routes are removed. Clear backend caches and apply normal project migrations: the forward retirement migration irreversibly drops both old proposal/receipt tables. See the [retirement contract](../contracts/admin-agent.md#operation-history-and-legacy-retirement) before upgrading a development database. Provider settings and optional API keys persist in browser local storage. HTTPS is required except for localhost/private LAN providers; LAN HTTP is unencrypted. See the [app guide](../../apps/admin-agent/README.md), [contract](../contracts/admin-agent.md) and [design](../design/admin-ai-assistant.md).
 
 ### Admin build resource use
 
