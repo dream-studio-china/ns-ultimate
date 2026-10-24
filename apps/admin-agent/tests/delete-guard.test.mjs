@@ -20,16 +20,19 @@ test('category deletion checks all legacy reference families through configured 
   assert.equal(calls.every(call => call[1].params.limit === 1), true)
 })
 
-test('product-category and comment deletions retain hierarchy/cascade checks; Tag has no content cascade guard', async() => {
+test('product-category, comment and tag deletions retain hierarchy and many-to-many checks', async() => {
   const { guard, calls } = setup()
   await guard({ entity: 'ProductCategory', record: { id: 8 } })
   await guard({ entity: 'Comment', record: { id: 9 } })
   await guard({ entity: 'Tag', record: { id: 10 } })
-  assert.deepEqual(calls.map(call => call[0]), ['/configured/ProductCategory', '/configured/Product', '/configured/Comment'])
+  assert.deepEqual(calls.map(call => call[0]), ['/configured/ProductCategory', '/configured/Product', '/configured/Comment', '/configured/Content'])
+  assert.equal(calls.at(-1)[1].params.page, 1)
+  assert.equal(calls.at(-1)[1].params.limit, 100)
 })
 
 test('references, missing access, malformed list responses and untrusted IDs block deletion', async() => {
   await assert.rejects(setup([{ id: 1 }]).guard({ entity: 'Category', record: { id: 7 } }), /is referenced/)
+  await assert.rejects(setup([{ id: 5, tags: [{ id: 7 }] }]).guard({ entity: 'Tag', record: { id: 7 } }), /is referenced/)
   await assert.rejects(setup(null).guard({ entity: 'Comment', record: { id: 7 } }), /Cannot verify/)
   const { guard, projection } = setup()
   projection.entities = []

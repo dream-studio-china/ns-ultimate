@@ -417,18 +417,36 @@ function collectSchemaFormPaths(fields, prefix, action, schemaFormResolver, dept
     const disablePolicy = fieldDisablePolicy(field)
     if (!disablePolicy.ok) return false
     if (disablePolicy.disabled) continue
-    if (hasFieldCallback(field)) return false
-    if (Object.hasOwn(field, 'component') && field.component !== undefined && field.component !== null) return false
+    // Optional nested controls that the assistant cannot represent are omitted;
+    // a required unsupported control still blocks the whole form because its
+    // absence could not be inferred from a preview.
+    if (hasFieldCallback(field)) {
+      if (field.required === true) return false
+      continue
+    }
+    if (Object.hasOwn(field, 'component') && field.component !== undefined && field.component !== null) {
+      if (field.required === true) return false
+      continue
+    }
     const type = normalizeFieldType(field.type, Boolean(field.relation))
-    if (!type) return false
+    if (!type) {
+      if (field.required === true) return false
+      continue
+    }
     const path = prefix ? `${prefix}.${property}` : property
 
     if (type === 'object') {
       const schema = field.type_options?.schema
-      if (!isPlainRecord(schema)) return false
+      if (!isPlainRecord(schema)) {
+        if (field.required === true) return false
+        continue
+      }
       const configuredFields = field.type_options?.fields
       const resolved = resolveSchemaForm(schema, configuredFields, schemaFormResolver)
-      if (!resolved.ok) return false
+      if (!resolved.ok) {
+        if (field.required === true) return false
+        continue
+      }
       if (resolved.fields === null) {
         const descendants = collectNestedPaths(schema)
         if (!descendants.length) continue
@@ -517,6 +535,13 @@ function projectField(raw, entityLabel, seen, unsupported, componentBindings, sc
     unsupported.push({ ...entityLabel, feature: 'field', property, reason: 'unsafe_relation' })
     return null
   }
+  // The admin currency control stores minor units (for example cents). Keep the
+  // factor so the assistant can accept the same major-unit values a user sees.
+  const rawType = typeof raw.type === 'string' ? raw.type.toLowerCase() : ''
+  const configuredMultiplier = Number(raw.type_options?.multiplier)
+  const multiplier = type === 'number' && rawType === 'currency'
+    ? (Number.isFinite(configuredMultiplier) && configuredMultiplier > 0 ? configuredMultiplier : 100)
+    : null
   if (Object.hasOwn(raw, 'default_value') && !safeDefault(raw.default_value)) {
     unsupported.push({ ...entityLabel, feature: 'field', property, reason: 'unsafe_default' })
     return null
@@ -557,6 +582,8 @@ function projectField(raw, entityLabel, seen, unsupported, componentBindings, sc
     actions: Object.freeze(actions),
     relation: relation.relation,
     ...(component.present ? { componentName: component.componentName } : {}),
+    ...(multiplier ? { multiplier, currency: String(raw.type_options?.currency || 'CNY').toUpperCase() } : {}),
+    ...(isPlainRecord(raw.type_options?.schema) ? { schema: raw.type_options.schema } : {}),
     ...(Object.hasOwn(raw, 'default_value') ? { defaultValue: raw.default_value } : {}),
     ...(nestedPaths.size ? { nestedPaths: Object.freeze([...nestedPaths]) } : {}),
     ...(sourcePaths.size ? { sourcePaths: Object.freeze([...sourcePaths]) } : {}),

@@ -4,6 +4,7 @@ import { buildAdminConfigProjection } from '../src/admin-config-policy.js'
 import { configuredCapabilities, createConfigMutationHost } from '../src/config-mutation-host.js'
 import { agentMutationPolicy } from '../adapters/ns-ultimate/admin/write-policy.mjs'
 import { normalizeBatchCapabilities, normalizePreparedBatch, prepareBatchRequest, createBatchProposal } from '../src/import-workbench.js'
+import { specialWrite } from '../adapters/ns-ultimate/admin/special-writes.mjs'
 
 function setup(extra = {}) {
   let clock = 1800000000000
@@ -209,4 +210,130 @@ test('explicit delete whitelist still uses the ordinary DELETE endpoint and snap
   const fresh = await host.prepareRecordChange({ entity: 'Comment', action: 'delete', identifier: '7' })
   assert.equal((await host.commitRecordChange(fresh.operationId)).status, 'succeeded')
   assert.equal(calls.at(-1)[0], 'delete')
+})
+
+function hostFor(entities, { availability, special = false, record = { id: 7 } } = {}) {
+  const calls = []
+  const config = {
+    entities: Object.fromEntries(Object.entries(entities).map(([name, fields]) => [name, {
+      form: { fields }, list: {}, detail: {}
+    }])),
+    routes: Object.keys(entities).map(name => ({ name: `${name}List`, path: `/${name.toLowerCase()}/list` }))
+  }
+  const request = {
+    get: async(...args) => { calls.push(['get', ...args]); return { data: structuredClone(record) } },
+    post: async(...args) => { calls.push(['post', ...args]); return { data: { id: 8 } } },
+    put: async(...args) => { calls.push(['put', ...args]); return { data: { id: 7 } } },
+    delete: async(...args) => { calls.push(['delete', ...args]); return { data: null } }
+  }
+  const host = createConfigMutationHost({
+    request,
+    policy: agentMutationPolicy,
+    getProjection: () => buildAdminConfigProjection(config),
+    isActionAvailable: availability,
+    specialWrite: special ? specialWrite : undefined,
+    now: () => 1800000000000,
+    randomId: () => `operation-${calls.length}`
+  })
+  return { host, calls, config }
+}
+
+test('currency form controls accept major units and submit the configured minor units', async() => {
+  const { host, calls } = hostFor({ Invoice: [
+    { property: 'amount', type: 'currency', type_options: { multiplier: 100, currency: 'CNY' } }
+  ] }, { record: { id: 7, amount: 1250 } })
+  const preview = await host.prepareRecordChange({ entity: 'Invoice', action: 'update', identifier: '7', changes: { amount: 19.9 } })
+  assert.deepEqual(preview.differences, [{ property: 'amount', before: 1250, after: 1990 }])
+  await host.commitRecordChange(preview.operationId)
+  assert.deepEqual(calls.at(-1).slice(0, 3), ['put', '/api/v1/manage/invoices/7', { amount: 1990 }])
+})
+
+test('actions whose CRUD route is absent from the loaded API document are not advertised', () => {
+  const { host } = hostFor({ Invoice: ['amount'] }, {
+    availability: (entity, action) => !(entity === 'Invoice' && action === 'update')
+  })
+  const [invoice] = host.getWriteCapabilities()
+  assert.deepEqual(invoice.actions, ['create'])
+  assert.equal(invoice.actionFields.update, undefined)
+})
+
+test('Store status uses the dedicated endpoint and never silently ignores the form field', async() => {
+  const { host, calls } = hostFor({ Store: ['name', { property: 'status', type: 'select', default_value: 'activate',
+    type_options: { options: [{ value: 'activate' }, { value: 'suspend' }, { value: 'close' }] } }, 'paymentSetting'] },
+  { special: true, record: { id: 7, uuid: '550e8400-e29b-41d4-a716-446655440007', name: 'Store', status: 'active' } })
+  assert.equal(host.getWriteCapabilities()[0].actionFields.create.paymentSetting, undefined)
+  assert.equal(host.getWriteCapabilities()[0].actionFields.update.paymentSetting, undefined)
+  await assert.rejects(host.prepareRecordChange({ entity: 'Store', action: 'create', changes: { name: 'S', status: 'suspend' } }), /change its status separately/)
+  const created = await host.prepareRecordChange({ entity: 'Store', action: 'create', changes: { name: 'S', status: 'activate' } })
+  await host.commitRecordChange(created.operationId)
+  assert.deepEqual(calls.at(-1).slice(0, 3), ['post', '/api/v1/manage/stores', { name: 'S' }])
+  const updated = await host.prepareRecordChange({ entity: 'Store', action: 'update', identifier: '7', changes: { status: 'suspend' } })
+  await host.commitRecordChange(updated.operationId)
+  assert.deepEqual(calls.at(-1).slice(0, 3), ['post', '/api/v1/manage/stores/550e8400-e29b-41d4-a716-446655440007/status/suspend', {}])
+  await assert.rejects(host.prepareRecordChange({ entity: 'Store', action: 'update', identifier: '7', changes: { name: 'N', status: 'close' } }), /separately/)
+})
+
+test('User creation maps the admin plainPassword control to the backend password contract', async() => {
+  const { host, calls } = hostFor({ User: ['username', 'email', { property: 'plainPassword', type: 'password' }, 'roles'] }, { special: true })
+  const caps = host.getWriteCapabilities()[0]
+  assert.deepEqual(Object.keys(caps.actionFields.create).sort(), ['email', 'plainPassword', 'username'])
+  const preview = await host.prepareRecordChange({ entity: 'User', action: 'create', changes: { username: 'u', email: 'u@example.test', plainPassword: 'temporary-value' } })
+  await host.commitRecordChange(preview.operationId)
+  assert.deepEqual(calls.at(-1).slice(0, 3), ['post', '/api/v1/manage/users', { username: 'u', email: 'u@example.test', password: 'temporary-value' }])
+})
+
+test('fields ignored by the backend controller are absent from the actionable capability', () => {
+  const { host } = hostFor({
+    Comment: ['body', 'entityType', 'entityId', 'status', 'parent'],
+    Material: ['code', 'name', 'kind', 'unit', 'status'],
+    Counter: ['storeUuid', 'code', 'name', 'capacity']
+  })
+  const comment = host.getWriteCapabilities().find(item => item.entity === 'Comment')
+  assert.equal(comment.actionFields.update.entityType, undefined)
+  assert.equal(comment.actionFields.update.entityId, undefined)
+  assert.equal(comment.actionFields.update.parent, undefined)
+  assert.ok(comment.actionFields.update.body)
+  assert.equal(host.getWriteCapabilities().find(item => item.entity === 'Material').actionFields.update.code, undefined)
+  assert.equal(host.getWriteCapabilities().find(item => item.entity === 'Counter').actionFields.update.storeUuid, undefined)
+})
+
+test('WeChat identity and store binding exceptions fail closed', () => {
+  const { host } = hostFor({
+    StoreWechatSetting: ['storeUuid', 'miniappUuid', 'officialUuid', 'merchantUuid'],
+    WechatUser: ['openid', 'unionid', 'appType', 'sessionKey', 'rawData', 'appId', 'user', 'nickname']
+  })
+  assert.equal(host.getWriteCapabilities().some(item => item.entity === 'StoreWechatSetting'), false)
+  const wechat = host.getWriteCapabilities().find(item => item.entity === 'WechatUser')
+  assert.deepEqual(Object.keys(wechat.actionFields.create).sort(), ['appType', 'nickname', 'openid', 'unionid'])
+})
+
+test('nested schema constraints are enforced before a preview can be confirmed', async() => {
+  const { config, host, setRecord } = setup()
+  setRecord({ id: 7, settings: { copies: 1 } })
+  config.entities.Page.form.fields = [{ property: 'settings', type: 'json_schema', type_options: { schema: {
+    type: 'object', additionalProperties: false,
+    properties: { copies: { type: 'integer', minimum: 1, maximum: 5 }, note: { type: 'string', maxLength: 4 } },
+    required: ['copies']
+  } } }]
+  await assert.rejects(host.prepareRecordChange({ entity: 'Page', action: 'update', identifier: '7', changes: { settings: { copies: 6 } } }), /maximum/)
+  await assert.rejects(host.prepareRecordChange({ entity: 'Page', action: 'update', identifier: '7', changes: { settings: { copies: 1, hidden: true } } }), /hidden or read-only|Unsupported nested field/)
+  await assert.rejects(host.prepareRecordChange({ entity: 'Page', action: 'update', identifier: '7', changes: { settings: { copies: 1, note: 'longer' } } }), /too long/)
+  const preview = await host.prepareRecordChange({ entity: 'Page', action: 'update', identifier: '7', changes: { settings: { copies: 2 } } })
+  assert.equal(preview.saved, false)
+})
+
+test('OrderCounter creation maps the configured relation name to counterUuid', async() => {
+  const { host, calls } = hostFor({ OrderCounter: [
+    { property: 'tradeOrderUuid', type: 'RelationToOne', relation: { target: 'Order', valueKey: 'uuid' } },
+    { property: 'counter', type: 'RelationToOne', relation: { target: 'Counter', valueKey: 'uuid' } }
+  ] }, { special: true })
+  const preview = await host.prepareRecordChange({ entity: 'OrderCounter', action: 'create', changes: {
+    tradeOrderUuid: '550e8400-e29b-41d4-a716-446655440001',
+    counter: '550e8400-e29b-41d4-a716-446655440002'
+  } })
+  await host.commitRecordChange(preview.operationId)
+  assert.deepEqual(calls.at(-1).slice(0, 3), ['post', '/api/v1/manage/order-counters', {
+    tradeOrderUuid: '550e8400-e29b-41d4-a716-446655440001',
+    counterUuid: '550e8400-e29b-41d4-a716-446655440002'
+  }])
 })

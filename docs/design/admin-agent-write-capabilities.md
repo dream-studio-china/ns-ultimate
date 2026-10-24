@@ -8,9 +8,10 @@ The current [contract](../contracts/admin-agent.md) is authoritative for capabil
 
 ## Retained restrictions
 
-- System settings, authorization management and wallet writes remain prohibited.
-- Existing users cannot be modified or deleted; configured creation does not permit role/permission assignment.
-- Deletion retains the explicit Category/ProductCategory/Tag/Comment whitelist, plus effective configuration and normal backend checks.
+- System settings, authorization management, wallet writes and Store WeChat application/merchant bindings remain prohibited.
+- Existing users cannot be modified or deleted; configured creation does not permit role/permission assignment. New WeChat users expose only profile fields, not session keys, raw payloads, app IDs or account links.
+- Deletion retains the explicit Category/ProductCategory/Tag/Comment whitelist, plus effective configuration and normal backend checks; Tag deletion also verifies Content membership.
+- The host applies the form's value semantics where the API differs (currency minor units, User password field, OrderCounter relation name, Store status endpoint) and omits controller-ignored fields or undocumented actions.
 - No batch update/delete, arbitrary HTTP tool, console execution or custom provider-action endpoint is exposed.
 - Uploads and embedded/custom controls require a supported host flow; configuration alone does not implement one.
 

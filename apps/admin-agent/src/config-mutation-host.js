@@ -22,19 +22,23 @@ function active(signal) {
 }
 function ruleFor(field) {
   return {
-    type: 'json', nullable: true, requiredOnCreate: field.required,
+    type: 'json', nullable: true, requiredOnCreate: field.required, requiredOnUpdate: field.required,
     ...(Object.hasOwn(field, 'defaultValue') ? { default: field.defaultValue } : {}),
-    description: `${field.label}: ${field.type}${field.relation ? `; ${field.relation.multiple ? 'array of ' : ''}${field.relation.target} ${field.relation.valueKey}` : ''}${field.options ? `; options: ${JSON.stringify(field.options.map(item => item.value))}` : ''}`
+    description: `${field.label}: ${field.type}${field.relation ? `; ${field.relation.multiple ? 'array of ' : ''}${field.relation.target} ${field.relation.valueKey}` : ''}${field.multiplier ? `; enter ${field.currency} major units (for example 12.50); stored as minor units x${field.multiplier}` : ''}${field.options ? `; options: ${JSON.stringify(field.options.map(item => item.value))}` : ''}${field.nestedPaths?.length ? `; nested paths: ${field.nestedPaths.slice(0, 40).join(', ')}` : ''}`
   }
 }
-export function configuredCapabilities(projection, policy) {
+export function configuredCapabilities(projection, policy, isActionAvailable) {
   if (typeof policy?.isActionAllowed !== 'function' || typeof policy?.isFieldAllowed !== 'function') throw new TypeError('An explicit host mutation policy is required.')
   return projection.entities.flatMap(entity => {
     const actionFields = {}
     for (const [action, config] of Object.entries(entity.actions)) {
       if (!config.configured || !policy.isActionAllowed(entity.name, action)) continue
-      const fields = config.fields.filter(field => policy.isFieldAllowed(entity.name, field.property))
-      if (action === 'create' && config.fields.some(field => field.required && !policy.isFieldAllowed(entity.name, field.property))) continue
+      // The admin form may enable an action whose CRUD route does not exist
+      // (for example Invoice PUT). Do not advertise an operation that can only
+      // fail after the user confirms it.
+      if (typeof isActionAvailable === 'function' && !isActionAvailable(entity.name, action, entity.path)) continue
+      const fields = config.fields.filter(field => policy.isFieldAllowed(entity.name, field.property, action))
+      if (action === 'create' && config.fields.some(field => field.required && !policy.isFieldAllowed(entity.name, field.property, action))) continue
       // A required unsupported control must not silently disappear from create.
       if (action === 'create' && projection.unsupported.some(item => item.entityName === entity.name && item.required === true
         && ['custom_component', 'unsupported_type', 'dynamic_hidden', 'callback_field'].includes(item.reason))) continue
@@ -49,7 +53,7 @@ export function configuredCapabilities(projection, policy) {
     }] : []
   })
 }
-function valueFor(field, value) {
+function valueFor(field, value, { convertCurrency = false, stored = false } = {}) {
   if (value === null) return null
   if (field.relation) {
     const id = item => {
@@ -63,13 +67,83 @@ function valueFor(field, value) {
     if (!safeJson(value)) throw new TypeError(`Invalid JSON: ${field.property}.`)
     return value
   }
-  if (field.type === 'enum' && field.options && !field.options.some(item => item.value === value)) throw new TypeError(`Invalid option: ${field.property}.`)
+  // Stored enum labels may differ from the form's submit values (Store stores
+  // "active" while the status endpoint accepts "activate"). Options constrain
+  // new input, not the current snapshot used for comparison.
+  if (!stored && field.type === 'enum' && field.options && !field.options.some(item => item.value === value)) throw new TypeError(`Invalid option: ${field.property}.`)
   if (field.type === 'boolean' && typeof value !== 'boolean') throw new TypeError(`Expected boolean: ${field.property}.`)
   if (['number', 'integer'].includes(field.type) && (typeof value !== 'number' || !Number.isFinite(value)
     || field.type === 'integer' && !Number.isSafeInteger(value))) throw new TypeError(`Expected ${field.type}: ${field.property}.`)
   if (['string', 'date', 'datetime'].includes(field.type) && typeof value !== 'string') throw new TypeError(`Expected text: ${field.property}.`)
+  if (convertCurrency && field.multiplier) {
+    const scaled = Math.round(value * field.multiplier)
+    if (!Number.isSafeInteger(scaled)) throw new TypeError(`The amount is out of range: ${field.property}.`)
+    return scaled
+  }
   return value
 }
+/**
+ * Validate the JSON-schema subset used by composed form controls. The backend
+ * remains authoritative; this only prevents a preview that cannot possibly be
+ * accepted and gives the model the same constraints the admin form displays.
+ */
+function validateSchema(schema, value, path, depth = 0) {
+  if (!plain(schema) || depth > 12) return
+  if (value === null) {
+    if (schema.nullable === true || schema.type === 'null') return
+    if (Array.isArray(schema.type) && schema.type.includes('null')) return
+    throw new TypeError(`Expected ${schema.type || 'a value'}: ${path}.`)
+  }
+  if (Array.isArray(schema.anyOf) && schema.anyOf.length) {
+    const accepted = schema.anyOf.some(candidate => {
+      try { validateSchema(candidate, value, path, depth + 1); return true } catch { return false }
+    })
+    if (!accepted) throw new TypeError(`Value does not match the allowed schema: ${path}.`)
+    return
+  }
+  if (schema.type === 'object' || plain(schema.properties)) {
+    if (!plain(value)) throw new TypeError(`Expected an object: ${path}.`)
+    for (const required of Array.isArray(schema.required) ? schema.required : []) {
+      if (!Object.hasOwn(value, required) || value[required] === null) throw new TypeError(`Missing required nested field: ${path}.${required}.`)
+    }
+    const properties = plain(schema.properties) ? schema.properties : {}
+    for (const [key, child] of Object.entries(value)) {
+      if (Object.hasOwn(properties, key)) validateSchema(properties[key], child, `${path}.${key}`, depth + 1)
+      else if (schema.additionalProperties === false) throw new TypeError(`Unsupported nested field: ${path}.${key}.`)
+      else if (plain(schema.additionalProperties)) validateSchema(schema.additionalProperties, child, `${path}.${key}`, depth + 1)
+    }
+    if (plain(schema.dependencies)) {
+      for (const [key, dependencies] of Object.entries(schema.dependencies)) {
+        if (!Object.hasOwn(value, key)) continue
+        for (const dependency of Array.isArray(dependencies) ? dependencies : []) {
+          if (!Object.hasOwn(value, dependency)) throw new TypeError(`Nested field ${path}.${dependency} is required with ${path}.${key}.`)
+        }
+      }
+    }
+    return
+  }
+  if (schema.type === 'array') {
+    if (!Array.isArray(value)) throw new TypeError(`Expected an array: ${path}.`)
+    if (schema.items) value.forEach((item, index) => validateSchema(schema.items, item, `${path}[${index}]`, depth + 1))
+    return
+  }
+  if (schema.type === 'string') {
+    if (typeof value !== 'string') throw new TypeError(`Expected text: ${path}.`)
+    if (schema.minLength !== undefined && value.length < schema.minLength) throw new TypeError(`Text is too short: ${path}.`)
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) throw new TypeError(`Text is too long: ${path}.`)
+    if (typeof schema.pattern === 'string' && !new RegExp(schema.pattern).test(value)) throw new TypeError(`Text does not match the configured pattern: ${path}.`)
+  } else if (schema.type === 'integer' || schema.type === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value) || (schema.type === 'integer' && !Number.isSafeInteger(value))) {
+      throw new TypeError(`Expected ${schema.type}: ${path}.`)
+    }
+    if (schema.minimum !== undefined && value < schema.minimum) throw new TypeError(`Value is below the minimum: ${path}.`)
+    if (schema.maximum !== undefined && value > schema.maximum) throw new TypeError(`Value is above the maximum: ${path}.`)
+  } else if (schema.type === 'boolean') {
+    if (typeof value !== 'boolean') throw new TypeError(`Expected boolean: ${path}.`)
+  }
+  if (Array.isArray(schema.enum) && !schema.enum.some(item => item === value)) throw new TypeError(`Invalid option: ${path}.`)
+}
+
 function mergeObject(before, patch) {
   if (!plain(patch)) return clone(patch)
   const result = plain(before) ? clone(before) : {}
@@ -85,7 +159,7 @@ function nestedAllowed(field, before, after, prefix = '') {
   })
 }
 
-export function createConfigMutationHost({ getProjection, request, policy, beforeDelete, now = Date.now, randomId = () => crypto.randomUUID() }) {
+export function createConfigMutationHost({ getProjection, request, policy, beforeDelete, specialWrite, isActionAvailable, now = Date.now, randomId = () => crypto.randomUUID() }) {
   const operations = new Map()
   let disposed = false
   let writing = false
@@ -93,13 +167,13 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
     if (disposed) throw conflict('The admin session ended.')
     return getProjection()
   }
-  const capabilities = () => configuredCapabilities(projection(), policy)
+  const capabilities = () => configuredCapabilities(projection(), policy, isActionAvailable)
   function binding(entity, action) {
     const current = projection()
-    const capability = configuredCapabilities(current, policy).find(item => item.entity === entity && item.actions.includes(action))
+    const capability = configuredCapabilities(current, policy, isActionAvailable).find(item => item.entity === entity && item.actions.includes(action))
     const config = current.entities.find(item => item.name === entity)
     if (!capability || !config?.path) throw conflict('This entity/action is not available in the current admin configuration.')
-    return { current, config, fields: config.actions[action].fields.filter(field => policy.isFieldAllowed(entity, field.property)) }
+    return { current, config, fields: config.actions[action].fields.filter(field => policy.isFieldAllowed(entity, field.property, action)) }
   }
   const receipt = op => ({ operationId: op.id, entity: op.entity, action: op.action, identifier: op.identifier,
     status: op.status, createdAt: op.createdAt, expiresAt: op.expiresAt, fields: op.fields,
@@ -122,7 +196,7 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
     operations.set(id, op)
     return op
   }
-  async function draft(input, signal) {
+  async function draft(input, signal, { normalized = false } = {}) {
     active(signal)
     if (!plain(input) || Object.keys(input).some(key => !['entity', 'action', 'identifier', 'changes'].includes(key))) throw new TypeError('Unsupported change parameters.')
     const { current, config, fields } = binding(input.entity, input.action)
@@ -133,7 +207,7 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
     const byName = new Map(fields.map(field => [field.property, field]))
     for (const [key, value] of Object.entries(input.changes || {})) {
       if (!byName.has(key)) throw new TypeError(`Unsupported change field: ${key}.`)
-      changes[key] = valueFor(byName.get(key), value)
+      changes[key] = valueFor(byName.get(key), value, { convertCurrency: !normalized })
     }
     if (input.action === 'create') for (const field of fields) {
       if (!Object.hasOwn(changes, field.property) && Object.hasOwn(field, 'defaultValue')) changes[field.property] = clone(field.defaultValue)
@@ -163,20 +237,34 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
     for (const field of selected) {
       const key = field.property
       if (input.action !== 'create' && !Object.hasOwn(before, key)) throw new TypeError(`Current field is missing from record details: ${key}.`)
-      const old = input.action === 'create' ? null : valueFor(field, before[key])
+      if (input.action === 'update' && field.required
+        && (changes[key] === null || changes[key] === '')) throw new TypeError(`Missing required field: ${key}.`)
+      const old = input.action === 'create' ? null : valueFor(field, before[key], { stored: true })
       let after = changes[key]
       if (field.nestedPaths) {
         if (!nestedAllowed(field, old, after)) throw new TypeError(`Change includes hidden or read-only nested fields: ${key}.`)
         after = mergeObject(old, after)
         changes[key] = after
       }
+      if (field.schema) validateSchema(field.schema, after, key)
       snapshot[key] = old
       if (input.action === 'create' || !same(old, after)) differences.push({ property: key, before: old, after })
     }
     if (!differences.length) throw new TypeError('The proposed change has no differences.')
     if (JSON.stringify(differences).length > 200000) throw new TypeError('The preview is too large. Use the standard editor.')
+    let submission
+    if (typeof specialWrite === 'function') {
+      const special = specialWrite({ entity: input.entity, action: input.action,
+        identifier: input.identifier == null ? null : String(input.identifier), changes, record: before,
+        path: config.path })
+      if (special !== undefined && special !== null) {
+        if (!plain(special) || typeof special.path !== 'string' || !['post', 'put', 'delete'].includes(special.method)
+          || !plain(special.changes || {})) throw new TypeError('The special write adapter returned an unsupported request.')
+        submission = { method: special.method, path: special.path, changes: special.changes || {} }
+      }
+    }
     return clone({ entity: input.entity, action: input.action, identifier: input.identifier == null ? null : String(input.identifier),
-      revision: current.revision, path, changes, snapshot, differences, fields: Object.keys(changes) })
+      revision: current.revision, path, changes, snapshot, differences, fields: Object.keys(changes), ...(submission ? { submission } : {}) })
   }
   function preview(op) {
     return { operationId: op.id, entity: op.entity, action: op.action, identifier: op.identifier,
@@ -191,7 +279,7 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
     if (op.status !== 'pending' || !op.draft) throw conflict('This proposal is no longer pending. Prepare a new preview.')
     if (projection().revision !== op.draft.revision) throw conflict('The admin configuration changed. Prepare a new preview.')
     const fresh = await draft({ entity: op.entity, action: op.action, ...(op.action === 'create' ? {} : { identifier: op.identifier }),
-      ...(op.action === 'delete' ? {} : { changes: op.draft.changes }) }, signal)
+      ...(op.action === 'delete' ? {} : { changes: op.draft.changes }) }, signal, { normalized: true })
     if (!same(fresh.snapshot, op.draft.snapshot)) throw conflict('The record changed. Prepare a new preview.')
     return fresh
   }
@@ -202,9 +290,11 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
     // The shared request client refreshes/replays 401 responses by default.
     // Disable that replay for mutations; a write must never be silently resent.
     const options = { signal, timeout: 60000, _retry: true }
-    const result = data.action === 'delete' ? await request.delete(data.path, options)
-      : data.action === 'create' ? await request.post(data.path, data.changes, options)
-        : await request.put(data.path, data.changes, options)
+    const submission = data.submission || { method: data.action === 'delete' ? 'delete' : data.action === 'create' ? 'post' : 'put',
+      path: data.path, changes: data.changes }
+    const result = submission.method === 'delete' ? await request.delete(submission.path, options)
+      : submission.method === 'post' ? await request.post(submission.path, submission.changes, options)
+        : await request.put(submission.path, submission.changes, options)
     if (!plain(result) || result.code !== undefined && ![0, 200].includes(result.code)) throw new Error('The CRUD response did not acknowledge success.')
     const candidate = data.action === 'create' ? result?.data?.id ?? result?.data?.uuid ?? null : data.identifier
     const identifier = candidate !== null && targetPattern.test(String(candidate)) ? candidate : null

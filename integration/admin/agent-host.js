@@ -10,6 +10,7 @@ import { createSchemaForm } from '@/utils/json-schema-form'
 import { scalarComponentBindings } from '../../apps/admin-agent/adapters/ns-ultimate/admin/config-bindings.mjs'
 import { resolveFormConfiguration } from '../../apps/admin-agent/adapters/ns-ultimate/admin/form-fields.mjs'
 import { createDeleteGuard } from '../../apps/admin-agent/adapters/ns-ultimate/admin/delete-guard.mjs'
+import { specialWrite } from '../../apps/admin-agent/adapters/ns-ultimate/admin/special-writes.mjs'
 import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/inspection.mjs'
 import { createRecordRead, recordReadPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/record-read.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
@@ -27,6 +28,17 @@ const adminPages = buildAdminPageCatalog(adminConfig.routes)
 const registeredRoutes = () => new Set(router.getRoutes().map(route => route.name).filter(Boolean))
 const entityName = (key, config) => typeof config.entity === 'string' ? config.entity : config.entity?.name || key
 
+// Core collection discovery also registers helper UI components that live under
+// the collections directory. They are not entity configurations and must never
+// become assistant capabilities.
+function isEntityConfiguration(config) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return false
+  if (typeof config.setup === 'function' || typeof config.render === 'function') return false
+  return Boolean(config.form?.fields || config.list?.query || config.list?.list_filter
+    || config.list?.list_display || config.detail?.detail_display)
+}
+const configuredEntities = Object.entries(adminConfig.entities).filter(([, config]) => isEntityConfiguration(config))
+
 export function createAdminAgentHost() {
   const structures = new Map()
   const listeners = new Set()
@@ -35,20 +47,38 @@ export function createAdminAgentHost() {
   let initialized = false
   let initialization = null
   let projection
+  let apiOperations = []
+  const pathPattern = path => new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\{[^/}]+\\}$`)
+  const isActionAvailable = (name, action, path) => {
+    if (!apiOperations.length || !path) return true
+    const known = apiOperations.some(operation => operation.path === path || operation.path.startsWith(`${path}/`))
+    if (!known) return true
+    const item = pathPattern(path)
+    if (action === 'create') return apiOperations.some(operation => operation.path === path && operation.method === 'POST')
+    if (action === 'update') return apiOperations.some(operation => item.test(operation.path) && ['PUT', 'PATCH'].includes(operation.method))
+    if (action === 'delete') return apiOperations.some(operation => item.test(operation.path) && operation.method === 'DELETE')
+    return true
+  }
   const accessibleNavigation = () => {
     const routes = registeredRoutes()
     return adminPages.filter(page => routes.has(page.key)).map(page => {
-      const entry = Object.entries(adminConfig.entities).find(([key, config]) => `${entityName(key, config)}List` === page.key)
+      const entry = configuredEntities.find(([key, config]) => `${entityName(key, config)}List` === page.key)
       return { ...page, entity: entry ? entityName(...entry) : undefined, entityKey: entry?.[0] }
     })
   }
-  const getCatalog = operations => buildCapabilityCatalog(adminConfig.entities, operations, { parameterize, defaultPrefix })
+  const getCatalog = operations => {
+    const catalog = buildCapabilityCatalog(Object.fromEntries(configuredEntities), operations, { parameterize, defaultPrefix })
+    // A documented collection endpoint is not enough: the model must not be
+    // offered a collection that has no page available to the current account.
+    const available = new Set(accessibleNavigation().flatMap(page => [page.entity, page.entityKey]).filter(Boolean))
+    return catalog.map(item => available.has(item.name) || available.has(item.key) ? item : { ...item, readable: false })
+  }
   const isRecordPageAvailable = entity => accessibleNavigation().some(page => page.entity === entity || page.entityKey === entity)
   const inspectRecordConfiguration = createRecordInspection({ request, getCatalog, isRecordPageAvailable })
   const readRecord = createRecordRead({ request, getCatalog, isRecordPageAvailable })
   const buildProjection = () => {
-    const entities = Object.fromEntries(Object.entries(adminConfig.entities).map(([key, config]) => [
-      key, resolveFormConfiguration(config, structures.get(key), { resolveRelation, entities: adminConfig.entities })
+    const entities = Object.fromEntries(configuredEntities.map(([key, config]) => [
+      key, resolveFormConfiguration(config, structures.get(key), { resolveRelation, entities: Object.fromEntries(configuredEntities) })
     ]))
     return buildAdminConfigProjection({ ...adminConfig, entities }, {
       defaultPrefix, parameterize, componentBindings: scalarComponentBindings,
@@ -68,10 +98,11 @@ export function createAdminAgentHost() {
   }
   refreshProjection()
   const mutations = createConfigMutationHost({ request, getProjection: refreshProjection, policy: agentMutationPolicy,
-    beforeDelete: createDeleteGuard({ request, getProjection: refreshProjection }) })
-  async function initializeAgentCapabilities(signal) {
+    beforeDelete: createDeleteGuard({ request, getProjection: refreshProjection }), specialWrite, isActionAvailable })
+  async function initializeAgentCapabilities(signal, operations) {
+    if (Array.isArray(operations)) apiOperations = operations
     if (!initialization) initialization = (async() => {
-      const entries = Object.entries(adminConfig.entities).filter(([key, config]) => !structures.has(key) && isRecordPageAvailable(key)
+      const entries = configuredEntities.filter(([key, config]) => !structures.has(key) && isRecordPageAvailable(key)
         && ['create', 'update'].some(action => isAgentActionAllowed(entityName(key, config), action)))
       let index = 0
       await Promise.all(Array.from({ length: Math.min(4, entries.length) }, async() => {

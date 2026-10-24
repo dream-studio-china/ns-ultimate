@@ -201,6 +201,32 @@ test('runs bounded read-only queries without confirmation and validates argument
   assert.equal(queryCount, 2)
 })
 
+test('pages the full configured entity catalog below the tool-result budget', async() => {
+  const large = Array.from({ length: 40 }, (_, index) => ({
+    key: `Entity${index}`,
+    name: `Entity${index}`,
+    readable: true,
+    fields: Array.from({ length: 20 }, (_, field) => ({ property: `field${field}`, label: `Field ${field}`, type: 'string', required: false })),
+    sortFields: Array.from({ length: 30 }, (_, field) => `field${field}`),
+    filters: Array.from({ length: 10 }, (_, field) => ({ property: `field${field}`, label: `Filter ${field}`, type: 'text', operator: 'contains', operators: ['contains', 'equals'], options: [], dynamicOptions: false }))
+  }))
+  const args = { catalog: large, host: {}, operations: [] }
+  let offset = 0
+  const seen = []
+  for (let page = 0; page < 20; page += 1) {
+    const result = await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: JSON.stringify(offset ? { offset } : {}) } } })
+    assert.ok(JSON.stringify(result).length <= 18000)
+    seen.push(...result.entities.map(item => item.name))
+    if (!result.hasMore) break
+    assert.ok(result.nextOffset > offset)
+    offset = result.nextOffset
+  }
+  assert.equal(seen.length, 40)
+  assert.equal(new Set(seen).size, 40)
+  const single = await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"entity":"Entity39"}' } } })
+  assert.deepEqual(single.entities.map(item => item.name), ['Entity39'])
+})
+
 test('allows repeated read queries and records only safe audit metadata', async() => {
   const audits = []
   const host = { queryRecords: async() => ({ records: [{ name: 'A' }, { name: 'B' }] }) }
@@ -217,7 +243,9 @@ test('allows repeated read queries and records only safe audit metadata', async(
 test('rejects unapproved tool names and malformed entity lists', async() => {
   const args = { catalog, host: {}, operations: [], budget: { count: 0 } }
   assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'delete_record', arguments: '{}' } } }), { error: 'This tool is not available.' })
-  assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"url":"https://example.test"}' } } }), { error: 'This tool takes no arguments.' })
+  assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"url":"https://example.test"}' } } }), { error: 'This tool accepts only an optional entity name and offset.' })
+  assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"offset":-1}' } } }), { error: 'The offset must be a non-negative integer.' })
+  assert.deepEqual(await executeAssistantTool({ ...args, call: { type: 'function', function: { name: 'list_entities', arguments: '{"entity":"Missing"}' } } }), { error: 'No configured admin entity has that exact name.' })
 })
 
 test('lists registered pages and opens only allowlisted pages or safe record details', async() => {

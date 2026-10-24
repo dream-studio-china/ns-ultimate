@@ -63,8 +63,16 @@ export function createAssistantTools(catalog, navigation = [], previewPolicy = {
     type: 'function',
     function: {
       name: 'list_entities',
-      description: 'List admin entities and their safe, configured read fields. This does not access record data.',
-      parameters: { type: 'object', properties: {}, required: [], additionalProperties: false }
+      description: 'List admin entities and their safe, configured read fields. This does not access record data. The result is paginated; call it again with nextOffset when hasMore is true, or pass an exact entity name to inspect only that entity.',
+      parameters: {
+        type: 'object',
+        properties: {
+          entity: { type: 'string', description: 'Optional exact entity name to inspect instead of the paged overview.' },
+          offset: { type: 'integer', minimum: 0, description: 'Optional zero-based entity offset from a previous nextOffset value.' }
+        },
+        required: [],
+        additionalProperties: false
+      }
     }
   }]
   if (navigation.length) {
@@ -376,19 +384,53 @@ export async function executeAssistantTool({ call, catalog, navigation = [], man
   if (call.function.name === 'list_entities') {
     let args
     try { args = JSON.parse(call.function.arguments || '{}') } catch { return { error: 'Invalid tool arguments.' } }
-    if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length) return { error: 'This tool takes no arguments.' }
-    const entities = catalog.slice(0, 60).map(item => ({
+    if (!args || typeof args !== 'object' || Array.isArray(args)
+      || Object.keys(args).some(key => !['entity', 'offset'].includes(key))) return { error: 'This tool accepts only an optional entity name and offset.' }
+    if (args.entity !== undefined && typeof args.entity !== 'string') return { error: 'The entity name must be text.' }
+    if (args.offset !== undefined && (!Number.isSafeInteger(args.offset) || args.offset < 0)) return { error: 'The offset must be a non-negative integer.' }
+    const describe = item => ({
       key: item.key,
       name: item.name,
       readable: item.readable,
       fields: item.fields.slice(0, 12).map(field => ({ property: field.property, label: field.label, type: field.type, required: field.required })),
       sortFields: (item.sortFields || []).slice(0, 30),
       filters: item.filters.slice(0, 10).map(filter => ({ property: filter.property, label: filter.label, type: filter.type, operator: filter.operator, operators: filter.operators, options: filter.options.slice(0, 20), dynamicOptions: filter.dynamicOptions }))
-    }))
-    const unsupportedFormControls = typeof host?.getUnsupportedFormControls === 'function'
-      ? host.getUnsupportedFormControls().slice(0, 40) : []
-    return { entities, truncated: catalog.length > entities.length,
-      ...(unsupportedFormControls.length ? { unsupportedFormControls } : {}) }
+    })
+    if (args.entity !== undefined) {
+      const matches = catalog.filter(item => item.name === args.entity || item.key === args.entity)
+      if (!matches.length) return { error: 'No configured admin entity has that exact name.' }
+      if (matches.length > 1) return { error: 'That entity name is ambiguous; use its configured entity key.' }
+      return { entities: [describe(matches[0])], total: 1, offset: 0, hasMore: false }
+    }
+    const offset = args.offset ?? 0
+    if (offset >= catalog.length && catalog.length) return { error: 'The offset is beyond the configured entity list.' }
+    // Tool results are bounded by the caller; keep each page below that limit so
+    // the model can always inspect the full configuration in several calls.
+    const maximumCharacters = 15000
+    const entities = []
+    let used = 0
+    for (let index = offset; index < catalog.length; index += 1) {
+      const item = describe(catalog[index])
+      const size = JSON.stringify(item).length + 1
+      if (entities.length && used + size > maximumCharacters) break
+      entities.push(item)
+      used += size
+    }
+    const unsupportedFormControls = offset === 0 && typeof host?.getUnsupportedFormControls === 'function'
+      ? host.getUnsupportedFormControls().slice(0, 20) : []
+    const result = {
+      entities,
+      total: catalog.length,
+      offset,
+      hasMore: offset + entities.length < catalog.length,
+      ...(offset + entities.length < catalog.length ? { nextOffset: offset + entities.length } : {}),
+      ...(unsupportedFormControls.length ? { unsupportedFormControls } : {})
+    }
+    if (JSON.stringify(result).length > 18000) {
+      // Defensive fallback for an unexpectedly verbose unsupported-control list.
+      delete result.unsupportedFormControls
+    }
+    return result
   }
   if (call.function.name === 'read_record') {
     let args
