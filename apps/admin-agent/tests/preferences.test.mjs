@@ -29,3 +29,15 @@ test('uses defaults for malformed or oversized persisted settings and handles un
   assert.deepEqual(readPreferences({ getItem() { throw new Error('blocked') } }), DEFAULT_PREFS)
   assert.equal(savePreferences(DEFAULT_PREFS, { setItem() { throw new Error('blocked') } }), false)
 })
+
+test('persists provider selection and migrates existing endpoints to a preset or Custom', () => {
+  const storage = memoryStorage()
+  const configured = { ...DEFAULT_PREFS, provider: 'ollama', baseUrl: 'http://localhost:11434/v1', model: 'qwen3.5' }
+  assert.equal(savePreferences(configured, storage), true)
+  assert.deepEqual(readPreferences(storage), configured)
+
+  storage.setItem(PREFS_KEY, JSON.stringify({ baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }))
+  assert.equal(readPreferences(storage).provider, 'deepseek')
+  storage.setItem(PREFS_KEY, JSON.stringify({ baseUrl: 'https://gateway.example/v1', model: 'model-x' }))
+  assert.equal(readPreferences(storage).provider, 'custom')
+})

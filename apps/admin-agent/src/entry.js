@@ -5,6 +5,7 @@ import { mountPanelLayout } from './panel-layout.js'
 import { createAssistantTools, executeAssistantTool } from './tools.js'
 import { formatInspectionOmissions } from './inspection-display.js'
 import { DEFAULT_PREFS, readPreferences, savePreferences } from './preferences.js'
+import { normalizeProvider, PROVIDER_PRESETS, providerUsesApiKey } from './provider-config.js'
 import { handleComposerKeydown } from './composer.js'
 import { renderMarkdown } from './markdown.js'
 import { toSafeCsv } from './export.js'
@@ -39,7 +40,7 @@ function element(tag, attributes = {}, text) {
   for (const [name, value] of Object.entries(attributes)) {
     if (name === 'class') node.className = value
     else if (tag === 'a' && (name === 'href' || name === 'rel')) node.setAttribute(name, value)
-    else if (name === 'type' || name === 'name' || name === 'role' || name === 'autocomplete' || name === 'placeholder' || name === 'aria-label' || name === 'aria-live' || name === 'aria-expanded' || name === 'title' || name === 'maxlength') node.setAttribute(name, value)
+    else if (name === 'type' || name === 'name' || name === 'role' || name === 'value' || name === 'autocomplete' || name === 'placeholder' || name === 'aria-label' || name === 'aria-live' || name === 'aria-expanded' || name === 'title' || name === 'maxlength') node.setAttribute(name, value)
   }
   if (text !== undefined) node.textContent = text
   return node
@@ -77,7 +78,7 @@ const css = `
  :host{all:initial;color:#182230;font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
  *{box-sizing:border-box}.launcher{position:fixed;right:22px;bottom:22px;z-index:2147482000;border:0;border-radius:999px;padding:12px 18px;background:var(--el-color-primary,#409eff);color:white;font:600 14px system-ui,sans-serif;box-shadow:0 6px 24px #102a5633;cursor:pointer}
 .panel{position:fixed;z-index:2147482000;right:20px;bottom:78px;width:min(430px,calc(100vw - 28px));height:min(680px,calc(100vh - 110px));display:flex;flex-direction:column;background:#fff;border:1px solid #d9e0ea;border-radius:16px;box-shadow:0 16px 50px #102a562b;overflow:hidden}
- .hidden{display:none!important}.header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e7ebf1;font-weight:700}.header small{display:block;color:#697586;font-weight:400}.buttons{display:flex;gap:7px}.icon{border:0;background:transparent;padding:7px;cursor:pointer;color:#475467;font-size:18px}.messages{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}.message{white-space:pre-wrap;overflow-wrap:anywhere;border-radius:12px;padding:10px 12px;max-width:95%;background:#f2f4f7;color:#263244}.message.user{align-self:flex-end;background:#e9efff}.message.error{background:#fff0f0;color:#a11}.markdown p,.markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{margin:0 0 8px}.markdown>:last-child{margin-bottom:0}.markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{line-height:1.3}.markdown h1{font-size:1.35em}.markdown h2{font-size:1.2em}.markdown h3{font-size:1.08em}.markdown ul,.markdown ol{margin:0 0 8px;padding-left:22px}.markdown li+li{margin-top:3px}.markdown blockquote{margin:0 0 8px;padding:2px 0 2px 10px;border-left:3px solid #cbd5e1;color:#536174}.markdown pre{margin:0 0 8px;padding:10px;border-radius:8px;background:#182230;color:#e4e7ec;overflow:auto;white-space:pre}.markdown pre code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.markdown :not(pre)>code{padding:1px 4px;border-radius:4px;background:#e6eaf0;font:0.92em ui-monospace,SFMono-Regular,Menlo,monospace}.markdown a{color:#315efb;text-decoration:underline;overflow-wrap:anywhere}.markdown hr{border:0;border-top:1px solid #d0d5dd;margin:4px 0 8px}.markdown table{display:block;width:100%;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:0 0 8px;font-size:.95em}.markdown th,.markdown td{padding:6px 9px;border:1px solid #d0d5dd;text-align:left;vertical-align:top}.markdown th{background:#f2f4f7;font-weight:650}.markdown tr:nth-child(even) td{background:#fafbfc}.status{font-size:12px;color:#667085;padding:0 14px}.composer{padding:12px;border-top:1px solid #e7ebf1;display:grid;gap:8px}.composer textarea{font:inherit;resize:vertical;min-height:64px;max-height:150px;border:1px solid #cfd7e3;border-radius:9px;padding:10px}.composer.drop-active{outline:2px dashed #315efb;outline-offset:-4px}.attachments{display:flex;flex-wrap:wrap;gap:8px}.attachments.hidden{display:none}.attachment{position:relative;display:flex;align-items:flex-start;gap:8px;max-width:100%;background:#f8fafc;border:1px solid #e1e7ef;border-radius:9px;padding:6px 8px}.attachment img.thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #d0d5dd;background:#fff}.attachment-meta{display:grid;min-width:0;gap:1px}.attachment-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}.attachment-meta small{color:#667085;font-size:11px}.attachment-warning{color:#b54708!important}.attachment .icon{padding:1px 5px;font-size:16px;align-self:flex-start}.attachment-notice{font-size:11px;padding:8px}.settings label.checkbox{display:flex;flex-direction:row;align-items:center;gap:8px;font-size:12px;color:#475467}.settings label.checkbox input{width:auto;padding:0}.settings label.checkbox small{color:#667085}.message .message-attachments{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.message .message-image{max-width:180px;max-height:180px;border-radius:8px;display:block;border:1px solid #d0d5dd}.message .message-file{font-size:12px;background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:3px 6px}.row{display:flex;gap:8px;flex-wrap:wrap}.button{border:0;border-radius:8px;background:#315efb;color:white;padding:8px 13px;font:inherit;cursor:pointer}.button.secondary{background:#eef2f7;color:#344054}.button:disabled{opacity:.55;cursor:not-allowed}.settings{position:absolute;inset:52px 0 0;background:white;padding:16px;overflow:auto;display:flex;flex-direction:column;gap:10px}.settings label{display:grid;gap:4px;color:#475467;font-size:12px}.settings input{font:inherit;padding:9px;border:1px solid #cfd7e3;border-radius:8px}.notice{font-size:12px;color:#667085;background:#f8fafc;border-radius:8px;padding:10px}.empty{color:#667085;text-align:center;margin:auto 10px}
+ .hidden{display:none!important}.header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e7ebf1;font-weight:700}.header small{display:block;color:#697586;font-weight:400}.buttons{display:flex;gap:7px}.icon{border:0;background:transparent;padding:7px;cursor:pointer;color:#475467;font-size:18px}.messages{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}.message{white-space:pre-wrap;overflow-wrap:anywhere;border-radius:12px;padding:10px 12px;max-width:95%;background:#f2f4f7;color:#263244}.message.user{align-self:flex-end;background:#e9efff}.message.error{background:#fff0f0;color:#a11}.markdown p,.markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{margin:0 0 8px}.markdown>:last-child{margin-bottom:0}.markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6{line-height:1.3}.markdown h1{font-size:1.35em}.markdown h2{font-size:1.2em}.markdown h3{font-size:1.08em}.markdown ul,.markdown ol{margin:0 0 8px;padding-left:22px}.markdown li+li{margin-top:3px}.markdown blockquote{margin:0 0 8px;padding:2px 0 2px 10px;border-left:3px solid #cbd5e1;color:#536174}.markdown pre{margin:0 0 8px;padding:10px;border-radius:8px;background:#182230;color:#e4e7ec;overflow:auto;white-space:pre}.markdown pre code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.markdown :not(pre)>code{padding:1px 4px;border-radius:4px;background:#e6eaf0;font:0.92em ui-monospace,SFMono-Regular,Menlo,monospace}.markdown a{color:#315efb;text-decoration:underline;overflow-wrap:anywhere}.markdown hr{border:0;border-top:1px solid #d0d5dd;margin:4px 0 8px}.markdown table{display:block;width:100%;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:0 0 8px;font-size:.95em}.markdown th,.markdown td{padding:6px 9px;border:1px solid #d0d5dd;text-align:left;vertical-align:top}.markdown th{background:#f2f4f7;font-weight:650}.markdown tr:nth-child(even) td{background:#fafbfc}.status{font-size:12px;color:#667085;padding:0 14px}.composer{padding:12px;border-top:1px solid #e7ebf1;display:grid;gap:8px}.composer textarea{font:inherit;resize:vertical;min-height:64px;max-height:150px;border:1px solid #cfd7e3;border-radius:9px;padding:10px}.composer.drop-active{outline:2px dashed #315efb;outline-offset:-4px}.attachments{display:flex;flex-wrap:wrap;gap:8px}.attachments.hidden{display:none}.attachment{position:relative;display:flex;align-items:flex-start;gap:8px;max-width:100%;background:#f8fafc;border:1px solid #e1e7ef;border-radius:9px;padding:6px 8px}.attachment img.thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #d0d5dd;background:#fff}.attachment-meta{display:grid;min-width:0;gap:1px}.attachment-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}.attachment-meta small{color:#667085;font-size:11px}.attachment-warning{color:#b54708!important}.attachment .icon{padding:1px 5px;font-size:16px;align-self:flex-start}.attachment-notice{font-size:11px;padding:8px}.settings label.checkbox{display:flex;flex-direction:row;align-items:center;gap:8px;font-size:12px;color:#475467}.settings label.checkbox input{width:auto;padding:0}.settings label.checkbox small{color:#667085}.message .message-attachments{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.message .message-image{max-width:180px;max-height:180px;border-radius:8px;display:block;border:1px solid #d0d5dd}.message .message-file{font-size:12px;background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:3px 6px}.row{display:flex;gap:8px;flex-wrap:wrap}.button{border:0;border-radius:8px;background:#315efb;color:white;padding:8px 13px;font:inherit;cursor:pointer}.button.secondary{background:#eef2f7;color:#344054}.button:disabled{opacity:.55;cursor:not-allowed}.settings{position:absolute;inset:52px 0 0;background:white;padding:16px;overflow:auto;display:flex;flex-direction:column;gap:10px}.settings label{display:grid;gap:4px;color:#475467;font-size:12px}.settings input,.settings select{font:inherit;padding:9px;border:1px solid #cfd7e3;border-radius:8px;background:#fff;color:inherit}.notice{font-size:12px;color:#667085;background:#f8fafc;border-radius:8px;padding:10px}.empty{color:#667085;text-align:center;margin:auto 10px}
   .message.result{max-width:100%;font-size:12px}.result>strong{display:block;margin-bottom:7px}.result-actions{margin:0 0 7px}.result table{display:block;width:100%;max-width:100%;overflow:auto;border-collapse:collapse;margin:0;font-size:inherit}.result th,.result td{padding:5px 7px;border:1px solid #d0d5dd;text-align:left;vertical-align:top}.result th{background:#e7ebf1;font-weight:650}.result-note{display:block;color:#667085;margin-top:5px}.message.sources{font-size:12px}.sources>strong{display:block;margin-bottom:4px}.sources ul{margin:0;padding-left:18px}.sources li+li{margin-top:3px}.sources a{color:#315efb;text-decoration:underline}
  .record-read{max-width:100%;font-size:12px}.record-read>strong{display:block;margin-bottom:7px}.record-read dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 10px;margin:0}.record-read dt{color:#667085}.record-read dd{margin:0;overflow-wrap:anywhere}.record-read pre{margin:0;max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f8fafc;border:1px solid #e4e7ec;border-radius:8px;padding:8px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.record-read .result-note{display:block;color:#667085;margin-top:6px}
  .operation-history{flex:1;overflow:auto;padding:14px}.operation-history .message{max-width:100%;margin-top:10px;white-space:normal;overflow-wrap:anywhere}
@@ -198,7 +199,7 @@ export function mountAdminAgent(host = {}) {
   headerButtons.append(clearButton, cancelButton, expandButton, closeButton)
   header.append(title, headerButtons)
   const messagesNode = element('div', { class: 'messages', 'aria-live': 'polite' })
-  const empty = element('p', { class: 'empty' }, t('Configure a compatible OpenAI Chat Completions provider to ask about API docs and bounded read-only queries.'))
+  const empty = element('p', { class: 'empty' }, t('Configure a provider to ask about API docs and bounded read-only queries.'))
   messagesNode.append(empty)
   const status = element('div', { class: 'status', 'aria-live': 'polite' })
   const composer = element('form', { class: 'composer' })
@@ -518,7 +519,34 @@ export function mountAdminAgent(host = {}) {
     wrapper.append(field)
     return wrapper
   }
-  settings.append(settingField(t('Provider base URL'), 'baseUrl'), settingField(t('Model'), 'model'), settingField(t('API documentation URL (same origin)'), 'docsUrl'), settingField(t('API key (stored in this browser)'), 'apiKey', 'password'))
+  const providerWrapper = element('label', {}, t('Provider'))
+  const providerSelect = element('select', { name: 'provider' })
+  for (const [value, preset] of Object.entries(PROVIDER_PRESETS)) {
+    providerSelect.append(element('option', { value }, t(preset.label)))
+  }
+  providerWrapper.append(providerSelect)
+  const baseUrlWrapper = settingField(t('Provider base URL'), 'baseUrl')
+  const baseUrlInput = baseUrlWrapper.querySelector('input')
+  const modelWrapper = settingField(t('Model'), 'model')
+  const modelInput = modelWrapper.querySelector('input')
+  const apiKeyWrapper = settingField(t('API key (stored in this browser)'), 'apiKey', 'password')
+  providerSelect.value = normalizeProvider(prefs.provider, prefs.baseUrl)
+  providerSelect.dataset.previousProvider = providerSelect.value
+  modelInput.placeholder = t(PROVIDER_PRESETS[providerSelect.value].modelPlaceholder)
+  apiKeyWrapper.classList.toggle('hidden', !providerUsesApiKey(providerSelect.value))
+  providerSelect.addEventListener('change', () => {
+    const previous = providerSelect.dataset.previousProvider
+    const next = providerSelect.value
+    const previousDefault = PROVIDER_PRESETS[previous]?.defaultModel
+    const nextPreset = PROVIDER_PRESETS[next] || PROVIDER_PRESETS.custom
+    if (next !== 'custom') baseUrlInput.value = nextPreset.baseUrl
+    else if (baseUrlInput.value === PROVIDER_PRESETS[previous]?.baseUrl) baseUrlInput.value = nextPreset.baseUrl
+    if (!modelInput.value || modelInput.value === previousDefault) modelInput.value = nextPreset.defaultModel
+    modelInput.placeholder = t(nextPreset.modelPlaceholder)
+    apiKeyWrapper.classList.toggle('hidden', !providerUsesApiKey(next))
+    providerSelect.dataset.previousProvider = next
+  })
+  settings.append(providerWrapper, baseUrlWrapper, modelWrapper, settingField(t('API documentation URL (same origin)'), 'docsUrl'), apiKeyWrapper)
   const visionWrapper = element('label', { class: 'checkbox' })
   const visionField = element('input', { type: 'checkbox', name: 'visionEnabled' })
   visionField.checked = prefs.visionEnabled === true
@@ -1354,6 +1382,7 @@ export function mountAdminAgent(host = {}) {
   function syncSettingsFromForm() {
     const data = new FormData(settings)
     const nextPrefs = {
+      provider: normalizeProvider(String(data.get('provider') || prefs.provider), String(data.get('baseUrl') || prefs.baseUrl)),
       baseUrl: String(data.get('baseUrl') || DEFAULT_PREFS.baseUrl).trim(),
       model: String(data.get('model') || '').trim(),
       docsUrl: String(data.get('docsUrl') || DEFAULT_PREFS.docsUrl).trim()
@@ -1364,8 +1393,9 @@ export function mountAdminAgent(host = {}) {
       normalizeChatEndpoint(nextPrefs.baseUrl)
       const docsUrl = new URL(nextPrefs.docsUrl, location.origin)
       if (docsUrl.origin !== location.origin || docsUrl.username || docsUrl.password || docsUrl.hash) throw new TypeError('The API document URL must be same-origin.')
-       if (submittedKey.length > 8192) throw new TypeError('The API key exceeds the size limit.')
-       prefs.baseUrl = nextPrefs.baseUrl
+      if (submittedKey.length > 8192) throw new TypeError('The API key exceeds the size limit.')
+      prefs.provider = nextPrefs.provider
+      prefs.baseUrl = nextPrefs.baseUrl
        prefs.model = nextPrefs.model
        prefs.docsUrl = nextPrefs.docsUrl
       prefs.apiKey = submittedKey
@@ -1505,9 +1535,10 @@ export function mountAdminAgent(host = {}) {
     // Freeze provider, model, vision, API key, and file contents at Send. Reads,
     // cancellation, settings edits, and later selection cannot change this request.
     const sendConfig = Object.freeze({
+      provider: normalizeProvider(prefs.provider, prefs.baseUrl),
       baseUrl: prefs.baseUrl,
       model: prefs.model,
-      apiKey,
+      apiKey: providerUsesApiKey(prefs.provider) ? apiKey : '',
       visionEnabled: prefs.visionEnabled === true
     })
     let sendAttachments
@@ -1636,6 +1667,8 @@ export function mountAdminAgent(host = {}) {
       while (true) {
         assertActive()
         const response = await askProvider({
+          provider: sendConfig.provider,
+          sessionId: chatSessions.activeId,
           baseUrl: sendConfig.baseUrl,
           model: sendConfig.model,
           apiKey: sendConfig.apiKey,
