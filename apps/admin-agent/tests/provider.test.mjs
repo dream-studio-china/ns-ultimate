@@ -57,7 +57,7 @@ test('sends OpenCode Go stable session IDs and supports keyless local requests',
   let request
   await askProvider({
     provider: 'opencodeGo', sessionId: 'chat-session-123',
-    baseUrl: 'https://opencode.ai/zen/go/v1', model: 'glm-5.3-flash', apiKey: 'go-secret', messages: [],
+    baseUrl: 'https://opencode.ai/zen/go/v1', model: 'deepseek-v4.1-flash', apiKey: 'go-secret', messages: [],
     fetchImpl: async(url, options) => {
       request = { url, options }
       return { ok: true, json: async() => ({ choices: [{ message: { content: 'ok' } }] }) }

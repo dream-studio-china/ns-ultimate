@@ -8,8 +8,8 @@ export const PROVIDER_PRESETS = Object.freeze({
   opencodeGo: Object.freeze({
     label: 'OpenCode Go',
     baseUrl: 'https://opencode.ai/zen/go/v1',
-    defaultModel: 'glm-5.3-flash',
-    modelPlaceholder: 'glm-5.3-flash'
+    defaultModel: 'deepseek-v4.1-flash',
+    modelPlaceholder: 'deepseek-v4.1-flash'
   }),
   ollama: Object.freeze({
     label: 'Ollama',
