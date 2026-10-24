@@ -53,6 +53,29 @@ test('supports optional API keys and function calls while rejecting malformed re
   }), /no text response/)
 })
 
+test('sends OpenCode Go stable session IDs and supports keyless local requests', async() => {
+  let request
+  await askProvider({
+    provider: 'opencodeGo', sessionId: 'chat-session-123',
+    baseUrl: 'https://opencode.ai/zen/go/v1', model: 'glm-5.3-flash', apiKey: 'go-secret', messages: [],
+    fetchImpl: async(url, options) => {
+      request = { url, options }
+      return { ok: true, json: async() => ({ choices: [{ message: { content: 'ok' } }] }) }
+    }
+  })
+  assert.equal(request.url, 'https://opencode.ai/zen/go/v1/chat/completions')
+  assert.equal(request.options.headers['x-opencode-session'], 'chat-session-123')
+
+  await askProvider({
+    provider: 'ollama', baseUrl: 'http://localhost:11434/v1', model: 'qwen3.5', apiKey: '', messages: [],
+    fetchImpl: async(_url, options) => {
+      assert.equal('Authorization' in options.headers, false)
+      assert.equal('x-opencode-session' in options.headers, false)
+      return { ok: true, json: async() => ({ choices: [{ message: { content: 'local' } }] }) }
+    }
+  })
+})
+
 test('preserves string messages and sends text plus image_url parts unchanged', async() => {
   const messages = [
     { role: 'user', content: 'hello' },

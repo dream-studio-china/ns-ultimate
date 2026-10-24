@@ -109,10 +109,11 @@ export function assertProviderMessages(messages) {
   }
 }
 
-export async function askProvider({ baseUrl, model, apiKey, messages, tools, signal, onToken, fetchImpl = fetch }) {
+export async function askProvider({ baseUrl, model, apiKey, provider, sessionId, messages, tools, signal, onToken, fetchImpl = fetch }) {
   if (!model.trim()) throw new Error('Enter a model name.')
   assertProviderMessages(messages)
   const endpoint = normalizeChatEndpoint(baseUrl)
+  const safeSessionId = typeof sessionId === 'string' && /^[A-Za-z0-9._:-]{1,160}$/.test(sessionId) ? sessionId : ''
   const body = encodeProviderRequest({
     model,
     messages,
@@ -126,7 +127,8 @@ export async function askProvider({ baseUrl, model, apiKey, messages, tools, sig
     signal,
     headers: {
       'Content-Type': 'application/json',
-      ...(typeof apiKey === 'string' && apiKey.length ? { Authorization: `Bearer ${apiKey}` } : {})
+      ...(typeof apiKey === 'string' && apiKey.length ? { Authorization: `Bearer ${apiKey}` } : {}),
+      ...(provider === 'opencodeGo' && safeSessionId ? { 'x-opencode-session': safeSessionId } : {})
     },
     body
   })

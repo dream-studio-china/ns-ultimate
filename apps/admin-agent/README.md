@@ -73,7 +73,7 @@ Set `VITE_ADMIN_AGENT_ENABLED=false` in the integration admin environment, then 
 
 ## Configure
 
-Enter the provider base URL, model, same-origin API document URL (default `/api/doc.json`) and optional provider API key. Root provider URLs use `/v1/chat/completions`. HTTPS is required except for localhost/private LAN providers; LAN HTTP is unencrypted. CORS and Chat Completions compatibility depend on the provider.
+Choose DeepSeek, OpenCode Go, Ollama, or Custom (OpenAI-compatible). The selection fills a default endpoint and model suggestion; both remain editable. Ollama defaults to `http://localhost:11434/v1` and does not send an API key. OpenCode Go defaults to `https://opencode.ai/zen/go/v1` and sends the active chat ID in `x-opencode-session`. DeepSeek defaults to `https://api.deepseek.com/v1`. Custom defaults to the OpenAI endpoint. Enter the same-origin API document URL (default `/api/doc.json`) as before. Root provider URLs use `/chat/completions` when the path already includes `/v1`, or the existing normalizer appends it. HTTPS is required except for localhost/private LAN providers; LAN HTTP is unencrypted. CORS and Chat Completions compatibility depend on the provider.
 
 Provider settings and optional keys persist in browser local storage. Use a trusted browser/device; same-origin scripts can access local storage. The admin token is never sent to the provider. Questions, selected documentation/knowledge excerpts, explicitly sent attachments and bounded read results are disclosed to the selected model. Read results do not require additional per-query confirmation. Chinese UI follows `app_locale`, with English fallback.
 
