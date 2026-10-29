@@ -70,7 +70,10 @@ to submit pending requests. Dispatch atomically claims requests and prunes
 deduplication claims older than 90 days. A crash may leave
 a request in `dispatching`; investigate the job/provider outcome before any manual
 intervention. Ambiguous provider outcomes are never automatically resubmitted.
-Failed requests remain visible in `printer_order_request` for investigation.
+Missing or undecryptable account credentials are definitive failures
+(`missing_credentials` / `invalid_credentials`), so the job is marked `failed`
+instead of `unknown`. Failed requests remain visible in `printer_order_request`
+for investigation.
 
 `GET /api/v1/manage/printer/jobs/{id}/preview` returns the stored job's
 `document` and `copies` in the standard success envelope, without re-rendering
@@ -96,8 +99,36 @@ and no provider order IDs; they are UI examples, not actual print attempts.
 No provider APIs or credential encryption keys are used. Re-running reuses the
 reserved `local-printer-demo` account, device serials, template names, and job
 idempotency keys without duplicating records or overwriting existing content.
-Do not enable the fake account or devices; the command refuses changed/enabled
-reserved hardware records. Use real account/device setup for live printing.
+Keep the fake account and devices disabled for normal development. They may be
+enabled temporarily in `dev` or `test` for the local check below, but must be
+disabled again afterwards; the seed command refuses reserved records that were
+changed or left enabled. Never enable them in a deployed store.
+
+### Local end-to-end check (dev/test only)
+
+This verifies rule execution, request snapshots, dispatch and job recording
+without contacting a printer:
+
+1. Apply migrations and run `app:printer:seed-dummy`.
+2. Temporarily enable the reserved account and receipt device through the admin
+   API, and point the receipt device at the test store.
+3. Create store-owned rules for the triggers under test. A typical table flow
+   uses production on `confirmed` with condition
+   `metadata.counterSettlement` `not_exists`, and settlement on `paid` with
+   `metadata.counterSettlement` `equals true`, both using the demo receipt
+   template.
+4. Create confirmed orders bound with `metadata.counterUuid` (payment is not
+   required), merge the table's confirmed orders, then pay the merged order with
+   the mock gateway.
+5. Run `app:printer:dispatch-orders`. Expect one request per confirmed source
+   order, one for the paid merged order, and none from the merged order's own
+   confirmation. Because the demo credentials are empty, each request produces a
+   `failed` job with `missing_credentials`.
+6. Paying the merged order does not close the table. Ending the counter session
+   requires every bound order to be `completed`, `cancelled`, `refunded` or
+   `merged`.
+
+Disable the demo account and device after the check.
 
 ## Admin integration
 
