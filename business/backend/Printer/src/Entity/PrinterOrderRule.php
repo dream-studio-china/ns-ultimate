@@ -40,9 +40,6 @@ class PrinterOrderRule
     #[ORM\Column(type: 'json')]
     private array $conditions = [];
 
-    #[ORM\Column(type: 'string', length: 20)]
-    private string $scene = '';
-
     #[ORM\Column(name: 'device_uuid', type: 'string', length: 36)]
     private string $deviceUuid = '';
 
@@ -67,8 +64,6 @@ class PrinterOrderRule
     public function setMatch(string $value): self { $this->match = $value; return $this; }
     /** @return list<array<string, mixed>> */ public function getConditions(): array { return $this->conditions; }
     /** @param list<array<string, mixed>> $value */ public function setConditions(array $value): self { $this->conditions = $value; return $this; }
-    public function getScene(): string { return $this->scene; }
-    public function setScene(string $value): self { $this->scene = $value; return $this; }
     public function getDeviceUuid(): string { return $this->deviceUuid; }
     public function setDeviceUuid(string $value): self { $this->deviceUuid = $value; return $this; }
     public function getTemplateUuid(): string { return $this->templateUuid; }
@@ -81,7 +76,7 @@ class PrinterOrderRule
     {
         return ['id' => $this->uuid, 'name' => $this->name, 'enabled' => $this->enabled,
             'events' => $this->events, 'match' => $this->match, 'conditions' => $this->conditions,
-            'scene' => $this->scene, 'deviceUuid' => $this->deviceUuid,
+            'deviceUuid' => $this->deviceUuid,
             'templateUuid' => $this->templateUuid, 'copies' => $this->copies];
     }
 }

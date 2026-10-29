@@ -20,10 +20,6 @@ export default {
         ['all', 'All conditions'], ['any', 'Any condition']
       ]) } },
       { property: 'conditions', component: OrderPrintConditions, default_value: [] },
-      { property: 'scene', type: 'select', required: true, type_options: { options: options([
-        ['order', 'Standard order receipt'], ['per_item', 'Per-item ticket'],
-        ['filtered_list', 'Filtered item list'], ['full_list', 'Full item list'], ['settlement', 'Settlement receipt']
-      ]) } },
       { property: 'deviceUuid', component: OrderPrintOutputSelect, required: true, help: t('Print rule output help'),
         relation: { target: 'PrinterDevice', plural: 'devices', prefix: '/api/v1/manage/printer', valueKey: 'uuid' } },
       { property: 'templateUuid', component: OrderPrintOutputSelect, required: true,
@@ -33,7 +29,7 @@ export default {
     list: {
       disabled_actions: ['delete', 'batch_edit', 'batch_delete'],
       list_filter: { storeUuid: uuidFilter('storeUuid', t('Store'), () => loadRelationRecords({ name: 'Store', valueKey: 'uuid' })), name: t('Name'), enabled: t('Enabled') },
-      list_display: [field('uuid', 'UUID'), field('storeUuid', 'Store'), field('name', 'Name'), field('enabled', 'Enabled'), field('scene', 'Print scene')]
+      list_display: [field('uuid', 'UUID'), field('storeUuid', 'Store'), field('name', 'Name'), field('enabled', 'Enabled'), field('templateUuid', 'Printer template UUID')]
     },
     detail: { detail_display: '__all__' }
   }

@@ -28,17 +28,25 @@ final class OrderPrintRuleEnqueuer
             $configuration = $rule->toRule();
             $template = $this->entityManager->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $rule->getTemplateUuid()]);
             $device = $this->entityManager->getRepository(PrinterDevice::class)->findOneBy(['uuid' => $rule->getDeviceUuid()]);
+            $perUnit = false;
+            $kitchenOnly = false;
             if ($template instanceof PrinterTemplate && $device instanceof PrinterDevice
+                && $template->isEnabled() && $device->isEnabled() && $device->getAccount()->isEnabled()
                 && $device->getStoreUuid() === $store->getUuid() && $template->getKind() === $device->getKind()) {
                 $definition = $template->getDefinition();
                 if ($device->getKind() === PrinterDevice::KIND_LABEL) {
                     if ($device->getWidthMm() !== null) { $definition['widthMm'] = $device->getWidthMm(); }
                     if ($device->getHeightMm() !== null) { $definition['heightMm'] = $device->getHeightMm(); }
                 }
+                // The template owns ticket granularity and item selection; freeze both with the request.
+                $perUnit = $template->getTicketMode() === PrinterTemplate::TICKET_PER_UNIT;
+                $kitchenOnly = $template->getItemFilter() === PrinterTemplate::ITEMS_KITCHEN;
                 $configuration['templateSnapshot'] = $definition;
+                $configuration['ticketMode'] = $template->getTicketMode();
+                $configuration['itemFilter'] = $template->getItemFilter();
             }
             try {
-                $tickets = $this->snapshots->buildPrintData($order, $store, $rule->getScene());
+                $tickets = $this->snapshots->buildPrintData($order, $store, $perUnit, $kitchenOnly);
             } catch (\OverflowException $exception) {
                 if ($this->writer->claim($order->getUuid(), $rule->getUuid())) {
                     $key = hash('sha256', json_encode([$order->getUuid(), $rule->getUuid(), 0], JSON_THROW_ON_ERROR));

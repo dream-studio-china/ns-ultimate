@@ -17,7 +17,7 @@ final class PrinterOrderRuleTest extends TestCase
         $rule = (new PrinterOrderRule())
             ->setStoreUuid(UUID::v4())->setName('Kitchen')->setEnabled(true)
             ->setEvents(['paid', 'accepted'])->setMatch('all')->setConditions([])
-            ->setScene('full_list')->setDeviceUuid(UUID::v4())->setTemplateUuid(UUID::v4())->setCopies(1);
+            ->setDeviceUuid(UUID::v4())->setTemplateUuid(UUID::v4())->setCopies(1);
         $uuid = $rule->getUuid();
         (new OrderPrintRuleValidator(new OrderPrintRuleMatcher()))->validate([$rule->toRule()]);
         $rule->setName('Updated kitchen');

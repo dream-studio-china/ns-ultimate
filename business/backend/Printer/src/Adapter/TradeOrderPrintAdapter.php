@@ -12,18 +12,12 @@ use Doctrine\ORM\EntityManagerInterface;
 /** Builds durable Trade order snapshots for print rules. */
 final class TradeOrderPrintAdapter
 {
-    public const SCENE_ORDER = 'order';
-    public const SCENE_PER_ITEM = 'per_item';
-    public const SCENE_FILTERED_LIST = 'filtered_list';
-    public const SCENE_FULL_LIST = 'full_list';
-    public const SCENE_SETTLEMENT = 'settlement';
-
     public function __construct(private readonly EntityManagerInterface $entityManager)
     {
     }
 
     /** @return list<array<string, mixed>> */
-    public function buildPrintData(Order $order, Store $store, string $scene): array
+    public function buildPrintData(Order $order, Store $store, bool $perUnit = false, bool $kitchenOnly = false): array
     {
         $items = [];
         foreach ($order->getItems() as $item) {
@@ -51,7 +45,7 @@ final class TradeOrderPrintAdapter
                 'productSettings' => $productSettings,
             ];
         }
-        if ($scene === self::SCENE_FILTERED_LIST) {
+        if ($kitchenOnly) {
             $items = array_values(array_filter($items, static fn (array $item): bool => ($item['productSettings']['kitchenPrinterEnable'] ?? false) === true));
             if ($items === []) {
                 return [];
@@ -70,7 +64,7 @@ final class TradeOrderPrintAdapter
             ],
             'store' => ['uuid' => $store->getUuid(), 'name' => $store->getName(), 'code' => $store->getCode()],
         ];
-        if ($scene !== self::SCENE_PER_ITEM) {
+        if (!$perUnit) {
             return [$base];
         }
         $tickets = [];

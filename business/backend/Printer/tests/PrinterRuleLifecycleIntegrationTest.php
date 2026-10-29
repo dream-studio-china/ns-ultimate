@@ -64,7 +64,7 @@ final class PrinterRuleLifecycleIntegrationTest extends KernelTestCase
         $body = ['storeUuid' => $store->getUuid(), 'name' => 'Offline test', 'enabled' => true,
             'events' => ['confirmed', 'paid', 'accepted'], 'match' => 'all',
             'conditions' => [['field' => 'metadata.counterSettlement', 'operator' => 'equals', 'value' => true]],
-            'scene' => 'order', 'deviceUuid' => $device->getUuid(), 'templateUuid' => $template->getUuid(), 'copies' => 1];
+            'deviceUuid' => $device->getUuid(), 'templateUuid' => $template->getUuid(), 'copies' => 1];
         $request = Request::create('/api/v1/manage/printer/order-rules', 'POST', [], [], [], [
             'HTTP_AUTHORIZATION' => 'Bearer '.$token, 'CONTENT_TYPE' => 'application/json',
         ], json_encode($body, JSON_THROW_ON_ERROR));

@@ -26,9 +26,9 @@ final class PrinterTemplateController extends RestController
     /** @var list<string> */
     protected array $requiredCreateProperties = ['name', 'kind', 'definition', 'sampleData'];
     /** @var list<string> */
-    protected array $acceptedCreateProperties = ['name', 'kind', 'definition', 'sampleData'];
+    protected array $acceptedCreateProperties = ['name', 'kind', 'definition', 'sampleData', 'ticketMode', 'itemFilter'];
     /** @var list<string> */
-    protected array $acceptedUpdateProperties = ['name', 'definition', 'sampleData'];
+    protected array $acceptedUpdateProperties = ['name', 'definition', 'sampleData', 'ticketMode', 'itemFilter'];
 
     public function __construct(
         protected readonly PrinterTemplateService $service,
@@ -51,6 +51,7 @@ final class PrinterTemplateController extends RestController
             || ($content['definition']['kind'] ?? null) !== $content['kind']) {
             throw new \InvalidArgumentException('Template kind must match the definition kind.');
         }
+        $this->validateTicketOptions($content);
         $this->renderer->render($content['definition'], $content['sampleData']);
         unset($content['sampleData']);
         return $content;
@@ -66,6 +67,7 @@ final class PrinterTemplateController extends RestController
         if (isset($content['name']) && (!is_string($content['name']) || trim($content['name']) === '')) {
             throw new \InvalidArgumentException('Template name cannot be empty.');
         }
+        $this->validateTicketOptions($content);
         if (array_key_exists('definition', $content)) {
             if (!is_array($content['definition']) || !is_array($content['sampleData'] ?? null)) {
                 throw new \InvalidArgumentException('Template updates require a definition and sampleData object.');
@@ -77,5 +79,18 @@ final class PrinterTemplateController extends RestController
         }
         unset($content['sampleData']);
         return $content;
+    }
+
+    /** @param array<string, mixed> $content */
+    private function validateTicketOptions(array $content): void
+    {
+        if (array_key_exists('ticketMode', $content)
+            && !in_array($content['ticketMode'], [PrinterTemplate::TICKET_SINGLE, PrinterTemplate::TICKET_PER_UNIT], true)) {
+            throw new \InvalidArgumentException('Ticket mode must be single or per_unit.');
+        }
+        if (array_key_exists('itemFilter', $content)
+            && !in_array($content['itemFilter'], [PrinterTemplate::ITEMS_ALL, PrinterTemplate::ITEMS_KITCHEN], true)) {
+            throw new \InvalidArgumentException('Item filter must be all or kitchen.');
+        }
     }
 }

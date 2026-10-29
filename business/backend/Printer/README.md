@@ -38,13 +38,18 @@ snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 
 The Printer module enqueues requests for enabled store-owned order print rules.
 Use the order print rules page to select one or more events (order confirmed,
-payment completed, Store acceptance), a scene, device, template and copies.
+payment completed, Store acceptance), a device, template and copies.
 Conditions match order status or bounded metadata paths using strict scalar
 comparisons or existence checks, combined by one level of all/any. An empty all
 list is unconditional; an empty any list is invalid. A rule produces requests
 at most once per order across its events; use distinct rules for separate prints.
-Scenes cover order, per-item, filtered list, full list and settlement. Filtered
-lists include products with `settings.kitchenPrinterEnable` enabled.
+
+Each template owns the output scenario:
+`ticketMode` is `single` (one ticket for the whole order) or `per_unit` (one
+ticket per purchased unit, with `item`, `item.index` and `item.total` in the
+snapshot). `itemFilter` is `all` or `kitchen`; kitchen prints only products with
+`settings.kitchenPrinterEnable` enabled and prints nothing when none match.
+Existing templates default to `single` and `all`.
 
 Legacy `Store.settings.printing` cases are no longer read or automatically
 migrated. Before deploying, record each store's intended routes and configure

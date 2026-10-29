@@ -66,7 +66,7 @@ final class DispatchOrderPrintRequestsCommand extends Command
                     throw new \DomainException('The configured store or printer device no longer exists.');
                 }
                 if (!is_array($snapshot)) {
-                    throw new \DomainException('The queued request has no template snapshot; it cannot be safely dispatched.');
+                    throw new \DomainException('The queued request has no template snapshot; its template, device or account was unavailable when queued.');
                 }
                 if (!$device->isEnabled() || !$device->getAccount()->isEnabled()) {
                     throw new \DomainException('The configured printer device or account is disabled.');
@@ -75,10 +75,7 @@ final class DispatchOrderPrintRequestsCommand extends Command
                     throw new \DomainException('The configured printer device does not belong to the order store.');
                 }
                 $copies = (int) ($configuration['copies'] ?? 1);
-                $requestKey = 'ord-'.substr($request->getRequestKey(), 0, 40);
-                if (($configuration['scene'] ?? null) === 'per_item') {
-                    $requestKey = 'ord-'.substr(hash('sha256', $request->getRequestKey()), 0, 40);
-                }
+                $requestKey = 'ord-'.substr(hash('sha256', $request->getRequestKey()), 0, 40);
                 $job = $this->jobs->submitSnapshot($device, $snapshot, $request->getPrintData(), $copies, $requestKey);
                 // A submitted/unknown job is terminal for automatic dispatch; only an explicit reprint may send again.
                 if (!in_array($job->getStatus(), [PrinterJob::STATUS_SUBMITTED, PrinterJob::STATUS_PRINTED, PrinterJob::STATUS_FAILED, PrinterJob::STATUS_UNKNOWN], true)) {

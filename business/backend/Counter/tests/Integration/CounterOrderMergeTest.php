@@ -459,7 +459,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         $this->merger()->merge($this->counter, $this->user);
     }
 
-    public function testSettlementPaymentPrintsConfiguredCases(): void
+    public function testSettlementPaymentPrintsConfiguredRules(): void
     {
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
         $account = new PrinterAccount('Test', 'test', '');
@@ -471,7 +471,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         $ruleIds = [];
         foreach (['order', 'settlement'] as $scene) {
             $rule = (new PrinterOrderRule())->setStoreUuid($store->getUuid())->setName($scene)->setEnabled(true)
-                ->setEvents(['paid'])->setMatch('all')->setConditions([])->setScene($scene)
+                ->setEvents(['paid'])->setMatch('all')->setConditions([])
                 ->setDeviceUuid($device->getUuid())->setTemplateUuid($template->getUuid())->setCopies(1);
             $this->em->persist($rule);
             $ruleIds[] = $rule->getUuid();

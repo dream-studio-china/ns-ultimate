@@ -26,9 +26,9 @@ final class PrinterOrderRuleController extends RestController
 {
     use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
 
-    protected array $requiredCreateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'scene', 'deviceUuid', 'templateUuid', 'copies'];
-    protected array $acceptedCreateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'scene', 'deviceUuid', 'templateUuid', 'copies'];
-    protected array $acceptedUpdateProperties = ['name', 'enabled', 'events', 'match', 'conditions', 'scene', 'deviceUuid', 'templateUuid', 'copies'];
+    protected array $requiredCreateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
+    protected array $acceptedCreateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
+    protected array $acceptedUpdateProperties = ['name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
 
     public function __construct(
         protected readonly PrinterOrderRuleService $service,

@@ -132,11 +132,24 @@ test('print rule translations cover every supported locale', () => {
     const source = read(`business/admin/i18n/${locale}.js`)
     for (const key of [
       'Print rule output store help', 'Print rule outputs failed to load',
-      'Print rule output unavailable help', 'Order print rules', 'Print scene'
+      'Print rule output unavailable help', 'Order print rules',
+      'Ticket mode', 'One ticket per order', 'One ticket per item',
+      'Item filter', 'All items', 'Kitchen items only'
     ]) {
       assert.ok(source.includes(`'${key}'`), `${locale} is missing ${key}`)
     }
   }
+})
+
+test('rules no longer carry a print scene; templates own ticket granularity and item scope', () => {
+  const rule = read('business/admin/config/collections/printer/PrinterOrderRule.js')
+  assert.doesNotMatch(rule, /property: 'scene'/)
+  const template = read('business/admin/config/collections/printer/PrinterTemplate.js')
+  const field = name => new RegExp(`property: '${name}'`)
+  assert.match(template, field('ticketMode'))
+  assert.match(template, field('itemFilter'))
+  assert.match(template, /value: 'per_unit'/)
+  assert.match(template, /value: 'kitchen'/)
 })
 
 test('condition editor warns about empty match modes and bounds field length', () => {

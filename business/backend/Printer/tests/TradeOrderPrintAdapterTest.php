@@ -69,16 +69,16 @@ final class TradeOrderPrintAdapterTest extends TestCase
         $handler(new StoreOrderAcceptedMessage(['payload' => ['orderUuid' => 1]]));
     }
 
-    public function testSnapshotBuilderRetainsEmptyOrderAndFilteredListBehavior(): void
+    public function testSnapshotBuilderRetainsSingleAndKitchenFilteredBehavior(): void
     {
         $adapter = new TradeOrderPrintAdapter($this->createStub(EntityManagerInterface::class));
         $order = new Order();
         $store = new Store('shop-a', 'Shop A');
-        $snapshots = $adapter->buildPrintData($order, $store, 'order');
+        $snapshots = $adapter->buildPrintData($order, $store);
         self::assertCount(1, $snapshots);
         self::assertSame($order->getUuid(), $snapshots[0]['order']['uuid']);
         self::assertSame([], $snapshots[0]['order']['items']);
-        self::assertSame([], $adapter->buildPrintData($order, $store, 'filtered_list'));
+        self::assertSame([], $adapter->buildPrintData($order, $store, false, true));
     }
 
     private function entityManager(Order $order, Store $store, int $selections): EntityManagerInterface

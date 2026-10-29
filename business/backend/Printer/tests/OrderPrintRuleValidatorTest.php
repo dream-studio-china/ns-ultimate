@@ -20,7 +20,7 @@ final class OrderPrintRuleValidatorTest extends TestCase
     public function testAcceptsBoundedRulesAndRejectsDuplicateIds(): void
     {
         $rule = ['id' => 'kitchen-paid', 'name' => 'Kitchen', 'enabled' => true,
-            'events' => ['paid'], 'match' => 'all', 'conditions' => [], 'scene' => 'full_list',
+            'events' => ['paid'], 'match' => 'all', 'conditions' => [],
             'deviceUuid' => UUID::v4(), 'templateUuid' => UUID::v4(), 'copies' => 1];
         $validator = new OrderPrintRuleValidator(new OrderPrintRuleMatcher());
         $validator->validate([$rule]);
@@ -32,7 +32,7 @@ final class OrderPrintRuleValidatorTest extends TestCase
     public function testRejectsInvalidOutputEvenWhenRuleIsDisabled(): void
     {
         $rule = ['id' => 'kitchen', 'name' => 'Kitchen', 'enabled' => false,
-            'events' => ['paid'], 'match' => 'all', 'conditions' => [], 'scene' => 'full_list',
+            'events' => ['paid'], 'match' => 'all', 'conditions' => [],
             'deviceUuid' => 'invalid', 'templateUuid' => UUID::v4(), 'copies' => 1];
         $this->expectException(\InvalidArgumentException::class);
         (new OrderPrintRuleValidator(new OrderPrintRuleMatcher()))->validate([$rule]);
@@ -44,7 +44,7 @@ final class OrderPrintRuleValidatorTest extends TestCase
         $device = new PrinterDevice(new PrinterAccount(), 'Printer', 'serial', PrinterDevice::KIND_RECEIPT, $store->getUuid());
         $template = new PrinterTemplate('Receipt');
         $rule = ['id' => 'receipt', 'name' => 'Receipt', 'enabled' => true,
-            'events' => ['paid'], 'match' => 'all', 'conditions' => [], 'scene' => 'order',
+            'events' => ['paid'], 'match' => 'all', 'conditions' => [],
             'deviceUuid' => $device->getUuid(), 'templateUuid' => $template->getUuid(), 'copies' => 1];
         $devices = $this->createStub(EntityRepository::class);
         $devices->method('findOneBy')->willReturn($device);

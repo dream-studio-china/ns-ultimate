@@ -102,7 +102,7 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $em = self::getContainer()->get(EntityManagerInterface::class);
         for ($i = 0; $i < 50; ++$i) {
             $em->persist((new PrinterOrderRule())->setStoreUuid($payload['storeUuid'])->setName('Rule '.$i)
-                ->setEnabled(false)->setEvents(['paid'])->setMatch('all')->setConditions([])->setScene('order')
+                ->setEnabled(false)->setEvents(['paid'])->setMatch('all')->setConditions([])
                 ->setDeviceUuid($payload['deviceUuid'])->setTemplateUuid($payload['templateUuid'])->setCopies(1));
         }
         $em->flush();
@@ -166,11 +166,11 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $base = static fn (): PrinterOrderRule => (new PrinterOrderRule())
             ->setStoreUuid($payload['storeUuid'])->setName('Additional')->setEnabled(true)
-            ->setEvents(['paid'])->setMatch('all')->setConditions([])->setScene('order')
+            ->setEvents(['paid'])->setMatch('all')->setConditions([])
             ->setDeviceUuid($payload['deviceUuid'])->setTemplateUuid($payload['templateUuid'])->setCopies(1);
         $em->persist($base()->setEnabled(false));
         $em->persist($base()->setStoreUuid('another-store'));
-        $em->persist($base()->setScene('invalid'));
+        $em->persist($base()->setCopies(0));
         $em->persist($base()->setConditions([['field' => 'metadata.bad..path', 'operator' => 'exists']]));
         $em->flush();
         $em->clear();
@@ -194,7 +194,7 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $template->setDefinition(['kind' => 'receipt', 'nodes' => [['type' => 'text', 'value' => 'Offline test']]]);
         $request = new PrinterOrderRequest(
             hash('sha256', 'offline-test'), 'order-test', $payload['storeUuid'], 'test-rule', 'paid',
-            ['scene' => 'order', 'deviceUuid' => $payload['deviceUuid'], 'templateUuid' => $payload['templateUuid'], 'copies' => 1, 'templateSnapshot' => $template->getDefinition()],
+            ['ticketMode' => 'single', 'deviceUuid' => $payload['deviceUuid'], 'templateUuid' => $payload['templateUuid'], 'copies' => 1, 'templateSnapshot' => $template->getDefinition()],
             ['order' => ['number' => 'offline-test']],
         );
         $em->persist($request);
@@ -223,8 +223,8 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $connection = $em->getConnection();
         $writer = new OrderPrintRequestWriter($connection);
         $key = hash('sha256', 'order-and-rule');
-        $request = new PrinterOrderRequest($key, 'order', 'store', 'rule', 'paid', ['scene' => 'order'], ['version' => 1]);
-        $duplicate = new PrinterOrderRequest($key, 'order', 'store', 'rule', 'accepted', ['scene' => 'order'], ['version' => 2]);
+        $request = new PrinterOrderRequest($key, 'order', 'store', 'rule', 'paid', ['ticketMode' => 'single'], ['version' => 1]);
+        $duplicate = new PrinterOrderRequest($key, 'order', 'store', 'rule', 'accepted', ['ticketMode' => 'single'], ['version' => 2]);
         $connection->beginTransaction();
         self::assertTrue($writer->claim('order', 'rule'));
         self::assertFalse($writer->claim('order', 'rule'));
@@ -422,10 +422,11 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
     public function testExcessPerItemTicketsRecordFailureWithoutBreakingOrderTransaction(): void
     {
         [$token, $payload] = $this->fixtures();
-        $payload['scene'] = 'per_item';
         $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
         self::assertSame(201, $response->getStatusCode(), $response->getContent());
         $em = self::getContainer()->get(EntityManagerInterface::class);
+        $template = $em->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $payload['templateUuid']]);
+        $template->setTicketMode(PrinterTemplate::TICKET_PER_UNIT);
         $order = (new Order())->setStatus(Order::STATUS_PAID)->addItem((new OrderItem())->setQuantity(501));
         $em->persist($order);
         $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
@@ -492,6 +493,75 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         self::assertCount(1, $em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $order->getUuid()]));
     }
 
+    public function testTemplatePerUnitCreatesOneRequestPerItemUnit(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $template = $em->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $payload['templateUuid']]);
+        $template->setTicketMode(PrinterTemplate::TICKET_PER_UNIT);
+        $order = (new Order())->setStatus(Order::STATUS_PAID)
+            ->addItem((new OrderItem())->setQuantity(2))
+            ->addItem((new OrderItem())->setQuantity(1));
+        $em->persist($order);
+        $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $adapter = new OrderPrintRuleEventAdapter($em, new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        ));
+        $adapter->onPaid($order);
+        $requests = $em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $order->getUuid()]);
+        self::assertCount(3, $requests);
+        $tickets = [];
+        foreach ($requests as $request) {
+            self::assertCount(1, $request->getPrintData()['order']['items']);
+            self::assertSame('per_unit', $request->getConfiguration()['ticketMode']);
+            $item = $request->getPrintData()['item'];
+            $tickets[] = $item['index'].'/'.$item['total'];
+        }
+        sort($tickets);
+        self::assertSame(['1/1', '1/2', '2/2'], $tickets);
+    }
+
+    public function testKitchenFilteredTemplateSkipsOrdersWithoutKitchenItems(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $ruleUuid = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data']['uuid'];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $template = $em->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $payload['templateUuid']]);
+        $template->setItemFilter(PrinterTemplate::ITEMS_KITCHEN);
+        $skipped = (new Order())->setStatus(Order::STATUS_PAID)
+            ->addItem((new OrderItem())->setProductSnapshot(['name' => 'Drink']));
+        $printed = (new Order())->setStatus(Order::STATUS_PAID)
+            ->addItem((new OrderItem())->setProductSnapshot(['name' => 'Burger', 'settings' => ['kitchenPrinterEnable' => true]]));
+        foreach ([$skipped, $printed] as $order) {
+            $em->persist($order);
+            $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        }
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $adapter = new OrderPrintRuleEventAdapter($em, new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        ));
+        $adapter->onPaid($skipped);
+        $adapter->onPaid($printed);
+        self::assertCount(0, $em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $skipped->getUuid()]));
+        self::assertSame(0, (int) $em->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM printer_order_rule_claim WHERE claim_key = ?',
+            [hash('sha256', json_encode([$skipped->getUuid(), $ruleUuid], JSON_THROW_ON_ERROR))],
+        ));
+        $requests = $em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $printed->getUuid()]);
+        self::assertCount(1, $requests);
+        self::assertSame('kitchen', $requests[0]->getConfiguration()['itemFilter']);
+        self::assertCount(1, $requests[0]->getPrintData()['order']['items']);
+    }
+
     private function fixtures(): array
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
@@ -504,7 +574,7 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $em->flush();
         return [self::getContainer()->get(TokenManager::class)->createAccessToken($admin), [
             'storeUuid' => $store->getUuid(), 'name' => 'Kitchen', 'enabled' => true,
-            'events' => ['paid'], 'match' => 'all', 'conditions' => [], 'scene' => 'order',
+            'events' => ['paid'], 'match' => 'all', 'conditions' => [],
             'deviceUuid' => $device->getUuid(), 'templateUuid' => $template->getUuid(), 'copies' => 1,
         ]];
     }

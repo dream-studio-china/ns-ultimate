@@ -35,8 +35,7 @@ final class OrderPrintRuleValidator
                 || !is_bool($rule['enabled'] ?? null) || !$this->matcher->isValid($rule)) {
                 throw new \InvalidArgumentException(sprintf('Print rule %d has invalid events or conditions.', $index + 1));
             }
-            if (!in_array($rule['scene'] ?? null, ['order', 'per_item', 'filtered_list', 'full_list', 'settlement'], true)
-                || !is_string($rule['deviceUuid'] ?? null) || !UUID::is_valid($rule['deviceUuid'])
+            if (!is_string($rule['deviceUuid'] ?? null) || !UUID::is_valid($rule['deviceUuid'])
                 || !is_string($rule['templateUuid'] ?? null) || !UUID::is_valid($rule['templateUuid'])
                 || !is_int($rule['copies'] ?? null) || $rule['copies'] < 1 || $rule['copies'] > 100) {
                 throw new \InvalidArgumentException(sprintf('Print rule %d has invalid output configuration.', $index + 1));
