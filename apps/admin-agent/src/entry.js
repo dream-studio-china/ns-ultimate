@@ -1663,9 +1663,9 @@ export function mountAdminAgent(host = {}) {
       messages.push({ role: 'system', content: 'inspect_record_configuration is the only way to read nested per-record configuration; never reconstruct it from list results or documentation. It returns only fixed allowlisted scalars with their retrieval time and bounded omission diagnostics. Report exactly those values and reasons: missing means only that the path is absent from the returned response; null-parent, invalid, or oversized describe response shape. None of these reasons establishes database storage, defaults, permissions, or disabled state. Missing values are unknown, not false, disabled, or unauthorized. Do not invent field names or recommend alternative read paths. These returned values do not establish business defaults, scheduler/worker activity, or device state and cannot prove a complete root cause.' })
       const toolLoopGuard = createToolLoopGuard()
       let answer = ''
-      let streamedAnswer = ''
       while (true) {
         assertActive()
+        let streamedAnswer = ''
         const response = await askProvider({
           provider: sendConfig.provider,
           sessionId: chatSessions.activeId,
@@ -1687,6 +1687,9 @@ export function mountAdminAgent(host = {}) {
           answer = response.content
           break
         }
+        // Tool results are appended after this turn. A later answer must use a
+        // fresh message rather than overwrite text above those results.
+        streamingMessage = null
         messages.push(response.message)
         for (const call of response.toolCalls) {
           const guard = toolLoopGuard.check(call)
