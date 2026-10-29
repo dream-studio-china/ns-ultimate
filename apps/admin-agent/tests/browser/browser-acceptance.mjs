@@ -22,7 +22,7 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 26
+const EXPECTED_CASE_COUNT = 27
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
@@ -1679,6 +1679,28 @@ function contextCheckAfterReader(ctx) {
 }
 
 const CASES = [
+  {
+    name: 'streamed final answer follows tool results from earlier turns',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      const first = provider.enqueueDeferredStream()
+      provider.enqueueText('Final conclusion sentinel.')
+      const agent = await ctx.mount({ provider })
+      sendText(agent, 'Query the synthetic records.')
+      await provider.waitForRequests(1, ctx)
+      first.text('Checking records sentinel.')
+      first.toolCall({ id: 'query-order-1', name: 'query_records', arguments: { entity: 'syntheticRecords' } })
+      first.close()
+      await provider.waitForRequests(2, ctx)
+      await waitForIdle(agent)
+      const messages = [...agent.shadow.querySelectorAll('.messages > .message')]
+      const preliminary = messages.findIndex(node => node.textContent.includes('Checking records sentinel.'))
+      const result = messages.findIndex(node => node.classList.contains('result'))
+      const conclusion = messages.findIndex(node => node.textContent.includes('Final conclusion sentinel.'))
+      ok(preliminary >= 0 && result > preliminary && conclusion > result, 'The final answer must follow the query result without overwriting the earlier streamed turn.')
+      return { chronologicalStreaming: true }
+    }
+  },
   {
     name: 'config-driven local preview submits existing CRUD only after confirmation and reports session-only history',
     async run(ctx) {
