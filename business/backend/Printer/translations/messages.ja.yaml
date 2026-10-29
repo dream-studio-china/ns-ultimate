@@ -44,3 +44,6 @@
 "Scene": "印刷シーン"
 "Device uuid": "プリンター UUID"
 "Template uuid": "テンプレート UUID"
+"PrinterOrderRuleClaim": "注文印刷ルール重複防止記録"
+"Claim key": "重複防止キー"
+"Token": "トークン"

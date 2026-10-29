@@ -44,3 +44,6 @@
 "Scene": "列印場景"
 "Device uuid": "印表機 UUID"
 "Template uuid": "列印範本 UUID"
+"PrinterOrderRuleClaim": "訂單列印規則去重記錄"
+"Claim key": "去重鍵"
+"Token": "標識"

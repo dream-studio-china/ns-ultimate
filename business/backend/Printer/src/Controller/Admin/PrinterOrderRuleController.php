@@ -37,6 +37,7 @@ final class PrinterOrderRuleController extends RestController
     protected function processCreateContent(array $content, object $entity): array
     {
         if (!$entity instanceof PrinterOrderRule) { throw new \LogicException('Unexpected printer rule entity.'); }
+        $content = $this->normalizeConditions($content);
         $this->validateContent($content, $entity);
         return $content;
     }
@@ -44,7 +45,26 @@ final class PrinterOrderRuleController extends RestController
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         if (!$entity instanceof PrinterOrderRule) { throw new \LogicException('Unexpected printer rule entity.'); }
+        $content = $this->normalizeConditions($content);
         $this->validateContent($content, $entity);
+        return $content;
+    }
+
+    /** Restore null comparisons after the generic admin form removes null fields. */
+    private function normalizeConditions(array $content): array
+    {
+        if (!is_array($content['conditions'] ?? null)) { return $content; }
+        foreach ($content['conditions'] as &$condition) {
+            if (!is_array($condition) || !array_key_exists('valueKind', $condition)) { continue; }
+            if ($condition['valueKind'] !== 'null'
+                || !in_array($condition['operator'] ?? null, ['equals', 'not_equals'], true)
+                || (array_key_exists('value', $condition) && $condition['value'] !== null)) {
+                throw new \InvalidArgumentException('Invalid print condition value type.');
+            }
+            $condition['value'] = null;
+            unset($condition['valueKind']);
+        }
+        unset($condition);
         return $content;
     }
 

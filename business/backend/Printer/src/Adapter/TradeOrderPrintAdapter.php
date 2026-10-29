@@ -132,7 +132,7 @@ final class TradeOrderPrintAdapter
     }
 
     /** @return list<array<string, mixed>> */
-    private function buildPrintData(Order $order, Store $store, string $scene): array
+    public function buildPrintData(Order $order, Store $store, string $scene): array
     {
         $items = [];
         foreach ($order->getItems() as $item) {

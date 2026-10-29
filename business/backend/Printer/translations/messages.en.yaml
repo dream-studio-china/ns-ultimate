@@ -44,3 +44,6 @@
 "Scene": "Print scene"
 "Device uuid": "Printer device UUID"
 "Template uuid": "Printer template UUID"
+"PrinterOrderRuleClaim": "Order print rule claim"
+"Claim key": "Claim key"
+"Token": "Token"

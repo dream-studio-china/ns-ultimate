@@ -17,6 +17,8 @@ use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
 use NsUltimate\Business\Printer\Entity\PrinterOrderRule;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Business\Printer\Command\DispatchOrderPrintRequestsCommand;
+use NsUltimate\Business\Printer\Adapter\TradeOrderPrintAdapter;
+use NsUltimate\Business\Printer\Service\OrderPrintRuleEnqueuer;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleMatcher;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleSelector;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleValidator;
@@ -87,6 +89,16 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
         self::assertSame(400, $response->getStatusCode(), $response->getContent());
         self::assertSame(0, $em->getRepository(PrinterOrderRule::class)->count([]));
+    }
+
+    public function testFormNullMarkerRestoresNullConditionValue(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['conditions'] = [['field' => 'metadata.optional', 'operator' => 'equals', 'valueKind' => 'null']];
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $data = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertSame([['field' => 'metadata.optional', 'operator' => 'equals', 'value' => null]], $data['conditions']);
     }
 
     public function testNonAdminCannotCreateRules(): void
@@ -195,6 +207,9 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $request = new PrinterOrderRequest($key, 'order', 'store', 'rule', 'paid', ['scene' => 'order'], ['version' => 1]);
         $duplicate = new PrinterOrderRequest($key, 'order', 'store', 'rule', 'accepted', ['scene' => 'order'], ['version' => 2]);
         $connection->beginTransaction();
+        self::assertTrue($writer->claim('order', 'rule'));
+        self::assertFalse($writer->claim('order', 'rule'));
+        self::assertTrue($writer->claim('order', 'another-rule'));
         $writer->insert($request);
         $writer->insert($duplicate);
         self::assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM printer_order_request'));
@@ -202,8 +217,50 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         self::assertSame(['version' => 1], json_decode($connection->fetchOne('SELECT print_data FROM printer_order_request'), true));
         $connection->rollBack();
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM printer_order_request'));
+        self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM printer_order_rule_claim'));
         $this->expectException(\LogicException::class);
         $writer->insert($request);
+    }
+
+    public function testRuleEnqueueCreatesOneOfflineFailedJobAcrossEvents(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['events'] = ['confirmed', 'paid', 'accepted'];
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $uuid = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data']['uuid'];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $store = $em->getRepository(Store::class)->findOneBy(['uuid' => $payload['storeUuid']]);
+        $template = $em->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $payload['templateUuid']]);
+        $template->setDefinition(['kind' => 'receipt', 'nodes' => [['type' => 'text', 'value' => 'Offline test']]]);
+        $em->flush();
+        $order = (new Order())->setStatus(Order::STATUS_CONFIRMED);
+        $matcher = new OrderPrintRuleMatcher();
+        $enqueuer = new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em),
+        );
+        $em->getConnection()->beginTransaction();
+        $enqueuer->enqueue($order, $store, 'confirmed');
+        $order->setStatus(Order::STATUS_PAID);
+        $enqueuer->enqueue($order, $store, 'paid');
+        $enqueuer->enqueue($order, $store, 'accepted');
+        $em->getConnection()->commit();
+        $requests = $em->getRepository(PrinterOrderRequest::class)->findAll();
+        self::assertCount(1, $requests);
+        self::assertSame($uuid, $requests[0]->getCaseKey());
+        self::assertSame('confirmed', $requests[0]->getTrigger());
+        self::assertSame('confirmed', $requests[0]->getPrintData()['order']['status']);
+        self::assertSame($uuid, $requests[0]->getConfiguration()['id']);
+        $provider = $this->createMock(PrinterProviderInterface::class);
+        $provider->method('code')->willReturn(PrinterAccount::PROVIDER_XPYUN);
+        $provider->expects(self::once())->method('submitJob')->willThrowException(new PrinterProviderException('offline_test'));
+        $jobs = new PrinterJobService($em, new PrintDocumentRenderer(), new PrinterProviderRegistry([$provider]));
+        $command = new CommandTester(new DispatchOrderPrintRequestsCommand($em, $jobs));
+        self::assertSame(0, $command->execute([]));
+        $result = $em->getRepository(PrinterJob::class)->findAll();
+        self::assertCount(1, $result);
+        self::assertSame(PrinterJob::STATUS_FAILED, $result[0]->getStatus());
     }
 
     private function fixtures(): array

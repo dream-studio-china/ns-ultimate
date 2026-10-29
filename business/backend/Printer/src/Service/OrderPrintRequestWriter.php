@@ -7,12 +7,34 @@ namespace NsUltimate\Business\Printer\Service;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
+use App\Core\Utils\UUID;
 use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
 
 /** Insert request snapshots atomically without turning a replay into a transaction failure. */
 final class OrderPrintRequestWriter
 {
     public function __construct(private readonly Connection $connection) {}
+
+    /** Claim an order/rule once in the caller's transaction, even under concurrent delivery. */
+    public function claim(string $orderUuid, string $ruleUuid): bool
+    {
+        if (!$this->connection->isTransactionActive()) {
+            throw new \LogicException('Order print rules must be claimed inside the order transaction.');
+        }
+        $key = hash('sha256', json_encode([$orderUuid, $ruleUuid], JSON_THROW_ON_ERROR));
+        $token = UUID::v4();
+        $platform = $this->connection->getDatabasePlatform();
+        if ($platform instanceof SQLitePlatform) {
+            $suffix = ' ON CONFLICT(claim_key) DO NOTHING';
+        } elseif ($platform instanceof AbstractMySQLPlatform) {
+            $suffix = ' ON DUPLICATE KEY UPDATE claim_key = claim_key';
+        } else {
+            throw new \LogicException('Atomic order print rule claims are unsupported on this database platform.');
+        }
+        $this->connection->executeStatement('INSERT INTO printer_order_rule_claim (claim_key, token) VALUES (?, ?)'.$suffix, [$key, $token]);
+        $lockingRead = $platform instanceof AbstractMySQLPlatform ? ' FOR UPDATE' : '';
+        return $this->connection->fetchOne('SELECT token FROM printer_order_rule_claim WHERE claim_key = ?'.$lockingRead, [$key]) === $token;
+    }
 
     public function insert(PrinterOrderRequest $request): void
     {

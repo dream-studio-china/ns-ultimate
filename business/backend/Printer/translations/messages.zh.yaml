@@ -44,3 +44,6 @@
 "Scene": "打印场景"
 "Device uuid": "打印机 UUID"
 "Template uuid": "打印模板 UUID"
+"PrinterOrderRuleClaim": "订单打印规则去重记录"
+"Claim key": "去重键"
+"Token": "标识"
