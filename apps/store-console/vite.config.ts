@@ -1,12 +1,15 @@
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [react(), tailwindcss()],
-  server: { host: '127.0.0.1', port: 5180, strictPort: true },
+  server: {
+    host: '127.0.0.1', port: 5180, strictPort: true,
+    proxy: { '/api': { target: loadEnv(mode, process.cwd(), 'STORE_CONSOLE_').STORE_CONSOLE_API_TARGET || 'http://127.0.0.1:8000' } },
+  },
   preview: { host: '127.0.0.1', port: 4180, strictPort: true },
   build: {
     rollupOptions: {
@@ -16,4 +19,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

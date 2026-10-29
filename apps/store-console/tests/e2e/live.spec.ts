@@ -1,0 +1,296 @@
+import { expect, test, type Page } from '@playwright/test'
+
+const storeId = '00000000-0000-4000-8000-000000000001'
+const productId = '00000000-0000-4000-8000-000000000002'
+const categoryId = '00000000-0000-4000-8000-000000000003'
+const orderId = '00000000-0000-4000-8000-000000000004'
+const specId = '00000000-0000-4000-8000-000000000005'
+const counterId = '00000000-0000-4000-8000-000000000006'
+const store = { uuid: storeId, name: 'Contract store', code: 'S1', currency: 'CNY', timezone: 'Asia/Shanghai' }
+
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean } = {}) {
+  const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
+  let products = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active' }]
+  let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
+  let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
+  let counters: { uuid: string; name: string; code: string; capacity: number; sort: number; enabled: boolean }[] = []
+  const order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] } }
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname
+    const method = request.method()
+    const body = request.postDataJSON() as Record<string, unknown> | null
+    requests.push({ path, method, body })
+    const respond = (data: unknown, paged = false) => route.fulfill({ json: { code: 0, data, ...(paged ? { paginator: { page: Number(url.searchParams.get('page') ?? 1), has_next: false } } : {}) } })
+    if (path === '/api/auth/login') return route.fulfill({ json: { access_token: 'test-staff-access', refresh_token: 'test-staff-refresh', expires_in: 60 } })
+    if (path === '/api/auth/logout') return route.fulfill({ status: 204 })
+    expect(request.headers().authorization).toBe('Bearer test-staff-access')
+    if (path === '/api/v1/app/stores') return respond([store], true)
+    if (path === `/api/v1/app/stores/${storeId}`) return respond(store)
+    if (path.endsWith('/membership')) return respond({ status: options.membership ?? 'active', role: 'manager' })
+    if (path === '/api/v1/app/users/me') return respond({ uuid: storeId, username: 'contract-staff', roles: ['ROLE_USER'] })
+    if (path === '/api/v1/app/authorization/me') {
+      const scopes: Record<string, string[]> = {}
+      for (const resource of ['product', 'product_category', 'specification', 'counter', 'order']) {
+        for (const action of options.readOnly || resource === 'order' ? ['read'] : ['read', 'create', 'update', 'delete']) scopes[`store:${resource}:${action}`] = [storeId]
+      }
+      return respond({ permissions: Object.keys(scopes), storeScopes: scopes })
+    }
+    if (options.denyWrite && method !== 'GET') return route.fulfill({ status: 403, json: { code: 403, message: 'denied' } })
+    if (path === `/api/v1/store/${storeId}/products`) {
+      if (method === 'POST') { products.push({ uuid: productId, name: String(body!.name), status: String(body!.status), category: { uuid: String(body!.category) } }); return respond(products.at(-1)) }
+      return respond(options.malformed ? [{ uuid: 'not-a-uuid' }] : products, true)
+    }
+    if (path === `/api/v1/store/${storeId}/products/${productId}`) {
+      if (method === 'PUT') { products = products.map((item) => ({ ...item, ...body, category: { uuid: String(body!.category) } })); return respond(products[0]) }
+      if (method === 'DELETE') { products = []; return route.fulfill({ status: 204 }) }
+    }
+    if (path.endsWith('/specifications')) {
+      if (method === 'POST') { specifications.push({ uuid: specId, name: String(body!.name), price: Number(body!.price), status: String(body!.status), sort: Number(body!.sort) }); return respond(specifications.at(-1)) }
+      return respond(specifications, true)
+    }
+    if (path.endsWith('/product-categories')) {
+      if (method === 'POST') { categories.push({ uuid: categoryId, name: String(body!.name), slug: String(body!.slug), sortOrder: Number(body!.sortOrder), enabled: Boolean(body!.enabled) }); return respond(categories.at(-1)) }
+      return respond(categories, true)
+    }
+    if (path.endsWith('/counters')) {
+      if (method === 'POST') { counters.push({ uuid: counterId, name: String(body!.name), code: String(body!.code), capacity: Number(body!.capacity), sort: Number(body!.sort), enabled: Boolean(body!.enabled) }); return respond(counters.at(-1)) }
+      return respond(counters, true)
+    }
+    if (path.endsWith(`/counters/${counterId}`) && method === 'PUT') { counters = counters.map((item) => ({ ...item, ...body })); return respond(counters[0]) }
+    if (path.endsWith('/orders')) return respond([order], true)
+    if (path.endsWith(`/orders/${orderId}`)) return respond(order)
+    return route.fulfill({ status: 404, json: { code: 404 } })
+  })
+  return requests
+}
+async function login(page: Page) {
+  await page.goto('/')
+  await page.getByLabel('账号', { exact: true }).fill('contract-staff')
+  await page.getByLabel('密码', { exact: true }).fill('test-only-password')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await page.getByRole('button', { name: 'Contract store S1', exact: true }).click()
+  await page.getByRole('button', { name: '连接门店', exact: true }).click()
+}
+
+test('live catalog, separate variants, categories, tables and read-only orders use employee APIs', async ({ page }) => {
+  const requests = await mockApi(page)
+  await login(page)
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await page.getByLabel('商品名称', { exact: true }).fill('Renamed live product')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Renamed live product', exact: true })).toBeVisible()
+  const update = requests.find((request) => request.method === 'PUT')!
+  expect(update.path).toBe(`/api/v1/store/${storeId}/products/${productId}`)
+  expect(update.body).toEqual({ name: 'Renamed live product', status: 'active', category: categoryId })
+  await page.getByRole('button', { name: '管理规格' }).click()
+  await page.getByRole('button', { name: '增加规格' }).click()
+  await page.getByLabel('规格名称', { exact: true }).fill('Regular')
+  await page.getByLabel('规格价格 (CNY)', { exact: true }).fill('19.90')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Regular', exact: true })).toBeVisible()
+  expect(requests.find((request) => request.path.endsWith('/specifications') && request.method === 'POST')?.body?.price).toBe(1990)
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('button', { name: '分类管理', exact: true }).click()
+  await page.getByRole('button', { name: '新增分类', exact: true }).click()
+  await page.getByLabel('分类名称', { exact: true }).fill('New live category')
+  await page.getByLabel('分类标识', { exact: true }).fill('new-live-category')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'New live category', exact: true })).toBeVisible()
+  await page.getByRole('navigation').getByRole('button', { name: '桌台', exact: true }).click()
+  await page.getByRole('button', { name: '新增桌台', exact: true }).click()
+  await page.getByLabel('桌台名称', { exact: true }).fill('Real A01')
+  await page.getByLabel('桌台编号', { exact: true }).fill('A01')
+  await page.getByLabel('座位数', { exact: true }).fill('4')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Real A01', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await page.getByLabel('桌台名称', { exact: true }).fill('Real A02')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Real A02', exact: true })).toBeVisible()
+  await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('pending_validation')
+  await expect(page.getByRole('button', { name: '确认结账', exact: true })).toHaveCount(0)
+  expect(requests.some((request) => request.path.includes('/manage/') || request.path.includes('/payment') || request.path.includes('/app/orders'))).toBe(false)
+  expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toContain('test-staff')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('read-only grants disable all mutations, and reload clears staff authentication', async ({ page }) => {
+  await mockApi(page, { readOnly: true })
+  await login(page)
+  await expect(page.getByRole('button', { name: '新增商品', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '删除', exact: true })).toBeDisabled()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toHaveCount(0)
+})
+
+test('inactive membership cannot enter a store and never enrolls automatically', async ({ page }) => {
+  const requests = await mockApi(page, { membership: 'suspended' })
+  await login(page)
+  await expect(page.getByRole('alert')).toContainText('需要有效门店成员身份')
+  expect(requests.some((request) => request.method === 'POST' && request.path.endsWith('/membership'))).toBe(false)
+  expect(requests.some((request) => request.path.startsWith('/api/v1/store/'))).toBe(false)
+})
+
+test('missing store membership reports its specific connection step and HTTP status', async ({ page }) => {
+  const requests = await mockApi(page)
+  await page.route('**/api/v1/app/stores/*/membership', (route) => route.fulfill({ status: 404, json: { code: 404, message: 'Membership not found.' } }))
+  await login(page)
+  await expect(page.getByRole('alert')).toContainText('需要有效门店成员身份')
+  await expect(page.getByRole('alert')).toContainText('门店成员检查 · HTTP 404')
+  await expect(page.getByRole('navigation')).toHaveCount(0)
+  expect(requests.some((request) => request.method === 'POST' && request.path.endsWith('/membership'))).toBe(false)
+})
+
+test('empty PHP authorization scopes connect safely without granting employee permissions', async ({ page }) => {
+  const requests = await mockApi(page)
+  await page.route('**/api/v1/app/authorization/me', (route) => route.fulfill({ json: { code: 0, data: { permissions: [], storeScopes: [] } } }))
+  await login(page)
+  await expect(page.getByRole('navigation')).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('没有此项门店权限')
+  expect(requests.some((request) => request.path.startsWith('/api/v1/store/'))).toBe(false)
+})
+
+test('server write denial keeps the form and does not display optimistic success', async ({ page }) => {
+  await mockApi(page, { denyWrite: true })
+  await login(page)
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await page.getByLabel('商品名称', { exact: true }).fill('Denied update')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('没有此项门店权限')
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toBeVisible()
+})
+
+test('malformed records show a contract error instead of demo products', async ({ page }) => {
+  await mockApi(page, { malformed: true })
+  await login(page)
+  await expect(page.getByRole('alert')).toContainText('后端响应不符合预期')
+  await expect(page.getByText('鲜切吊龙', { exact: true })).toHaveCount(0)
+})
+
+test('expired refresh returns to login and removes loaded store data', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toBeVisible()
+  await page.route('**/api/v1/store/**/products?**', (route) => route.fulfill({ status: 401, json: { code: 401 } }))
+  await page.route('**/api/auth/token/refresh', (route) => route.fulfill({ status: 401, json: { code: 401 } }))
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toHaveCount(0)
+})
+
+test('demo entry stays independent and never sends staff API requests', async ({ page }) => {
+  const requests = await mockApi(page)
+  await page.goto('/?mode=demo')
+  await expect(page.getByRole('heading', { name: '把每一份用心，做好。' })).toBeVisible()
+  expect(requests).toEqual([])
+})
+
+test('live lists request the next backend page and clear data on store switching and logout', async ({ page }) => {
+  const requests = await mockApi(page)
+  await page.route('**/api/v1/store/**/products?**', (route) => {
+    const pageNumber = Number(new URL(route.request().url()).searchParams.get('page'))
+    return route.fulfill({ json: { code: 0, data: [{ uuid: productId, name: `Live page ${pageNumber}`, category: null, status: 'active' }], paginator: { page: pageNumber, has_next: pageNumber === 1 } } })
+  })
+  await login(page)
+  await expect(page.getByRole('heading', { name: 'Live page 1', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '下一页', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Live page 2', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Live page 1', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '切换门店', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '选择门店', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Live page 2', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
+  await expect.poll(() => requests.filter((request) => request.path === '/api/auth/logout').length).toBe(1)
+})
+
+test('late responses from a discarded store view cannot repopulate it', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toBeVisible()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const requested = page.waitForRequest('**/api/v1/store/**/products?**')
+  await page.route('**/api/v1/store/**/products?**', async (route) => {
+    await gate
+    await route.fulfill({ json: { code: 0, data: [{ uuid: productId, name: 'Late old record', category: null, status: 'active' }], paginator: { page: 1, has_next: false } } })
+  })
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await requested
+  await page.getByRole('button', { name: '切换门店', exact: true }).click()
+  const returned = page.waitForResponse('**/api/v1/store/**/products?**')
+  release()
+  await returned
+  await expect(page.getByRole('heading', { name: '选择门店', exact: true })).toBeVisible()
+  await expect(page.getByText('Late old record', { exact: true })).toHaveCount(0)
+})
+
+test('redesigned workspace remains usable across phone, tablet and desktop layouts', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await mockApi(page)
+  await page.route('**/api/v1/store/**/products?**', (route) => route.fulfill({ json: { code: 0, data: [
+    { uuid: productId, name: 'Fresh-cut beef', category: null, status: 'active' },
+    { uuid: '00000000-0000-4000-8000-000000000012', name: 'Garden vegetables', category: null, status: 'active' },
+    { uuid: '00000000-0000-4000-8000-000000000013', name: 'House broth', category: null, status: 'inactive' },
+  ], paginator: { page: 1, has_next: false } } }))
+  await page.route('**/api/v1/store/**/counters?**', (route) => route.fulfill({ json: { code: 0, data: Array.from({ length: 4 }, (_, index) => ({ uuid: `00000000-0000-4000-8000-00000000002${index}`, name: `Table A0${index + 1}`, code: `LONG-TABLE-CONFIGURATION-CODE-${index + 1}`, capacity: 4, sort: index, enabled: index < 3 })), paginator: { page: 1, has_next: false } } }))
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
+  await page.screenshot({ path: 'test-results/ui-login.png', fullPage: true })
+  await page.getByLabel('账号', { exact: true }).fill('contract-staff')
+  await page.getByLabel('密码', { exact: true }).fill('test-only-password')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  const choice = page.getByRole('button', { name: 'Contract store S1', exact: true })
+  await choice.click()
+  await expect(choice).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByLabel('门店 UUID', { exact: true })).toHaveValue(storeId)
+  await expect(page.getByLabel('门店 UUID', { exact: true })).not.toBeVisible()
+  await page.screenshot({ path: 'test-results/ui-store-selection.png', fullPage: true })
+  await page.getByRole('button', { name: '连接门店', exact: true }).click()
+  await expect(page.locator('.catalog-product-card')).toHaveCount(3)
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(0)
+  await expect(page.locator('.record-identity dd').first()).not.toBeVisible()
+  await page.screenshot({ path: 'test-results/ui-catalog.png', fullPage: true })
+  await page.getByLabel('搜索当前页', { exact: true }).fill('Garden')
+  await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+  await page.getByLabel('搜索当前页', { exact: true }).fill('')
+  await page.getByRole('button', { name: '已下架', exact: true }).click()
+  await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'House broth', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '全部状态', exact: true }).click()
+  await page.getByRole('button', { name: '编辑', exact: true }).first().click()
+  await expect(page.getByRole('dialog').getByRole('combobox', { name: '所属分类', exact: true })).toHaveValue('')
+  await page.screenshot({ path: 'test-results/ui-product-form.png', fullPage: true })
+  await expect(page.getByRole('dialog')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  for (const width of [320, 390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const name of ['商品', '桌台', '门店订单（只读）', '我的']) {
+      await page.getByRole('navigation').getByRole('button', { name, exact: true }).click()
+      await expect(page.locator('.workspace-skeleton')).toHaveCount(0)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      const bounds = await page.getByRole('navigation').getByRole('button', { name, exact: true }).boundingBox()
+      expect(bounds!.height).toBeGreaterThanOrEqual(44)
+      if (width === 390) await page.screenshot({ path: `test-results/ui-${name === '桌台' ? 'tables' : name === '我的' ? 'account' : name === '商品' ? 'products' : 'orders'}.png`, fullPage: true })
+    }
+  }
+  await page.getByRole('navigation').getByRole('button', { name: '商品', exact: true }).click()
+  await expect(page.locator('.catalog-product-card')).toHaveCount(3)
+  await page.screenshot({ path: 'test-results/ui-desktop.png', fullPage: true })
+  await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('API product')
+  await expect(page.getByRole('dialog').locator('pre')).not.toBeVisible()
+  expect(errors).toEqual([])
+})

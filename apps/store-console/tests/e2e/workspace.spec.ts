@@ -13,7 +13,7 @@ async function generateLink(page: Page) {
   return (await page.getByRole('link', { name: '打开演示付款页' }).getAttribute('href'))!
 }
 
-test.beforeEach(async ({ page }) => { await page.goto('/') })
+test.beforeEach(async ({ page }) => { await page.goto('/?mode=demo') })
 
 test('mobile workspace and tabs render without overflow or runtime errors', async ({ page }) => {
   const errors: string[] = []

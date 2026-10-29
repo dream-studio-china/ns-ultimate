@@ -1,12 +1,41 @@
 # NS Store Console
 
-An independent mobile-first Web workspace for store staff, built with React, TypeScript, Vite, Ant Design Mobile and Tailwind CSS. It contains a separately built customer payment entry. The product workflow is inspired by the referenced kitchen/cashier/payment H5, without copying its implementation, branding, assets or API assumptions.
+An independent mobile-first Web workspace for store staff, built with React, TypeScript, Vite, Ant Design Mobile and Tailwind CSS. It has a live employee API mode, an explicitly selected demo mode, and a separately built **demo-only** customer payment entry.
 
-## Status: explicit UI demo
+## Live employee mode
 
-**This application is not connected to real store authentication, APIs, payments or printers.** The employee/store identity and all initial products/tables are fixtures. They grant no actual permissions. Every payment action is visibly labeled as a simulation; no network request, provider SDK or real funds transfer is involved. Never enter real payment codes or credentials.
+The default staff entry (`/` or `?mode=live`) uses the existing backend. Sign in with an existing employee account, select an active store or enter its UUID, then connect. The store list is a directory, **not** proof of membership. Connection reads the user's membership and effective store-scoped permissions. No registration, membership enrollment, role grant or administrator API call is performed. Administrators still require active store membership, matching the backend voter.
 
-Implemented UI flows:
+Connection failures identify the failed check and, when available, its HTTP status without exposing backend exception text or credentials. A membership-check 404 means the existing store has no membership for the current account (or the store is unavailable); it is shown as a membership requirement, not a generic connectivity error. Ask an administrator to provision active store membership and the required store-scoped permissions through the existing management workflow. The app never calls the self-enrollment endpoint to work around a missing membership.
+
+Supported live operations:
+
+- Product listing and basic name, category and active/inactive status CRUD. Product category selection supports paginated choices and an advanced UUID field, preserving associations outside the current page. Catalog cards can display existing HTTPS or same-origin cover images from product metadata; this does not enable uploads or metadata writes.
+- Separate specification CRUD for names, integer-minor-unit prices, status and sort. A product and its specifications are saved separately: no cross-resource transaction or all-or-nothing save is claimed.
+- Category CRUD for name, slug, enabled state and numeric `sortOrder`.
+- Table configuration CRUD for code, name, capacity, sort and enabled state. These records do not establish occupancy, dining duration or payment state.
+- Paginated store order listing and detail/snapshot reads. Operational status is displayed as such, **not** interpreted as payment status.
+- Local language/theme preferences, store switching and logout.
+
+The live interface uses a responsive staff workspace: selected store cards fill the actual UUID, icon navigation separates catalog/tables/orders/account, and record identifiers/raw snapshots are disclosed on demand rather than dominating resource lists. Search and status filters apply only to the loaded page; counts are labeled accordingly, not presented as whole-store statistics. Phone layouts use a floating navigation dock; tablets and desktop use a wider multi-column layout with top navigation. Empty/loading/error/permission states never synthesize business data.
+
+Sale/listing status is not a substitute for the business `isSoldout` flag. Sold-out writes, product ordering, image uploads, kitchen flags and sale-window editing are unavailable in live mode because the employee Product controller does not allow those extension fields. No backend/core allowlists were broadened. Adding items, editing orders, discounts, checkout, customer payment links, financial reports and printer operations remain unavailable in live mode. No demo data is substituted on a failed live request.
+
+### Connection and credentials
+
+The app's own `src/staff/adapters/api-client.ts` sends same-origin `/api/` requests with bearer tokens and no cookies; it does not share a client package or credentials with Cashier or the customer entry. API responses and pagination are runtime-validated. Access/refresh tokens live only in the staff page's memory: reload, switching into the isolated demo, or opening another tab requires a new login. Tokens are not written to URLs, local/session storage, logs or customer links. Logout clears local state immediately and attempts backend token revocation; a failed revocation is reported. Reload alone does not revoke server-side tokens.
+
+Concurrent 401 responses share a single rotating refresh request. An expired/invalid refresh clears staff data and returns to login. Network-failed writes and refresh requests are not automatically replayed: a timeout can mean the server committed a write, so refresh and verify before manually retrying. After a confirmed write the list is re-read; stale page/unmounted-view responses are ignored. This is not optimistic concurrency control: current endpoints do not provide application-level order versions or cross-device edit-conflict resolution. Backend membership and per-action checks remain authoritative; UI permissions are a snapshot, refreshed by reconnecting the store, and a later server denial is shown rather than bypassed.
+
+The Vite development server proxies `/api` to `http://127.0.0.1:8000`. Start the backend using the [development guide](../../docs/operations/development.md); this app does not initialize databases, migrate schemas or create employee accounts. To use a different **trusted development backend**, set `STORE_CONSOLE_API_TARGET` in an ignored package `.env.local` and restart Vite. It is server-side proxy configuration, not a browser-supplied API host. Use test data: saves/deletes in live mode affect the connected backend. Do not put credentials in this setting or point it at production for routine checks.
+
+Build preview does not proxy the API. A deployment must serve this app and route same-origin `/api/` requests to the composed backend under HTTPS, with appropriate security headers. No production routing, Docker or deployment changes are included here. The default staff entry now shows real login instead of demo fixtures; use `?mode=demo` for the previous demo experience.
+
+## Isolated UI demo
+
+Open `?mode=demo` explicitly. **This mode is not connected to real store authentication, APIs, payments or printers.** The employee/store identity and all initial products/tables are fixtures. They grant no actual permissions. Every payment action is visibly labeled as a simulation; no network request, provider SDK or real funds transfer is involved. Never enter real payment codes or credentials.
+
+Implemented demo UI flows:
 
 - Home dashboard with session-based collection totals, pending table amounts, shortcuts and dining tables.
 - Product/category filtering, product name/code search, sold-out/restored availability, batch restore, category/product ordering and category creation.
@@ -31,13 +60,13 @@ npm ci --prefix apps/store-console
 npm run dev --prefix apps/store-console
 ```
 
-Open `http://127.0.0.1:5180/`. The workspace is designed for phone viewports from 320 px wide, with a centered maximum width on tablets and desktop browsers. The desktop cashier uses a different development port.
+Open `http://127.0.0.1:5180/` for live login or `http://127.0.0.1:5180/?mode=demo` for fixtures. Phone viewports start at 320 px; the live workspace expands into multi-column tablet/desktop layouts, while demo/customer entries retain centered mobile layouts. The desktop cashier uses a different development port.
 
-Staff navigation uses hash routes (`#home`, `#products`, `#tables`, `#reports`, `#mine` and `#history`). The customer entry is `payment.html?session=<demo-session-id>`. Use the link created by table checkout rather than inventing a session ID. Opening `payment.html` without a valid session displays a safe missing-bill screen.
+Demo staff navigation uses hash routes (`#home`, `#products`, `#tables`, `#reports`, `#mine` and `#history`). Live navigation is page-local and resets on reload. The demo customer entry is `payment.html?session=<demo-session-id>`. Use the link created by demo table checkout rather than inventing a session ID. Opening `payment.html` without a valid session displays a safe missing-bill screen. Live mode cannot generate links to this payment entry.
 
 Demo payment collection uses the browser Web Locks API on localhost/HTTPS to coordinate tabs. A secure browser context is required. A link must be opened in the **same browser profile and origin** as the staff demo; a link copied to another device/browser has no matching demo data. Real cross-device payment needs a server-backed payment session and is not implemented. Do not expose the development server as a production payment service.
 
-## Data lifetime and isolation
+## Demo data lifetime and isolation
 
 - Products, categories, table edits, held checkout associations and staff receipts live in memory only. Reloading the staff entry restores fixtures and loses those edits and associations. Existing order lines retain their own display/price snapshot when catalog data changes.
 - Only the validated theme identifier is persisted as a preference (`ns-store-console.theme.v1`). Browser storage failures are shown without breaking the current theme.
@@ -61,9 +90,9 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Browser tests exercise mobile navigation/layout, catalog/category/table editing, checkout, cross-entry payment completion, failure/unknown/void states, offline gating, language and local theme persistence. Tests use isolated browser contexts and do not call live services.
+Browser tests exercise both demo flows and live-mode UI against deterministic intercepted API responses. They cover staff permissions, denied writes, DTO failures, expired sessions and the separation from demo/payment behavior. They do not write to a running development or production service. Unit tests cover request contracts, pagination, refresh races and scope checks. The backend composition test at `business/backend/Store/tests/Integration/StoreConsoleApiTest.php` independently exercises the existing login/refresh/logout, ordinary employee authorization, CRUD, order reads and cross-store denial against the integration suite's isolated SQLite database. Run it with `php -d memory_limit=512M core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml --filter StoreConsoleApiTest` from the repository root. These tests do not replace authenticated acceptance testing against the intended MySQL deployment.
 
-`build` runs TypeScript checking and produces both HTML entries in `dist/`. `npm run preview` serves the built app on localhost port 4180. Serve both HTML files and generated assets from the same directory under HTTPS in a future deployment; the relative Vite base supports a dedicated subdirectory. No Nginx routes, Docker context, PWA/service worker or existing admin/API deployment are changed. CI explicitly installs and checks this app in its own job.
+`build` runs TypeScript checking and produces both HTML entries in `dist/`. `npm run preview` serves the built app on localhost port 4180 (without an API proxy). Serve both HTML files and generated assets from the same directory under HTTPS in a future deployment; the relative Vite asset base supports a dedicated subdirectory, while API calls remain rooted at `/api/`. No Nginx routes, Docker context, PWA/service worker or existing admin/API deployment are changed. CI explicitly installs and checks this app in its own job.
 
 The current dependency audit reports a low-severity `deepmerge` advisory inherited through Ant Design Mobile (two affected dependency entries). The latest published `deepmerge` version has no patched release at implementation time. Configuration/locale objects are project-owned; do not pass untrusted objects to UI configuration merges. Track the upstream fix before production release. No forced downgrade or unreviewed dependency override is applied.
 
@@ -72,14 +101,15 @@ Ant Design Mobile declares React 19 support, but some transitive animation/compo
 ## Ownership and live integration
 
 ```text
-src/staff/              Staff UI, fixture gateway, local catalog/table orchestration
-src/staff/adapters/     Explicit host integration seam (currently demo only)
+src/staff/              Demo staff UI and local catalog/table orchestration
+src/staff/live/         Live login, permission-aware resource UI and paginated reads
+src/staff/adapters/     App-owned live API client/DTOs and separate fixture gateway
 src/payment/            Customer entry with no dependency on staff modules
 src/shared/             Base UI, locale/preferences and narrow demo-payment transport
 src/locales/            English and Simplified Chinese resources
 tests/                  Domain, boundary and mobile browser checks
 ```
 
-The app owns mobile UI and host adapters. Backend order/stock/pricing/discount/payment/printing rules remain in business modules. The current gateway is a UI bootstrap seam, not a promised live transaction API. Verify the existing store-facing contracts and add missing product-specific endpoints in `business/backend/`; do not reuse administrator rights or customer order ownership as staff authorization. Do not edit `core/` for this UI.
+The app owns mobile UI and host adapters. Backend order/stock/pricing/discount/payment/printing rules remain in business modules. The demo gateway is a UI bootstrap seam, not a promised live transaction API. Live mode reuses the existing employee APIs; it does not reuse administrator CRUD or customer order ownership as staff authorization. Add missing business endpoints in `business/backend/` before expanding live workflows. Do not edit `core/` for this UI.
 
-Before enabling live operations, implement store-member authentication and per-action authorization, canonical server pricing, concurrent edit conflict handling, durable payment idempotency/recovery, short-lived restricted customer payment sessions, trusted payment-result lookup/webhooks, configured print destinations and secure deployment headers. Keep employee credentials out of customer URLs/storage and isolate customer/employee credentials; an independently served customer origin may be appropriate for production. Browser/provider callbacks alone must never establish that a payment succeeded. Actual mobile browsers, WeChat/Alipay environments, printers and business integrations require separate acceptance testing.
+Before enabling live **transaction** operations, implement employee order commands with canonical server pricing, concurrent edit conflict handling, durable payment idempotency/recovery, short-lived restricted customer payment sessions, trusted payment-result lookup/webhooks and configured print destinations. Keep employee credentials out of customer URLs/storage and isolate customer/employee credentials; an independently served customer origin may be appropriate for production. Browser/provider callbacks alone must never establish that a payment succeeded. Actual mobile browsers, WeChat/Alipay environments, printers and business integrations require separate acceptance testing.

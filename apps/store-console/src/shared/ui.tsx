@@ -1,6 +1,6 @@
 import { Popup, Button } from 'antd-mobile'
 import { X, Plus, Minus, CookingPot } from 'lucide-react'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useCallback, useRef, type ReactNode } from 'react'
 import { useI18n } from './i18n'
 
 export function Sheet({ open, onClose, title, children, footer, locked = false }: {
@@ -9,11 +9,17 @@ export function Sheet({ open, onClose, title, children, footer, locked = false }
   const { t } = useI18n()
   const content = useRef<HTMLElement>(null)
   const previousFocus = useRef<HTMLElement | null>(null)
-  useEffect(() => { if (open) previousFocus.current = document.activeElement as HTMLElement }, [open])
+  const mountContent = useCallback((node: HTMLElement | null) => {
+    content.current = node
+    if (node && open) {
+      if (!node.contains(document.activeElement)) previousFocus.current = document.activeElement as HTMLElement
+      node.focus({ preventScroll: true })
+    }
+  }, [open])
   return <Popup visible={open} onMaskClick={locked ? undefined : onClose} bodyClassName="mobile-sheet" destroyOnClose
-    afterShow={() => content.current?.focus({ preventScroll: true })}
+    afterShow={() => { if (!content.current?.contains(document.activeElement)) content.current?.focus({ preventScroll: true }) }}
     afterClose={() => { if (previousFocus.current?.isConnected) previousFocus.current.focus({ preventScroll: true }) }}>
-    <section ref={content} tabIndex={-1} className="outline-none" role="dialog" aria-modal="true" aria-label={title} onKeyDown={(event) => {
+    <section ref={mountContent} tabIndex={-1} className="outline-none" role="dialog" aria-modal="true" aria-label={title} onKeyDown={(event) => {
       if (event.key === 'Escape') { event.stopPropagation(); if (!locked) onClose(); return }
       if (event.key !== 'Tab') return
       const elements = [...(content.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') ?? [])].filter((element) => element.getClientRects().length)
