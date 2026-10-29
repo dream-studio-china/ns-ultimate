@@ -455,7 +455,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         $this->merger()->merge($this->counter, $this->user);
     }
 
-    public function testSettlementPaymentDoesNotRepeatProductionWork(): void
+    public function testSettlementPaymentPrintsConfiguredCases(): void
     {
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
         $route = ['enabled' => true, 'deviceUuid' => UUID::v4(), 'templateUuid' => UUID::v4()];
@@ -476,8 +476,8 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertCount(1, $outbox);
         self::assertFalse($outbox[0]->getPayload()['store']['requireInventory']);
         $requests = $this->em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $target->getUuid()]);
-        self::assertCount(1, $requests);
-        self::assertSame('settlement', $requests[0]->getCaseKey());
+        self::assertCount(2, $requests);
+        self::assertEqualsCanonicalizing(['order', 'settlement'], array_map(static fn (PrinterOrderRequest $request): string => $request->getCaseKey(), $requests));
     }
 
     public function testCallerOutsideSessionCannotMerge(): void

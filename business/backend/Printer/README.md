@@ -45,6 +45,10 @@ enables a case and chooses its device/template. Production cases run after
 store acceptance when `Store.settings.order.requireAcceptance` is true, and
 otherwise after payment. Settlement runs only after payment. For example:
 
+Merged orders use the same configured cases and triggers. If source orders have
+already produced tickets, printing the merged order can repeat those tickets;
+the current configuration does not deduplicate production across orders.
+
 ```json
 {
   "printing": {

@@ -151,7 +151,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame('fullList', $queuedRequest->getCaseKey());
     }
 
-    public function testMergedSettlementOnlyPrintsSettlementReceipt(): void
+    public function testMergedOrderPrintsEnabledProductionAndSettlementCases(): void
     {
         $store = new Store('shop-a', 'Shop A');
         $route = ['enabled' => true, 'deviceUuid' => 'device-a', 'templateUuid' => 'template-a'];
@@ -174,9 +174,43 @@ final class TradeOrderPrintAdapterTest extends TestCase
             PrinterOrderRequest::class => $requestRepository,
             default => throw new \LogicException('Unexpected repository '.$class),
         });
-        $em->expects(self::once())->method('persist')->with(self::callback(
-            static fn (object $request): bool => $request instanceof PrinterOrderRequest && $request->getCaseKey() === 'settlement',
-        ));
+        $caseKeys = [];
+        $em->expects(self::exactly(2))->method('persist')->willReturnCallback(static function (object $request) use (&$caseKeys): void {
+            self::assertInstanceOf(PrinterOrderRequest::class, $request);
+            $caseKeys[] = $request->getCaseKey();
+        });
         (new TradeOrderPrintAdapter($em))->enqueueForPaidOrder($order);
+        self::assertSame(['order', 'settlement'], $caseKeys);
+    }
+
+    public function testMergedOrderPrintsProductionOnAcceptanceWhenRequired(): void
+    {
+        $store = new Store('shop-a', 'Shop A');
+        $store->setSettings([
+            'order' => ['requireAcceptance' => true],
+            'printing' => ['fullList' => ['enabled' => true, 'deviceUuid' => 'device-a', 'templateUuid' => 'template-a']],
+        ]);
+        $order = (new Order())->setMetadata(['counterSettlement' => true]);
+        $lifecycle = new OrderStoreLifecycle($order->getUuid(), $store->getUuid());
+        $lifecycleRepository = $this->createStub(EntityRepository::class);
+        $lifecycleRepository->method('findOneBy')->willReturn($lifecycle);
+        $orderRepository = $this->createStub(EntityRepository::class);
+        $orderRepository->method('findOneBy')->willReturn($order);
+        $storeRepository = $this->createStub(EntityRepository::class);
+        $storeRepository->method('findOneBy')->willReturn($store);
+        $requestRepository = $this->createStub(EntityRepository::class);
+        $requestRepository->method('findOneBy')->willReturn(null);
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('getRepository')->willReturnCallback(static fn (string $class): EntityRepository => match ($class) {
+            OrderStoreLifecycle::class => $lifecycleRepository,
+            Order::class => $orderRepository,
+            Store::class => $storeRepository,
+            PrinterOrderRequest::class => $requestRepository,
+            default => throw new \LogicException('Unexpected repository '.$class),
+        });
+        $em->expects(self::once())->method('persist')->with(self::callback(
+            static fn (object $request): bool => $request instanceof PrinterOrderRequest && $request->getCaseKey() === 'fullList' && $request->getTrigger() === 'accepted',
+        ));
+        (new TradeOrderPrintAdapter($em))->enqueueForAcceptedOrder($order->getUuid(), $store->getUuid());
     }
 }
