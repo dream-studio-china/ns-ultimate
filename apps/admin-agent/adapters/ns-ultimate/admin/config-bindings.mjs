@@ -10,17 +10,6 @@
  */
 
 export const semanticCapabilityBindings = Object.freeze({
-  StorePrinting: Object.freeze({
-    entity: 'Store',
-    actions: Object.freeze(['update']),
-    fields: Object.freeze({
-      order: 'settings.printing.order',
-      perItem: 'settings.printing.perItem',
-      filteredList: 'settings.printing.filteredList',
-      fullList: 'settings.printing.fullList',
-      settlement: 'settings.printing.settlement'
-    })
-  }),
   ProductPrinting: Object.freeze({
     entity: 'Product',
     actions: Object.freeze(['update']),

@@ -21,6 +21,15 @@ import { catalogResponse } from './support/capability-fixture.mjs'
 const REVISION = 'a'.repeat(64)
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
 
+test('composed Store schema does not expose legacy printing settings', () => {
+  const schema = JSON.parse(readFileSync(new URL('../../../business/admin/config/overrides/store/StoreSettings.json', import.meta.url), 'utf8'))
+  assert.equal(Object.hasOwn(schema.properties, 'printing'), false)
+  assert.equal(schema.additionalProperties, true)
+  assert.ok(schema.properties.order.properties.requireAcceptance)
+  assert.equal(Object.hasOwn(semanticCapabilityBindings, 'StorePrinting'), false)
+  assert.equal(semanticCapabilityBindings.ProductPrinting.fields.kitchenPrinterEnable, 'settings.kitchenPrinterEnable')
+})
+
 function stringRule(maxLength = 100, extra = {}) {
   return { type: 'string', maxLength, ...extra }
 }
@@ -222,7 +231,7 @@ test('semantic print capabilities require explicit nested config paths and never
     },
     routes: [route('Store')]
   }
-  const validBinding = { StorePrinting: semanticCapabilityBindings.StorePrinting }
+  const validBinding = { StorePrinting: { entity: 'Store', actions: ['update'], fields: Object.fromEntries(printingCases.map(key => [key, `settings.printing.${key}`])) } }
   const projection = buildAdminConfigProjection(config, { semanticBindings: validBinding })
   assert.deepEqual(projection.entities.map(entity => entity.name), ['Store'])
   assert.deepEqual(projection.semanticCapabilities.StorePrinting, {
@@ -236,7 +245,8 @@ test('semantic print capabilities require explicit nested config paths and never
       settlement: 'settings.printing.settlement'
     }
   })
-  assert.equal(Object.isFrozen(semanticCapabilityBindings.StorePrinting.fields), true)
+  assert.equal(Object.hasOwn(semanticCapabilityBindings, 'StorePrinting'), false)
+  assert.equal(Object.isFrozen(semanticCapabilityBindings.ProductPrinting.fields), true)
   const repeated = buildAdminConfigProjection(config, { semanticBindings: validBinding })
   assert.equal(repeated.revision, projection.revision)
   assert.notEqual(buildAdminConfigProjection(config).revision, projection.revision)
@@ -581,7 +591,7 @@ test('semantic print bindings restrict case children without breaking full canon
     routes: [route('Store')]
   }
   const projection = buildAdminConfigProjection(config, {
-    semanticBindings: { StorePrinting: semanticCapabilityBindings.StorePrinting }
+    semanticBindings: { StorePrinting: { entity: 'Store', actions: ['update'], fields: Object.fromEntries(printingCases.map(key => [key, `settings.printing.${key}`])) } }
   })
   const uuid = 'a2c6b792-cab7-4fae-8a25-86f5d59e0210'
   const printingRule = {
