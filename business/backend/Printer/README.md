@@ -47,9 +47,13 @@ at most once per order across its events; use distinct rules for separate prints
 Each template owns the output scenario:
 `ticketMode` is `single` (one ticket for the whole order) or `per_unit` (one
 ticket per purchased unit, with `item`, `item.index` and `item.total` in the
-snapshot). `itemFilter` is `all` or `kitchen`; kitchen prints only products with
-`settings.kitchenPrinterEnable` enabled and prints nothing when none match.
-Existing templates default to `single` and `all`.
+snapshot). `itemFilter` is an optional filter evaluated for each order item;
+empty means every item. The filter has a read-only `entity` context with item
+getters (`getQuantity()`, `getProductSettings()`, ...) and its product/category,
+for example `entity.getProduct().getCategory().getName() == "Kitchen"`.
+Templates reject invalid filter syntax when saved, an invalid result excludes the
+item, and an order with no matching item produces no print. Existing templates
+default to `single` and no filter.
 
 Legacy `Store.settings.printing` cases are no longer read or automatically
 migrated. Before deploying, record each store's intended routes and configure

@@ -8,34 +8,46 @@ use App\Store\Entity\Store;
 use App\Store\Entity\Product;
 use App\Trade\Entity\Order;
 use Doctrine\ORM\EntityManagerInterface;
+use NsUltimate\Business\Printer\Service\OrderItemFilter;
+use NsUltimate\Business\Printer\Value\PrintCategoryContext;
+use NsUltimate\Business\Printer\Value\PrintItemContext;
+use NsUltimate\Business\Printer\Value\PrintProductContext;
 
 /** Builds durable Trade order snapshots for print rules. */
 final class TradeOrderPrintAdapter
 {
-    public function __construct(private readonly EntityManagerInterface $entityManager)
+    private readonly OrderItemFilter $filter;
+
+    public function __construct(private readonly EntityManagerInterface $entityManager, ?OrderItemFilter $filter = null)
     {
+        $this->filter = $filter ?? new OrderItemFilter();
     }
 
     /** @return list<array<string, mixed>> */
-    public function buildPrintData(Order $order, Store $store, bool $perUnit = false, bool $kitchenOnly = false): array
+    public function buildPrintData(Order $order, Store $store, bool $perUnit = false, ?string $itemFilter = null): array
     {
+        $filtered = $itemFilter !== null && trim($itemFilter) !== '';
         $items = [];
         foreach ($order->getItems() as $item) {
             $product = $item->getProductSnapshot() ?? [];
             $specification = $item->getSpecSnapshot() ?? [];
             $productSettings = is_array($product['settings'] ?? null) ? $product['settings'] : [];
+            $currentProduct = null;
             // Product settings are not yet part of the core Trade item snapshot. Freeze
             // the current opt-in onto this durable request until Trade snapshots it.
             if (is_string($product['uuid'] ?? null)) {
-                $currentProduct = $this->entityManager->getRepository(Product::class)->findOneBy(['uuid' => $product['uuid']]);
-                if ($currentProduct instanceof Product && method_exists($currentProduct, 'getSettings')) {
-                    $settings = $currentProduct->getSettings();
-                    if (is_array($settings)) {
-                        $productSettings = $settings;
+                $candidate = $this->entityManager->getRepository(Product::class)->findOneBy(['uuid' => $product['uuid']]);
+                if ($candidate instanceof Product) {
+                    $currentProduct = $candidate;
+                    if (method_exists($candidate, 'getSettings')) {
+                        $settings = $candidate->getSettings();
+                        if (is_array($settings)) {
+                            $productSettings = $settings;
+                        }
                     }
                 }
             }
-            $items[] = [
+            $data = [
                 'name' => (string) ($product['name'] ?? $item->getSpecificationTitle() ?? ''),
                 'specification' => (string) ($specification['name'] ?? $item->getSpecificationTitle() ?? ''),
                 'quantity' => $item->getQuantity(),
@@ -44,12 +56,24 @@ final class TradeOrderPrintAdapter
                 'productUuid' => $product['uuid'] ?? null,
                 'productSettings' => $productSettings,
             ];
-        }
-        if ($kitchenOnly) {
-            $items = array_values(array_filter($items, static fn (array $item): bool => ($item['productSettings']['kitchenPrinterEnable'] ?? false) === true));
-            if ($items === []) {
-                return [];
+            if ($filtered) {
+                $category = $currentProduct?->getCategory();
+                $productContext = $currentProduct instanceof Product
+                    ? new PrintProductContext(
+                        $currentProduct->getUuid(),
+                        $currentProduct->getName(),
+                        $productSettings,
+                        $category === null ? null : new PrintCategoryContext($category->getUuid(), $category->getName(), $category->getSlug()),
+                    )
+                    : null;
+                if (!$this->filter->matches($itemFilter, new PrintItemContext($data, $productSettings, $productContext))) {
+                    continue;
+                }
             }
+            $items[] = $data;
+        }
+        if ($filtered && $items === []) {
+            return [];
         }
         $base = [
             'order' => [

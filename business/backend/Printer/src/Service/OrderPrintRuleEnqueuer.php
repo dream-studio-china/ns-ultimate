@@ -29,7 +29,7 @@ final class OrderPrintRuleEnqueuer
             $template = $this->entityManager->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $rule->getTemplateUuid()]);
             $device = $this->entityManager->getRepository(PrinterDevice::class)->findOneBy(['uuid' => $rule->getDeviceUuid()]);
             $perUnit = false;
-            $kitchenOnly = false;
+            $itemFilter = null;
             if ($template instanceof PrinterTemplate && $device instanceof PrinterDevice
                 && $template->isEnabled() && $device->isEnabled() && $device->getAccount()->isEnabled()
                 && $device->getStoreUuid() === $store->getUuid() && $template->getKind() === $device->getKind()) {
@@ -40,13 +40,13 @@ final class OrderPrintRuleEnqueuer
                 }
                 // The template owns ticket granularity and item selection; freeze both with the request.
                 $perUnit = $template->getTicketMode() === PrinterTemplate::TICKET_PER_UNIT;
-                $kitchenOnly = $template->getItemFilter() === PrinterTemplate::ITEMS_KITCHEN;
+                $itemFilter = $template->getItemFilter();
                 $configuration['templateSnapshot'] = $definition;
                 $configuration['ticketMode'] = $template->getTicketMode();
-                $configuration['itemFilter'] = $template->getItemFilter();
+                $configuration['itemFilter'] = $itemFilter;
             }
             try {
-                $tickets = $this->snapshots->buildPrintData($order, $store, $perUnit, $kitchenOnly);
+                $tickets = $this->snapshots->buildPrintData($order, $store, $perUnit, $itemFilter);
             } catch (\OverflowException $exception) {
                 if ($this->writer->claim($order->getUuid(), $rule->getUuid())) {
                     $key = hash('sha256', json_encode([$order->getUuid(), $rule->getUuid(), 0], JSON_THROW_ON_ERROR));

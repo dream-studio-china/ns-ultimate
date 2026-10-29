@@ -14,8 +14,6 @@ class PrinterTemplate
 {
     public const TICKET_SINGLE = 'single';
     public const TICKET_PER_UNIT = 'per_unit';
-    public const ITEMS_ALL = 'all';
-    public const ITEMS_KITCHEN = 'kitchen';
 
     #[ORM\Id, ORM\GeneratedValue, ORM\Column(type: 'integer')]
     private ?int $id = null;
@@ -37,9 +35,9 @@ class PrinterTemplate
     #[ORM\Column(name: 'ticket_mode', type: 'string', length: 20, options: ['default' => self::TICKET_SINGLE])]
     private string $ticketMode = self::TICKET_SINGLE;
 
-    /** Which order items the request snapshot contains. */
-    #[ORM\Column(name: 'item_filter', type: 'string', length: 20, options: ['default' => self::ITEMS_ALL])]
-    private string $itemFilter = self::ITEMS_ALL;
+    /** Optional filter over each order item; see OrderItemFilter. */
+    #[ORM\Column(name: 'item_filter', type: 'text', nullable: true)]
+    private ?string $itemFilter = null;
 
     #[ORM\Column(type: 'boolean', options: ['default' => true])]
     private bool $enabled = true;
@@ -48,7 +46,7 @@ class PrinterTemplate
     private \DateTimeImmutable $createdAt;
 
     /** @param array<string, mixed> $definition */
-    public function __construct(string $name = '', string $kind = PrinterDevice::KIND_RECEIPT, array $definition = ['kind' => 'receipt', 'nodes' => []], string $ticketMode = self::TICKET_SINGLE, string $itemFilter = self::ITEMS_ALL)
+    public function __construct(string $name = '', string $kind = PrinterDevice::KIND_RECEIPT, array $definition = ['kind' => 'receipt', 'nodes' => []], string $ticketMode = self::TICKET_SINGLE, ?string $itemFilter = null)
     {
         if (!in_array($kind, [PrinterDevice::KIND_RECEIPT, PrinterDevice::KIND_LABEL], true)) { throw new \InvalidArgumentException('Template kind must be receipt or label.'); }
         if (($definition['kind'] ?? null) !== $kind || !is_array($definition['nodes'] ?? null)) { throw new \InvalidArgumentException('Template definition kind and node list are required.'); }
@@ -97,13 +95,11 @@ class PrinterTemplate
         $this->ticketMode = $ticketMode;
         return $this;
     }
-    public function getItemFilter(): string { return $this->itemFilter; }
-    public function setItemFilter(string $itemFilter): self
+    public function getItemFilter(): ?string { return $this->itemFilter; }
+    public function setItemFilter(?string $itemFilter): self
     {
-        if (!in_array($itemFilter, [self::ITEMS_ALL, self::ITEMS_KITCHEN], true)) {
-            throw new \InvalidArgumentException('Template item filter must be all or kitchen.');
-        }
-        $this->itemFilter = $itemFilter;
+        $itemFilter = $itemFilter === null ? null : trim($itemFilter);
+        $this->itemFilter = $itemFilter === '' ? null : $itemFilter;
         return $this;
     }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }

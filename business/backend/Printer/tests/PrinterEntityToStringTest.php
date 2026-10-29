@@ -31,21 +31,16 @@ final class PrinterEntityToStringTest extends TestCase
     {
         $template = new PrinterTemplate('Kitchen receipt', PrinterDevice::KIND_RECEIPT);
         self::assertSame(PrinterTemplate::TICKET_SINGLE, $template->getTicketMode());
-        self::assertSame(PrinterTemplate::ITEMS_ALL, $template->getItemFilter());
+        self::assertNull($template->getItemFilter());
         self::assertSame(PrinterTemplate::TICKET_PER_UNIT, $template->setTicketMode('per_unit')->getTicketMode());
-        self::assertSame(PrinterTemplate::ITEMS_KITCHEN, $template->setItemFilter('kitchen')->getItemFilter());
+        self::assertSame('entity.getQuantity() > 1', $template->setItemFilter('  entity.getQuantity() > 1  ')->getItemFilter());
+        self::assertNull($template->setItemFilter('')->getItemFilter());
 
         try {
             $template->setTicketMode('per_order');
             self::fail('Invalid ticket mode was accepted.');
         } catch (\InvalidArgumentException) {
         }
-        try {
-            $template->setItemFilter('drinks');
-            self::fail('Invalid item filter was accepted.');
-        } catch (\InvalidArgumentException) {
-        }
         self::assertSame(PrinterTemplate::TICKET_PER_UNIT, $template->getTicketMode());
-        self::assertSame(PrinterTemplate::ITEMS_KITCHEN, $template->getItemFilter());
     }
 }

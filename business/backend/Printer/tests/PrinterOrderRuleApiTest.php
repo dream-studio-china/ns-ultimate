@@ -526,7 +526,7 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         self::assertSame(['1/1', '1/2', '2/2'], $tickets);
     }
 
-    public function testKitchenFilteredTemplateSkipsOrdersWithoutKitchenItems(): void
+    public function testItemFilterEvaluatesPerItemAndSkipsOrdersWithoutMatches(): void
     {
         [$token, $payload] = $this->fixtures();
         $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
@@ -534,7 +534,8 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $ruleUuid = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data']['uuid'];
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $template = $em->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $payload['templateUuid']]);
-        $template->setItemFilter(PrinterTemplate::ITEMS_KITCHEN);
+        $filter = 'entity.getProductSettings()["kitchenPrinterEnable"] == true';
+        $template->setItemFilter($filter);
         $skipped = (new Order())->setStatus(Order::STATUS_PAID)
             ->addItem((new OrderItem())->setProductSnapshot(['name' => 'Drink']));
         $printed = (new Order())->setStatus(Order::STATUS_PAID)
@@ -558,8 +559,26 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         ));
         $requests = $em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $printed->getUuid()]);
         self::assertCount(1, $requests);
-        self::assertSame('kitchen', $requests[0]->getConfiguration()['itemFilter']);
+        self::assertSame($filter, $requests[0]->getConfiguration()['itemFilter']);
         self::assertCount(1, $requests[0]->getPrintData()['order']['items']);
+    }
+
+    public function testTemplateItemFilterSyntaxIsValidatedOnSave(): void
+    {
+        [$token] = $this->fixtures();
+        $base = [
+            'name' => 'Filtered receipt', 'kind' => 'receipt',
+            'definition' => ['kind' => 'receipt', 'nodes' => [['type' => 'text', 'value' => 'Test']]],
+            'sampleData' => [], 'ticketMode' => 'single',
+        ];
+        $invalid = $this->request('POST', '/api/v1/manage/printer/templates', $token, $base + ['itemFilter' => 'entity.getQuantity( >']);
+        self::assertSame(400, $invalid->getStatusCode(), $invalid->getContent());
+        $invalidType = $this->request('POST', '/api/v1/manage/printer/templates', $token, $base + ['itemFilter' => ['kitchen']]);
+        self::assertSame(400, $invalidType->getStatusCode(), $invalidType->getContent());
+        $valid = $this->request('POST', '/api/v1/manage/printer/templates', $token, $base + ['itemFilter' => 'entity.getQuantity() > 1']);
+        self::assertSame(201, $valid->getStatusCode(), $valid->getContent());
+        $data = json_decode($valid->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertSame('entity.getQuantity() > 1', $data['itemFilter']);
     }
 
     private function fixtures(): array

@@ -13,9 +13,7 @@ export default {
       { property: 'ticketMode', label: t('Ticket mode'), type: 'select', required: true, default_value: 'single', help: t('Ticket mode help'), type_options: { options: [
         { value: 'single', label: t('One ticket per order') }, { value: 'per_unit', label: t('One ticket per item') }
       ] } },
-      { property: 'itemFilter', label: t('Item filter'), type: 'select', required: true, default_value: 'all', help: t('Item filter help'), type_options: { options: [
-        { value: 'all', label: t('All items') }, { value: 'kitchen', label: t('Kitchen items only') }
-      ] } },
+      { property: 'itemFilter', label: t('Item filter'), required: false, default_value: '', help: t('Item filter help'), type_options: { maxlength: 500, placeholder: t('Item filter placeholder') } },
       { property: 'definition', label: t('Template JSON'), type: 'json', required: true },
       { property: 'sampleData', label: t('Sample data JSON'), type: 'json', required: true, help: t('Template validation data help') }
     ] },

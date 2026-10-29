@@ -13,6 +13,7 @@ use App\Core\View\UpdateApiViewMixin;
 use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Business\Printer\Service\PrintDocumentRenderer;
+use NsUltimate\Business\Printer\Service\OrderItemFilter;
 use NsUltimate\Business\Printer\Service\PrinterTemplateService;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
@@ -33,6 +34,7 @@ final class PrinterTemplateController extends RestController
     public function __construct(
         protected readonly PrinterTemplateService $service,
         private readonly PrintDocumentRenderer $renderer,
+        private readonly OrderItemFilter $itemFilter,
     ) {}
 
     /**
@@ -88,9 +90,11 @@ final class PrinterTemplateController extends RestController
             && !in_array($content['ticketMode'], [PrinterTemplate::TICKET_SINGLE, PrinterTemplate::TICKET_PER_UNIT], true)) {
             throw new \InvalidArgumentException('Ticket mode must be single or per_unit.');
         }
-        if (array_key_exists('itemFilter', $content)
-            && !in_array($content['itemFilter'], [PrinterTemplate::ITEMS_ALL, PrinterTemplate::ITEMS_KITCHEN], true)) {
-            throw new \InvalidArgumentException('Item filter must be all or kitchen.');
+        if (array_key_exists('itemFilter', $content)) {
+            if ($content['itemFilter'] !== null && !is_string($content['itemFilter'])) {
+                throw new \InvalidArgumentException('Item filter must be a filter string or null.');
+            }
+            $this->itemFilter->validate($content['itemFilter']);
         }
     }
 }
