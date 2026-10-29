@@ -47,6 +47,10 @@ use NsUltimate\Business\Counter\Entity\OrderMerge;
 use NsUltimate\Business\Counter\Service\CounterOrderMergeService;
 use NsUltimate\Business\Counter\Service\CounterSessionService;
 use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
+use NsUltimate\Business\Printer\Entity\PrinterOrderRule;
+use NsUltimate\Business\Printer\Entity\PrinterAccount;
+use NsUltimate\Business\Printer\Entity\PrinterDevice;
+use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -458,8 +462,20 @@ final class CounterOrderMergeTest extends KernelTestCase
     public function testSettlementPaymentPrintsConfiguredCases(): void
     {
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
-        $route = ['enabled' => true, 'deviceUuid' => UUID::v4(), 'templateUuid' => UUID::v4()];
-        $store->setSettings(['printing' => ['order' => $route, 'settlement' => $route]]);
+        $account = new PrinterAccount('Test', 'test', '');
+        $device = new PrinterDevice($account, 'Test', 'counter-test', PrinterDevice::KIND_RECEIPT, $store->getUuid());
+        $template = new PrinterTemplate('Test', PrinterDevice::KIND_RECEIPT, ['kind' => 'receipt', 'nodes' => [['type' => 'text', 'value' => 'Test']]]);
+        $this->em->persist($account);
+        $this->em->persist($device);
+        $this->em->persist($template);
+        $ruleIds = [];
+        foreach (['order', 'settlement'] as $scene) {
+            $rule = (new PrinterOrderRule())->setStoreUuid($store->getUuid())->setName($scene)->setEnabled(true)
+                ->setEvents(['paid'])->setMatch('all')->setConditions([])->setScene($scene)
+                ->setDeviceUuid($device->getUuid())->setTemplateUuid($template->getUuid())->setCopies(1);
+            $this->em->persist($rule);
+            $ruleIds[] = $rule->getUuid();
+        }
         $this->em->flush();
         $sourceA = $this->source();
         $sourceB = $this->source();
@@ -477,7 +493,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertFalse($outbox[0]->getPayload()['store']['requireInventory']);
         $requests = $this->em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $target->getUuid()]);
         self::assertCount(2, $requests);
-        self::assertEqualsCanonicalizing(['order', 'settlement'], array_map(static fn (PrinterOrderRequest $request): string => $request->getCaseKey(), $requests));
+        self::assertEqualsCanonicalizing($ruleIds, array_map(static fn (PrinterOrderRequest $request): string => $request->getCaseKey(), $requests));
     }
 
     public function testCallerOutsideSessionCannotMerge(): void

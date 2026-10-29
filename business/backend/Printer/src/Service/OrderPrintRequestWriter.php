@@ -15,6 +15,17 @@ final class OrderPrintRequestWriter
 {
     public function __construct(private readonly Connection $connection) {}
 
+    /** Claims older than this can no longer affect a live order; keep the table bounded. */
+    public const CLAIM_RETENTION_DAYS = 90;
+
+    public function pruneClaims(\DateTimeImmutable $now = new \DateTimeImmutable()): int
+    {
+        return $this->connection->executeStatement(
+            'DELETE FROM printer_order_rule_claim WHERE created_at < ?',
+            [$now->modify('-'.self::CLAIM_RETENTION_DAYS.' days')->format('Y-m-d H:i:s')],
+        );
+    }
+
     /** Claim an order/rule once in the caller's transaction, even under concurrent delivery. */
     public function claim(string $orderUuid, string $ruleUuid): bool
     {
@@ -31,7 +42,10 @@ final class OrderPrintRequestWriter
         } else {
             throw new \LogicException('Atomic order print rule claims are unsupported on this database platform.');
         }
-        $this->connection->executeStatement('INSERT INTO printer_order_rule_claim (claim_key, token) VALUES (?, ?)'.$suffix, [$key, $token]);
+        $this->connection->executeStatement(
+            'INSERT INTO printer_order_rule_claim (claim_key, token, created_at) VALUES (?, ?, ?)'.$suffix,
+            [$key, $token, (new \DateTimeImmutable())->format('Y-m-d H:i:s')],
+        );
         $lockingRead = $platform instanceof AbstractMySQLPlatform ? ' FOR UPDATE' : '';
         return $this->connection->fetchOne('SELECT token FROM printer_order_rule_claim WHERE claim_key = ?'.$lockingRead, [$key]) === $token;
     }
@@ -57,7 +71,7 @@ final class OrderPrintRequestWriter
                 $request->getCaseKey(), $request->getTrigger(),
                 json_encode($request->getConfiguration(), JSON_THROW_ON_ERROR),
                 json_encode($request->getPrintData(), JSON_THROW_ON_ERROR),
-                $request->getStatus(), null, $request->getCreatedAt()->format('Y-m-d H:i:s'),
+                $request->getStatus(), $request->getErrorMessage(), $request->getCreatedAt()->format('Y-m-d H:i:s'),
             ],
         );
     }

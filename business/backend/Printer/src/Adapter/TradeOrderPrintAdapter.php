@@ -7,21 +7,11 @@ namespace NsUltimate\Business\Printer\Adapter;
 use App\Store\Entity\Store;
 use App\Store\Entity\Product;
 use App\Trade\Entity\Order;
-use App\Trade\Entity\OrderStoreLifecycle;
 use Doctrine\ORM\EntityManagerInterface;
-use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
-use NsUltimate\Business\Counter\Entity\OrderMerge;
 
-/** Translates Trade lifecycle events and per-store print settings into durable print requests. */
+/** Builds durable Trade order snapshots for print rules. */
 final class TradeOrderPrintAdapter
 {
-    public const TRIGGER_PAID = 'paid';
-    public const TRIGGER_ACCEPTED = 'accepted';
-    public const CASE_ORDER = 'order';
-    public const CASE_PER_ITEM = 'perItem';
-    public const CASE_FILTERED_LIST = 'filteredList';
-    public const CASE_FULL_LIST = 'fullList';
-    public const CASE_SETTLEMENT = 'settlement';
     public const SCENE_ORDER = 'order';
     public const SCENE_PER_ITEM = 'per_item';
     public const SCENE_FILTERED_LIST = 'filtered_list';
@@ -30,105 +20,6 @@ final class TradeOrderPrintAdapter
 
     public function __construct(private readonly EntityManagerInterface $entityManager)
     {
-    }
-
-    public function enqueueForPaidOrder(Order $order): void
-    {
-        if ($order->getStatus() !== Order::STATUS_PAID) {
-            return;
-        }
-        $lifecycle = $this->entityManager->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $order->getUuid()]);
-        if (!$lifecycle instanceof OrderStoreLifecycle) {
-            return;
-        }
-        $store = $this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $lifecycle->getStoreUuid()]);
-        if ($store instanceof Store) {
-            $this->enqueue($order, $store, self::TRIGGER_PAID);
-        }
-    }
-
-    public function enqueueForPaidSettlement(Order $order): void
-    {
-        if ($this->entityManager->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) > 0) {
-            $this->enqueueForPaidOrder($order);
-        }
-    }
-
-    public function enqueueForAcceptedOrder(string $orderUuid, string $storeUuid): void
-    {
-        $lifecycle = $this->entityManager->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $orderUuid]);
-        if (!$lifecycle instanceof OrderStoreLifecycle
-            || $lifecycle->getStoreUuid() !== $storeUuid) {
-            return;
-        }
-        $order = $this->entityManager->getRepository(Order::class)->findOneBy(['uuid' => $orderUuid]);
-        $store = $this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $storeUuid]);
-        if ($order instanceof Order && $store instanceof Store && $this->requiresAcceptance($store)) {
-            $this->enqueue($order, $store, self::TRIGGER_ACCEPTED);
-            $this->entityManager->flush();
-        }
-    }
-
-    private function enqueue(Order $order, Store $store, string $trigger): void
-    {
-        $settings = $store->getSettings() ?? [];
-        $printing = $settings['printing'] ?? null;
-        if (!is_array($printing)) {
-            return;
-        }
-        $productionTrigger = $this->requiresAcceptance($store) ? self::TRIGGER_ACCEPTED : self::TRIGGER_PAID;
-        $cases = [
-            self::CASE_ORDER => self::SCENE_ORDER,
-            self::CASE_PER_ITEM => self::SCENE_PER_ITEM,
-            self::CASE_FILTERED_LIST => self::SCENE_FILTERED_LIST,
-            self::CASE_FULL_LIST => self::SCENE_FULL_LIST,
-            self::CASE_SETTLEMENT => self::SCENE_SETTLEMENT,
-        ];
-        foreach ($cases as $caseKey => $scene) {
-            $case = $printing[$caseKey] ?? null;
-            if ($trigger !== ($scene === self::SCENE_SETTLEMENT ? self::TRIGGER_PAID : $productionTrigger)
-                || !is_array($case)
-                || ($case['enabled'] ?? false) !== true) {
-                continue;
-            }
-            if (!is_string($case['deviceUuid'] ?? null) || !is_string($case['templateUuid'] ?? null)) {
-                continue;
-            }
-            $copies = $case['copies'] ?? 1;
-            if (!is_int($copies) || $copies < 1 || $copies > 100) {
-                continue;
-            }
-
-            $configuration = [
-                'scene' => $scene,
-                'deviceUuid' => $case['deviceUuid'],
-                'templateUuid' => $case['templateUuid'],
-                'copies' => $copies,
-            ];
-            $requestKey = hash('sha256', implode(':', [$order->getUuid(), $trigger, $caseKey]));
-            foreach ($this->buildPrintData($order, $store, $scene) as $ticketIndex => $printData) {
-                $ticketKey = $scene === self::SCENE_PER_ITEM ? ':'.$ticketIndex : '';
-                $key = hash('sha256', $requestKey.$ticketKey);
-                $existing = $this->entityManager->getRepository(PrinterOrderRequest::class)->findOneBy(['requestKey' => $key]);
-                if ($existing instanceof PrinterOrderRequest) {
-                    continue;
-                }
-                $this->entityManager->persist(new PrinterOrderRequest(
-                    $key,
-                    $order->getUuid(),
-                    $store->getUuid(),
-                    $caseKey,
-                    $trigger,
-                    $configuration,
-                    $printData,
-                ));
-            }
-        }
-    }
-
-    private function requiresAcceptance(Store $store): bool
-    {
-        return ($store->getSettings()['order']['requireAcceptance'] ?? false) === true;
     }
 
     /** @return list<array<string, mixed>> */
@@ -185,15 +76,15 @@ final class TradeOrderPrintAdapter
         $tickets = [];
         foreach ($items as $item) {
             for ($index = 0; $index < $item['quantity']; ++$index) {
+                if (count($tickets) >= 500) {
+                    throw new \OverflowException('Per-item printing exceeds the limit of 500 tickets.');
+                }
                 $ticket = $base;
                 $ticket['order']['items'] = [$item];
                 $ticket['item'] = $item;
                 $ticket['item']['index'] = $index + 1;
                 $ticket['item']['total'] = $item['quantity'];
                 $tickets[] = $ticket;
-                if (count($tickets) >= 500) {
-                    return $tickets;
-                }
             }
         }
         return $tickets;

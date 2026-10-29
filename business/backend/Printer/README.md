@@ -36,50 +36,32 @@ snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 
 ## Automatic Trade order printing
 
-The Printer module can enqueue order print requests for store-scoped Trade orders.
-Configure the five fixed legacy cases in `Store.settings.printing`: `order`,
-`perItem`, `filteredList`, `fullList`, and `settlement`. Each case has its own
-`enabled` flag, printer `deviceUuid`, `templateUuid`, and optional `copies`
-(default `1`). The adapter selects the print behavior and timing; the store only
-enables a case and chooses its device/template. Production cases run after
-store acceptance when `Store.settings.order.requireAcceptance` is true, and
-otherwise after payment. Settlement runs only after payment. For example:
+The Printer module enqueues requests for enabled store-owned order print rules.
+Use the order print rules page to select one or more events (order confirmed,
+payment completed, Store acceptance), a scene, device, template and copies.
+Conditions match order status or bounded metadata paths using strict scalar
+comparisons or existence checks, combined by one level of all/any. An empty all
+list is unconditional; an empty any list is invalid. A rule produces requests
+at most once per order across its events; use distinct rules for separate prints.
+Scenes cover order, per-item, filtered list, full list and settlement. Filtered
+lists include products with `settings.kitchenPrinterEnable` enabled.
 
-Merged orders use the same configured cases and triggers. If source orders have
-already produced tickets, printing the merged order can repeat those tickets;
-the current configuration does not deduplicate production across orders.
+Legacy `Store.settings.printing` cases are no longer read or automatically
+migrated. Before deploying, record each store's intended routes and configure
+equivalent rules; without rules there is no automatic printing. Existing values
+remain stored but have no effect. Merged orders follow the same rules; deduplication
+is per order, so previously printed source orders can still produce repeated tickets.
 
-```json
-{
-  "printing": {
-    "order": {
-      "enabled": true,
-      "deviceUuid": "<store printer device UUID>",
-      "templateUuid": "<standard order template UUID>"
-    },
-    "filteredList": {
-      "enabled": true,
-      "deviceUuid": "<store printer device UUID>",
-      "templateUuid": "<kitchen template UUID>"
-    },
-    "settlement": {
-      "enabled": true,
-      "deviceUuid": "<store printer device UUID>",
-      "templateUuid": "<settlement template UUID>"
-    }
-  }
-}
-```
-
-The adapter maps the cases to the legacy normal order receipt, per-item ticket,
-kitchen-filtered list (`settings.kitchenPrinterEnable`), full item list, and
-settlement receipt behaviors. Requests are persisted with order/product data
-snapshots before being dispatched, so event handlers never call printer
-providers. Run
+New requests freeze rule configuration, template definition, and order/product
+data before dispatch. Drain pending legacy requests before upgrading: old queued
+requests without template snapshots fail closed and require operator investigation.
+Events never call printer providers. Run
 `app:printer:dispatch-orders` periodically (or as a supervised worker command)
-to submit pending requests. Request keys are stable across redelivery and an
-ambiguous provider result is not automatically resubmitted. Failed requests are
-left visible in `printer_order_request` for operator investigation.
+to submit pending requests. Dispatch atomically claims requests and prunes
+deduplication claims older than 90 days. A crash may leave
+a request in `dispatching`; investigate the job/provider outcome before any manual
+intervention. Ambiguous provider outcomes are never automatically resubmitted.
+Failed requests remain visible in `printer_order_request` for investigation.
 
 `GET /api/v1/manage/printer/jobs/{id}/preview` returns the stored job's
 `document` and `copies` in the standard success envelope, without re-rendering

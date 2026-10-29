@@ -16,4 +16,7 @@ class PrinterOrderRuleClaim
 
     #[ORM\Column(type: 'string', length: 36)]
     private string $token;
+
+    #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
+    private \DateTimeImmutable $createdAt;
 }

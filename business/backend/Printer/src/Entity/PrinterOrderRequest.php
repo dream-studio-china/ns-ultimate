@@ -14,6 +14,7 @@ use Doctrine\ORM\Mapping as ORM;
 class PrinterOrderRequest
 {
     public const STATUS_PENDING = 'pending';
+    public const STATUS_DISPATCHING = 'dispatching';
     public const STATUS_PROCESSED = 'processed';
     public const STATUS_FAILED = 'failed';
 

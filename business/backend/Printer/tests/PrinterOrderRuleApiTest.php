@@ -8,6 +8,9 @@ use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
 use App\Store\Entity\Store;
 use App\Trade\Entity\Order;
+use App\Trade\Entity\OrderItem;
+use App\Trade\Entity\OrderStoreLifecycle;
+use App\Trade\Event\OrderPaidEvent;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Printer\Entity\PrinterAccount;
@@ -18,6 +21,7 @@ use NsUltimate\Business\Printer\Entity\PrinterOrderRule;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Business\Printer\Command\DispatchOrderPrintRequestsCommand;
 use NsUltimate\Business\Printer\Adapter\TradeOrderPrintAdapter;
+use NsUltimate\Business\Printer\Adapter\OrderPrintRuleEventAdapter;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleEnqueuer;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleMatcher;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleSelector;
@@ -33,6 +37,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Workflow\Event\CompletedEvent;
 
 final class PrinterOrderRuleApiTest extends KernelTestCase
 {
@@ -89,6 +94,20 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
         self::assertSame(400, $response->getStatusCode(), $response->getContent());
         self::assertSame(0, $em->getRepository(PrinterOrderRule::class)->count([]));
+    }
+
+    public function testStoreRuleLimitIsEnforced(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        for ($i = 0; $i < 50; ++$i) {
+            $em->persist((new PrinterOrderRule())->setStoreUuid($payload['storeUuid'])->setName('Rule '.$i)
+                ->setEnabled(false)->setEvents(['paid'])->setMatch('all')->setConditions([])->setScene('order')
+                ->setDeviceUuid($payload['deviceUuid'])->setTemplateUuid($payload['templateUuid'])->setCopies(1));
+        }
+        $em->flush();
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(400, $response->getStatusCode(), $response->getContent());
     }
 
     public function testFormNullMarkerRestoresNullConditionValue(): void
@@ -175,7 +194,7 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $template->setDefinition(['kind' => 'receipt', 'nodes' => [['type' => 'text', 'value' => 'Offline test']]]);
         $request = new PrinterOrderRequest(
             hash('sha256', 'offline-test'), 'order-test', $payload['storeUuid'], 'test-rule', 'paid',
-            ['scene' => 'order', 'deviceUuid' => $payload['deviceUuid'], 'templateUuid' => $payload['templateUuid'], 'copies' => 1],
+            ['scene' => 'order', 'deviceUuid' => $payload['deviceUuid'], 'templateUuid' => $payload['templateUuid'], 'copies' => 1, 'templateSnapshot' => $template->getDefinition()],
             ['order' => ['number' => 'offline-test']],
         );
         $em->persist($request);
@@ -184,7 +203,7 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $provider->method('code')->willReturn(PrinterAccount::PROVIDER_XPYUN);
         $provider->expects(self::once())->method('submitJob')->willThrowException(new PrinterProviderException('offline_test'));
         $jobs = new PrinterJobService($em, new PrintDocumentRenderer(), new PrinterProviderRegistry([$provider]));
-        $command = new CommandTester(new DispatchOrderPrintRequestsCommand($em, $jobs));
+        $command = new CommandTester(new DispatchOrderPrintRequestsCommand($em, $jobs, new OrderPrintRequestWriter($em->getConnection())));
         self::assertSame(0, $command->execute([]));
         $em->clear();
         $stored = $em->getRepository(PrinterOrderRequest::class)->findOneBy(['requestKey' => hash('sha256', 'offline-test')]);
@@ -218,6 +237,11 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $connection->rollBack();
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM printer_order_request'));
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM printer_order_rule_claim'));
+        $connection->executeStatement(
+            "INSERT INTO printer_order_rule_claim (claim_key, token, created_at) VALUES ('old-claim', 'token', '2000-01-01 00:00:00')",
+        );
+        self::assertSame(1, $writer->pruneClaims(new \DateTimeImmutable('2026-10-29 00:00:00')));
+        self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM printer_order_rule_claim'));
         $this->expectException(\LogicException::class);
         $writer->insert($request);
     }
@@ -238,7 +262,7 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $matcher = new OrderPrintRuleMatcher();
         $enqueuer = new OrderPrintRuleEnqueuer(
             new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
-            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
         );
         $em->getConnection()->beginTransaction();
         $enqueuer->enqueue($order, $store, 'confirmed');
@@ -256,11 +280,216 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $provider->method('code')->willReturn(PrinterAccount::PROVIDER_XPYUN);
         $provider->expects(self::once())->method('submitJob')->willThrowException(new PrinterProviderException('offline_test'));
         $jobs = new PrinterJobService($em, new PrintDocumentRenderer(), new PrinterProviderRegistry([$provider]));
-        $command = new CommandTester(new DispatchOrderPrintRequestsCommand($em, $jobs));
+        $command = new CommandTester(new DispatchOrderPrintRequestsCommand($em, $jobs, new OrderPrintRequestWriter($em->getConnection())));
         self::assertSame(0, $command->execute([]));
         $result = $em->getRepository(PrinterJob::class)->findAll();
         self::assertCount(1, $result);
         self::assertSame(PrinterJob::STATUS_FAILED, $result[0]->getStatus());
+    }
+
+    public function testEventAdapterUsesTrustedStoreAndDeduplicatesAcrossEvents(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['events'] = ['confirmed', 'paid', 'accepted'];
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $order = (new Order())->setStatus(Order::STATUS_CONFIRMED);
+        $em->persist($order);
+        $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $enqueuer = new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        );
+        $adapter = new OrderPrintRuleEventAdapter($em, $enqueuer);
+        $adapter->onAccepted($order->getUuid(), 'wrong-store');
+        self::assertSame(0, $em->getRepository(PrinterOrderRequest::class)->count([]));
+        $em->getConnection()->beginTransaction();
+        $adapter->onConfirmed($order);
+        $order->setStatus(Order::STATUS_PAID);
+        $adapter->onPaid($order);
+        $em->getConnection()->commit();
+        $adapter->onAccepted($order->getUuid(), $payload['storeUuid']);
+        $requests = $em->getRepository(PrinterOrderRequest::class)->findAll();
+        self::assertCount(1, $requests);
+        self::assertSame('confirmed', $requests[0]->getTrigger());
+        self::assertSame($payload['storeUuid'], $requests[0]->getStoreUuid());
+    }
+
+    public function testWorkflowConfirmedEventUsesNewStatusAndRollsBackPrintRequest(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['events'] = ['confirmed'];
+        $payload['conditions'] = [['field' => 'status', 'operator' => 'equals', 'value' => 'confirmed']];
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $order = (new Order())->setStatus(Order::STATUS_PENDING);
+        $em->persist($order);
+        $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $adapter = new OrderPrintRuleEventAdapter($em, new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        ));
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        $listener = static function (CompletedEvent $event) use ($adapter): void {
+            $subject = $event->getSubject();
+            if ($subject instanceof Order) { $adapter->onConfirmed($subject); }
+        };
+        $dispatcher->addListener('workflow.order.completed.confirm', $listener);
+        try {
+            $connection = $em->getConnection();
+            $connection->beginTransaction();
+            self::getContainer()->get('state_machine.order')->apply($order, 'confirm');
+            self::assertSame(1, $em->getRepository(PrinterOrderRequest::class)->count([]));
+            $request = $em->getRepository(PrinterOrderRequest::class)->findOneBy([]);
+            self::assertSame('confirmed', $request->getPrintData()['order']['status']);
+            $connection->rollBack();
+            self::assertSame(0, $em->getRepository(PrinterOrderRequest::class)->count([]));
+            self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM printer_order_rule_claim'));
+        } finally {
+            $dispatcher->removeListener('workflow.order.completed.confirm', $listener);
+        }
+    }
+
+    public function testPaymentCompletedEventSeesPaidStatusAndQueuesRule(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['conditions'] = [['field' => 'status', 'operator' => 'equals', 'value' => 'paid']];
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $order = (new Order())->setStatus(Order::STATUS_CONFIRMED);
+        $em->persist($order);
+        $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $adapter = new OrderPrintRuleEventAdapter($em, new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        ));
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        $domainStatus = null;
+        $domainListener = static function (OrderPaidEvent $event) use (&$domainStatus): void { $domainStatus = $event->order->getStatus(); };
+        $completedListener = static function (CompletedEvent $event) use ($adapter): void {
+            $subject = $event->getSubject();
+            if ($subject instanceof Order) { $adapter->onPaid($subject); }
+        };
+        $dispatcher->addListener(OrderPaidEvent::class, $domainListener);
+        $dispatcher->addListener('workflow.order.completed.pay', $completedListener);
+        try {
+            $em->wrapInTransaction(fn () => self::getContainer()->get('state_machine.order')->apply($order, 'pay'));
+            self::assertSame(Order::STATUS_CONFIRMED, $domainStatus);
+            $request = $em->getRepository(PrinterOrderRequest::class)->findOneBy(['orderUuid' => $order->getUuid()]);
+            self::assertInstanceOf(PrinterOrderRequest::class, $request);
+            self::assertSame('paid', $request->getTrigger());
+            self::assertSame('paid', $request->getPrintData()['order']['status']);
+        } finally {
+            $dispatcher->removeListener(OrderPaidEvent::class, $domainListener);
+            $dispatcher->removeListener('workflow.order.completed.pay', $completedListener);
+        }
+    }
+
+    public function testAcceptedEventCanQueueAndReplayOutsideTransaction(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['events'] = ['accepted'];
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $order = (new Order())->setStatus(Order::STATUS_PENDING);
+        $em->persist($order);
+        $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $adapter = new OrderPrintRuleEventAdapter($em, new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        ));
+        $adapter->onAccepted($order->getUuid(), $payload['storeUuid']);
+        $adapter->onAccepted($order->getUuid(), $payload['storeUuid']);
+        $requests = $em->getRepository(PrinterOrderRequest::class)->findAll();
+        self::assertCount(1, $requests);
+        self::assertSame('accepted', $requests[0]->getTrigger());
+        self::assertSame('pending', $requests[0]->getPrintData()['order']['status']);
+        self::assertFalse($em->getConnection()->isTransactionActive());
+    }
+
+    public function testExcessPerItemTicketsRecordFailureWithoutBreakingOrderTransaction(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['scene'] = 'per_item';
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $order = (new Order())->setStatus(Order::STATUS_PAID)->addItem((new OrderItem())->setQuantity(501));
+        $em->persist($order);
+        $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $adapter = new OrderPrintRuleEventAdapter($em, new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        ));
+        $em->wrapInTransaction(fn () => $adapter->onPaid($order));
+        $requests = $em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $order->getUuid()]);
+        self::assertCount(1, $requests);
+        self::assertSame(PrinterOrderRequest::STATUS_FAILED, $requests[0]->getStatus());
+        self::assertStringContainsString('500 tickets', $requests[0]->getErrorMessage());
+    }
+
+    public function testRuleFailureNeverRollsBackOrderTransaction(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $order = (new Order())->setStatus(Order::STATUS_CONFIRMED);
+        $em->persist($order);
+        $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $adapter = new OrderPrintRuleEventAdapter($em, new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        ));
+        // Force a storage failure inside the order transaction.
+        $em->getConnection()->executeStatement('DROP TABLE printer_order_rule_claim');
+        $order->setStatus(Order::STATUS_PAID);
+        $em->wrapInTransaction(function () use ($em, $adapter, $order): void {
+            $adapter->onPaid($order);
+            $order->setNotes('payment committed');
+            $em->flush();
+        });
+        $em->clear();
+        $stored = $em->getRepository(Order::class)->findOneBy(['uuid' => $order->getUuid()]);
+        self::assertSame('payment committed', $stored->getNotes());
+        self::assertSame(Order::STATUS_PAID, $stored->getStatus());
+    }
+
+    public function testRuleEventOutsideTransactionStartsItsOwn(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $order = (new Order())->setStatus(Order::STATUS_PAID);
+        $em->persist($order);
+        $em->persist(new OrderStoreLifecycle($order->getUuid(), $payload['storeUuid']));
+        $em->flush();
+        $matcher = new OrderPrintRuleMatcher();
+        $adapter = new OrderPrintRuleEventAdapter($em, new OrderPrintRuleEnqueuer(
+            new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher),
+            new OrderPrintRequestWriter($em->getConnection()), new TradeOrderPrintAdapter($em), $em,
+        ));
+        self::assertFalse($em->getConnection()->isTransactionActive());
+        $adapter->onPaid($order);
+        self::assertFalse($em->getConnection()->isTransactionActive());
+        self::assertCount(1, $em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $order->getUuid()]));
     }
 
     private function fixtures(): array

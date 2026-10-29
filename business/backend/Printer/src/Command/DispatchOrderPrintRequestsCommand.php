@@ -9,8 +9,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterJob;
 use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
-use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Business\Printer\Service\PrinterJobService;
+use NsUltimate\Business\Printer\Service\OrderPrintRequestWriter;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -22,12 +22,22 @@ final class DispatchOrderPrintRequestsCommand extends Command
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly PrinterJobService $jobs,
+        private readonly OrderPrintRequestWriter $claims,
     ) {
         parent::__construct();
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $connection = $this->entityManager->getConnection();
+        if ($connection->isTransactionActive()) {
+            throw new \LogicException('Order dispatch must run outside a transaction so claims and jobs are durable before provider calls.');
+        }
+        // Retention cleanup is best-effort: a failure must not stop dispatching.
+        try {
+            $this->claims->pruneClaims();
+        } catch (\Throwable) {
+        }
         $requests = $this->entityManager->getRepository(PrinterOrderRequest::class)->findBy(
             ['status' => PrinterOrderRequest::STATUS_PENDING],
             ['createdAt' => 'ASC'],
@@ -39,29 +49,37 @@ final class DispatchOrderPrintRequestsCommand extends Command
             if (!$request instanceof PrinterOrderRequest) {
                 continue;
             }
+            // A claim is never automatically reclaimed: a crashed worker may have sent the job.
+            if ($connection->executeStatement(
+                'UPDATE printer_order_request SET status = ? WHERE id = ? AND status = ?',
+                [PrinterOrderRequest::STATUS_DISPATCHING, $request->getId(), PrinterOrderRequest::STATUS_PENDING],
+            ) !== 1) {
+                continue;
+            }
+            $this->entityManager->refresh($request);
             try {
                 $configuration = $request->getConfiguration();
                 $device = $this->entityManager->getRepository(PrinterDevice::class)->findOneBy(['uuid' => $configuration['deviceUuid'] ?? '']);
-                $template = $this->entityManager->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $configuration['templateUuid'] ?? '']);
+                $snapshot = $configuration['templateSnapshot'] ?? null;
                 $store = $this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $request->getStoreUuid()]);
-                if (!$device instanceof PrinterDevice || !$template instanceof PrinterTemplate || !$store instanceof Store) {
-                    throw new \DomainException('The configured store, printer device, or template no longer exists.');
+                if (!$device instanceof PrinterDevice || !$store instanceof Store) {
+                    throw new \DomainException('The configured store or printer device no longer exists.');
                 }
-                if (!$device->isEnabled() || !$device->getAccount()->isEnabled() || !$template->isEnabled()) {
-                    throw new \DomainException('The configured printer device, account, or template is disabled.');
+                if (!is_array($snapshot)) {
+                    throw new \DomainException('The queued request has no template snapshot; it cannot be safely dispatched.');
+                }
+                if (!$device->isEnabled() || !$device->getAccount()->isEnabled()) {
+                    throw new \DomainException('The configured printer device or account is disabled.');
                 }
                 if ($device->getStoreUuid() !== $request->getStoreUuid()) {
                     throw new \DomainException('The configured printer device does not belong to the order store.');
                 }
-                if ($device->getKind() !== $template->getKind()) {
-                    throw new \DomainException('Printer device and template kinds do not match.');
-                }
                 $copies = (int) ($configuration['copies'] ?? 1);
                 $requestKey = 'ord-'.substr($request->getRequestKey(), 0, 40);
-                if ($configuration['scene'] === 'per_item') {
+                if (($configuration['scene'] ?? null) === 'per_item') {
                     $requestKey = 'ord-'.substr(hash('sha256', $request->getRequestKey()), 0, 40);
                 }
-                $job = $this->jobs->submit($device, $template, $request->getPrintData(), $copies, $requestKey);
+                $job = $this->jobs->submitSnapshot($device, $snapshot, $request->getPrintData(), $copies, $requestKey);
                 // A submitted/unknown job is terminal for automatic dispatch; only an explicit reprint may send again.
                 if (!in_array($job->getStatus(), [PrinterJob::STATUS_SUBMITTED, PrinterJob::STATUS_PRINTED, PrinterJob::STATUS_FAILED, PrinterJob::STATUS_UNKNOWN], true)) {
                     throw new \RuntimeException('Printer job did not reach a dispatch result.');

@@ -12,6 +12,8 @@ use App\Core\View\ListApiViewMixin;
 use App\Core\View\UpdateApiViewMixin;
 use App\Store\Entity\Store;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\DBAL\LockMode;
+use Doctrine\DBAL\Platforms\SQLitePlatform;
 use NsUltimate\Business\Printer\Entity\PrinterOrderRule;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleValidator;
 use NsUltimate\Business\Printer\Service\PrinterOrderRuleService;
@@ -38,7 +40,7 @@ final class PrinterOrderRuleController extends RestController
     {
         if (!$entity instanceof PrinterOrderRule) { throw new \LogicException('Unexpected printer rule entity.'); }
         $content = $this->normalizeConditions($content);
-        $this->validateContent($content, $entity);
+        $this->validateContent($content, $entity, true);
         return $content;
     }
 
@@ -68,13 +70,26 @@ final class PrinterOrderRuleController extends RestController
         return $content;
     }
 
-    private function validateContent(array $content, PrinterOrderRule $entity): void
+    private function validateContent(array $content, PrinterOrderRule $entity, bool $creating = false): void
     {
         $data = array_replace($entity->toRule(), $content);
         $storeUuid = $content['storeUuid'] ?? $entity->getStoreUuid();
         if (!is_string($storeUuid)) { throw new \InvalidArgumentException('A valid store is required.'); }
         $store = $this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $storeUuid]);
         if (!$store instanceof Store) { throw new \InvalidArgumentException('A valid store is required.'); }
+        if ($creating) {
+            $connection = $this->entityManager->getConnection();
+            if (!$connection->isTransactionActive()) {
+                throw new \InvalidArgumentException('Rule creation requires a transaction.');
+            }
+            if (!$connection->getDatabasePlatform() instanceof SQLitePlatform) {
+                // Serialize concurrent additions to this store before counting rules.
+                $this->entityManager->lock($store, LockMode::PESSIMISTIC_WRITE);
+            }
+            if ($this->entityManager->getRepository(PrinterOrderRule::class)->count(['storeUuid' => $storeUuid]) >= 50) {
+                throw new \InvalidArgumentException('A store may have at most 50 print rules.');
+            }
+        }
         $this->validator->validateForStore([$data], $store, $this->entityManager);
     }
 }

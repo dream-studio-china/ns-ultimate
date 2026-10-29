@@ -23,12 +23,19 @@ final class PrinterJobService
     {
         if (!$template->isEnabled()) { throw new \InvalidArgumentException('Printer template is disabled.'); }
         if ($device->getKind() !== $template->getKind()) { throw new \InvalidArgumentException('Template type must match printer type.'); }
+        $definition = $template->getDefinition();
         if ($device->getKind() === 'label') {
-            $definition = $template->getDefinition();
             if ($device->getWidthMm() !== null) { $definition['widthMm'] = $device->getWidthMm(); }
             if ($device->getHeightMm() !== null) { $definition['heightMm'] = $device->getHeightMm(); }
-        } else {
-            $definition = $template->getDefinition();
+        }
+        return $this->submitSnapshot($device, $definition, $data, $copies, $idempotencyKey);
+    }
+
+    /** @param array<string, mixed> $definition @param array<string, mixed> $data */
+    public function submitSnapshot(PrinterDevice $device, array $definition, array $data, int $copies, string $idempotencyKey): PrinterJob
+    {
+        if (($definition['kind'] ?? null) !== $device->getKind() || !is_array($definition['nodes'] ?? null)) {
+            throw new \InvalidArgumentException('Template snapshot must match the printer type and contain nodes.');
         }
         $document = $this->renderer->render($definition, $data);
         if (count($document['pages']) * $copies > 500) {
@@ -74,6 +81,9 @@ final class PrinterJobService
     /** @return PrinterJob */
     private function dispatch(PrinterJob $job): PrinterJob
     {
+        if ($this->entityManager->getConnection()->isTransactionActive()) {
+            throw new \LogicException('Printer jobs must be dispatched outside a transaction so the job is durable before the provider call.');
+        }
         $provider = $this->providers->get($job->getDevice()->getAccount()->getProvider());
         $this->entityManager->persist($job);
         $this->entityManager->flush();
