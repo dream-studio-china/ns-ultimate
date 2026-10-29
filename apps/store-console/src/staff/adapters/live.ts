@@ -4,6 +4,9 @@ import { ApiClient, ApiError } from './api-client'
 const uuid = z.string().uuid()
 const cents = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const currency = z.string().regex(/^[A-Z]{3}$/)
+const version = z.string().regex(/^[a-f0-9]{64}$/)
+export const orderActions = ['accept', 'reject', 'fulfill', 'verify'] as const
+export type OrderAction = typeof orderActions[number]
 export const storeSchema = z.object({ uuid, name: z.string(), code: z.string(), currency, timezone: z.string() })
 export const membershipSchema = z.object({ status: z.string(), role: z.string() })
 export const profileSchema = z.object({ uuid, username: z.string().nullable(), roles: z.array(z.string()) })
@@ -14,7 +17,8 @@ export const authorizationSchema = z.object({
 })
 export const productSchema = z.object({
   uuid, name: z.string(), status: z.enum(['active', 'inactive']), category: z.object({ uuid }).nullable(),
-  isSoldout: z.boolean().optional(),
+  version, isSoldout: z.boolean(), description: z.string().nullable(), sortOrder: z.number().int().nonnegative(), recommendationLevel: z.number().int().nonnegative(), extensionEditable: z.boolean(),
+  settings: z.object({ kitchenPrinterEnable: z.boolean(), startSaleTime: z.string(), endSaleTime: z.string() }),
   metadata: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? null : value,
     z.object({ cover: z.string().nullable().optional(), subtitle: z.string().nullable().optional() }).nullable().optional()),
 })
@@ -23,7 +27,7 @@ export const categorySchema = z.object({ uuid, name: z.string(), slug: z.string(
 export const counterSchema = z.object({ uuid, code: z.string(), name: z.string(), capacity: z.number().int().nullable(), sort: z.number().int(), enabled: z.boolean() })
 export const orderSchema = z.object({
   uuid, tradeOrderUuid: uuid, operationalStatus: z.string(), totalAmount: cents, currency,
-  createdAt: z.string(), orderSnapshot: z.unknown().optional(),
+  createdAt: z.string(), orderSnapshot: z.unknown().optional(), version, allowedActions: z.array(z.enum(orderActions)), verificationRequired: z.boolean(), rejectionReason: z.string().nullable(),
 })
 export type LiveStore = z.infer<typeof storeSchema>
 export type LiveProduct = z.infer<typeof productSchema>
@@ -68,16 +72,37 @@ export class StoreApi {
     if (store.uuid !== storeUuid) throw new ApiError('invalid')
     return { store, membership, authorization, profile }
   }
-  products(page: number) { return this.client.list(`${this.base}/products`, productSchema, page) }
-  categories(page: number) { return this.client.list(`${this.base}/product-categories`, categorySchema, page) }
-  counters(page: number) { return this.client.list(`${this.base}/counters`, counterSchema, page) }
-  orders(page: number) { return this.client.list(`${this.base}/orders`, orderSchema, page) }
+  private async operationalList<T>(resource: string, schema: z.ZodType<T>, page: number, q = '', status = 'all') {
+    const result = await this.client.data(`${this.base}/operations/${resource}?${new URLSearchParams({ page: String(page), limit: '30', q: q.trim(), status })}`, z.object({ items: z.array(schema), page: z.number().int().positive(), hasNext: z.boolean(), total: z.number().int().nonnegative() }))
+    if (result.page !== page) throw new ApiError('invalid')
+    return result
+  }
+  products(page: number, q = '', status = 'all') { return this.operationalList('products', productSchema, page, q, status) }
+  categories(page: number, q = '') { return this.operationalList('product-categories', categorySchema, page, q) }
+  counters(page: number, q = '', status = 'all') { return this.operationalList('counters', counterSchema, page, q, status) }
+  orders(page: number, q = '', status = 'all') { return this.operationalList('orders', orderSchema, page, q, status) }
+  history(page: number) {
+    return this.operationalList('history', z.object({ uuid, actorUuid: uuid, commandUuid: uuid, action: z.string(), createdAt: z.string() }), page)
+  }
   specifications(productUuid: string, page: number) {
     return this.client.list(`${this.base}/products/${uuid.parse(productUuid)}/specifications`, specificationSchema, page)
   }
-  order(orderUuid: string) { return this.client.data(`${this.base}/orders/${uuid.parse(orderUuid)}`, orderSchema) }
-  // Callers supply explicit per-resource payloads. Extension-only fields and transactions are not exposed here.
-  save(resource: 'products' | 'product-categories' | 'counters', id: string | null, body: Record<string, unknown>) {
+  order(orderUuid: string) { return this.client.data(`${this.base}/operations/orders/${uuid.parse(orderUuid)}`, orderSchema) }
+  saveProduct(id: string | null, body: Record<string, unknown>) {
+    return this.client.data(`${this.base}/operations/products${id ? `/${uuid.parse(id)}` : ''}`, productSchema, id ? 'PUT' : 'POST', body)
+  }
+  availability(items: LiveProduct[], isSoldout: boolean, commandUuid: string) {
+    return this.client.request(`${this.base}/operations/products/availability`, 'POST', { commandUuid, isSoldout, items: items.map(({ uuid, version }) => ({ uuid, version })) })
+  }
+  orderCommand(order: LiveOrder, action: OrderAction, reason: string, commandUuid: string) {
+    return this.client.data(`${this.base}/operations/orders/${order.uuid}/${action}`, orderSchema, 'POST', { commandUuid, version: order.version, ...(action === 'reject' ? { reason: reason.trim() } : {}) })
+  }
+  uploadImage(file: File, commandUuid = crypto.randomUUID()) {
+    const body = new FormData(); body.append('file', file); body.append('commandUuid', commandUuid)
+    return this.client.data(`${this.base}/operations/images`, z.object({ uuid, url: z.string().regex(/^\/(?!\/)/) }), 'POST', body)
+  }
+  // Existing configuration CRUD stays separate from versioned product/order commands.
+  save(resource: 'product-categories' | 'counters', id: string | null, body: Record<string, unknown>) {
     return this.client.request(`${this.base}/${resource}${id ? `/${uuid.parse(id)}` : ''}`, id ? 'PUT' : 'POST', body)
   }
   remove(resource: 'products' | 'product-categories' | 'counters', id: string) {

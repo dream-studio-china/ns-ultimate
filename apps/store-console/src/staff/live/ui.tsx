@@ -16,21 +16,23 @@ export function LiveSheet({ children, ...props }: { children: ReactNode; open: b
 export function errorKey(error: unknown): MessageKey {
   if (error instanceof StoreConnectionError && error.step === 'checkMembership' && error.status === 404) return 'noMembership'
   if (!(error instanceof ApiError)) return 'invalidResponse'
+  if (error.status === 409) return 'conflictingRecord'
+  if (error.status === 422) return 'validInput'
   return { unauthorized: 'sessionExpired', forbidden: 'noPermission', network: 'networkFailed', invalid: 'invalidResponse', request: 'requestFailed' }[error.kind] as MessageKey
 }
 
-export function usePage<T>(load: (page: number) => Promise<{ items: T[]; hasNext: boolean }>, enabled = true) {
+export function usePage<T>(load: (page: number) => Promise<{ items: T[]; hasNext: boolean; total?: number }>, enabled = true) {
   const [page, setPage] = useState(1)
   const [revision, setRevision] = useState(0)
-  const [state, setState] = useState({ items: [] as T[], hasNext: false, loading: true, error: null as MessageKey | null })
+  const [state, setState] = useState({ items: [] as T[], hasNext: false, total: undefined as number | undefined, loading: true, error: null as MessageKey | null })
   useEffect(() => {
     let active = true
-    if (!enabled) { setState({ items: [], hasNext: false, loading: false, error: 'noPermission' }); return }
-    setState({ items: [], hasNext: false, loading: true, error: null })
+    if (!enabled) { setState({ items: [], hasNext: false, total: undefined, loading: false, error: 'noPermission' }); return }
+    setState({ items: [], hasNext: false, total: undefined, loading: true, error: null })
     void load(page).then((data) => {
-      if (active) setState({ ...data, loading: false, error: null })
+      if (active) setState({ total: undefined, ...data, loading: false, error: null })
     }).catch((error: unknown) => {
-      if (active) setState({ items: [], hasNext: false, loading: false, error: errorKey(error) })
+      if (active) setState({ items: [], hasNext: false, total: undefined, loading: false, error: errorKey(error) })
     })
     return () => { active = false }
   }, [load, page, revision, enabled])
@@ -67,13 +69,21 @@ export function RecordIdentity({ id, children }: { id: string; children?: ReactN
   const { t } = useI18n()
   return <details className="record-identity"><summary><Hash size={13} />{t('recordDetails')}<ChevronDown size={13} /></summary><dl><dt>{t('recordId')}</dt><dd>{id}</dd>{children}</dl></details>
 }
-export function SearchField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+export function SearchField({ value, onChange, server = false }: { value: string; onChange: (value: string) => void; server?: boolean }) {
   const { t } = useI18n()
-  return <div className="workspace-search"><Search size={18} aria-hidden="true" /><input aria-label={t('searchCurrentPage')} placeholder={t('searchCurrentPage')} value={value} onChange={(event) => onChange(event.target.value)} />{value && <button type="button" onClick={() => onChange('')} aria-label={t('close')}><X size={16} /></button>}</div>
+  return <div className="workspace-search"><Search size={18} aria-hidden="true" /><input maxLength={100} aria-label={t(server ? 'searchStore' : 'searchCurrentPage')} placeholder={t(server ? 'searchStore' : 'searchCurrentPage')} value={value} onChange={(event) => onChange(event.target.value)} />{value && <button type="button" onClick={() => onChange('')} aria-label={t('close')}><X size={16} /></button>}</div>
 }
-export function PageScope({ count }: { count: number }) {
+export function PageScope({ count, total }: { count: number; total?: number }) {
   const { t } = useI18n()
-  return <div className="page-scope"><span>{t('pageRecords')}<strong>{String(count).padStart(2, '0')}</strong></span><small>{t('currentPageOnly')}</small></div>
+  return <div className="page-scope"><span>{t('pageRecords')}<strong>{String(count).padStart(2, '0')}</strong></span><small>{total === undefined ? t('currentPageOnly') : `${t('matchingStoreRecords')} · ${total}`}</small></div>
+}
+
+/** New payloads get new keys; a deliberate retry of unchanged input reuses its durable receipt. */
+export function useCommand(payload: unknown) {
+  const fingerprint = JSON.stringify(payload)
+  const command = useRef({ fingerprint, uuid: crypto.randomUUID() })
+  if (command.current.fingerprint !== fingerprint) command.current = { fingerprint, uuid: crypto.randomUUID() }
+  return command.current.uuid
 }
 export function useDelete(reload: () => void) {
   const { t } = useI18n()

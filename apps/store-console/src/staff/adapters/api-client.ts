@@ -22,9 +22,9 @@ export class ApiClient {
     try {
       const fetcher = this.fetcher
       return await fetcher(path, {
-        method, credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(20_000),
-        headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        method, credentials: 'omit', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(20_000),
+        headers: { Accept: 'application/json', ...(body === undefined || body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }),
       })
     } catch { throw new ApiError('network') }
   }

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 
 const storeId = '00000000-0000-4000-8000-000000000001'
 const productId = '00000000-0000-4000-8000-000000000002'
@@ -7,22 +7,42 @@ const orderId = '00000000-0000-4000-8000-000000000004'
 const specId = '00000000-0000-4000-8000-000000000005'
 const counterId = '00000000-0000-4000-8000-000000000006'
 const store = { uuid: storeId, name: 'Contract store', code: 'S1', currency: 'CNY', timezone: 'Asia/Shanghai' }
+const version = 'a'.repeat(64)
+const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '', endSaleTime: '' }, ...item })
+const operationalOrder = (item: Record<string, unknown>) => ({ version, allowedActions: [], verificationRequired: false, rejectionReason: null, ...item })
+function operationalList(route: Route, records: Record<string, unknown>[], hasNext = false) {
+  const url = new URL(route.request().url())
+  const q = (url.searchParams.get('q') ?? '').toLowerCase()
+  const status = url.searchParams.get('status') ?? 'all'
+  const items = records.filter((item) => (!q || [item.name, item.uuid, item.slug, item.code, item.tradeOrderUuid].some((value) => String(value ?? '').toLowerCase().includes(q))) &&
+    (status === 'all' || (status === 'soldout' ? item.isSoldout : ['enabled', 'disabled'].includes(status) ? item.enabled === (status === 'enabled') : (item.status ?? item.operationalStatus) === status)))
+    .map((item) => url.pathname.endsWith('/products') ? operationalProduct(item) : url.pathname.endsWith('/orders') ? operationalOrder(item) : item)
+  return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
+}
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean } = {}) {
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
-  let products = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active' }]
+  let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active' }]
   let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
   let counters: { uuid: string; name: string; code: string; capacity: number; sort: number; enabled: boolean }[] = []
-  const order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] } }
+  let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
-    const path = url.pathname
+    const actualPath = url.pathname
+    const path = actualPath.replace('/operations/', '/')
     const method = request.method()
-    const body = request.postDataJSON() as Record<string, unknown> | null
-    requests.push({ path, method, body })
-    const respond = (data: unknown, paged = false) => route.fulfill({ json: { code: 0, data, ...(paged ? { paginator: { page: Number(url.searchParams.get('page') ?? 1), has_next: false } } : {}) } })
+    const body = request.headers()['content-type']?.startsWith('multipart/') ? null : request.postDataJSON() as Record<string, unknown> | null
+    requests.push({ path: actualPath, method, body })
+    const respond = (data: unknown, paged = false) => {
+      if (actualPath.includes('/operations/')) {
+        if (paged) return operationalList(route, data as Record<string, unknown>[])
+        if (actualPath.includes('/products/') || actualPath.endsWith('/products')) data = operationalProduct(data as Record<string, unknown>)
+        if (actualPath.includes('/orders/')) data = operationalOrder(data as Record<string, unknown>)
+      }
+      return route.fulfill({ json: { code: 0, data, ...(paged ? { paginator: { page: Number(url.searchParams.get('page') ?? 1), has_next: false } } : {}) } })
+    }
     if (path === '/api/auth/login') return route.fulfill({ json: { access_token: 'test-staff-access', refresh_token: 'test-staff-refresh', expires_in: 60 } })
     if (path === '/api/auth/logout') return route.fulfill({ status: 204 })
     expect(request.headers().authorization).toBe('Bearer test-staff-access')
@@ -35,15 +55,27 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
       for (const resource of ['product', 'product_category', 'specification', 'counter', 'order']) {
         for (const action of options.readOnly || resource === 'order' ? ['read'] : ['read', 'create', 'update', 'delete']) scopes[`store:${resource}:${action}`] = [storeId]
       }
+      if (!options.readOnly) { scopes['store:product:availability'] = [storeId]; scopes['store:catalog_image:create'] = [storeId] }
+      if (options.orderOperations && !options.readOnly) for (const action of ['accept', 'reject', 'fulfill', 'verify']) scopes[`store:order:${action}`] = [storeId]
+      if (options.auditor) scopes['store:operation:read'] = [storeId]
       return respond({ permissions: Object.keys(scopes), storeScopes: scopes })
     }
     if (options.denyWrite && method !== 'GET') return route.fulfill({ status: 403, json: { code: 403, message: 'denied' } })
+    if (path === `/api/v1/store/${storeId}/products/availability`) {
+      const ids = (body!.items as { uuid: string }[]).map((item) => item.uuid)
+      products = products.map((item) => ids.includes(item.uuid) ? { ...item, isSoldout: Boolean(body!.isSoldout) } : item)
+      return route.fulfill({ json: { code: 0, data: { items: products } } })
+    }
+    if (path === `/api/v1/store/${storeId}/images`) return route.fulfill({ json: { code: 0, data: { uuid: counterId, url: '/uploads/test-image.png' } } })
     if (path === `/api/v1/store/${storeId}/products`) {
-      if (method === 'POST') { products.push({ uuid: productId, name: String(body!.name), status: String(body!.status), category: { uuid: String(body!.category) } }); return respond(products.at(-1)) }
+      if (method === 'POST') { products.push({ ...body, uuid: '00000000-0000-4000-8000-000000000007', name: String(body!.name), status: String(body!.status), category: body!.category ? { uuid: String(body!.category) } : null }); return respond(products.at(-1)) }
       return respond(options.malformed ? [{ uuid: 'not-a-uuid' }] : products, true)
     }
     if (path === `/api/v1/store/${storeId}/products/${productId}`) {
-      if (method === 'PUT') { products = products.map((item) => ({ ...item, ...body, category: { uuid: String(body!.category) } })); return respond(products[0]) }
+      if (method === 'PUT') { products = products.map((item) => ({ ...item, ...body, category: body!.category ? { uuid: String(body!.category) } : null,
+        metadata: { subtitle: body!.subtitle ?? null, cover: body!.coverImageUuid ? '/uploads/test-image.png' : null },
+        settings: { kitchenPrinterEnable: body!.kitchenPrinterEnable ?? false, startSaleTime: body!.startSaleTime ?? '', endSaleTime: body!.endSaleTime ?? '' },
+      })); return respond(products[0]) }
       if (method === 'DELETE') { products = []; return route.fulfill({ status: 204 }) }
     }
     if (path.endsWith('/specifications')) {
@@ -62,7 +94,13 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
     }
     if (path.endsWith(`/counters/${counterId}`) && method === 'PUT') { counters = counters.map((item) => ({ ...item, ...body })); return respond(counters[0]) }
     if (path.endsWith('/orders')) return respond([order], true)
+    if (path.endsWith('/history')) return respond([{ uuid: productId, actorUuid: storeId, commandUuid: counterId, action: 'product.update', createdAt: '2026-10-30T10:00:00+08:00' }], true)
     if (path.endsWith(`/orders/${orderId}`)) return respond(order)
+    if (path.includes(`/orders/${orderId}/`) && method === 'POST') {
+      const action = path.split('/').at(-1)!
+      order = { ...order, operationalStatus: ({ accept: 'accepted', reject: 'rejected', fulfill: 'fulfilled', verify: 'verified' } as Record<string, string>)[action]!, allowedActions: action === 'accept' ? ['fulfill'] : action === 'fulfill' ? ['verify'] : [] }
+      return respond(order)
+    }
     return route.fulfill({ status: 404, json: { code: 404 } })
   })
   return requests
@@ -85,8 +123,8 @@ test('live catalog, separate variants, categories, tables and read-only orders u
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Renamed live product', exact: true })).toBeVisible()
   const update = requests.find((request) => request.method === 'PUT')!
-  expect(update.path).toBe(`/api/v1/store/${storeId}/products/${productId}`)
-  expect(update.body).toEqual({ name: 'Renamed live product', status: 'active', category: categoryId })
+  expect(update.path).toBe(`/api/v1/store/${storeId}/operations/products/${productId}`)
+  expect(update.body).toMatchObject({ name: 'Renamed live product', status: 'active', category: categoryId, version, commandUuid: expect.any(String), isSoldout: false })
   await page.getByRole('button', { name: '管理规格' }).click()
   await page.getByRole('button', { name: '增加规格' }).click()
   await page.getByLabel('规格名称', { exact: true }).fill('Regular')
@@ -127,9 +165,105 @@ test('read-only grants disable all mutations, and reload clears staff authentica
   await expect(page.getByRole('button', { name: '新增商品', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: '删除', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '设为售罄', exact: true })).toHaveCount(0)
   await page.reload()
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'API product', exact: true })).toHaveCount(0)
+})
+
+test('catalog operating fields and raster image uploads save through one versioned staff command', async ({ page }) => {
+  const requests = await mockApi(page)
+  await login(page)
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await page.getByLabel('商品副标题', { exact: true }).fill('Lunch special')
+  await page.getByLabel('商品描述', { exact: true }).fill('Freshly prepared')
+  await page.locator('.resource-editor input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64') })
+  await page.getByRole('switch', { name: '后厨打印标记', exact: true }).click()
+  await page.getByLabel('开始售卖时间', { exact: true }).fill('22:00')
+  await page.getByLabel('结束售卖时间', { exact: true }).fill('02:00')
+  await page.locator('.editor-advanced summary').click()
+  await page.getByLabel('排序值', { exact: true }).fill('5')
+  await page.getByLabel('推荐等级', { exact: true }).fill('2')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  const save = requests.find((request) => request.method === 'PUT')!
+  expect(save.body).toMatchObject({ subtitle: 'Lunch special', description: 'Freshly prepared', sortOrder: 5, recommendationLevel: 2, kitchenPrinterEnable: true, startSaleTime: '22:00', endSaleTime: '02:00', coverImageUuid: counterId, version, commandUuid: expect.any(String) })
+  expect(requests.filter((request) => request.path.endsWith('/operations/images'))).toHaveLength(1)
+  await expect(page.locator('.catalog-product-info')).toContainText('Lunch special')
+})
+
+test('single and explicit-page batch availability use selected record versions and preserve errors', async ({ page }) => {
+  const requests = await mockApi(page)
+  await login(page)
+  await page.getByRole('button', { name: '设为售罄', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('API product')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '恢复售卖', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '恢复本页售罄商品', exact: true }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(requests.filter((request) => request.path.endsWith('/availability')).map((request) => request.body)).toEqual([
+    { commandUuid: expect.any(String), isSoldout: true, items: [{ uuid: productId, version }] },
+    { commandUuid: expect.any(String), isSoldout: false, items: [{ uuid: productId, version }] },
+  ])
+  await page.route('**/operations/products/*', (route) => route.fulfill({ status: 409, json: { code: 409, message: 'stale_record' } }))
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await page.getByLabel('商品名称', { exact: true }).fill('Conflict input')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('记录已变化')
+  await expect(page.getByLabel('商品名称', { exact: true })).toHaveValue('Conflict input')
+})
+
+test('order operators can accept, fulfill and verify but cannot treat operational state as payment', async ({ page }) => {
+  const requests = await mockApi(page, { orderOperations: true })
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '门店订单', exact: true }).click()
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  for (const [label, action] of [['接单', 'accept'], ['完成履约', 'fulfill'], ['核销', 'verify']]) {
+    await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
+    await expect(page.locator('.resource-editor')).toContainText('不代表付款、退款或结账')
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(page.locator('.resource-editor')).toHaveCount(0)
+    expect(requests.find((request) => request.path.endsWith(`/${action}`))?.body).toMatchObject({ commandUuid: expect.any(String), version })
+  }
+  await expect(page.getByRole('dialog')).toContainText('已核销')
+  await expect(page.getByRole('button', { name: '确认结账', exact: true })).toHaveCount(0)
+  expect(requests.some((request) => /payment|refund|manage/.test(request.path))).toBe(false)
+})
+
+test('rejection requires a reason and removes actions after reaching a terminal state', async ({ page }) => {
+  const requests = await mockApi(page, { orderOperations: true })
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '门店订单', exact: true }).click()
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  await page.getByRole('button', { name: '拒单', exact: true }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  expect(requests.filter((request) => request.path.endsWith('/reject'))).toHaveLength(0)
+  await page.getByLabel('拒单原因', { exact: true }).fill('Kitchen closed')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('.resource-editor')).toHaveCount(0)
+  expect(requests.find((request) => request.path.endsWith('/reject'))?.body).toMatchObject({ reason: 'Kitchen closed', commandUuid: expect.any(String), version })
+  await expect(page.getByRole('dialog').getByRole('button', { name: '接单', exact: true })).toHaveCount(0)
+})
+
+test('auditors can inspect successful store operations without receiving financial actions', async ({ page }) => {
+  await mockApi(page, { readOnly: true, auditor: true })
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '我的', exact: true }).click()
+  await page.getByRole('button', { name: '操作记录', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('product.update')
+  await expect(page.getByRole('dialog')).toContainText(storeId)
+  await expect(page.getByRole('dialog')).toContainText('不是所有历史 CRUD 或财务流水')
+})
+
+test('a server search miss never pretends that the store has no products', async ({ page }) => {
+  const requests = await mockApi(page)
+  await login(page)
+  await page.getByLabel('搜索全店记录', { exact: true }).fill('No matching item')
+  await expect(page.getByRole('heading', { name: '没有匹配的记录', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '从第一件商品开始', exact: true })).toHaveCount(0)
+  expect(requests.filter((request) => request.path.endsWith('/operations/products')).length).toBeGreaterThan(0)
 })
 
 test('inactive membership cannot enter a store and never enrolls automatically', async ({ page }) => {
@@ -227,7 +361,7 @@ test('shared editor validates collapsed advanced fields and traps and restores k
   expect(requests.filter((request) => request.method === 'PUT')).toHaveLength(0)
   await page.getByLabel('所属分类 UUID', { exact: true }).fill(categoryId)
   await advanced.click()
-  await dialog.getByRole('switch', { name: '上下架状态', exact: true }).focus()
+  await dialog.getByRole('switch', { name: '后厨打印标记', exact: true }).focus()
   await page.keyboard.press('Tab')
   await expect(advanced).toBeFocused()
   await page.keyboard.press('Escape')
@@ -240,7 +374,7 @@ test('pending saves lock fields, cancellation and repeated submission without di
   let release!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
   let writes = 0
-  await page.route(`**/api/v1/store/${storeId}/products/${productId}`, async (route) => {
+  await page.route(`**/api/v1/store/${storeId}/operations/products/${productId}`, async (route) => {
     writes++
     await gate
     await route.fulfill({ status: 403, json: { code: 403 } })
@@ -369,7 +503,7 @@ test('live lists request the next backend page and clear data on store switching
   const requests = await mockApi(page)
   await page.route('**/api/v1/store/**/products?**', (route) => {
     const pageNumber = Number(new URL(route.request().url()).searchParams.get('page'))
-    return route.fulfill({ json: { code: 0, data: [{ uuid: productId, name: `Live page ${pageNumber}`, category: null, status: 'active' }], paginator: { page: pageNumber, has_next: pageNumber === 1 } } })
+    return operationalList(route, [{ uuid: productId, name: `Live page ${pageNumber}`, category: null, status: 'active' }], pageNumber === 1)
   })
   await login(page)
   await expect(page.getByRole('heading', { name: 'Live page 1', exact: true })).toBeVisible()
@@ -393,7 +527,7 @@ test('late responses from a discarded store view cannot repopulate it', async ({
   const requested = page.waitForRequest('**/api/v1/store/**/products?**')
   await page.route('**/api/v1/store/**/products?**', async (route) => {
     await gate
-    await route.fulfill({ json: { code: 0, data: [{ uuid: productId, name: 'Late old record', category: null, status: 'active' }], paginator: { page: 1, has_next: false } } })
+    await operationalList(route, [{ uuid: productId, name: 'Late old record', category: null, status: 'active' }])
   })
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await requested
@@ -410,12 +544,12 @@ test('redesigned workspace remains usable across phone, tablet and desktop layou
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await mockApi(page)
-  await page.route('**/api/v1/store/**/products?**', (route) => route.fulfill({ json: { code: 0, data: [
+  await page.route('**/api/v1/store/**/products?**', (route) => operationalList(route, [
     { uuid: productId, name: 'Fresh-cut beef', category: null, status: 'active' },
     { uuid: '00000000-0000-4000-8000-000000000012', name: 'Garden vegetables', category: null, status: 'active' },
     { uuid: '00000000-0000-4000-8000-000000000013', name: 'House broth', category: null, status: 'inactive' },
-  ], paginator: { page: 1, has_next: false } } }))
-  await page.route('**/api/v1/store/**/counters?**', (route) => route.fulfill({ json: { code: 0, data: Array.from({ length: 4 }, (_, index) => ({ uuid: `00000000-0000-4000-8000-00000000002${index}`, name: `Table A0${index + 1}`, code: `LONG-TABLE-CONFIGURATION-CODE-${index + 1}`, capacity: 4, sort: index, enabled: index < 3 })), paginator: { page: 1, has_next: false } } }))
+  ]))
+  await page.route('**/api/v1/store/**/counters?**', (route) => operationalList(route, Array.from({ length: 4 }, (_, index) => ({ uuid: `00000000-0000-4000-8000-00000000002${index}`, name: `Table A0${index + 1}`, code: `LONG-TABLE-CONFIGURATION-CODE-${index + 1}`, capacity: 4, sort: index, enabled: index < 3 }))))
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
   await page.screenshot({ path: 'test-results/ui-login.png', fullPage: true })
@@ -433,9 +567,9 @@ test('redesigned workspace remains usable across phone, tablet and desktop layou
   await expect.poll(() => page.evaluate(() => scrollY)).toBe(0)
   await expect(page.locator('.record-identity dd').first()).not.toBeVisible()
   await page.screenshot({ path: 'test-results/ui-catalog.png', fullPage: true })
-  await page.getByLabel('搜索当前页', { exact: true }).fill('Garden')
+  await page.getByLabel('搜索全店记录', { exact: true }).fill('Garden')
   await expect(page.locator('.catalog-product-card')).toHaveCount(1)
-  await page.getByLabel('搜索当前页', { exact: true }).fill('')
+  await page.getByLabel('搜索全店记录', { exact: true }).fill('')
   await page.getByRole('button', { name: '已下架', exact: true }).click()
   await expect(page.locator('.catalog-product-card')).toHaveCount(1)
   await expect(page.getByRole('heading', { name: 'House broth', exact: true })).toBeVisible()

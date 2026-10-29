@@ -1,10 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
 import { ArrowUpDown, ChevronDown, CookingPot, Layers3, Pencil, Plus, Tag, Trash2 } from 'lucide-react'
 import { useI18n } from '../../shared/i18n'
 import { can, type StoreAccess, StoreApi, type LiveProduct, type LiveCategory, type LiveSpecification } from '../adapters/live'
 import { parseAmount } from '../domain'
-import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, RecordIdentity, SearchField, StatusPill, useDelete, usePage, LiveSheet as Sheet } from './ui'
+import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, RecordIdentity, SearchField, StatusPill, useCommand, useDelete, usePage, LiveSheet as Sheet } from './ui'
 
 function StatusField({ value, set }: { value: 'active' | 'inactive'; set: (value: 'active' | 'inactive') => void }) {
   return <EditorToggle label="productStatus" hint="listingHint" checked={value === 'active'} onChange={(enabled) => set(enabled ? 'active' : 'inactive')} />
@@ -15,10 +15,40 @@ function ProductForm({ api, access, product, done, onClose }: { api: StoreApi; a
   const [name, setName] = useState(product?.name ?? '')
   const [status, setStatus] = useState(product?.status ?? 'active')
   const [category, setCategory] = useState(product?.category?.uuid ?? '')
-  return <EditorSheet title={t('basicProduct')} description="productInfoHint" onClose={onClose} onDone={done} submit={() => api.save('products', product?.uuid ?? null, { name: name.trim(), status, category: category || null })} preview={<EditorPreview icon={CookingPot} label="products" name={name.trim() || t('editorNewProduct')}><StatusPill muted={status !== 'active'}>{t(status === 'active' ? 'listingActive' : 'listingInactive')}</StatusPill></EditorPreview>}>
+  const [description, setDescription] = useState(product?.description ?? '')
+  const [subtitle, setSubtitle] = useState(product?.metadata?.subtitle ?? '')
+  const [isSoldout, setSoldout] = useState(product?.isSoldout ?? false)
+  const [sortOrder, setSortOrder] = useState(product?.sortOrder ?? 0)
+  const [recommendationLevel, setRecommendation] = useState(product?.recommendationLevel ?? 0)
+  const [kitchenPrinterEnable, setKitchen] = useState(product?.settings.kitchenPrinterEnable ?? false)
+  const [startSaleTime, setStart] = useState(product?.settings.startSaleTime ?? '')
+  const [endSaleTime, setEnd] = useState(product?.settings.endSaleTime ?? '')
+  const [image, setImage] = useState<File | null>(null)
+  const [uploadCommand, setUploadCommand] = useState(() => crypto.randomUUID())
+  const [removeCover, setRemoveCover] = useState(false)
+  const imageInput = useRef<HTMLInputElement>(null)
+  const uploaded = useRef<{ file: File; uuid: string } | null>(null)
+  const extended = product?.extensionEditable ?? true
+  const body = { name: name.trim(), status, category: category || null, description: description.trim(), subtitle: subtitle.trim(),
+    ...(extended ? { isSoldout, sortOrder, recommendationLevel, kitchenPrinterEnable, startSaleTime, endSaleTime } : {}),
+    ...(product ? { version: product.version } : {}), ...(removeCover ? { coverImageUuid: null } : {}) }
+  const commandUuid = useCommand({ body, image: image ? uploadCommand : null })
+  return <EditorSheet title={t('basicProduct')} description="productInfoHint" onClose={onClose} onDone={done} submit={async () => {
+    let coverImageUuid: string | null | undefined = removeCover ? null : undefined
+    if (image) {
+      if (uploaded.current?.file !== image) uploaded.current = { file: image, uuid: (await api.uploadImage(image, uploadCommand)).uuid }
+      coverImageUuid = uploaded.current.uuid
+    }
+    await api.saveProduct(product?.uuid ?? null, { ...body, commandUuid, ...(coverImageUuid !== undefined ? { coverImageUuid } : {}) })
+  }} preview={<EditorPreview icon={CookingPot} label="products" name={name.trim() || t('editorNewProduct')}><StatusPill muted={status !== 'active'}>{t(status === 'active' ? 'listingActive' : 'listingInactive')}</StatusPill></EditorPreview>}>
     <EditorSection title="editorBasics" index="01"><label className="field">{t('productName')}<input required maxLength={60} value={name} placeholder={t('productName')} onChange={(event) => setName(event.target.value)} /></label><CategoryPicker api={api} enabled={can(access, 'product_category', 'read')} value={category} choose={setCategory} /></EditorSection>
-    <EditorSection title="editorAvailability" index="02"><StatusField value={status} set={setStatus} /></EditorSection>
-    <EditorAdvanced><label className="field">{t('category')} UUID<input pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}" value={category} onChange={(event) => setCategory(event.target.value)} /></label></EditorAdvanced>
+    <EditorSection title="productDisplay" index="02"><label className="field">{t('productSubtitle')}<input maxLength={255} value={subtitle} onChange={(event) => setSubtitle(event.target.value)} /></label><label className="field">{t('productDescription')}<textarea maxLength={5000} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label><label className="field">{t('coverUpload')}<input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" disabled={!can(access, 'catalog_image', 'create')} onChange={(event) => {
+      const file = event.target.files?.[0] ?? null
+      if (file && (file.size > 2 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))) { event.target.setCustomValidity(t('imageUploadHint')); return }
+      event.target.setCustomValidity(''); setImage(file); setUploadCommand(crypto.randomUUID()); setRemoveCover(false)
+    }} /><small>{t('imageUploadHint')}</small></label>{(product?.metadata?.cover || image) && !removeCover && <button type="button" className="text-action" onClick={() => { setImage(null); setRemoveCover(true); if (imageInput.current) { imageInput.current.value = ''; imageInput.current.setCustomValidity('') } }}>{t('removeImage')}</button>}</EditorSection>
+    <EditorSection title="editorAvailability" index="03"><StatusField value={status} set={setStatus} />{extended && <><EditorToggle label="soldOut" hint="soldoutRuleHint" checked={isSoldout} onChange={setSoldout} /><div className="editor-field-grid"><label className="field">{t('startSale')}<input type="time" required={Boolean(endSaleTime)} value={startSaleTime} onChange={(event) => setStart(event.target.value)} /></label><label className="field">{t('endSale')}<input type="time" required={Boolean(startSaleTime)} value={endSaleTime} onChange={(event) => setEnd(event.target.value)} /></label></div><p className="helper">{t('saleWindowRuleHint')} · {access.store.timezone}</p><EditorToggle label="kitchenPrint" hint="kitchenRuleHint" checked={kitchenPrinterEnable} onChange={setKitchen} /></>}</EditorSection>
+    <EditorAdvanced><label className="field">{t('category')} UUID<input pattern="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}" value={category} onChange={(event) => setCategory(event.target.value)} /></label>{extended && <div className="editor-field-grid"><label className="field">{t('sortOrder')}<input required type="number" min="0" max="1000000" step="1" value={sortOrder} onChange={(event) => setSortOrder(Number(event.target.value))} /></label><label className="field">{t('recommendationLevel')}<input required type="number" min="0" max="100" step="1" value={recommendationLevel} onChange={(event) => setRecommendation(Number(event.target.value))} /></label></div>}</EditorAdvanced>
   </EditorSheet>
 }
 function CategoryPicker({ api, value, choose, enabled }: { api: StoreApi; value: string; choose: (uuid: string) => void; enabled: boolean }) {
@@ -59,57 +89,66 @@ export function LiveCatalog({ api, access }: { api: StoreApi; access: StoreAcces
     <PageHeading eyebrow="catalogEyebrow" title="kitchenTitle" subtitle="catalogSubtitle" />
     <div className="workspace-tabs"><button className={tab === 'products' ? 'active' : ''} onClick={() => setTab('products')}><CookingPot size={16} />{t('products')}</button><button className={tab === 'categories' ? 'active' : ''} onClick={() => setTab('categories')}><Tag size={16} />{t('categoryManagement')}</button></div>
     {tab === 'products' ? <ProductList api={api} access={access} /> : <CategoryList api={api} access={access} />}
-    <details className="workspace-capability"><summary>{t('serviceConnection')}<ChevronDown size={14} /></summary><p>{t('extensionUnavailable')}</p></details>
+    <details className="workspace-capability"><summary>{t('serviceConnection')}<ChevronDown size={14} /></summary><p>{t('catalogOperationalHint')}</p></details>
   </>
 }
 function ProductVisual({ product }: { product: LiveProduct }) {
   const [broken, setBroken] = useState(false)
   const cover = product.metadata?.cover
+  useEffect(() => { setBroken(false) }, [cover])
   const safe = cover && (/^https:\/\//.test(cover) || /^\/(?!\/)/.test(cover)) && !cover.includes('\\')
   return <div className="catalog-product-visual" aria-hidden="true">{safe && !broken ? <img src={cover} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} /> : <><CookingPot size={31} strokeWidth={1.15} /><span>{product.name.slice(0, 1)}</span></>}</div>
 }
 function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t } = useI18n()
-  const load = useCallback((page: number) => api.products(page), [api])
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState<'all' | 'active' | 'inactive' | 'soldout'>('all')
+  const load = useCallback((page: number) => api.products(page, query, status), [api, query, status])
   const list = usePage(load, can(access, 'product', 'read'))
   const deletion = useDelete(list.reload)
   const [editing, setEditing] = useState<LiveProduct | null | undefined>()
   const [specs, setSpecs] = useState<LiveProduct | null>(null)
-  const [query, setQuery] = useState('')
-  const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all')
-  const visible = list.items.filter((product) => (status === 'all' || product.status === status) && `${product.name} ${product.uuid}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const [availability, setAvailability] = useState<{ products: LiveProduct[]; soldout: boolean } | null>(null)
+  const visible = list.items
   if (!can(access, 'product', 'read')) return <AccessNotice />
   return <>
-    <PageScope count={list.items.length} />
-    <div className="workspace-toolbar"><SearchField value={query} onChange={setQuery} /><Button className="workspace-primary" color="primary" disabled={!can(access, 'product', 'create') || deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addProduct')}</Button></div>
-    <div className="workspace-filters">{(['all', 'active', 'inactive'] as const).map((value) => <button key={value} className={status === value ? 'active' : ''} aria-pressed={status === value} onClick={() => setStatus(value)}>{t(value === 'all' ? 'allStatuses' : value === 'active' ? 'listingActive' : 'listingInactive')}</button>)}</div>
+    <PageScope count={list.items.length} total={list.total} />
+    <div className="workspace-toolbar"><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /><Button className="workspace-primary" color="primary" disabled={!can(access, 'product', 'create') || deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addProduct')}</Button></div>
+    <div className="workspace-filters">{(['all', 'active', 'inactive', 'soldout'] as const).map((value) => <button key={value} className={status === value ? 'active' : ''} aria-pressed={status === value} onClick={() => { setStatus(value); list.setPage(1) }}>{t(value === 'all' ? 'allStatuses' : value === 'active' ? 'listingActive' : value === 'soldout' ? 'soldOut' : 'listingInactive')}</button>)}</div>
+    {can(access, 'product', 'availability') && <button className="text-action" disabled={!list.items.some((product) => product.isSoldout && product.extensionEditable)} onClick={() => setAvailability({ products: list.items.filter((product) => product.isSoldout && product.extensionEditable), soldout: false })}>{t('restoreLoadedSoldout')}</button>}
     {deletion.feedback}
-    <ListFeedback state={{ ...list, items: visible }} empty={list.items.length ? 'noSearchResults' : 'firstProduct'} hint={list.items.length ? 'adjustSearch' : 'firstProductHint'} icon={CookingPot} />
+    <ListFeedback state={{ ...list, items: visible }} empty={query.trim() || status !== 'all' ? 'noSearchResults' : 'firstProduct'} hint={query.trim() || status !== 'all' ? 'adjustSearch' : 'firstProductHint'} icon={CookingPot} />
     <div className="catalog-product-grid">{visible.map((product) => <article className="catalog-product-card" key={product.uuid}>
       <div className="catalog-product-top"><ProductVisual product={product} /><div className="catalog-product-info"><StatusPill muted={product.status !== 'active'}>{t(product.status === 'active' ? 'listingActive' : 'listingInactive')}</StatusPill><h2>{product.name}</h2><p>{product.metadata?.subtitle || t('specifications')}{product.isSoldout && ` · ${t('soldOut')}`}</p></div></div>
       <div className="catalog-product-actions"><Button disabled={!can(access, 'product', 'update') || deletion.busy} onClick={() => setEditing(product)}><Pencil size={14} />{t('edit')}</Button><Button disabled={!can(access, 'specification', 'read') || deletion.busy} onClick={() => setSpecs(product)}><Layers3 size={14} />{t('specManagement')}</Button><button className="workspace-icon danger" aria-label={t('delete')} disabled={!can(access, 'product', 'delete') || deletion.busy} onClick={() => void deletion.remove(() => api.remove('products', product.uuid))}><Trash2 size={16} /></button></div>
-      <RecordIdentity id={product.uuid} />
+      {can(access, 'product', 'availability') && product.extensionEditable && <button className="text-action" onClick={() => setAvailability({ products: [product], soldout: !product.isSoldout })}>{t(product.isSoldout ? 'restoreAvailability' : 'markSoldout')}</button>}<RecordIdentity id={product.uuid} />
     </article>)}</div>
     <PageControls state={list} />
     {editing !== undefined && <ProductForm api={api} access={access} product={editing} onClose={() => setEditing(undefined)} done={() => { setEditing(undefined); list.reload() }} />}
+    {availability && <AvailabilityForm api={api} products={availability.products} soldout={availability.soldout} onClose={() => setAvailability(null)} done={() => { setAvailability(null); list.reload() }} />}
     {specs && <Sheet open title={`${specs.name} · ${t('specifications')}`} onClose={() => setSpecs(null)}><SpecificationList key={specs.uuid} api={api} access={access} product={specs} /></Sheet>}
   </>
 }
 function CategoryList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t } = useI18n()
-  const load = useCallback((page: number) => api.categories(page), [api])
+  const [query, setQuery] = useState('')
+  const load = useCallback((page: number) => api.categories(page, query), [api, query])
   const list = usePage(load, can(access, 'product_category', 'read'))
   const deletion = useDelete(list.reload)
   const [editing, setEditing] = useState<LiveCategory | null | undefined>()
-  const [query, setQuery] = useState('')
-  const visible = list.items.filter((category) => `${category.name} ${category.slug}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const visible = list.items
   if (!can(access, 'product_category', 'read')) return <AccessNotice />
-  return <><PageScope count={list.items.length} /><div className="workspace-toolbar"><SearchField value={query} onChange={setQuery} /><Button color="primary" className="workspace-primary" disabled={!can(access, 'product_category', 'create') || deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addCategory')}</Button></div>{deletion.feedback}
-    <ListFeedback state={{ ...list, items: visible }} empty={list.items.length ? 'noSearchResults' : 'firstCategory'} hint={list.items.length ? 'adjustSearch' : 'firstCategoryHint'} icon={Tag} />
+  return <><PageScope count={list.items.length} total={list.total} /><div className="workspace-toolbar"><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /><Button color="primary" className="workspace-primary" disabled={!can(access, 'product_category', 'create') || deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addCategory')}</Button></div>{deletion.feedback}
+    <ListFeedback state={{ ...list, items: visible }} empty={query.trim() ? 'noSearchResults' : 'firstCategory'} hint={query.trim() ? 'adjustSearch' : 'firstCategoryHint'} icon={Tag} />
     <div className="workspace-category-list">{visible.map((category) => <article key={category.uuid}><div className="category-main"><span className="category-symbol"><Tag size={21} strokeWidth={1.5} /></span><div><h2>{category.name}</h2><p>{category.slug}</p></div><StatusPill muted={!category.enabled}>{t(category.enabled ? 'enabled' : 'disabled')}</StatusPill></div><div className="category-meta"><span><ArrowUpDown size={13} />{t('sortOrder')} {category.sortOrder}</span><div><Button disabled={!can(access, 'product_category', 'update') || deletion.busy} onClick={() => setEditing(category)}><Pencil size={14} />{t('edit')}</Button><button className="workspace-icon danger" aria-label={t('delete')} disabled={!can(access, 'product_category', 'delete') || deletion.busy} onClick={() => void deletion.remove(() => api.remove('product-categories', category.uuid))}><Trash2 size={16} /></button></div></div><RecordIdentity id={category.uuid} /></article>)}</div>
     <PageControls state={list} />
     {editing !== undefined && <CategoryForm api={api} category={editing} onClose={() => setEditing(undefined)} done={() => { setEditing(undefined); list.reload() }} />}
   </>
+}
+function AvailabilityForm({ api, products, soldout, onClose, done }: { api: StoreApi; products: LiveProduct[]; soldout: boolean; onClose: () => void; done: () => void }) {
+  const { t } = useI18n()
+  const command = useCommand({ items: products.map(({ uuid, version }) => ({ uuid, version })), soldout })
+  return <EditorSheet title={t(soldout ? 'markSoldout' : 'restoreAvailability')} description="soldoutRuleHint" preview={<EditorPreview icon={CookingPot} label="products" name={`${products.length} ${t('recordsUnit')}`} />} onClose={onClose} onDone={done} submit={() => api.availability(products, soldout, command)}><Notice subtle>{t('explicitBatchHint')}</Notice><ul className="operation-records">{products.map((product) => <li key={product.uuid}>{product.name}</li>)}</ul></EditorSheet>
 }
 function SpecificationList({ api, access, product }: { api: StoreApi; access: StoreAccess; product: LiveProduct }) {
   const { t } = useI18n()

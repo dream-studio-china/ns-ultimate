@@ -193,6 +193,10 @@
 .variant-actions { display: flex; gap: 5px; justify-content: flex-end; align-items: center; margin-top: 6px; }
 .variant-actions .adm-button { min-height: 44px; font-size: 11px; }
 .variant-actions .workspace-icon { width: 44px; }
+.order-operation-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+.order-status-filter { margin-top: 15px; max-width: 360px; }
+.operation-records { display: grid; gap: 12px; padding-inline: 16px; font-size: 13px; overflow-wrap: anywhere; }
+.account-history-button { max-width: 680px; margin: 16px auto 0; }
 .variant-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 21px; font-size: 13px; }
 .workspace-table-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .workspace-table-card { border: 1px solid var(--ws-line); border-radius: 17px; padding: 15px 14px 0; background: #fff; min-width: 0; }

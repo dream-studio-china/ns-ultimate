@@ -2,8 +2,8 @@ import { useCallback, useId, useState } from 'react'
 import { Button } from 'antd-mobile'
 import { ChevronDown, Clock3, LayoutGrid, LockKeyhole, Minus, Pencil, Plus, ReceiptText, Trash2, UsersRound } from 'lucide-react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
-import { can, type StoreAccess, StoreApi, type LiveCounter, type LiveOrder } from '../adapters/live'
-import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, RecordIdentity, SearchField, StatusPill, useDelete, usePage, LiveSheet as Sheet } from './ui'
+import { can, orderActions, type OrderAction, type StoreAccess, StoreApi, type LiveCounter, type LiveOrder } from '../adapters/live'
+import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, RecordIdentity, SearchField, StatusPill, useCommand, useDelete, usePage, LiveSheet as Sheet } from './ui'
 
 function CounterForm({ api, counter, done, onClose }: { api: StoreApi; counter: LiveCounter | null; done: () => void; onClose: () => void }) {
   const { t } = useI18n()
@@ -24,18 +24,18 @@ function TableGlyph() {
 }
 export function LiveTables({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t } = useI18n()
-  const load = useCallback((page: number) => api.counters(page), [api])
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const load = useCallback((page: number) => api.counters(page, query, filter), [api, query, filter])
   const list = usePage(load, can(access, 'counter', 'read'))
   const deletion = useDelete(list.reload)
   const [editing, setEditing] = useState<LiveCounter | null | undefined>()
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
-  const visible = list.items.filter((counter) => `${counter.name} ${counter.code}`.toLowerCase().includes(query.trim().toLowerCase()) && (filter === 'all' || counter.enabled === (filter === 'enabled')))
+  const visible = list.items
   return <><PageHeading eyebrow="tablesEyebrow" title="tables" subtitle="tablesLiveSubtitle"><span className="configuration-badge"><LayoutGrid size={13} />{t('configurationOnly')}</span></PageHeading>
     {!can(access, 'counter', 'read') ? <AccessNotice /> : <>
-      <PageScope count={list.items.length} /><div className="workspace-toolbar"><SearchField value={query} onChange={setQuery} /><Button className="workspace-primary" color="primary" disabled={!can(access, 'counter', 'create') || deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addTable')}</Button></div>
-      <div className="workspace-filters">{(['all', 'enabled', 'disabled'] as const).map((value) => <button key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} onClick={() => setFilter(value)}>{t(value === 'all' ? 'allStatuses' : value === 'enabled' ? 'tableEnabled' : 'tableDisabled')}</button>)}</div>
-      {deletion.feedback}<ListFeedback state={{ ...list, items: visible }} empty={list.items.length ? 'noSearchResults' : 'firstTable'} hint={list.items.length ? 'adjustSearch' : 'firstTableHint'} icon={LayoutGrid} />
+      <PageScope count={list.items.length} total={list.total} /><div className="workspace-toolbar"><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /><Button className="workspace-primary" color="primary" disabled={!can(access, 'counter', 'create') || deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addTable')}</Button></div>
+      <div className="workspace-filters">{(['all', 'enabled', 'disabled'] as const).map((value) => <button key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} onClick={() => { setFilter(value); list.setPage(1) }}>{t(value === 'all' ? 'allStatuses' : value === 'enabled' ? 'tableEnabled' : 'tableDisabled')}</button>)}</div>
+      {deletion.feedback}<ListFeedback state={{ ...list, items: visible }} empty={query.trim() || filter !== 'all' ? 'noSearchResults' : 'firstTable'} hint={query.trim() || filter !== 'all' ? 'adjustSearch' : 'firstTableHint'} icon={LayoutGrid} />
       <div className="workspace-table-grid">{visible.map((counter) => <article className={`workspace-table-card ${counter.enabled ? '' : 'is-disabled'}`} key={counter.uuid}>
         <div className="table-config-top"><strong title={counter.code}>{counter.code}</strong><StatusPill muted={!counter.enabled}>{t(counter.enabled ? 'tableEnabled' : 'tableDisabled')}</StatusPill></div><TableGlyph /><h2>{counter.name}</h2><p className="table-config-seats"><UsersRound size={14} />{counter.capacity ?? '—'} {t('capacity')}</p>
         <div className="table-config-actions"><Button disabled={!can(access, 'counter', 'update') || deletion.busy} onClick={() => setEditing(counter)}><Pencil size={14} />{t('edit')}</Button><button className="workspace-icon danger" aria-label={t('delete')} disabled={!can(access, 'counter', 'delete') || deletion.busy} onClick={() => void deletion.remove(() => api.remove('counters', counter.uuid))}><Trash2 size={16} /></button></div><RecordIdentity id={counter.uuid}><dt>{t('tableCode')}</dt><dd>{counter.code}</dd></RecordIdentity>
@@ -48,18 +48,20 @@ export function LiveTables({ api, access }: { api: StoreApi; access: StoreAccess
 const statusLabels: Record<string, MessageKey> = { pending_validation: 'statePendingValidation', awaiting_inventory: 'stateAwaitingInventory', accepted: 'stateAccepted', rejected: 'stateRejected', fulfillment_pending: 'stateFulfillmentPending', fulfilling: 'stateFulfilling', fulfilled: 'stateFulfilled', verified: 'stateVerified', cancelled: 'stateCancelled' }
 export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t, locale } = useI18n()
-  const load = useCallback((page: number) => api.orders(page), [api])
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState('all')
+  const load = useCallback((page: number) => api.orders(page, query, status), [api, query, status])
   const list = usePage(load, can(access, 'order', 'read'))
   const [selected, setSelected] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const visible = list.items.filter((order) => `${order.tradeOrderUuid} ${order.operationalStatus}`.toLowerCase().includes(query.trim().toLowerCase()))
-  return <><PageHeading eyebrow="ordersEyebrow" title="readOnlyOrders" subtitle="ordersLiveSubtitle"><span className="configuration-badge"><LockKeyhole size={13} />{t('readOnly')}</span></PageHeading>
+  const visible = list.items
+  const writable = orderActions.some((action) => can(access, 'order', action))
+  return <><PageHeading eyebrow="ordersEyebrow" title={writable ? 'storeOrders' : 'readOnlyOrders'} subtitle="ordersLiveSubtitle"><span className="configuration-badge"><LockKeyhole size={13} />{t(writable ? 'orderOperations' : 'readOnly')}</span></PageHeading>
     {!can(access, 'order', 'read') ? <AccessNotice /> : <>
-      <PageScope count={list.items.length} /><SearchField value={query} onChange={setQuery} /><ListFeedback state={{ ...list, items: visible }} empty={list.items.length ? 'noSearchResults' : 'firstOrder'} hint={list.items.length ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
-      <div className="workspace-order-list">{visible.map((order) => <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('orderReference')}</span><StatusPill muted={['cancelled', 'rejected'].includes(order.operationalStatus)}>{statusLabels[order.operationalStatus] ? t(statusLabels[order.operationalStatus]) : order.operationalStatus}</StatusPill></div><div className="order-card-body"><div><h2 title={order.tradeOrderUuid}>#{order.tradeOrderUuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, locale)}</strong></div><div className="order-card-footer"><span>{t('readOnly')}</span><Button onClick={() => setSelected(order.uuid)}>{t('view')}<ChevronDown size={14} /></Button></div></article>)}</div>
+      <PageScope count={list.items.length} total={list.total} /><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /><label className="field order-status-filter">{t('orderStatus')}<select value={status} onChange={(event) => { setStatus(event.target.value); list.setPage(1) }}><option value="all">{t('allStatuses')}</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label><ListFeedback state={{ ...list, items: visible }} empty={query.trim() || status !== 'all' ? 'noSearchResults' : 'firstOrder'} hint={query.trim() || status !== 'all' ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
+      <div className="workspace-order-list">{visible.map((order) => <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('orderReference')}</span><StatusPill muted={['cancelled', 'rejected'].includes(order.operationalStatus)}>{statusLabels[order.operationalStatus] ? t(statusLabels[order.operationalStatus]) : order.operationalStatus}</StatusPill></div><div className="order-card-body"><div><h2 title={order.tradeOrderUuid}>#{order.tradeOrderUuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, locale)}</strong></div><div className="order-card-footer"><span>{t('operationalStatusHint')}</span><Button onClick={() => setSelected(order.uuid)}>{t('view')}<ChevronDown size={14} /></Button></div></article>)}</div>
       <PageControls state={list} /><Notice subtle icon={LockKeyhole}>{t('operationalStatusHint')}</Notice>
     </>}
-    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail api={api} id={selected} /></Sheet>}
+    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail api={api} access={access} id={selected} changed={list.reload} /></Sheet>}
   </>
 }
 function formatOrderAmount(order: LiveOrder, locale: string) { return new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100) }
@@ -78,14 +80,25 @@ function snapshotItems(snapshot: unknown): { name?: string; quantity?: number }[
     return name || quantity ? [{ name, quantity }] : []
   })
 }
-function OrderDetail({ api, id }: { api: StoreApi; id: string }) {
+const actionLabels: Record<OrderAction, MessageKey> = { accept: 'acceptOrder', reject: 'rejectOrder', fulfill: 'fulfillOrder', verify: 'verifyOrder' }
+function OrderDetail({ api, access, id, changed }: { api: StoreApi; access: StoreAccess; id: string; changed: () => void }) {
   const { t, locale } = useI18n()
   const load = useCallback(async () => ({ items: [await api.order(id)], hasNext: false }), [api, id])
   const detail = usePage(load)
+  const [operation, setOperation] = useState<{ order: LiveOrder; action: OrderAction } | null>(null)
   return <><ListFeedback state={detail} empty="emptyLive" hint="firstOrderHint" icon={ReceiptText} />{detail.items.map((order) => <div className="workspace-order-detail" key={order.uuid}>
     <div className="order-detail-hero"><span><ReceiptText size={28} strokeWidth={1.3} /></span><p>{t('amount')}</p><strong>{formatOrderAmount(order, locale)}</strong><StatusPill>{statusLabels[order.operationalStatus] ? t(statusLabels[order.operationalStatus]) : order.operationalStatus}</StatusPill><small>{order.operationalStatus}</small></div>
     <dl className="order-detail-meta"><dt>{t('orderNo')}</dt><dd>{order.tradeOrderUuid}</dd><dt>{t('createdAt')}</dt><dd>{formatDate(order.createdAt, locale)}</dd></dl>
     <h3>{t('orderItems')}</h3><div className="order-snapshot-items">{snapshotItems(order.orderSnapshot).length ? snapshotItems(order.orderSnapshot).map((item, index) => <div key={index}><span className="snapshot-item-index">{String(index + 1).padStart(2, '0')}</span><span>{item.name ?? t('orderItem')}</span>{item.quantity !== undefined && <strong>×{item.quantity}</strong>}</div>) : <p className="helper">{t('noSnapshotItems')}</p>}</div>
+    {order.rejectionReason && <p className="helper">{t('rejectionReason')} · {order.rejectionReason}</p>}
+    <div className="order-operation-actions">{order.allowedActions.filter((action) => can(access, 'order', action)).map((action) => <Button key={action} color={action === 'reject' ? 'default' : 'primary'} onClick={() => setOperation({ order, action })}>{t(actionLabels[action])}</Button>)}</div>
     <Notice icon={LockKeyhole} subtle>{t('operationalStatusHint')}</Notice><details className="workspace-advanced"><summary>{t('rawSnapshot')}<ChevronDown size={14} /></summary><pre>{JSON.stringify(order.orderSnapshot ?? null, null, 2)}</pre></details>
-  </div>)}<PageControls state={detail} detail /></>
+  </div>)}<PageControls state={detail} detail />{operation && <OrderOperation api={api} {...operation} onClose={() => setOperation(null)} done={() => { setOperation(null); detail.reload(); changed() }} />}</>
+}
+
+function OrderOperation({ api, order, action, onClose, done }: { api: StoreApi; order: LiveOrder; action: OrderAction; onClose: () => void; done: () => void }) {
+  const { t } = useI18n()
+  const [reason, setReason] = useState('')
+  const command = useCommand({ uuid: order.uuid, version: order.version, action, reason: reason.trim() })
+  return <EditorSheet title={t(actionLabels[action])} description="orderCommandHint" onClose={onClose} onDone={done} submit={() => api.orderCommand(order, action, reason, command)} preview={<EditorPreview icon={ReceiptText} label="orderReference" name={`#${order.tradeOrderUuid.slice(0, 8).toUpperCase()}`} detail={t(statusLabels[order.operationalStatus] ?? 'orderStatus')} />}><Notice subtle>{t('orderCommandHint')}</Notice>{action === 'reject' && <label className="field">{t('rejectionReason')}<textarea required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>}</EditorSheet>
 }

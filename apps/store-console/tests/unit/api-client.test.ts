@@ -91,7 +91,7 @@ describe('staff API transport', () => {
 })
 describe('store-scoped permissions and adapters', () => {
   it('accepts PHP empty product metadata without inventing a cover image', () => {
-    const product = productSchema.parse({ uuid: store, name: 'Product', status: 'active', category: null, metadata: [] })
+    const product = productSchema.parse({ uuid: store, name: 'Product', status: 'active', category: null, metadata: [], version: 'a'.repeat(64), isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '', endSaleTime: '' } })
     expect(product.metadata).toBeNull()
   })
   it('identifies membership lookup failures without exposing server messages or credentials', async () => {
@@ -126,9 +126,29 @@ describe('store-scoped permissions and adapters', () => {
     const client = new ApiClient()
     const request = vi.spyOn(client, 'request').mockResolvedValue({ code: 0 })
     const api = new StoreApi(client, store)
-    await api.save('products', null, { name: 'Item' })
-    expect(request).toHaveBeenCalledWith(`/api/v1/store/${store}/products`, 'POST', { name: 'Item' })
+    await api.save('product-categories', null, { name: 'Category' })
+    expect(request).toHaveBeenCalledWith(`/api/v1/store/${store}/product-categories`, 'POST', { name: 'Category' })
     expect(() => new StoreApi(client, '../manage')).toThrow()
     expect(() => api.remove('products', '../orders')).toThrow()
+  })
+  it('sends raster uploads as multipart without overriding the browser boundary', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(tokens())).mockResolvedValueOnce(json({ code: 0, data: { uuid: store, url: '/uploads/test.png' } }))
+    const client = new ApiClient(fetcher)
+    await client.login('staff', 'test-only')
+    await new StoreApi(client, store).uploadImage(new File(['test'], 'test.png', { type: 'image/png' }), store)
+    const init = fetcher.mock.calls[1]![1]!
+    expect(init.body).toBeInstanceOf(FormData)
+    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined()
+    expect((init.body as FormData).get('commandUuid')).toBe(store)
+    expect(init.credentials).toBe('omit')
+  })
+  it('validates server-wide result pagination and sends bounded search parameters without query expressions', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(tokens())).mockResolvedValueOnce(json({ code: 0, data: { items: [], total: 0, page: 2, hasNext: false } })).mockResolvedValueOnce(json({ code: 0, data: { items: [], total: 0, page: 99, hasNext: false } }))
+    const client = new ApiClient(fetcher)
+    await client.login('staff', 'test-only')
+    const api = new StoreApi(client, store)
+    expect(await api.products(2, ' special % ', 'soldout')).toEqual({ items: [], total: 0, page: 2, hasNext: false })
+    expect(fetcher.mock.calls[1]![0]).toBe(`/api/v1/store/${store}/operations/products?page=2&limit=30&q=special+%25&status=soldout`)
+    await expect(api.products(1)).rejects.toMatchObject({ kind: 'invalid' })
   })
 })

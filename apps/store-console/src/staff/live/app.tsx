@@ -2,13 +2,13 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
 import { ArrowRight, Check, ChevronDown, ChevronRight, CircleHelp, CookingPot, Globe2, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
 import { ApiClient } from '../adapters/api-client'
-import { can, StoreApi, StoreConnectionError, storeSchema, type StoreAccess, type ConnectionStep } from '../adapters/live'
+import { can, orderActions, StoreApi, StoreConnectionError, storeSchema, type StoreAccess, type ConnectionStep } from '../adapters/live'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { useOnline } from '../../shared/use-online'
 import { ThemePicker } from '../../shared/theme-picker'
 import { LiveCatalog } from './catalog'
 import { LiveTables, LiveOrders } from './tables'
-import { errorKey, ListFeedback, Notice, PageControls, PageHeading, StatusPill, usePage } from './ui'
+import { errorKey, ListFeedback, Notice, PageControls, PageHeading, StatusPill, usePage, LiveSheet } from './ui'
 import { BrandArt } from './brand-art'
 import './workspace.css'
 
@@ -42,7 +42,7 @@ export function LiveApp() {
       {signedIn && !access && <button className="workspace-icon" aria-label={t('logout')} onClick={() => void logout()}><LogOut size={18} /></button>}
     </header>
     {!online && <div role="alert" className="workspace-offline"><WifiOff size={16} /><span>{t('offline')}</span></div>}
-    {access && <nav className="workspace-nav" aria-label={t('app')}>{navigation.map(({ key, icon: Icon, title }) => <button aria-label={t(title)} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => setPage(key)}><span><Icon size={21} strokeWidth={page === key ? 1.9 : 1.6} /></span><small>{t(key === 'orders' ? 'orderReference' : key)}</small></button>)}</nav>}
+    {access && <nav className="workspace-nav" aria-label={t('app')}>{navigation.map(({ key, icon: Icon, title }) => <button aria-label={t(key === 'orders' && orderActions.some((action) => can(access, 'order', action)) ? 'storeOrders' : title)} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => setPage(key)}><span><Icon size={21} strokeWidth={page === key ? 1.9 : 1.6} /></span><small>{t(key === 'orders' ? 'orderReference' : key)}</small></button>)}</nav>}
     <div className="workspace-body">
       {error && <div className="workspace-error" role="alert"><CircleHelp size={19} /><p>{t(error)}</p></div>}
       {!signedIn ? <Login client={client} done={() => { setError(null); setSignedIn(true) }} /> : !access ? <StoreSelection client={client} connected={(next) => { api.current = new StoreApi(client, next.store.uuid); setAccess(next); setPage('products') }} /> : <>
@@ -50,9 +50,9 @@ export function LiveApp() {
           {page === 'products' && <LiveCatalog api={api.current!} access={access} />}
           {page === 'tables' && <LiveTables api={api.current!} access={access} />}
           {page === 'orders' && <LiveOrders api={api.current!} access={access} />}
-          {page === 'mine' && <LiveAccount access={access} logout={() => void logout()} />}
+           {page === 'mine' && <LiveAccount api={api.current!} access={access} logout={() => void logout()} />}
         </div>
-        <details className="workspace-connection"><summary><ShieldCheck size={14} />{t('connectionDetails')}<ChevronDown size={14} /></summary><p>{t('realScopeHint')}</p></details>
+        <details className="workspace-connection"><summary><ShieldCheck size={14} />{t('connectionDetails')}<ChevronDown size={14} /></summary><p>{t('operationalScopeHint')}</p></details>
       </>}
       {!access && <div className="workspace-demo-link"><span>{t('demoModeHint')}</span><a href="?mode=demo" aria-label={t('demoEntry')}>{t('demoModeLink')}<ArrowRight size={13} /></a></div>}
       <footer className="workspace-signature"><CookingPot size={14} strokeWidth={1.3} /><span>NS STORE CONSOLE</span><i />{t(access ? 'liveMode' : 'secureSession')}</footer>
@@ -122,10 +122,11 @@ function StoreSelection({ client, connected }: { client: ApiClient; connected: (
 }
 
 const roleLabels: Record<string, MessageKey> = { owner: 'membershipOwner', manager: 'membershipManager', clerk: 'membershipClerk', fulfillment: 'membershipFulfillment' }
-const resourceLabels: Record<string, MessageKey> = { product: 'products', product_category: 'categoryManagement', specification: 'specifications', counter: 'tables', order: 'orderReference' }
-const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', create: 'permissionCreate', update: 'permissionUpdate', delete: 'permissionDelete' }
-function LiveAccount({ access, logout }: { access: StoreAccess; logout: () => void }) {
+const resourceLabels: Record<string, MessageKey> = { product: 'products', product_category: 'categoryManagement', specification: 'specifications', counter: 'tables', order: 'orderReference', catalog_image: 'coverUpload', operation: 'operationHistory' }
+const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', create: 'permissionCreate', update: 'permissionUpdate', delete: 'permissionDelete', availability: 'availabilityControl', accept: 'acceptOrder', reject: 'rejectOrder', fulfill: 'fulfillOrder', verify: 'verifyOrder' }
+function LiveAccount({ api, access, logout }: { api: StoreApi; access: StoreAccess; logout: () => void }) {
   const { t, locale, setLocale } = useI18n()
+  const [history, setHistory] = useState(false)
   return <>
     <PageHeading eyebrow="accountEyebrow" title="liveAccount" subtitle="accountSubtitle" />
     <section className="workspace-profile"><div className="profile-monogram">{(access.profile.username ?? 'NS').slice(0, 1).toUpperCase()}<span><ShieldCheck size={13} /></span></div><div><h2>{access.profile.username ?? access.profile.uuid}</h2><p>{t(roleLabels[access.membership.role] ?? 'liveAccount')}</p></div><StatusPill>{t('liveMode')}</StatusPill></section>
@@ -134,6 +135,15 @@ function LiveAccount({ access, logout }: { access: StoreAccess; logout: () => vo
     <section className="workspace-panel"><div className="account-setting"><span className="setting-symbol"><Globe2 size={19} /></span><div><h3>{t('language')}</h3><small>{locale === 'en' ? t('en') : t('zh')}</small></div><button onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}>{locale === 'en' ? t('zh') : t('en')}<ChevronRight size={16} /></button></div><ThemePicker /></section>
     <div className="account-section-title"><h2>{t('profileAndAccess')}</h2><span>{t('scopedAccess')}</span></div>
     <section className="workspace-panel account-permissions">{Object.entries(resourceLabels).map(([resource, label]) => <div key={resource}><strong>{t(label)}</strong><span>{Object.entries(actionLabels).filter(([action]) => can(access, resource, action)).map(([action, label]) => <small key={action}>{t(label)}</small>)}{!Object.keys(actionLabels).some((action) => can(access, resource, action)) && <small className="no-grant">{t('noGrantedActions')}</small>}</span></div>)}</section>
+    {can(access, 'operation', 'read') && <Button block className="account-history-button" onClick={() => setHistory(true)}>{t('operationHistory')}</Button>}
+    {history && <LiveSheet open title={t('operationHistory')} onClose={() => setHistory(false)}><OperationHistory api={api} /></LiveSheet>}
     <section className="account-session"><h2>{t('sessionSettings')}</h2><p>{t('accountSessionHint')}</p><Button block className="logout-button" onClick={logout}><LogOut size={17} />{t('logout')}</Button><a href="?mode=demo">{t('demoModeLink')}<ArrowRight size={14} /></a></section>
   </>
+}
+
+function OperationHistory({ api }: { api: StoreApi }) {
+  const { t, locale } = useI18n()
+  const load = useCallback((page: number) => api.history(page), [api])
+  const list = usePage(load)
+  return <><Notice subtle>{t('historyScopeHint')}</Notice><ListFeedback state={list} empty="emptyLive" hint="historyScopeHint" icon={ShieldCheck} /><ul className="operation-records">{list.items.map((operation) => <li key={operation.uuid}><strong>{operation.action}</strong><p>{new Date(operation.createdAt).toLocaleString(locale)}</p><small>{t('operationActor')} · {operation.actorUuid}</small></li>)}</ul><PageControls state={list} /></>
 }
