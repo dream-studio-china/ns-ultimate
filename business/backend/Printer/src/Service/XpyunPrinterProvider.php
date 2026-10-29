@@ -64,9 +64,18 @@ final class XpyunPrinterProvider implements PrinterProviderInterface
     /** @return array{userKey: string} */
     private function credentials(PrinterAccount $account): array
     {
-        $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
+        if ($account->getCredentialsCipher() === '') {
+            throw new PrinterProviderException('missing_credentials', 'Xpyun account credentials are incomplete.');
+        }
+        try {
+            $credentials = $this->cipher->decrypt($account->getCredentialsCipher());
+        } catch (\RuntimeException) {
+            throw new PrinterProviderException('invalid_credentials', 'Stored printer credentials cannot be decrypted.');
+        }
         if (!is_string($credentials['userKey'] ?? null) || $credentials['userKey'] === '') {
-            throw new \LogicException('Xpyun account credentials are incomplete.');
+            // A missing credential is a definitive configuration failure, not an
+            // ambiguous transport outcome, so the job must be marked failed.
+            throw new PrinterProviderException('missing_credentials', 'Xpyun account credentials are incomplete.');
         }
         return ['userKey' => $credentials['userKey']];
     }
