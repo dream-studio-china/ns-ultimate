@@ -19,6 +19,7 @@ final class MergeTransitionGuard implements EventSubscriberInterface
         return ['workflow.order.guard.merge' => 'guard'];
     }
 
+    /** @param GuardEvent<object> $event */
     public function guard(GuardEvent $event): void
     {
         $order = $event->getSubject();

@@ -20,7 +20,7 @@ final class OrderPrintRequestWriter
 
     public function pruneClaims(\DateTimeImmutable $now = new \DateTimeImmutable()): int
     {
-        return $this->connection->executeStatement(
+        return (int) $this->connection->executeStatement(
             'DELETE FROM printer_order_rule_claim WHERE created_at < ?',
             [$now->modify('-'.self::CLAIM_RETENTION_DAYS.' days')->format('Y-m-d H:i:s')],
         );

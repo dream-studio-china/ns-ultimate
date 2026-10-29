@@ -31,7 +31,10 @@ final class PrinterJobService
         return $this->submitSnapshot($device, $definition, $data, $copies, $idempotencyKey);
     }
 
-    /** @param array<string, mixed> $definition @param array<string, mixed> $data */
+    /**
+     * @param array<string, mixed> $definition
+     * @param array<string, mixed> $data
+     */
     public function submitSnapshot(PrinterDevice $device, array $definition, array $data, int $copies, string $idempotencyKey): PrinterJob
     {
         if (($definition['kind'] ?? null) !== $device->getKind() || !is_array($definition['nodes'] ?? null)) {

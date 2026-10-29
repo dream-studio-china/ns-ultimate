@@ -19,4 +19,11 @@ class PrinterOrderRuleClaim
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
+
+    public function __construct(string $claimKey = '', string $token = '', ?\DateTimeImmutable $createdAt = null)
+    {
+        $this->claimKey = $claimKey;
+        $this->token = $token;
+        $this->createdAt = $createdAt ?? new \DateTimeImmutable();
+    }
 }

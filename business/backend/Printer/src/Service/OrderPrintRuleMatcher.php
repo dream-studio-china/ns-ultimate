@@ -37,6 +37,7 @@ final class OrderPrintRuleMatcher
                 'not_exists' => !$exists,
                 'equals' => $exists && $value === $condition['value'],
                 'not_equals' => $exists && $value !== $condition['value'],
+                default => false,
             };
         }
 

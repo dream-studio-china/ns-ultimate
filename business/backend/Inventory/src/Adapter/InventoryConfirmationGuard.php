@@ -18,6 +18,7 @@ final class InventoryConfirmationGuard implements EventSubscriberInterface
         return ['workflow.order.guard.confirm' => 'guard'];
     }
 
+    /** @param GuardEvent<object> $event */
     public function guard(GuardEvent $event): void
     {
         $order = $event->getSubject();

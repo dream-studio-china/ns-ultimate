@@ -26,8 +26,11 @@ final class PrinterOrderRuleController extends RestController
 {
     use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
 
+    /** @var list<string> */
     protected array $requiredCreateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
+    /** @var list<string> */
     protected array $acceptedCreateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
+    /** @var list<string> */
     protected array $acceptedUpdateProperties = ['name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
 
     public function __construct(
@@ -36,6 +39,10 @@ final class PrinterOrderRuleController extends RestController
         private readonly EntityManagerInterface $entityManager,
     ) {}
 
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     protected function processCreateContent(array $content, object $entity): array
     {
         if (!$entity instanceof PrinterOrderRule) { throw new \LogicException('Unexpected printer rule entity.'); }
@@ -44,6 +51,10 @@ final class PrinterOrderRuleController extends RestController
         return $content;
     }
 
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     protected function processUpdateContent(array $content, ?object $entity = null): array
     {
         if (!$entity instanceof PrinterOrderRule) { throw new \LogicException('Unexpected printer rule entity.'); }
@@ -52,7 +63,10 @@ final class PrinterOrderRuleController extends RestController
         return $content;
     }
 
-    /** Restore null comparisons after the generic admin form removes null fields. */
+    /**
+     * @param array<string, mixed> $content
+     * @return array<string, mixed>
+     */
     private function normalizeConditions(array $content): array
     {
         if (!is_array($content['conditions'] ?? null)) { return $content; }
@@ -70,6 +84,7 @@ final class PrinterOrderRuleController extends RestController
         return $content;
     }
 
+    /** @param array<string, mixed> $content */
     private function validateContent(array $content, PrinterOrderRule $entity, bool $creating = false): void
     {
         $data = array_replace($entity->toRule(), $content);

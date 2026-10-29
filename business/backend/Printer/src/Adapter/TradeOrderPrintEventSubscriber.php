@@ -22,6 +22,7 @@ final class TradeOrderPrintEventSubscriber implements EventSubscriberInterface
         ];
     }
 
+    /** @param CompletedEvent<object> $event */
     public function onConfirmationCompleted(CompletedEvent $event): void
     {
         $order = $event->getSubject();
@@ -30,6 +31,7 @@ final class TradeOrderPrintEventSubscriber implements EventSubscriberInterface
         }
     }
 
+    /** @param CompletedEvent<object> $event */
     public function onPaymentCompleted(CompletedEvent $event): void
     {
         $order = $event->getSubject();
