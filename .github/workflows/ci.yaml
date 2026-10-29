@@ -8,6 +8,30 @@ permissions:
   contents: read
 
 jobs:
+  store-console-checks:
+    name: Store console mobile UI checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/store-console
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/store-console/package-lock.json
+      - name: Install store console dependencies
+        run: npm ci
+      - name: Run store console unit checks and build
+        run: npm test && npm run build
+      - name: Install mobile test browser
+        run: npx playwright install --with-deps chromium
+      - name: Run mobile browser flows
+        run: npm run test:e2e
+
   cashier-checks:
     name: Cashier UI checks
     runs-on: ubuntu-latest
