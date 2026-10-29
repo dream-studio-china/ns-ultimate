@@ -47,6 +47,13 @@ final class TradeOrderPrintAdapter
         }
     }
 
+    public function enqueueForPaidSettlement(Order $order): void
+    {
+        if ($this->entityManager->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) > 0) {
+            $this->enqueueForPaidOrder($order);
+        }
+    }
+
     public function enqueueForAcceptedOrder(string $orderUuid, string $storeUuid): void
     {
         $lifecycle = $this->entityManager->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $orderUuid]);

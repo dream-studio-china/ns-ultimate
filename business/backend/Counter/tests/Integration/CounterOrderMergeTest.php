@@ -32,6 +32,7 @@ use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
 use NsUltimate\Business\Counter\Service\CounterOrderMergeService;
 use NsUltimate\Business\Counter\Service\CounterSessionService;
+use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -199,6 +200,29 @@ final class CounterOrderMergeTest extends KernelTestCase
         $this->expectException(\DomainException::class);
         $this->expectExceptionMessage('existing payment invoice');
         $this->merger()->merge($this->counter, $this->user);
+    }
+
+    public function testSettlementPaymentDoesNotRepeatProductionWork(): void
+    {
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
+        $route = ['enabled' => true, 'deviceUuid' => UUID::v4(), 'templateUuid' => UUID::v4()];
+        $store->setSettings(['printing' => ['order' => $route, 'settlement' => $route]]);
+        $this->em->flush();
+        $sourceA = $this->source();
+        $sourceB = $this->source();
+        $target = $this->merger()->merge($this->counter, $this->user);
+
+        $payment = self::getContainer()->get(OrderServiceInterface::class)->createPayment($target, 'mock', ['autoPaid' => true]);
+        self::assertSame(Invoice::STATUS_PAID, $payment->invoice->getStatus());
+        self::assertSame(Order::STATUS_PAID, $target->getStatus());
+        self::assertSame('merged', $sourceA->getStatus());
+        self::assertSame('merged', $sourceB->getStatus());
+        self::assertNull($sourceA->getInvoiceId());
+        self::assertNull($sourceB->getInvoiceId());
+        self::assertSame([], $this->em->getRepository(TradeOutboxMessage::class)->findBy(['aggregateId' => $target->getUuid()]));
+        $requests = $this->em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $target->getUuid()]);
+        self::assertCount(1, $requests);
+        self::assertSame('settlement', $requests[0]->getCaseKey());
     }
 
     public function testCallerOutsideSessionCannotMerge(): void
