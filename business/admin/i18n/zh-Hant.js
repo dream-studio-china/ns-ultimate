@@ -1,4 +1,13 @@
 export default {
+  'Print rule outputs failed to load': '列印選項載入失敗。',
+  'Print rule output store help': '請先選擇門市，再選擇印表機和範本。',
+  'Print rule output unavailable': '不可用',
+  'Print rule output unavailable help': '已儲存的選項與目前門市或設備不相容。儲存前請選擇有效選項。',
+  'Order print rules': '訂單列印規則',
+  'Print rule enable help': '規則預設停用。啟用後可能自動列印符合條件的訂單。',
+  'Print rule output help': '請選擇屬於此門市的設備及印表機類型相同的範本。',
+  'Print rule all conditions help': '沒有條件時，所選事件的所有訂單均符合。',
+  'Print rule any conditions help': '符合任一條件時，請至少新增一個條件。',
   'Select print events': '選擇列印時機', 'Order confirmed': '訂單確認後', 'Payment succeeded': '付款成功後', 'Store accepted': '門市接單後',
   'All conditions': '全部條件符合', 'Any condition': '任一條件符合', 'Print scene': '列印場景',
   'Order print field placeholder': 'status 或 metadata.路徑',

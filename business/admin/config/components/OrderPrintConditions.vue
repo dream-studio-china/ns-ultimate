@@ -1,7 +1,8 @@
 <template>
   <div class="order-print-conditions">
+    <p v-if="conditions.length === 0">{{ $t(form.match === 'any' ? 'Print rule any conditions help' : 'Print rule all conditions help') }}</p>
     <div v-for="(condition, index) in conditions" :key="index" class="condition-row">
-      <el-input v-model="condition.field" :placeholder="$t('Order print field placeholder')" />
+      <el-input v-model="condition.field" maxlength="128" :placeholder="$t('Order print field placeholder')" />
       <el-select :model-value="condition.operator" @update:model-value="setOperator(index, $event)">
         <el-option v-for="item in operators" :key="item.value" :value="item.value" :label="$t(item.label)" />
       </el-select>

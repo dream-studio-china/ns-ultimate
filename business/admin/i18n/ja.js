@@ -1,4 +1,13 @@
 export default {
+  'Print rule outputs failed to load': '印刷先の読み込みに失敗しました。',
+  'Print rule output store help': '店舗を選択してからプリンターとテンプレートを選んでください。',
+  'Print rule output unavailable': '利用不可',
+  'Print rule output unavailable help': '保存済みの選択は現在の店舗または端末に対応していません。保存前に有効な選択肢を選んでください。',
+  'Order print rules': '注文印刷ルール',
+  'Print rule enable help': 'ルールは初期状態で無効です。有効にすると条件に合う注文が自動印刷される場合があります。',
+  'Print rule output help': 'この店舗に属する端末と、同じプリンター種別のテンプレートを選択してください。',
+  'Print rule all conditions help': '条件がない場合、選択したイベントのすべての注文に一致します。',
+  'Print rule any conditions help': 'いずれかの条件に一致する場合は、条件を1件以上追加してください。',
   'Select print events': '印刷タイミングを選択', 'Order confirmed': '注文確定後', 'Payment succeeded': '支払い成功後', 'Store accepted': '店舗受付後',
   'All conditions': 'すべての条件', 'Any condition': 'いずれかの条件', 'Print scene': '印刷シーン',
   'Order print field placeholder': 'status または metadata.パス',

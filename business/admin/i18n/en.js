@@ -1,4 +1,13 @@
 export default {
+  'Print rule outputs failed to load': 'Printer choices failed to load.',
+  'Print rule output store help': 'Select a store to choose a printer device and template.',
+  'Print rule output unavailable': 'Unavailable',
+  'Print rule output unavailable help': 'The saved selection is not compatible with the current store or device. Choose a valid option before saving.',
+  'Order print rules': 'Order print rules',
+  'Print rule enable help': 'Rules are disabled by default. Enabling a rule can automatically print matching orders.',
+  'Print rule output help': 'Choose a device belonging to this store and a template with the same printer type.',
+  'Print rule all conditions help': 'No conditions: every order for the selected events matches.',
+  'Print rule any conditions help': 'Add at least one condition when matching any condition.',
   'Select print events': 'Select print events', 'Order confirmed': 'Order confirmed', 'Payment succeeded': 'Payment succeeded', 'Store accepted': 'Store accepted',
   'All conditions': 'All conditions', 'Any condition': 'Any condition', 'Print scene': 'Print scene',
   'Order print field placeholder': 'status or metadata.path',

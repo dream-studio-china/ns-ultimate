@@ -1,4 +1,13 @@
 export default {
+  'Print rule outputs failed to load': '打印选项加载失败。',
+  'Print rule output store help': '请先选择门店，再选择打印机和模板。',
+  'Print rule output unavailable': '不可用',
+  'Print rule output unavailable help': '已保存的选项与当前门店或设备不兼容。保存前请选择有效选项。',
+  'Order print rules': '订单打印规则',
+  'Print rule enable help': '规则默认停用。启用后可能自动打印符合条件的订单。',
+  'Print rule output help': '请选择属于此门店的设备及打印机类型相同的模板。',
+  'Print rule all conditions help': '没有条件时，所选事件的所有订单均匹配。',
+  'Print rule any conditions help': '匹配任一条件时，请至少添加一个条件。',
   'Select print events': '选择打印时机', 'Order confirmed': '订单确认后', 'Payment succeeded': '付款成功后', 'Store accepted': '门店接单后',
   'All conditions': '全部条件满足', 'Any condition': '任一条件满足', 'Print scene': '打印场景',
   'Order print field placeholder': 'status 或 metadata.路径',
