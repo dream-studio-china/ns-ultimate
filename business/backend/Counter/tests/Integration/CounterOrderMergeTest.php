@@ -264,7 +264,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         try {
             $this->merger(self::getContainer()->get(OrderServiceInterface::class))->merge($this->counter, $this->user);
             self::fail('Inactive specifications must not be repriced.');
-        } catch (\App\Trade\Exception\SpecificationNotFoundException) {
+        } catch (\InvalidArgumentException) {
             $this->em->clear();
             self::assertCount(2, $this->em->getRepository(Order::class)->findAll());
             self::assertSame([], $this->em->getRepository(OrderMerge::class)->findAll());
