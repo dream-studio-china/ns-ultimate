@@ -1,4 +1,9 @@
 export default {
+  'Select print events': '選擇列印時機', 'Order confirmed': '訂單確認後', 'Payment succeeded': '付款成功後', 'Store accepted': '門市接單後',
+  'All conditions': '全部條件符合', 'Any condition': '任一條件符合', 'Print scene': '列印場景',
+  'Order print field placeholder': 'status 或 metadata.路徑',
+  'Equals': '等於', 'Not equals': '不等於', 'Exists': '存在', 'Does not exist': '不存在',
+  'Text value': '文字', 'Integer value': '整數', 'Boolean value': '布林值', 'Null value': '空值', 'Add condition': '新增條件',
   'Paper preview': '紙張預覽',
   'Automatic printing': '自動列印', 'Standard order receipt': '一般訂單收據',
   'Per-item ticket': '逐件單', 'Filtered item list': '篩選明細單',

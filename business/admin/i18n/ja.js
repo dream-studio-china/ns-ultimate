@@ -1,4 +1,9 @@
 export default {
+  'Select print events': '印刷タイミングを選択', 'Order confirmed': '注文確定後', 'Payment succeeded': '支払い成功後', 'Store accepted': '店舗受付後',
+  'All conditions': 'すべての条件', 'Any condition': 'いずれかの条件', 'Print scene': '印刷シーン',
+  'Order print field placeholder': 'status または metadata.パス',
+  'Equals': '等しい', 'Not equals': '等しくない', 'Exists': '存在する', 'Does not exist': '存在しない',
+  'Text value': 'テキスト', 'Integer value': '整数', 'Boolean value': '真偽値', 'Null value': 'Null', 'Add condition': '条件を追加',
   'Paper preview': '用紙プレビュー',
   'Automatic printing': '自動印刷', 'Standard order receipt': '通常注文レシート',
   'Per-item ticket': '商品ごとの伝票', 'Filtered item list': '絞り込み商品一覧',

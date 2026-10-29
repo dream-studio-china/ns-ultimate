@@ -1,4 +1,9 @@
 export default {
+  'Select print events': 'Select print events', 'Order confirmed': 'Order confirmed', 'Payment succeeded': 'Payment succeeded', 'Store accepted': 'Store accepted',
+  'All conditions': 'All conditions', 'Any condition': 'Any condition', 'Print scene': 'Print scene',
+  'Order print field placeholder': 'status or metadata.path',
+  'Equals': 'Equals', 'Not equals': 'Not equals', 'Exists': 'Exists', 'Does not exist': 'Does not exist',
+  'Text value': 'Text', 'Integer value': 'Integer', 'Boolean value': 'Boolean', 'Null value': 'Null', 'Add condition': 'Add condition',
   'Paper preview': 'Paper preview',
   'Automatic printing': 'Automatic printing', 'Standard order receipt': 'Standard order receipt',
   'Per-item ticket': 'Per-item ticket', 'Filtered item list': 'Filtered item list',

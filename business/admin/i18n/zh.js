@@ -1,4 +1,9 @@
 export default {
+  'Select print events': '选择打印时机', 'Order confirmed': '订单确认后', 'Payment succeeded': '付款成功后', 'Store accepted': '门店接单后',
+  'All conditions': '全部条件满足', 'Any condition': '任一条件满足', 'Print scene': '打印场景',
+  'Order print field placeholder': 'status 或 metadata.路径',
+  'Equals': '等于', 'Not equals': '不等于', 'Exists': '存在', 'Does not exist': '不存在',
+  'Text value': '文本', 'Integer value': '整数', 'Boolean value': '布尔值', 'Null value': '空值', 'Add condition': '添加条件',
   'Paper preview': '纸张预览',
   'Automatic printing': '自动打印', 'Standard order receipt': '普通订单小票',
   'Per-item ticket': '逐件单', 'Filtered item list': '筛选明细单',
