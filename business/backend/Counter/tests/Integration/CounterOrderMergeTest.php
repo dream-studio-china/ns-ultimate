@@ -10,6 +10,8 @@ use App\Identity\Security\TokenManager;
 use App\Payment\DTO\PaymentResult;
 use App\Payment\Entity\Invoice;
 use App\Store\Entity\Store;
+use App\Store\Entity\Product;
+use App\Store\Entity\Specification;
 use App\Trade\DTO\StoreContext;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderItem;
@@ -91,6 +93,53 @@ final class CounterOrderMergeTest extends KernelTestCase
         );
         $this->em->clear();
         self::assertSame('merged', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $sourceA->getUuid()])->getStatus());
+    }
+
+    public function testMergeRepricesUsingTheRealStoreCatalog(): void
+    {
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
+        $product = (new Product($store))->setName('Coffee');
+        $specification = (new Specification())->setProduct($product)->setName('Large')->setPrice(250);
+        $this->em->persist($product);
+        $this->em->persist($specification);
+        $this->em->flush();
+        $sourceA = $this->source();
+        $sourceB = $this->source();
+        foreach ([$sourceA, $sourceB] as $source) {
+            $source->getItems()->first()->setSpecificationUuid($specification->getUuid());
+        }
+        $this->em->flush();
+
+        $target = $this->merger(self::getContainer()->get(OrderServiceInterface::class))->merge($this->counter, $this->user);
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+        self::assertSame(500, $target->getTotalAmount());
+        self::assertSame([250, 250], array_map(static fn (OrderItem $item): int => $item->getUnitPrice(), $target->getItems()->toArray()));
+        self::assertSame('Coffee', $target->getItems()->first()->getProductSnapshot()['name']);
+    }
+
+    public function testUnavailableSpecificationRollsBackRealPricingMerge(): void
+    {
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
+        $product = (new Product($store))->setName('Coffee');
+        $specification = (new Specification())->setProduct($product)->setName('Large')->setPrice(250)->setStatus(Specification::STATUS_INACTIVE);
+        $this->em->persist($product);
+        $this->em->persist($specification);
+        $this->em->flush();
+        $sourceA = $this->source();
+        $sourceB = $this->source();
+        foreach ([$sourceA, $sourceB] as $source) {
+            $source->getItems()->first()->setSpecificationUuid($specification->getUuid());
+        }
+        $this->em->flush();
+        try {
+            $this->merger(self::getContainer()->get(OrderServiceInterface::class))->merge($this->counter, $this->user);
+            self::fail('Inactive specifications must not be repriced.');
+        } catch (\App\Trade\Exception\SpecificationNotFoundException) {
+            $this->em->clear();
+            self::assertCount(2, $this->em->getRepository(Order::class)->findAll());
+            self::assertSame([], $this->em->getRepository(OrderMerge::class)->findAll());
+            self::assertSame(Order::STATUS_CONFIRMED, $this->em->getRepository(Order::class)->findOneBy(['uuid' => $sourceA->getUuid()])->getStatus());
+        }
     }
 
     public function testAuthenticatedMergeEndpointUsesCurrentUserAndReturnsTarget(): void
