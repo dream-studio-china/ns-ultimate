@@ -15,6 +15,7 @@ use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
+use NsUltimate\Business\Inventory\Service\OrderInventoryAvailability;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
 
@@ -25,6 +26,7 @@ final class CounterTradeOrderService implements OrderServiceInterface
     public function __construct(
         #[AutowireDecorated] private readonly OrderServiceInterface $inner,
         private readonly EntityManagerInterface $em,
+        private readonly OrderInventoryAvailability $inventory,
     ) {}
 
     public function createPayment(Order $order, string $payment = 'mock', array $options = []): PaymentResult
@@ -40,6 +42,9 @@ final class CounterTradeOrderService implements OrderServiceInterface
             }
             if ($order->getStatus() !== Order::STATUS_CONFIRMED) {
                 throw new \DomainException('Only confirmed orders can start payment.');
+            }
+            if (!$this->inventory->hasValidInventory($order)) {
+                throw new \DomainException('A valid inventory reservation is required before payment.');
             }
 
             return $this->inner->createPayment($order, $payment, $options);

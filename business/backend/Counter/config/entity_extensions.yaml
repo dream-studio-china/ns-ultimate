@@ -1,0 +1,2 @@
+controllers:
+    App\Trade\Controller\Manage\OrderItemController: NsUltimate\Business\Counter\Adapter\ManageOrderItemController

@@ -7,7 +7,7 @@ namespace NsUltimate\Business\Counter\Service;
 use App\Identity\Entity\User;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderItem;
-use App\Trade\Entity\OrderStoreLifecycle;
+use App\Trade\DTO\StoreContext;
 use App\Trade\Service\OrderServiceInterface;
 use App\Trade\Service\StoreContextResolverInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,6 +17,7 @@ use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\CounterSession;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
+use NsUltimate\Business\Inventory\Service\OrderInventoryAvailability;
 use Symfony\Component\Workflow\WorkflowInterface;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
@@ -29,6 +30,7 @@ final class CounterOrderMergeService
         #[Target('state_machine.order')]
         private readonly WorkflowInterface $orderWorkflow,
         private readonly CounterSessionService $sessions,
+        private readonly OrderInventoryAvailability $inventory,
     ) {}
 
     public function merge(Counter $counter, User $user): Order
@@ -54,18 +56,14 @@ final class CounterOrderMergeService
                 if (isset($orders[$order->getUuid()])) {
                     continue;
                 }
-                if (!in_array($order->getStatus(), [Order::STATUS_PENDING, Order::STATUS_CONFIRMED], true)) {
+                if ($order->getStatus() !== Order::STATUS_CONFIRMED) {
                     continue;
+                }
+                if (!$this->inventory->hasValidInventory($order)) {
+                    throw new \DomainException('A valid inventory reservation is required for every source order.');
                 }
                 if ($order->getInvoiceId() !== null) {
                     throw new \DomainException('An order with an existing payment invoice cannot be merged.');
-                }
-                if ($this->em->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) > 0) {
-                    throw new \DomainException('A merged settlement cannot be merged again.');
-                }
-                $lifecycle = $this->em->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $order->getUuid()]);
-                if (!$lifecycle instanceof OrderStoreLifecycle || $lifecycle->getAcceptanceStatus() !== OrderStoreLifecycle::ACCEPTANCE_ACCEPTED) {
-                    throw new \DomainException('Every source order must be accepted by the store before merging.');
                 }
                 if ($this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1) {
                     throw new \DomainException('Orders bound to multiple counters cannot be merged.');
@@ -95,28 +93,30 @@ final class CounterOrderMergeService
                 throw new \DomainException('The counter is not in the active store context.');
             }
             $calculation = $this->orders->calculatePrices($items, $store->currency, $store->storeCode);
-            // A settlement order is not a new fulfillment order. In particular, do
-            // not pass a StoreContext to createOrder: that would emit a second
-            // trade.order.created event and reserve the same inventory again.
-            $snapshot = $store->toSnapshot();
-            $snapshot['requireAcceptance'] = false;
+            // Preserve the ordinary Store order flow, but do not reserve inventory
+            // a second time for items already present in the source orders.
+            $mergeStore = new StoreContext(
+                $store->storeUuid, $store->storeCode, $store->storeName, $store->channel,
+                $store->currency, $store->requireAcceptance, false, $store->requireVerification,
+            );
             $target = $this->orders->createOrder(
                 $calculation->items, $user, $calculation->totalAmount, $store->currency,
-                null, ['_store' => $snapshot, 'counterSessionUuid' => $session->getUuid(), 'counterSettlement' => true], null,
+                null, ['counterUuid' => $counter->getUuid(), 'counterSessionUuid' => $session->getUuid(), 'counterSettlement' => true], $mergeStore,
             );
-            $this->em->persist(new OrderStoreLifecycle($target->getUuid(), $store->storeUuid));
-            $this->em->persist((new OrderCounter())->setTradeOrderUuid($target->getUuid())->setCounter($counter)->setStoreUuid($store->storeUuid));
-            $this->orderWorkflow->apply($target, 'submit');
-            $this->orderWorkflow->apply($target, 'confirm');
+            foreach ($orders as $source) {
+                $this->em->persist(new OrderMerge($source->getUuid(), $target->getUuid()));
+            }
+            $this->em->flush();
             foreach ($orders as $source) {
                 $this->orderWorkflow->apply($source, 'merge');
                 $source->setMetadata([
                     ...($source->getMetadata() ?? []),
                     'mergedIntoOrderUuid' => $target->getUuid(),
-                    // Source Store fulfillment and inventory reservations are not transferred yet.
-                    'counterMergeInventoryReconciliationRequired' => true,
                 ]);
-                $this->em->persist(new OrderMerge($source->getUuid(), $target->getUuid()));
+            }
+            $this->em->flush();
+            if ($this->orderWorkflow->can($target, 'confirm')) {
+                $this->orderWorkflow->apply($target, 'confirm');
             }
             $this->em->flush();
             $this->em->getConnection()->commit();

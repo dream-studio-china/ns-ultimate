@@ -7,16 +7,29 @@ namespace NsUltimate\Business\Counter\Tests\Integration;
 use App\Core\Utils\UUID;
 use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
+use App\Inventory\Entity\Reservation;
 use App\Payment\DTO\PaymentResult;
 use App\Payment\Entity\Invoice;
 use App\Store\Entity\Store;
+use App\Store\Entity\Membership;
 use App\Store\Entity\Product;
 use App\Store\Entity\Specification;
+use App\Store\Entity\StoreOrder;
+use App\Store\Entity\StoreOutboxMessage;
+use App\Store\MessageHandler\TradeOrderCreatedHandler;
+use App\Store\Repository\StoreRepository;
+use App\Store\Repository\StoreConsumedEventRepository;
+use App\Store\Repository\StoreTradeOrderCancellationRepository;
+use App\Store\Service\StoreOrderServiceInterface;
+use App\Store\Service\StoreOutboxServiceInterface;
 use App\Trade\DTO\StoreContext;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderItem;
 use App\Trade\Entity\OrderStoreLifecycle;
 use App\Trade\Entity\TradeOutboxMessage;
+use App\Trade\Message\TradeOrderCreatedMessage;
+use App\Trade\Message\StoreOrderFulfilledMessage;
+use App\Trade\MessageHandler\StoreOrderFulfilledHandler;
 use App\Trade\Service\OrderServiceInterface;
 use App\Trade\Service\Pricing\PriceCalculationResult;
 use App\Trade\Service\StoreContextResolverInterface;
@@ -27,6 +40,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Platforms\MySQLPlatform;
 use NsUltimate\Business\Counter\Adapter\CounterTradeOrderService;
+use NsUltimate\Business\Inventory\Service\OrderInventoryAvailability;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
@@ -69,6 +83,115 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertInstanceOf(CounterTradeOrderService::class, self::getContainer()->get(OrderServiceInterface::class));
     }
 
+    public function testAuthenticatedApiMergePaymentAndFulfillmentFlow(): void
+    {
+        if (getenv('INVENTORY_ENABLED') === '1') {
+            self::markTestSkipped('This flow validates the inventory-disabled deployment.');
+        }
+        $this->user->setRoles(['ROLE_ADMIN']);
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
+        $this->em->persist(new Membership($store, $this->user->getUuid(), Membership::ROLE_OWNER));
+        $product = (new Product($store))->setName('Integration coffee');
+        $spec = (new Specification())->setProduct($product)->setName('Large')->setPrice(250);
+        $this->em->persist($product);
+        $this->em->persist($spec);
+        $this->em->flush();
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->user);
+        $headers = [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_STORE_CODE' => $store->getCode(),
+            'CONTENT_TYPE' => 'application/json',
+        ];
+        $post = static function (string $path, array $body = []) use ($headers): \Symfony\Component\HttpFoundation\Response {
+            return self::$kernel->handle(Request::create($path, 'POST', [], [], [], $headers, json_encode($body, JSON_THROW_ON_ERROR)));
+        };
+        $deliver = function (string $orderUuid): void {
+            $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $orderUuid, 'topic' => 'trade.order.created.v1']);
+            self::assertNotNull($event);
+            self::getContainer()->get(TradeOrderCreatedHandler::class)(new TradeOrderCreatedMessage([
+                'eventId' => $event->getEventId(), 'payload' => $event->getPayload(),
+            ]));
+        };
+
+        $sourceUuids = [];
+        foreach ([1, 2] as $quantity) {
+            $response = $post('/api/v1/app/orders', [
+                'items' => [['specificationId' => $spec->getUuid(), 'quantity' => $quantity]],
+                'metadata' => ['counterUuid' => $this->counter->getUuid()],
+            ]);
+            self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+            $sourceUuid = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data']['uuid'];
+            $sourceUuids[] = $sourceUuid;
+            $deliver($sourceUuid);
+            $response = $post('/api/v1/app/orders/'.$sourceUuid.'/confirm');
+            self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        }
+
+        $response = $post('/api/v1/app/counters/'.$this->counter->getUuid().'/orders/merge');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $target = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertSame(Order::STATUS_CONFIRMED, $target['status']);
+        self::assertSame(750, $target['totalAmount']);
+        foreach ($sourceUuids as $sourceUuid) {
+            $source = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $sourceUuid]);
+            self::assertSame('merged', $source->getStatus());
+            self::assertSame($target['uuid'], $source->getMetadata()['mergedIntoOrderUuid']);
+            $response = $post('/api/v1/app/orders/'.$sourceUuid.'/payment', ['payment' => 'mock', 'autoPaid' => true]);
+            self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        }
+        $deliver($target['uuid']);
+        $response = $post('/api/v1/app/orders/'.$target['uuid'].'/payment', ['payment' => 'mock', 'autoPaid' => true]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $targetOrder = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $target['uuid']]);
+        self::assertSame(Order::STATUS_PAID, $targetOrder->getStatus());
+        $response = $post('/api/v1/store/'.$store->getUuid().'/orders/'.$target['uuid'].'/fulfill');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $storeOrder = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $target['uuid']]);
+        $event = $this->em->getRepository(StoreOutboxMessage::class)->findOneBy(['topic' => 'store.order.fulfilled.v1', 'aggregateId' => $storeOrder->getUuid()]);
+        self::assertNotNull($event);
+        self::getContainer()->get(StoreOrderFulfilledHandler::class)(new StoreOrderFulfilledMessage([
+            'eventId' => $event->getEventId(), 'payload' => $event->getPayload(),
+        ]));
+        $response = $post('/api/v1/manage/orders/'.$target['uuid'].'/fulfill');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $response = $post('/api/v1/manage/orders/'.$target['uuid'].'/do/complete');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $this->em->clear();
+        self::assertSame(Order::STATUS_COMPLETED, $this->em->getRepository(Order::class)->findOneBy(['uuid' => $target['uuid']])->getStatus());
+    }
+
+    public function testOrdinaryOrderCannotBeMarkedMergedDirectly(): void
+    {
+        $this->user->setRoles(['ROLE_ADMIN']);
+        $order = $this->source();
+        self::assertFalse(self::getContainer()->get('state_machine.order')->can($order, 'merge'));
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->user);
+        $request = Request::create('/api/v1/manage/orders/'.$order->getUuid().'/do/merge', 'POST', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+        ]);
+        $response = self::$kernel->handle($request);
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(Order::STATUS_CONFIRMED, $order->getStatus());
+    }
+
+    public function testMergedSourceItemsCannotBeUpdatedOrDeletedByAdmin(): void
+    {
+        $this->user->setRoles(['ROLE_ADMIN']);
+        $source = $this->source();
+        $this->source();
+        $item = $source->getItems()->first();
+        $this->merger()->merge($this->counter, $this->user);
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->user);
+        $headers = ['HTTP_AUTHORIZATION' => 'Bearer '.$token, 'CONTENT_TYPE' => 'application/json'];
+        $path = '/api/v1/manage/order-items/'.$item->getUuid();
+        $response = self::$kernel->handle(Request::create($path, 'DELETE', [], [], [], $headers));
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        $response = self::$kernel->handle(Request::create($path, 'PUT', [], [], [], $headers, '{"price":10}'));
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        $this->em->clear();
+        self::assertNotNull($this->em->getRepository(OrderItem::class)->findOneBy(['uuid' => $item->getUuid()]));
+    }
+
     public function testMergeMarksSourcesAndCreatesOneBoundTarget(): void
     {
         $sourceA = $this->source();
@@ -76,16 +199,18 @@ final class CounterOrderMergeTest extends KernelTestCase
         $target = $this->merger()->merge($this->counter, $this->user);
 
         self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
-        self::assertSame([], $this->em->getRepository(TradeOutboxMessage::class)->findBy(['aggregateId' => $target->getUuid()]));
+        $outbox = $this->em->getRepository(TradeOutboxMessage::class)->findBy(['aggregateId' => $target->getUuid()]);
+        self::assertCount(1, $outbox);
+        self::assertSame('trade.order.created.v1', $outbox[0]->getTopic());
+        self::assertFalse($outbox[0]->getPayload()['store']['requireInventory']);
         self::assertSame(200, $target->getTotalAmount());
         self::assertSame($this->user, $target->getUser());
         foreach ([$sourceA, $sourceB] as $source) {
             self::assertSame('merged', $source->getStatus());
             self::assertSame($target->getUuid(), $source->getMetadata()['mergedIntoOrderUuid']);
-            self::assertTrue($source->getMetadata()['counterMergeInventoryReconciliationRequired']);
         }
         self::assertCount(2, $this->em->getRepository(OrderMerge::class)->findAll());
-        self::assertFalse(self::getContainer()->get('state_machine.order')->can($target, 'cancel'));
+        self::assertTrue(self::getContainer()->get('state_machine.order')->can($target, 'cancel'));
         $binding = $this->em->getRepository(OrderCounter::class)->findOneBy(['tradeOrderUuid' => $target->getUuid()]);
         self::assertNotNull($binding?->getCounterSession());
         self::assertSame(
@@ -179,16 +304,144 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertFalse($this->em->getConnection()->isTransactionActive());
     }
 
-    public function testUnacceptedStoreOrderCannotBeMerged(): void
+    public function testUnacceptedStoreOrderCanBeMerged(): void
     {
         $source = $this->source();
         $this->source();
         $lifecycle = $this->em->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $source->getUuid()]);
         $lifecycle->setAcceptanceStatus(OrderStoreLifecycle::ACCEPTANCE_PENDING);
         $this->em->flush();
-        $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('accepted by the store');
-        $this->merger()->merge($this->counter, $this->user);
+        $target = $this->merger()->merge($this->counter, $this->user);
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+    }
+
+    public function testMergeCreatesStoreOrderWithoutRequestingInventory(): void
+    {
+        $this->context = new StoreContext($this->context->storeUuid, $this->context->storeCode, $this->context->storeName, requireInventory: true);
+        $this->source(true);
+        $this->source(true);
+        $target = $this->merger()->merge($this->counter, $this->user);
+        $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $target->getUuid()]);
+        $container = self::getContainer();
+        $handler = new TradeOrderCreatedHandler(
+            $container->get(StoreRepository::class),
+            $container->get(StoreConsumedEventRepository::class),
+            $container->get(StoreTradeOrderCancellationRepository::class),
+            $container->get(StoreOrderServiceInterface::class),
+            $container->get(StoreOutboxServiceInterface::class),
+            $this->em,
+            true,
+        );
+        $message = new TradeOrderCreatedMessage(['eventId' => $event->getEventId(), 'payload' => $event->getPayload()]);
+        $handler($message);
+        $handler($message);
+        $storeOrder = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $target->getUuid()]);
+        self::assertInstanceOf(StoreOrder::class, $storeOrder);
+        self::assertSame(StoreOrder::STATUS_ACCEPTED, $storeOrder->getOperationalStatus());
+        self::assertNull($storeOrder->getReservationId());
+        self::assertSame([], $this->em->getRepository(StoreOutboxMessage::class)->findBy(['topic' => 'inventory.reservation.requested.v1']));
+        self::assertCount(1, $this->em->getRepository(StoreOrder::class)->findBy(['tradeOrderUuid' => $target->getUuid()]));
+
+        $container->get(OrderServiceInterface::class)->createPayment($target, 'mock', ['autoPaid' => true]);
+        $container->get(StoreOrderServiceInterface::class)->fulfill($storeOrder);
+        $outbox = $this->em->getRepository(StoreOutboxMessage::class)->findOneBy(['topic' => 'store.order.fulfilled.v1']);
+        $container->get(StoreOrderFulfilledHandler::class)(new StoreOrderFulfilledMessage([
+            'eventId' => $outbox->getEventId(), 'payload' => $outbox->getPayload(),
+        ]));
+        $workflow = $container->get('state_machine.order');
+        $this->em->wrapInTransaction(function () use ($workflow, $target): void {
+            $workflow->apply($target, 'fulfill');
+            $workflow->apply($target, 'complete');
+        });
+        self::assertSame(Order::STATUS_COMPLETED, $target->getStatus());
+    }
+
+    public function testMergeRetainsStoreAcceptancePolicy(): void
+    {
+        $this->context = new StoreContext($this->context->storeUuid, $this->context->storeCode, $this->context->storeName, requireAcceptance: true, requireInventory: true);
+        $this->source(true);
+        $this->source(true);
+        $target = $this->merger()->merge($this->counter, $this->user);
+        $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $target->getUuid()]);
+        self::assertSame(Order::STATUS_PENDING, $target->getStatus());
+        self::assertTrue($event->getPayload()['store']['requireAcceptance']);
+        self::assertFalse($event->getPayload()['store']['requireInventory']);
+        $workflow = self::getContainer()->get('state_machine.order');
+        self::assertFalse($workflow->can($target, 'confirm'));
+        $lifecycle = $this->em->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $target->getUuid()]);
+        $lifecycle->markAccepted();
+        $this->em->flush();
+        $this->em->wrapInTransaction(fn () => $workflow->apply($target, 'confirm'));
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+    }
+
+    public function testInventoryConfirmationRequiresLiveMatchingReservation(): void
+    {
+        $order = $this->source();
+        $order->setMetadata(['_store' => ['uuid' => $this->context->storeUuid, 'requireInventory' => true]]);
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
+        $storeOrder = new StoreOrder($store, $order->getUuid(), $store->getCode(), $store->getName(), null, 'CNY', 100, []);
+        $reservationId = UUID::v4();
+        $storeOrder->awaitInventory($reservationId);
+        $this->em->persist($storeOrder);
+        $this->em->persist(new TradeOutboxMessage('trade.order.created.v1', 'trade_order', $order->getUuid(), [
+            'store' => ['uuid' => $this->context->storeUuid, 'requireInventory' => true],
+        ]));
+        $this->em->flush();
+        $guard = new OrderInventoryAvailability($this->em, true);
+        self::assertFalse($guard->hasValidInventory($order));
+        $order->setMetadata(['_store' => ['uuid' => $this->context->storeUuid, 'requireInventory' => false]]);
+        self::assertFalse($guard->hasValidInventory($order), 'Client metadata must not disable a trusted inventory policy.');
+        $reservation = new Reservation($reservationId, $this->context->storeUuid, $order->getUuid(), $storeOrder->getUuid(), str_repeat('a', 64), new \DateTimeImmutable('+30 minutes'));
+        $this->em->persist($reservation);
+        $this->em->flush();
+        self::assertFalse($guard->hasValidInventory($order));
+        $reservation->confirm();
+        $this->em->flush();
+        self::assertTrue($guard->hasValidInventory($order));
+        $this->em->getConnection()->executeStatement('UPDATE inventory_reservation SET expires_at = ? WHERE reservation_id = ?', [(new \DateTimeImmutable('-1 minute'))->format('Y-m-d H:i:s'), $reservationId]);
+        self::assertFalse($guard->hasValidInventory($order));
+        $reservation->release();
+        $this->em->flush();
+        self::assertFalse($guard->hasValidInventory($order));
+        self::assertTrue((new OrderInventoryAvailability($this->em, false))->hasValidInventory($order));
+    }
+
+    public function testEnabledInventoryGuardBlocksWorkflowWhenReservationIsReleased(): void
+    {
+        if (getenv('INVENTORY_ENABLED') !== '1') {
+            self::markTestSkipped('This workflow test requires inventory to be enabled.');
+        }
+        $order = $this->source(true);
+        $order->setStatus(Order::STATUS_PENDING);
+        $this->em->flush();
+        $workflow = self::getContainer()->get('state_machine.order');
+        self::assertTrue($workflow->can($order, 'confirm'));
+        $reservation = $this->em->getRepository(Reservation::class)->findOneBy(['tradeOrderUuid' => $order->getUuid()]);
+        $reservation->release();
+        $this->em->flush();
+        self::assertFalse($workflow->can($order, 'confirm'));
+        $order->setStatus(Order::STATUS_CONFIRMED);
+        $this->em->flush();
+        try {
+            self::getContainer()->get(OrderServiceInterface::class)->createPayment($order, 'mock');
+            self::fail('A released reservation must prevent payment.');
+        } catch (\DomainException $error) {
+            self::assertStringContainsString('inventory reservation', $error->getMessage());
+        }
+    }
+
+    public function testPreviouslyMergedOrderCanBeMergedWithNewOrder(): void
+    {
+        $first = $this->source();
+        $this->source();
+        $target = $this->merger()->merge($this->counter, $this->user);
+        $this->source();
+        $next = $this->merger()->merge($this->counter, $this->user);
+        self::assertSame('merged', $first->getStatus());
+        self::assertSame('merged', $target->getStatus());
+        self::assertSame($next->getUuid(), $target->getMetadata()['mergedIntoOrderUuid']);
+        self::assertSame(Order::STATUS_CONFIRMED, $next->getStatus());
     }
 
     public function testRealPaymentFlowCreatesInvoiceThatBlocksMerge(): void
@@ -219,7 +472,9 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertSame('merged', $sourceB->getStatus());
         self::assertNull($sourceA->getInvoiceId());
         self::assertNull($sourceB->getInvoiceId());
-        self::assertSame([], $this->em->getRepository(TradeOutboxMessage::class)->findBy(['aggregateId' => $target->getUuid()]));
+        $outbox = $this->em->getRepository(TradeOutboxMessage::class)->findBy(['aggregateId' => $target->getUuid()]);
+        self::assertCount(1, $outbox);
+        self::assertFalse($outbox[0]->getPayload()['store']['requireInventory']);
         $requests = $this->em->getRepository(PrinterOrderRequest::class)->findBy(['orderUuid' => $target->getUuid()]);
         self::assertCount(1, $requests);
         self::assertSame('settlement', $requests[0]->getCaseKey());
@@ -245,7 +500,7 @@ final class CounterOrderMergeTest extends KernelTestCase
             $this->merger()->merge($this->counter, $this->user);
             self::fail('A retry must not create a replacement for the sole remaining order.');
         } catch (\DomainException $error) {
-            self::assertStringContainsString('cannot be merged again', $error->getMessage());
+            self::assertStringContainsString('At least two', $error->getMessage());
         }
         self::assertCount(3, $this->em->getRepository(Order::class)->findAll());
         self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
@@ -308,7 +563,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         $inner = $this->createMock(OrderServiceInterface::class);
         $inner->method('wrapInTransaction')->willReturnCallback(fn (callable $callback) => $this->em->wrapInTransaction($callback));
         $inner->expects(self::never())->method('createPayment');
-        $service = new CounterTradeOrderService($inner, $this->em);
+        $service = new CounterTradeOrderService($inner, $this->em, new OrderInventoryAvailability($this->em, false));
         $this->expectException(\DomainException::class);
         $service->createPayment($source);
     }
@@ -327,7 +582,7 @@ final class CounterOrderMergeTest extends KernelTestCase
                 self::assertSame($invoiceUuid, $order->getInvoiceId());
                 return $result;
             });
-        self::assertSame($result, (new CounterTradeOrderService($inner, $this->em))->createPayment($source, 'mock', ['test' => true]));
+        self::assertSame($result, (new CounterTradeOrderService($inner, $this->em, new OrderInventoryAvailability($this->em, false)))->createPayment($source, 'mock', ['test' => true]));
     }
 
     public function testMergeRecordPreventsPaymentEvenIfAnotherWorkflowRestoresConfirmedStatus(): void
@@ -340,7 +595,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         $inner->expects(self::never())->method('createPayment');
         $this->expectException(\DomainException::class);
         $this->expectExceptionMessage('Merged source orders');
-        (new CounterTradeOrderService($inner, $this->em))->createPayment($source);
+        (new CounterTradeOrderService($inner, $this->em, new OrderInventoryAvailability($this->em, false)))->createPayment($source);
     }
 
     public function testMySqlPaymentRequestsExclusiveOrderLockBeforeDelegation(): void
@@ -365,10 +620,10 @@ final class CounterOrderMergeTest extends KernelTestCase
                 return $result;
             },
         );
-        self::assertSame($result, (new CounterTradeOrderService($inner, $em))->createPayment($source));
+        self::assertSame($result, (new CounterTradeOrderService($inner, $em, new OrderInventoryAvailability($em, false)))->createPayment($source));
     }
 
-    private function source(): Order
+    private function source(bool $inventory = false): Order
     {
         $order = (new Order())->setUser($this->user)->setStatus(Order::STATUS_CONFIRMED)->setTotalAmount(100)
             ->setMetadata(['counterUuid' => $this->counter->getUuid()]);
@@ -377,6 +632,18 @@ final class CounterOrderMergeTest extends KernelTestCase
             $this->em->persist($order);
             $this->em->persist((new OrderStoreLifecycle($order->getUuid(), $this->context->storeUuid))->markAccepted());
         });
+        if ($inventory) {
+            $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
+            $storeOrder = new StoreOrder($store, $order->getUuid(), $store->getCode(), $store->getName(), null, 'CNY', 100, []);
+            $reservationId = UUID::v4();
+            $storeOrder->awaitInventory($reservationId);
+            $reservation = new Reservation($reservationId, $store->getUuid(), $order->getUuid(), $storeOrder->getUuid(), str_repeat('a', 64), new \DateTimeImmutable('+30 minutes'));
+            $reservation->confirm();
+            foreach ([$storeOrder, $reservation, new TradeOutboxMessage('trade.order.created.v1', 'trade_order', $order->getUuid(), ['store' => ['uuid' => $store->getUuid(), 'requireInventory' => true]])] as $entity) {
+                $this->em->persist($entity);
+            }
+            $this->em->flush();
+        }
         return $order;
     }
 
@@ -399,6 +666,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         return new CounterOrderMergeService(
             $this->em, $orders, $resolver, self::getContainer()->get('state_machine.order'),
             self::getContainer()->get(CounterSessionService::class),
+            self::getContainer()->get(OrderInventoryAvailability::class),
         );
     }
 }

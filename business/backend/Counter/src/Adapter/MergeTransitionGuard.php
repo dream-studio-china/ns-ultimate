@@ -10,21 +10,20 @@ use NsUltimate\Business\Counter\Entity\OrderMerge;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Workflow\Event\GuardEvent;
 
-/** A settlement cannot be cancelled after its source orders have been frozen. */
-final class SettlementWorkflowGuard implements EventSubscriberInterface
+final class MergeTransitionGuard implements EventSubscriberInterface
 {
     public function __construct(private readonly EntityManagerInterface $em) {}
 
     public static function getSubscribedEvents(): array
     {
-        return ['workflow.order.guard.cancel' => 'guardCancel'];
+        return ['workflow.order.guard.merge' => 'guard'];
     }
 
-    public function guardCancel(GuardEvent $event): void
+    public function guard(GuardEvent $event): void
     {
         $order = $event->getSubject();
-        if ($order instanceof Order && $this->em->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) > 0) {
-            $event->setBlocked(true, 'A merged settlement cannot be cancelled.');
+        if (!$order instanceof Order || $this->em->getRepository(OrderMerge::class)->findOneBy(['sourceOrderUuid' => $order->getUuid()]) === null) {
+            $event->setBlocked(true, 'Orders can only be merged through the counter merge operation.');
         }
     }
 }
