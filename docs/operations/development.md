@@ -57,6 +57,11 @@ make migrate
 
 Manual migrations retain Symfony's interactive confirmation. Migrations do not run during installation, restarts after successful setup, `make env-init`, or tests; first-time `make dev`/`make docker-dev` and each reset followed by startup are explicit setup flows. Do not point routine development setup or validation at production databases.
 
+## Admin and order API guards
+
+- Admin user batch creation accepts at most **40 users per request**. Larger JSON arrays are rejected with HTTP 400 before password hashing; each password uses a deliberately slow hash and an unbounded batch can exceed the PHP request time limit, rolling back the whole batch. Split larger imports into smaller requests.
+- An unknown, inactive or out-of-store product specification in an order or quote request returns HTTP 400 with the catalog message. It is rejected before any order is created; it is not an HTTP 500.
+
 ## Admin agent persistence validation
 
 The assistant now calls ordinary authenticated CRUD endpoints. Its former adapter-specific MySQL concurrency harness has been retired with the operation backend. Local preview rechecks are not atomic conflict protection, and batch creation is sequential rather than transactional. Validate backend permissions, domain rules and side effects through the owning CRUD APIs against an isolated test environment; never use production data for destructive validation. Earlier adapter-concurrency results are historical evidence only.

@@ -28,6 +28,10 @@ class OrderCounter
     #[ORM\JoinColumn(name: 'counter_id', referencedColumnName: 'id', nullable: false, onDelete: 'RESTRICT')]
     private ?Counter $counter = null;
 
+    #[ORM\ManyToOne(targetEntity: CounterSession::class)]
+    #[ORM\JoinColumn(name: 'counter_session_id', referencedColumnName: 'id', nullable: true, onDelete: 'RESTRICT')]
+    private ?CounterSession $counterSession = null;
+
     #[ORM\Column(name: 'store_uuid', type: 'string', length: 36)]
     private string $storeUuid = '';
 
@@ -70,6 +74,8 @@ class OrderCounter
         return $this;
     }
     public function getStoreUuid(): string { return $this->storeUuid; }
+    public function getCounterSession(): ?CounterSession { return $this->counterSession; }
+    public function setCounterSession(CounterSession $session): self { $this->counterSession = $session; return $this; }
     public function setStoreUuid(string $storeUuid): self { $this->storeUuid = $storeUuid; return $this; }
     public function getCounterCodeSnapshot(): string { return $this->counterCodeSnapshot; }
     public function getCounterNameSnapshot(): string { return $this->counterNameSnapshot; }

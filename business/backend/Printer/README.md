@@ -36,46 +36,44 @@ snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 
 ## Automatic Trade order printing
 
-The Printer module can enqueue order print requests for store-scoped Trade orders.
-Configure the five fixed legacy cases in `Store.settings.printing`: `order`,
-`perItem`, `filteredList`, `fullList`, and `settlement`. Each case has its own
-`enabled` flag, printer `deviceUuid`, `templateUuid`, and optional `copies`
-(default `1`). The adapter selects the print behavior and timing; the store only
-enables a case and chooses its device/template. Production cases run after
-store acceptance when `Store.settings.order.requireAcceptance` is true, and
-otherwise after payment. Settlement runs only after payment. For example:
+The Printer module enqueues requests for enabled store-owned order print rules.
+Use the order print rules page to select one or more events (order confirmed,
+payment completed, Store acceptance), a device, template and copies.
+Conditions match order status or bounded metadata paths using strict scalar
+comparisons or existence checks, combined by one level of all/any. An empty all
+list is unconditional; an empty any list is invalid. A rule produces requests
+at most once per order across its events; use distinct rules for separate prints.
 
-```json
-{
-  "printing": {
-    "order": {
-      "enabled": true,
-      "deviceUuid": "<store printer device UUID>",
-      "templateUuid": "<standard order template UUID>"
-    },
-    "filteredList": {
-      "enabled": true,
-      "deviceUuid": "<store printer device UUID>",
-      "templateUuid": "<kitchen template UUID>"
-    },
-    "settlement": {
-      "enabled": true,
-      "deviceUuid": "<store printer device UUID>",
-      "templateUuid": "<settlement template UUID>"
-    }
-  }
-}
-```
+Each template owns the output scenario:
+`ticketMode` is `single` (one ticket for the whole order) or `per_unit` (one
+ticket per purchased unit, with `item`, `item.index` and `item.total` in the
+snapshot). `itemFilter` is an optional filter evaluated for each order item;
+empty means every item. The filter has a read-only `entity` context with item
+getters (`getQuantity()`, `getProductSettings()`, ...) and its product/category,
+for example `entity.getProduct().getCategory().getName() == "Kitchen"`.
+Templates reject invalid filter syntax when saved, an invalid result excludes the
+item, and an order with no matching item produces no print. Existing templates
+default to `single` and no filter.
 
-The adapter maps the cases to the legacy normal order receipt, per-item ticket,
-kitchen-filtered list (`settings.kitchenPrinterEnable`), full item list, and
-settlement receipt behaviors. Requests are persisted with order/product data
-snapshots before being dispatched, so event handlers never call printer
-providers. Run
+Legacy `Store.settings.printing` cases are no longer read or automatically
+migrated. Before deploying, record each store's intended routes and configure
+equivalent rules; without rules there is no automatic printing. Existing values
+remain stored but have no effect. Merged orders follow the same rules; deduplication
+is per order, so previously printed source orders can still produce repeated tickets.
+
+New requests freeze rule configuration, template definition, and order/product
+data before dispatch. Drain pending legacy requests before upgrading: old queued
+requests without template snapshots fail closed and require operator investigation.
+Events never call printer providers. Run
 `app:printer:dispatch-orders` periodically (or as a supervised worker command)
-to submit pending requests. Request keys are stable across redelivery and an
-ambiguous provider result is not automatically resubmitted. Failed requests are
-left visible in `printer_order_request` for operator investigation.
+to submit pending requests. Dispatch atomically claims requests and prunes
+deduplication claims older than 90 days. A crash may leave
+a request in `dispatching`; investigate the job/provider outcome before any manual
+intervention. Ambiguous provider outcomes are never automatically resubmitted.
+Missing or undecryptable account credentials are definitive failures
+(`missing_credentials` / `invalid_credentials`), so the job is marked `failed`
+instead of `unknown`. Failed requests remain visible in `printer_order_request`
+for investigation.
 
 `GET /api/v1/manage/printer/jobs/{id}/preview` returns the stored job's
 `document` and `copies` in the standard success envelope, without re-rendering
@@ -101,8 +99,36 @@ and no provider order IDs; they are UI examples, not actual print attempts.
 No provider APIs or credential encryption keys are used. Re-running reuses the
 reserved `local-printer-demo` account, device serials, template names, and job
 idempotency keys without duplicating records or overwriting existing content.
-Do not enable the fake account or devices; the command refuses changed/enabled
-reserved hardware records. Use real account/device setup for live printing.
+Keep the fake account and devices disabled for normal development. They may be
+enabled temporarily in `dev` or `test` for the local check below, but must be
+disabled again afterwards; the seed command refuses reserved records that were
+changed or left enabled. Never enable them in a deployed store.
+
+### Local end-to-end check (dev/test only)
+
+This verifies rule execution, request snapshots, dispatch and job recording
+without contacting a printer:
+
+1. Apply migrations and run `app:printer:seed-dummy`.
+2. Temporarily enable the reserved account and receipt device through the admin
+   API, and point the receipt device at the test store.
+3. Create store-owned rules for the triggers under test. A typical table flow
+   uses production on `confirmed` with condition
+   `metadata.counterSettlement` `not_exists`, and settlement on `paid` with
+   `metadata.counterSettlement` `equals true`, both using the demo receipt
+   template.
+4. Create confirmed orders bound with `metadata.counterUuid` (payment is not
+   required), merge the table's confirmed orders, then pay the merged order with
+   the mock gateway.
+5. Run `app:printer:dispatch-orders`. Expect one request per confirmed source
+   order, one for the paid merged order, and none from the merged order's own
+   confirmation. Because the demo credentials are empty, each request produces a
+   `failed` job with `missing_credentials`.
+6. Paying the merged order does not close the table. Ending the counter session
+   requires every bound order to be `completed`, `cancelled`, `refunded` or
+   `merged`.
+
+Disable the demo account and device after the check.
 
 ## Admin integration
 

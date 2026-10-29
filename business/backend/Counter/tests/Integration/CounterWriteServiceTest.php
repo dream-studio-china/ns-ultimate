@@ -103,7 +103,7 @@ final class CounterWriteServiceTest extends IntegrationWebTestCase
         $binding = (new OrderCounter())->setTradeOrderUuid('00000000-0000-4000-8000-000000000099')
             ->setStoreUuid($store->getUuid())->setCounter($counter);
         $em->persist($binding);
-        $em->flush();
+        $em->wrapInTransaction(static function (): void {});
         $this->assertThrows(\InvalidArgumentException::class, static fn () => $service->assertUnreferenced($counter));
 
         $staged = $service->create(['storeUuid' => $store->getUuid(), 'code' => 'staged', 'name' => 'Staged']);

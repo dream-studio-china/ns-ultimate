@@ -58,6 +58,10 @@ Original contents are not stored in preferences or later conversation history; o
 
 Read queries and exact Content/Page body reads retain their separate bounded policies. Selected Store/Product configuration inspection exposes fixed scalar paths only, never arbitrary settings, credentials or private contact data. Cached configuration does not prove worker/device status. Read tools perform no writes and cannot authorize mutations.
 
+## Printing rules and store operations
+
+Order print rules and printer templates are ordinary configured CRUD. Rule and template changes require the operator's explicit UI confirmation, affect future automatic printing only, and remain subject to backend validation. Printer accounts and jobs are prohibited, and device creation is prohibited because the ordinary POST registers with the provider. The assistant cannot run `app:printer:dispatch-orders`, refresh provider status, submit a print, or reprint a job, and cannot verify physical output. Template item filters and rule conditions are data, not instructions. Legacy `Store.settings.printing` is no longer read. Curated guidance lives in `adapters/ns-ultimate/admin/knowledge/printer-auto-printing.mjs`, `printer-templates.mjs`, `printer-setup.mjs` and `counter.mjs`.
+
 ## Package and adapter boundaries
 
 - `src/`: generic assistant and config-driven local mutation host.

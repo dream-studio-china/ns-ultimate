@@ -16,6 +16,7 @@ use Doctrine\ORM\QueryBuilder;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Service\OrderCounterService;
+use NsUltimate\Business\Counter\Service\CounterOrderMergeService;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
@@ -30,7 +31,29 @@ final class OrderCounterController extends RestController
         protected readonly OrderCounterService $service,
         private readonly EntityManagerInterface $entityManager,
         private readonly StoreServiceInterface $storeService,
+        private readonly CounterOrderMergeService $mergeService,
     ) {
+    }
+
+    #[Route('/merge', name: 'merge', methods: ['POST'])]
+    public function mergeAction(): \Symfony\Component\HttpFoundation\Response
+    {
+        try {
+            $filter = $this->commonFilter();
+            $user = $this->getUser();
+            if (!$user instanceof \App\Identity\Entity\User) {
+                throw new \DomainException('Authenticated user is required.');
+            }
+            $order = $this->mergeService->merge($filter['counter'], $user);
+            return $this->success([
+                'uuid' => $order->getUuid(),
+                'status' => $order->getStatus(),
+                'totalAmount' => $order->getTotalAmount(),
+                'currency' => $order->getCurrency(),
+            ], 'Counter orders merged');
+        } catch (\Throwable $error) {
+            return $this->warning($error->getMessage(), 400, '', 400);
+        }
     }
 
     /** @return array<string, mixed> */
@@ -65,35 +88,28 @@ final class OrderCounterController extends RestController
             throw new \LogicException('Counter store context was not resolved.');
         }
 
-        $timezone = new \DateTimeZone($filter['storeTimezone']);
-        $startOfDay = new \DateTimeImmutable('today', $timezone);
-        $startOfTomorrow = $startOfDay->modify('+1 day');
-        $databaseTimezone = new \DateTimeZone(date_default_timezone_get());
-
         $orderQuery = $this->entityManager->createQueryBuilder()
             ->select('o.uuid')
             ->from(Order::class, 'o')
             ->where('o.uuid = oc.tradeOrderUuid')
-            ->andWhere('o.createdAt >= :startOfDay')
-            ->andWhere('o.createdAt < :startOfTomorrow')
             ->andWhere('o.status NOT IN (:closedStatuses)');
 
         return $this->entityManager->createQueryBuilder()
             ->select('oc')
             ->from(OrderCounter::class, 'oc')
+            ->join('oc.counterSession', 'session')
             ->where('oc.counter = :counter')
             ->andWhere('oc.storeUuid = :storeUuid')
+            ->andWhere('session.endedAt IS NULL')
             ->andWhere($this->entityManager->createQueryBuilder()->expr()->exists($orderQuery->getDQL()))
             ->setParameter('counter', $filter['counter'])
             ->setParameter('storeUuid', $filter['storeUuid'])
-            ->setParameter('startOfDay', $startOfDay->setTimezone($databaseTimezone))
-            ->setParameter('startOfTomorrow', $startOfTomorrow->setTimezone($databaseTimezone))
             ->setParameter('closedStatuses', [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED, Order::STATUS_REFUNDED])
             ->orderBy('oc.createdAt', 'ASC');
     }
 
     /** @param mixed $entities
-     * @return list<array{uuid: string, status: string, totalAmount: int, currency: string, createdAt: string, items: list<array{productName: ?string, specificationName: ?string, quantity: int, unitPrice: int, price: int}>}> */
+     * @return list<array{uuid: string, status: string, totalAmount: int, currency: string, createdAt: string, mergedIntoOrderUuid: ?string, items: list<array{productName: ?string, specificationName: ?string, quantity: int, unitPrice: int, price: int}>}> */
     protected function listProcessor(mixed $entities): array
     {
         if ($entities instanceof QueryBuilder) {
@@ -117,23 +133,27 @@ final class OrderCounterController extends RestController
         $orders = $this->entityManager->getRepository(Order::class)->findBy(['uuid' => $orderUuids]);
         usort($orders, static fn (Order $left, Order $right): int => $left->getCreatedAt() <=> $right->getCreatedAt());
 
-        return array_map(static fn (Order $order): array => [
-            'uuid' => $order->getUuid(),
-            'status' => $order->getStatus(),
-            'totalAmount' => $order->getTotalAmount(),
-            'currency' => $order->getCurrency(),
-            'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
-            'items' => array_values(array_map(static function (OrderItem $item): array {
-                $productSnapshot = $item->getProductSnapshot();
+        return array_map(static function (Order $order): array {
+            $targetUuid = ($order->getMetadata() ?? [])['mergedIntoOrderUuid'] ?? null;
+            return [
+                'uuid' => $order->getUuid(),
+                'status' => $order->getStatus(),
+                'totalAmount' => $order->getTotalAmount(),
+                'currency' => $order->getCurrency(),
+                'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
+                'mergedIntoOrderUuid' => is_string($targetUuid) ? $targetUuid : null,
+                'items' => array_values(array_map(static function (OrderItem $item): array {
+                    $productSnapshot = $item->getProductSnapshot();
 
-                return [
-                    'productName' => is_string($productSnapshot['name'] ?? null) ? $productSnapshot['name'] : null,
-                    'specificationName' => $item->getSpecificationTitle(),
-                    'quantity' => $item->getQuantity(),
-                    'unitPrice' => $item->getUnitPrice(),
-                    'price' => $item->getPrice(),
-                ];
-            }, $order->getItems()->toArray())),
-        ], $orders);
+                    return [
+                        'productName' => is_string($productSnapshot['name'] ?? null) ? $productSnapshot['name'] : null,
+                        'specificationName' => $item->getSpecificationTitle(),
+                        'quantity' => $item->getQuantity(),
+                        'unitPrice' => $item->getUnitPrice(),
+                        'price' => $item->getPrice(),
+                    ];
+                }, $order->getItems()->toArray())),
+            ];
+        }, $orders);
     }
 }

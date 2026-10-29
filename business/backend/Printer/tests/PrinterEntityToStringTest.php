@@ -26,4 +26,21 @@ final class PrinterEntityToStringTest extends TestCase
         self::assertStringNotContainsString('secret-ciphertext', (string) $account);
         self::assertStringNotContainsString('private rendered content', (string) $job);
     }
+
+    public function testTemplateDefaultsAndValidatesTicketOptions(): void
+    {
+        $template = new PrinterTemplate('Kitchen receipt', PrinterDevice::KIND_RECEIPT);
+        self::assertSame(PrinterTemplate::TICKET_SINGLE, $template->getTicketMode());
+        self::assertNull($template->getItemFilter());
+        self::assertSame(PrinterTemplate::TICKET_PER_UNIT, $template->setTicketMode('per_unit')->getTicketMode());
+        self::assertSame('entity.getQuantity() > 1', $template->setItemFilter('  entity.getQuantity() > 1  ')->getItemFilter());
+        self::assertNull($template->setItemFilter('')->getItemFilter());
+
+        try {
+            $template->setTicketMode('per_order');
+            self::fail('Invalid ticket mode was accepted.');
+        } catch (\InvalidArgumentException) {
+        }
+        self::assertSame(PrinterTemplate::TICKET_PER_UNIT, $template->getTicketMode());
+    }
 }

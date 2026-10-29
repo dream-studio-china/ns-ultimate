@@ -13,6 +13,7 @@ export default {
         ...r('PrinterAccount', t('Printer accounts')),
         ...r('PrinterDevice', t('Printer devices')),
         ...r('PrinterTemplate', t('Printer templates')),
+        ...r('PrinterOrderRule', t('Order print rules')),
         ...r('PrinterJob', t('Printer jobs'))
       ]
     },

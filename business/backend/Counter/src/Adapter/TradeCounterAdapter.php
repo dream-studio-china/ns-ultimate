@@ -13,6 +13,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Events;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
+use NsUltimate\Business\Counter\Entity\CounterSession;
+use NsUltimate\Business\Counter\Service\CounterSessionService;
 
 /**
  * Temporary monolith adapter. Trade-specific order metadata is intentionally
@@ -82,6 +84,19 @@ final class TradeCounterAdapter
                 $entityManager->persist($binding);
                 $unitOfWork->computeChangeSet($entityManager->getClassMetadata(OrderCounter::class), $binding);
             }
+        }
+
+        // This covers automatic, store-manual, and administrator bindings alike.
+        // onFlush precedes ORM's implicit transaction: callers must open one explicitly.
+        $sessions = new CounterSessionService($entityManager);
+        $bindings = array_filter($unitOfWork->getScheduledEntityInsertions(), static fn (object $entity): bool => $entity instanceof OrderCounter);
+        usort($bindings, static fn (OrderCounter $a, OrderCounter $b): int => ($a->getCounter()?->getId() ?? 0) <=> ($b->getCounter()?->getId() ?? 0));
+        foreach ($bindings as $binding) {
+            $session = $sessions->assign($binding);
+            if ($session->getId() === null) {
+                $unitOfWork->computeChangeSet($entityManager->getClassMetadata(CounterSession::class), $session);
+            }
+            $unitOfWork->recomputeSingleEntityChangeSet($entityManager->getClassMetadata(OrderCounter::class), $binding);
         }
     }
 }

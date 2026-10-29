@@ -33,11 +33,9 @@ const operations = [
 
 const SENSITIVE_PATH = /password|secret|token|credential|private.?key|certificate|api.?key|openid|authorization|email|phone|mobile|address|contact|metadata|payment|pay/i
 
-test('host policy covers exactly Store printing configuration and the Product kitchen-print flag', () => {
+test('host policy covers Store lifecycle configuration and the Product kitchen-print flag', () => {
   assert.deepEqual(Object.keys(recordInspectionPolicy), ['Store', 'Product'])
-  const cases = ['order', 'perItem', 'filteredList', 'fullList', 'settlement']
-  const expectedStore = ['code', 'name', 'status', 'settings.order.requireAcceptance',
-    ...cases.flatMap(caseKey => ['enabled', 'deviceUuid', 'templateUuid', 'copies'].map(field => `settings.printing.${caseKey}.${field}`))]
+  const expectedStore = ['code', 'name', 'status', 'settings.order.requireAcceptance']
   assert.deepEqual(recordInspectionPolicy.Store.paths, expectedStore)
   assert.deepEqual(recordInspectionPolicy.Product.paths, ['name', 'status', 'settings.kitchenPrinterEnable'])
   for (const [entity, entry] of Object.entries(recordInspectionPolicy)) {
@@ -90,7 +88,7 @@ function makeHost(record, { available = true } = {}) {
   return { inspect, calls }
 }
 
-test('inspects Store printing configuration without leaking secrets, blobs, or snapshots', async() => {
+test('inspects Store lifecycle configuration without leaking legacy printing, secrets, blobs, or snapshots', async() => {
   const { inspect, calls } = makeHost(storeRecord())
   const result = await inspect({ entity: 'Store', identifier: STORE_UUID }, operations)
   assert.equal(result.entity, 'Store')
@@ -100,14 +98,7 @@ test('inspects Store printing configuration without leaking secrets, blobs, or s
     name: 'Flagship',
     status: 'activate',
     settings: {
-      order: { requireAcceptance: true },
-      printing: {
-        order: { enabled: true, deviceUuid: DEVICE_UUID, templateUuid: TEMPLATE_UUID, copies: 2 },
-        perItem: { enabled: false, deviceUuid: null, templateUuid: null, copies: 1 },
-        filteredList: { enabled: true, deviceUuid: DEVICE_UUID, templateUuid: TEMPLATE_UUID, copies: 1 },
-        fullList: { enabled: false },
-        settlement: { enabled: true, deviceUuid: DEVICE_UUID, templateUuid: TEMPLATE_UUID, copies: 1 }
-      }
+      order: { requireAcceptance: true }
     }
   })
   assert.ok(Number.isSafeInteger(result.omitted))
@@ -118,6 +109,7 @@ test('inspects Store printing configuration without leaking secrets, blobs, or s
   assert.ok(!serialized.includes('s3cr3t'))
   assert.ok(!serialized.includes('+86-138-0000-0000'))
   assert.ok(!serialized.includes('paymentRate'))
+  assert.ok(!serialized.includes('printing'))
   assert.ok(!serialized.includes('snapshot'))
   assert.ok(serialized.length <= 8000)
 })
@@ -162,27 +154,6 @@ test('adapter rejects unknown entities, bad ids, unavailable pages, and malforme
 
   const malformed = makeHost({ data: [{ id: 1 }], code: 0 })
   await assert.rejects(malformed.inspect({ entity: 'Store', identifier: '1' }, operations), /unsupported record response/)
-
-  const atLimit = 'x'.repeat(120)
-  // Fill max-size leaves across the fixed policy paths so the bounded
-  // projection still exceeds the size limit without any silent truncation.
-  const sizeLimitRecord = {
-    id: 9,
-    uuid: '123e4567-e89b-4123-a456-426614174009',
-    code: atLimit,
-    name: atLimit,
-    status: atLimit,
-    settings: {
-      order: { requireAcceptance: true },
-      printing: Object.fromEntries(['order', 'perItem', 'filteredList', 'fullList', 'settlement'].map(caseKey => [
-        caseKey,
-        { enabled: true, deviceUuid: atLimit, templateUuid: atLimit, copies: 1 }
-      ]))
-    }
-  }
-  // Sanity check the fixture really exceeds the limit via max-size leaves.
-  const oversized = makeHost(sizeLimitRecord)
-  await assert.rejects(oversized.inspect({ entity: 'Store', identifier: '9' }, operations), /size limit/)
 
   const aborted = new AbortController()
   aborted.abort()

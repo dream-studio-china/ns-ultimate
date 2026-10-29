@@ -6,17 +6,7 @@
 // snapshots, metadata) is deliberately absent; paths are fixed here and are
 // never supplied by the model.
 
-const PRINTING_CASES = ['order', 'perItem', 'filteredList', 'fullList', 'settlement']
-const PRINTING_CASE_FIELDS = ['enabled', 'deviceUuid', 'templateUuid', 'copies']
-
-const storePaths = [
-  'code',
-  'name',
-  'status',
-  'settings.order.requireAcceptance',
-  ...PRINTING_CASES.flatMap(caseKey =>
-    PRINTING_CASE_FIELDS.map(field => `settings.printing.${caseKey}.${field}`))
-]
+const storePaths = ['code', 'name', 'status', 'settings.order.requireAcceptance']
 
 export const recordInspectionPolicy = {
   Store: { paths: storePaths },
