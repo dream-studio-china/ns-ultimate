@@ -1,13 +1,14 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button, Dialog } from 'antd-mobile'
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, Hash, LockKeyhole, RefreshCw, Search, X, type LucideIcon } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, Hash, LockKeyhole, RefreshCw, Search, X, type LucideIcon } from 'lucide-react'
 import { ApiError } from '../adapters/api-client'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { Sheet } from '../../shared/ui'
 import { StoreConnectionError } from '../adapters/live'
+import './editor.css'
 
 const BusyContext = createContext<((busy: boolean) => void) | null>(null)
-export function LiveSheet({ children, ...props }: { children: ReactNode; open: boolean; title: string; onClose: () => void }) {
+export function LiveSheet({ children, ...props }: { children: ReactNode; open: boolean; title: string; onClose: () => void; footer?: ReactNode; className?: string }) {
   const [busy, setBusy] = useState(false)
   return <BusyContext.Provider value={setBusy}><Sheet {...props} locked={busy}><div className="live-sheet-content">{children}</div></Sheet></BusyContext.Provider>
 }
@@ -92,21 +93,55 @@ export function useDelete(reload: () => void) {
   }
   return { busy, remove, feedback: <>{error && <div className="workspace-error" role="alert"><AlertCircle size={18} /><p>{t(error)}</p></div>}{notice && <p className="workspace-success" role="status"><CheckCircle2 size={16} />{t('deletedLive')}</p>}</> }
 }
-export function MutationForm({ children, submit, onDone }: { children: ReactNode; submit: () => Promise<unknown>; onDone: () => void }) {
+export function MutationForm({ children, submit, onDone, id, actions = true, onBusyChange }: { children: ReactNode; submit: () => Promise<unknown>; onDone: () => void; id?: string; actions?: boolean; onBusyChange?: (busy: boolean) => void }) {
   const { t } = useI18n()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<MessageKey | null>(null)
   const locked = useRef(false)
   const mounted = useRef(true)
+  const errorRef = useRef<HTMLParagraphElement>(null)
   const setParentBusy = useContext(BusyContext)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-  return <form className="form-stack" onSubmit={(event) => {
+  useEffect(() => { if (error) errorRef.current?.scrollIntoView({ block: 'nearest' }) }, [error])
+  return <form id={id} className="form-stack" aria-busy={busy} onInvalidCapture={(event) => {
+    // Advanced fields remain keyboard reachable when native validation reports an error.
+    const details = (event.target as HTMLElement).closest('details')
+    if (details) details.open = true
+  }} onSubmit={(event) => {
     event.preventDefault()
     if (locked.current) return
     if (!navigator.onLine) { setError('offline'); return }
-    locked.current = true; setBusy(true); setParentBusy?.(true); setError(null)
-    void submit().then(() => { if (mounted.current) onDone() }).catch((error: unknown) => {
+    locked.current = true; setBusy(true); setParentBusy?.(true); onBusyChange?.(true); setError(null)
+    void Promise.resolve().then(submit).then(() => { if (mounted.current) onDone() }).catch((error: unknown) => {
       if (mounted.current) setError(errorKey(error))
-    }).finally(() => { locked.current = false; if (mounted.current) { setBusy(false); setParentBusy?.(false) } })
-  }}><fieldset disabled={busy} className="form-stack">{children}<Button type="submit" block color="primary" loading={busy}>{t('save')}</Button></fieldset>{error && <p className="error-text" role="alert">{t(error)}</p>}</form>
+    }).finally(() => { locked.current = false; if (mounted.current) { setBusy(false); setParentBusy?.(false); onBusyChange?.(false) } })
+  }}><fieldset disabled={busy} className="form-stack">{children}{actions && <Button type="submit" block color="primary" loading={busy}>{t('save')}</Button>}</fieldset>{error && <p ref={errorRef} className="error-text" role="alert">{t(error)}</p>}</form>
+}
+
+export function EditorSheet({ title, description, preview, children, submit, onDone, onClose }: {
+  title: string; description: MessageKey; preview: ReactNode; children: ReactNode; submit: () => Promise<unknown>; onDone: () => void; onClose: () => void
+}) {
+  const { t } = useI18n()
+  const id = useId()
+  const [busy, setBusy] = useState(false)
+  return <LiveSheet open title={title} className="resource-editor" onClose={onClose} footer={<div className="editor-footer"><p><LockKeyhole size={13} />{t(description)}</p><div><Button disabled={busy} onClick={onClose}>{t('cancel')}</Button><Button type="submit" form={id} color="primary" loading={busy}><Check size={17} />{t('save')}</Button></div></div>}>
+    {preview}<MutationForm id={id} actions={false} submit={submit} onDone={onDone} onBusyChange={setBusy}>{children}</MutationForm>
+  </LiveSheet>
+}
+export function EditorPreview({ icon: Icon, label, name, detail, children }: { icon: LucideIcon; label: MessageKey; name: string; detail?: string; children?: ReactNode }) {
+  const { t } = useI18n()
+  return <div className="editor-preview"><div className="editor-preview-icon"><Icon size={32} strokeWidth={1.25} /></div><div><p>{t(label)}</p><h3>{name}</h3>{detail && <small>{detail}</small>}</div>{children}</div>
+}
+export function EditorSection({ title, index, children }: { title: MessageKey; index: string; children: ReactNode }) {
+  const { t } = useI18n()
+  return <section className="editor-section"><div className="editor-section-heading"><span>{index}</span><h3>{t(title)}</h3></div><div className="editor-section-fields">{children}</div></section>
+}
+export function EditorToggle({ label, hint, checked, onChange }: { label: MessageKey; hint: MessageKey; checked: boolean; onChange: (checked: boolean) => void }) {
+  const { t } = useI18n()
+  const hintId = useId()
+  return <div className="editor-toggle"><div><strong>{t(label)}</strong><p id={hintId}>{t(hint)}</p></div><button type="button" role="switch" aria-label={t(label)} aria-describedby={hintId} aria-checked={checked} onClick={() => onChange(!checked)}><span /></button></div>
+}
+export function EditorAdvanced({ children }: { children: ReactNode }) {
+  const { t } = useI18n()
+  return <details className="editor-advanced"><summary><span>{t('advancedFields')}</span><ChevronDown size={15} /></summary><div>{children}</div></details>
 }

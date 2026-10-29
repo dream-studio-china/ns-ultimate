@@ -1,11 +1,11 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ArrowRight, Check, ChevronDown, ChevronRight, CircleHelp, CookingPot, Globe2, LayoutGrid, LockKeyhole, LogOut, MapPin, Palette, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, ChevronRight, CircleHelp, CookingPot, Globe2, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
 import { ApiClient } from '../adapters/api-client'
 import { can, StoreApi, StoreConnectionError, storeSchema, type StoreAccess, type ConnectionStep } from '../adapters/live'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { useOnline } from '../../shared/use-online'
-import { themes, usePreferences, type Theme } from '../../shared/preferences'
+import { ThemePicker } from '../../shared/theme-picker'
 import { LiveCatalog } from './catalog'
 import { LiveTables, LiveOrders } from './tables'
 import { errorKey, ListFeedback, Notice, PageControls, PageHeading, StatusPill, usePage } from './ui'
@@ -126,13 +126,12 @@ const resourceLabels: Record<string, MessageKey> = { product: 'products', produc
 const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', create: 'permissionCreate', update: 'permissionUpdate', delete: 'permissionDelete' }
 function LiveAccount({ access, logout }: { access: StoreAccess; logout: () => void }) {
   const { t, locale, setLocale } = useI18n()
-  const { theme, setTheme, storageFailed } = usePreferences()
   return <>
     <PageHeading eyebrow="accountEyebrow" title="liveAccount" subtitle="accountSubtitle" />
     <section className="workspace-profile"><div className="profile-monogram">{(access.profile.username ?? 'NS').slice(0, 1).toUpperCase()}<span><ShieldCheck size={13} /></span></div><div><h2>{access.profile.username ?? access.profile.uuid}</h2><p>{t(roleLabels[access.membership.role] ?? 'liveAccount')}</p></div><StatusPill>{t('liveMode')}</StatusPill></section>
     <section className="account-store-card"><span><Store size={25} strokeWidth={1.5} /></span><div><strong>{access.store.name}</strong><small>{access.store.code} · {access.store.currency}</small></div><MapPin size={17} /><p>{t('storeContextHint')}</p></section>
     <div className="account-section-title"><h2>{t('devicePreferences')}</h2><span>{t('preferences')}</span></div>
-    <section className="workspace-panel"><div className="account-setting"><span className="setting-symbol"><Globe2 size={19} /></span><div><h3>{t('language')}</h3><small>{locale === 'en' ? t('en') : t('zh')}</small></div><button onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}>{locale === 'en' ? t('zh') : t('en')}<ChevronRight size={16} /></button></div><div className="account-theme"><h3><Palette size={18} />{t('appearance')}</h3><p>{t('localThemeHint')}</p><div className="theme-grid" role="group" aria-label={t('theme')}>{(Object.keys(themes) as Theme[]).map((value) => <button key={value} aria-pressed={theme === value} onClick={() => setTheme(value)}><span style={{ backgroundColor: themes[value] }}>{theme === value && <Check size={15} />}</span>{t(value)}</button>)}</div>{storageFailed && <p className="error-text" role="alert">{t('storageFailed')}</p>}</div></section>
+    <section className="workspace-panel"><div className="account-setting"><span className="setting-symbol"><Globe2 size={19} /></span><div><h3>{t('language')}</h3><small>{locale === 'en' ? t('en') : t('zh')}</small></div><button onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}>{locale === 'en' ? t('zh') : t('en')}<ChevronRight size={16} /></button></div><ThemePicker /></section>
     <div className="account-section-title"><h2>{t('profileAndAccess')}</h2><span>{t('scopedAccess')}</span></div>
     <section className="workspace-panel account-permissions">{Object.entries(resourceLabels).map(([resource, label]) => <div key={resource}><strong>{t(label)}</strong><span>{Object.entries(actionLabels).filter(([action]) => can(access, resource, action)).map(([action, label]) => <small key={action}>{t(label)}</small>)}{!Object.keys(actionLabels).some((action) => can(access, resource, action)) && <small className="no-grant">{t('noGrantedActions')}</small>}</span></div>)}</section>
     <section className="account-session"><h2>{t('sessionSettings')}</h2><p>{t('accountSessionHint')}</p><Button block className="logout-button" onClick={logout}><LogOut size={17} />{t('logout')}</Button><a href="?mode=demo">{t('demoModeLink')}<ArrowRight size={14} /></a></section>

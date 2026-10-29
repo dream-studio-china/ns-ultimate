@@ -132,6 +132,28 @@ test('language and local color preferences work across navigation and reload', a
   await expect(page.getByRole('button', { name: 'Fresh Beef Brisket', exact: true })).toBeVisible()
 })
 
+test('demo uses the same seven-color surfaces and themed portal forms without requiring storage', async ({ page }) => {
+  const colors: string[][] = []
+  for (const name of ['红', '橙', '黄', '绿', '靛', '紫', '蓝']) {
+    await page.getByRole('link', { name: '我的', exact: true }).click()
+    await page.getByRole('group', { name: '配色方案' }).getByRole('button', { name, exact: true }).click()
+    const sample = await page.evaluate(() => ['.store-account', '.profile-avatar', '.mobile-app'].map((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor))
+    await page.getByRole('link', { name: '商品', exact: true }).click()
+    await page.getByRole('button', { name: '新增商品', exact: true }).click()
+    sample.push(...await page.evaluate(() => ['.mobile-sheet', '.sheet-footer', '.field input', '.sheet-footer .adm-button-primary'].map((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor)))
+    colors.push(sample)
+    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+  }
+  for (let index = 0; index < colors[0]!.length; index++) expect(new Set(colors.map((sample) => sample[index])).size).toBe(7)
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'blue')
+  await page.getByRole('link', { name: '我的', exact: true }).click()
+  await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('Blocked storage') } })
+  await page.getByRole('button', { name: '红', exact: true }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'red')
+  await expect(page.getByRole('alert')).toContainText('本机存储不可用')
+})
+
 test('payment entry handles missing sessions and unavailable storage', async ({ page }) => {
   await page.goto('/payment.html?session=missing')
   await expect(page.getByRole('heading', { name: '未找到可用演示账单' })).toBeVisible()

@@ -5,7 +5,7 @@ export function BrandArt() {
     <ellipse cx="175" cy="219" rx="103" ry="12" fill="currentColor" fillOpacity=".07" />
     <path d="M73 137h203l-17 66c-4 17-25 25-84 25s-78-9-83-26l-19-65Z" fill="currentColor" fillOpacity=".12" />
     <path d="M77 141h193l-14 56c-4 17-26 24-81 24-54 0-74-7-79-24l-19-56Z" stroke="currentColor" strokeWidth="2" />
-    <ellipse cx="174" cy="137" rx="101" ry="28" fill="#ece9dd" stroke="currentColor" strokeWidth="2" />
+    <ellipse cx="174" cy="137" rx="101" ry="28" fill="var(--theme-soft)" stroke="currentColor" strokeWidth="2" />
     <ellipse cx="174" cy="137" rx="85" ry="19" fill="currentColor" fillOpacity=".16" />
     <path d="M117 133c15-12 33 8 48 0s29-8 48-1m-78 13c10 6 24 3 35-2m37-5 20 2" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     <path d="m73 146-16-5c-14-4-18 18-5 21l27 5m196-21 16-5c14-4 18 18 5 21l-27 5" stroke="currentColor" strokeWidth="2" />
