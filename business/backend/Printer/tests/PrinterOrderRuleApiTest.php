@@ -18,6 +18,8 @@ use NsUltimate\Business\Printer\Entity\PrinterOrderRule;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Business\Printer\Command\DispatchOrderPrintRequestsCommand;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleMatcher;
+use NsUltimate\Business\Printer\Service\OrderPrintRuleSelector;
+use NsUltimate\Business\Printer\Service\OrderPrintRuleValidator;
 use NsUltimate\Business\Printer\Service\OrderPrintRequestWriter;
 use NsUltimate\Business\Printer\Service\PrintDocumentRenderer;
 use NsUltimate\Business\Printer\Service\PrinterJobService;
@@ -120,6 +122,37 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $order->setMetadata(['counterSettlement' => false]);
         self::assertFalse($matcher->matches($rules[0]->toRule(), 'paid', $order));
         self::assertCount(0, $em->getRepository(PrinterOrderRule::class)->findBy(['storeUuid' => 'another-store', 'enabled' => true]));
+    }
+
+    public function testSelectorIgnoresDisabledInvalidAndOtherStoreRules(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['events'] = ['paid', 'accepted'];
+        $payload['conditions'] = [['field' => 'status', 'operator' => 'equals', 'value' => 'paid']];
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $uuid = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data']['uuid'];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $base = static fn (): PrinterOrderRule => (new PrinterOrderRule())
+            ->setStoreUuid($payload['storeUuid'])->setName('Additional')->setEnabled(true)
+            ->setEvents(['paid'])->setMatch('all')->setConditions([])->setScene('order')
+            ->setDeviceUuid($payload['deviceUuid'])->setTemplateUuid($payload['templateUuid'])->setCopies(1);
+        $em->persist($base()->setEnabled(false));
+        $em->persist($base()->setStoreUuid('another-store'));
+        $em->persist($base()->setScene('invalid'));
+        $em->persist($base()->setConditions([['field' => 'metadata.bad..path', 'operator' => 'exists']]));
+        $em->flush();
+        $em->clear();
+        $matcher = new OrderPrintRuleMatcher();
+        $selector = new OrderPrintRuleSelector($em, new OrderPrintRuleValidator($matcher), $matcher);
+        $order = (new Order())->setStatus(Order::STATUS_PAID);
+        $selected = $selector->select($payload['storeUuid'], 'paid', $order);
+        self::assertCount(1, $selected);
+        self::assertSame($uuid, $selected[0]->getUuid());
+        self::assertCount(1, $selector->select($payload['storeUuid'], 'accepted', $order));
+        self::assertSame([], $selector->select($payload['storeUuid'], 'confirmed', $order));
+        $order->setStatus(Order::STATUS_CONFIRMED);
+        self::assertSame([], $selector->select($payload['storeUuid'], 'paid', $order));
     }
 
     public function testDispatchRecordsFailedJobWithoutRealPrinter(): void
