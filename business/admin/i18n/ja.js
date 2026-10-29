@@ -14,7 +14,6 @@ export default {
   'Ticket mode help': 'テンプレートが、注文全体を1枚で印刷するか、数量ごとに1枚ずつ印刷するかを決めます。',
   'Item filter': '商品範囲',
   'Item filter help': '任意のフィルターで、注文商品ごとに評価します。空欄ならすべての商品を印刷します。例: entity.getProduct().getCategory().getName() == "Kitchen"。保存時に構文を検証します。',
-  'Item filter placeholder': 'entity.getProductSettings()["kitchenPrinterEnable"] == true',
   'Order print field placeholder': 'status または metadata.パス',
   'Equals': '等しい', 'Not equals': '等しくない', 'Exists': '存在する', 'Does not exist': '存在しない',
   'Text value': 'テキスト', 'Integer value': '整数', 'Boolean value': '真偽値', 'Null value': 'Null', 'Add condition': '条件を追加',

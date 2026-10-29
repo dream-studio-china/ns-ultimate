@@ -134,7 +134,7 @@ test('print rule translations cover every supported locale', () => {
       'Print rule output store help', 'Print rule outputs failed to load',
       'Print rule output unavailable help', 'Order print rules',
       'Ticket mode', 'One ticket per order', 'One ticket per item',
-      'Item filter', 'Item filter placeholder', 'Item filter help'
+      'Item filter', 'Item filter help'
     ]) {
       assert.ok(source.includes(`'${key}'`), `${locale} is missing ${key}`)
     }
@@ -150,8 +150,10 @@ test('rules no longer carry a print scene; templates own ticket granularity and 
   assert.match(template, field('itemFilter'))
   assert.match(template, /value: 'per_unit'/)
   assert.doesNotMatch(template, /value: 'kitchen'/)
-  assert.match(template, /Item filter placeholder/)
-  assert.match(template, /maxlength: 500/)
+  assert.match(template, /property: 'itemFilter', label: t\('Item filter'\), type: 'code'/)
+  assert.match(template, /language: 'javascript'/)
+  const display = template.match(/list_display: \[([^\]]*)\]/)?.[1] ?? ''
+  assert.doesNotMatch(display, /itemFilter/)
 })
 
 test('condition editor warns about empty match modes and bounds field length', () => {

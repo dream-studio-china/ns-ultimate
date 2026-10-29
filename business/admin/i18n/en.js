@@ -14,7 +14,6 @@ export default {
   'Ticket mode help': 'The template decides whether one print covers the whole order or one ticket is printed per item quantity.',
   'Item filter': 'Item filter',
   'Item filter help': 'Optional filter evaluated for each order item. Leave empty to print every item. Example: entity.getProduct().getCategory().getName() == "Kitchen". Invalid filters are rejected when saving.',
-  'Item filter placeholder': 'entity.getProductSettings()["kitchenPrinterEnable"] == true',
   'Order print field placeholder': 'status or metadata.path',
   'Equals': 'Equals', 'Not equals': 'Not equals', 'Exists': 'Exists', 'Does not exist': 'Does not exist',
   'Text value': 'Text', 'Integer value': 'Integer', 'Boolean value': 'Boolean', 'Null value': 'Null', 'Add condition': 'Add condition',
