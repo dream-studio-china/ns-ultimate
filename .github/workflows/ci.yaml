@@ -8,6 +8,32 @@ permissions:
   contents: read
 
 jobs:
+  cashier-checks:
+    name: Cashier UI checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/cashier
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/cashier/package-lock.json
+      - name: Install cashier dependencies
+        run: npm ci
+      - name: Run cashier unit tests and build
+        run: npm test && npm run build
+      - name: Install browser for UI tests
+        run: npx playwright install --with-deps chromium
+      - name: Run cashier browser flows
+        run: npm run test:e2e
+
   project-checks:
     name: Project composition checks
     runs-on: ubuntu-latest

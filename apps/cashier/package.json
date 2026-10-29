@@ -1,0 +1,62 @@
+{
+  "name": "ns-ultimate-cashier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Touch-first, store-scoped NS Cashier desktop application",
+  "author": "Lam K.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist-electron/main.mjs",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --host 127.0.0.1",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:desktop": "npm run build && node scripts/test-desktop.mjs",
+    "build": "npm run type-check && vite build && node scripts/build-electron.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "start": "electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-slot": "^1.2.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.64.1",
+    "tailwindcss": "^4.1.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.7",
+    "vitest": "^5.0.5"
+  },
+  "build": {
+    "appId": "com.nsultimate.cashier",
+    "productName": "NS Cashier",
+    "asar": true,
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "dist-electron/**/*", "package.json", "LICENSE"],
+    "mac": { "target": ["dmg"], "category": "public.app-category.business" },
+    "win": { "target": ["nsis"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}
