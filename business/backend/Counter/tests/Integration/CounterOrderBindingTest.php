@@ -242,7 +242,7 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertSame([], $payload['data']);
     }
 
-    public function testAppCounterOrdersListsOnlyTodaysNonClosedOrdersForTheCounter(): void
+    public function testAppCounterOrdersListsNonClosedOrdersAcrossDaysInActiveSession(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
         $user = (new User())->setEmail('app-counter-orders@example.test')->setUsername('app-counter-orders');
@@ -289,16 +289,17 @@ final class CounterOrderBindingTest extends KernelTestCase
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         $payload = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR);
-        self::assertSame([$openOrder->getUuid()], array_column($payload['data'], 'uuid'));
+        self::assertEqualsCanonicalizing([$openOrder->getUuid(), $yesterdayOrder->getUuid()], array_column($payload['data'], 'uuid'));
+        $openOrderData = array_column($payload['data'], null, 'uuid')[$openOrder->getUuid()];
         self::assertSame([
             'productName' => 'Coffee',
             'specificationName' => 'Latte',
             'quantity' => 2,
             'unitPrice' => 450,
             'price' => 900,
-        ], $payload['data'][0]['items'][0]);
-        self::assertArrayNotHasKey('cost', $payload['data'][0]['items'][0]);
-        self::assertArrayNotHasKey('profit', $payload['data'][0]['items'][0]);
+        ], $openOrderData['items'][0]);
+        self::assertArrayNotHasKey('cost', $openOrderData['items'][0]);
+        self::assertArrayNotHasKey('profit', $openOrderData['items'][0]);
     }
 
     public function testAdminApiStoresCounterSortAndMetadata(): void

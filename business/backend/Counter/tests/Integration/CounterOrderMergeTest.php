@@ -14,6 +14,7 @@ use App\Trade\DTO\StoreContext;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderItem;
 use App\Trade\Entity\OrderStoreLifecycle;
+use App\Trade\Entity\TradeOutboxMessage;
 use App\Trade\Service\OrderServiceInterface;
 use App\Trade\Service\Pricing\PriceCalculationResult;
 use App\Trade\Service\StoreContextResolverInterface;
@@ -71,7 +72,8 @@ final class CounterOrderMergeTest extends KernelTestCase
         $sourceB = $this->source();
         $target = $this->merger()->merge($this->counter, $this->user);
 
-        self::assertSame(Order::STATUS_PENDING, $target->getStatus());
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+        self::assertSame([], $this->em->getRepository(TradeOutboxMessage::class)->findBy(['aggregateId' => $target->getUuid()]));
         self::assertSame(200, $target->getTotalAmount());
         self::assertSame($this->user, $target->getUser());
         foreach ([$sourceA, $sourceB] as $source) {
@@ -80,6 +82,7 @@ final class CounterOrderMergeTest extends KernelTestCase
             self::assertTrue($source->getMetadata()['counterMergeInventoryReconciliationRequired']);
         }
         self::assertCount(2, $this->em->getRepository(OrderMerge::class)->findAll());
+        self::assertFalse(self::getContainer()->get('state_machine.order')->can($target, 'cancel'));
         $binding = $this->em->getRepository(OrderCounter::class)->findOneBy(['tradeOrderUuid' => $target->getUuid()]);
         self::assertNotNull($binding?->getCounterSession());
         self::assertSame(
@@ -93,6 +96,7 @@ final class CounterOrderMergeTest extends KernelTestCase
     public function testAuthenticatedMergeEndpointUsesCurrentUserAndReturnsTarget(): void
     {
         $source = $this->source();
+        $this->source();
         self::getContainer()->set(CounterOrderMergeService::class, $this->merger());
         $token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->user);
         $headers = ['HTTP_AUTHORIZATION' => 'Bearer '.$token, 'HTTP_X_STORE_CODE' => $this->context->storeCode];
@@ -100,7 +104,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         $response = self::$kernel->handle(Request::create($path.'/merge', 'POST', [], [], [], $headers));
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         $payload = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR);
-        self::assertSame(Order::STATUS_PENDING, $payload['data']['status']);
+        self::assertSame(Order::STATUS_CONFIRMED, $payload['data']['status']);
         $targetUuid = $payload['data']['uuid'];
         $listing = self::$kernel->handle(Request::create($path, 'GET', [], [], [], $headers));
         self::assertSame(200, $listing->getStatusCode(), (string) $listing->getContent());
@@ -125,6 +129,18 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertFalse($this->em->getConnection()->isTransactionActive());
     }
 
+    public function testUnacceptedStoreOrderCannotBeMerged(): void
+    {
+        $source = $this->source();
+        $this->source();
+        $lifecycle = $this->em->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $source->getUuid()]);
+        $lifecycle->setAcceptanceStatus(OrderStoreLifecycle::ACCEPTANCE_PENDING);
+        $this->em->flush();
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('accepted by the store');
+        $this->merger()->merge($this->counter, $this->user);
+    }
+
     public function testRealPaymentFlowCreatesInvoiceThatBlocksMerge(): void
     {
         $paid = $this->source();
@@ -143,13 +159,57 @@ final class CounterOrderMergeTest extends KernelTestCase
         $this->em->persist($other);
         $this->em->flush();
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('placed an order');
+        $this->expectExceptionMessage('eligible unpaid order');
         $this->merger()->merge($this->counter, $other);
+    }
+
+    public function testSingleOrderCannotBeMergedAgain(): void
+    {
+        $this->source();
+        $this->source();
+        $target = $this->merger()->merge($this->counter, $this->user);
+        try {
+            $this->merger()->merge($this->counter, $this->user);
+            self::fail('A retry must not create a replacement for the sole remaining order.');
+        } catch (\DomainException $error) {
+            self::assertStringContainsString('cannot be merged again', $error->getMessage());
+        }
+        self::assertCount(3, $this->em->getRepository(Order::class)->findAll());
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+    }
+
+    public function testClosedOrderDoesNotGrantMergePermission(): void
+    {
+        $closed = $this->source();
+        $closed->setStatus(Order::STATUS_CANCELLED);
+        $other = (new User())->setEmail('eligible-other@example.test')->setUsername('eligible-other');
+        $this->em->persist($other);
+        $this->source()->setUser($other);
+        $this->source()->setUser($other);
+        $this->em->flush();
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('eligible unpaid order');
+        $this->merger()->merge($this->counter, $this->user);
+    }
+
+    public function testMultiCounterOrderCannotBeMerged(): void
+    {
+        $source = $this->source();
+        $this->source();
+        $otherCounter = (new Counter())->setStoreUuid($this->context->storeUuid)->setCode('A02')->setName('Table A02');
+        $this->em->persist($otherCounter);
+        $this->em->flush();
+        $binding = (new OrderCounter())->setCounter($otherCounter)->setStoreUuid($this->context->storeUuid)->setTradeOrderUuid($source->getUuid());
+        $this->em->wrapInTransaction(fn () => $this->em->persist($binding));
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('multiple counters');
+        $this->merger()->merge($this->counter, $this->user);
     }
 
     public function testMergeFailureRollsBackTargetAndSourceChanges(): void
     {
         $source = $this->source();
+        $this->source();
         $orders = $this->createStub(OrderServiceInterface::class);
         $orders->method('calculatePrices')->willReturn(new PriceCalculationResult(100, 'CNY', []));
         $orders->method('createOrder')->willReturnCallback(function (): never {
@@ -164,7 +224,7 @@ final class CounterOrderMergeTest extends KernelTestCase
             self::assertSame('Target creation failed.', $error->getMessage());
         }
         $this->em->clear();
-        self::assertCount(1, $this->em->getRepository(Order::class)->findAll());
+        self::assertCount(2, $this->em->getRepository(Order::class)->findAll());
         self::assertSame(Order::STATUS_CONFIRMED, $this->em->getRepository(Order::class)->findOneBy(['uuid' => $source->getUuid()])->getStatus());
     }
 
@@ -242,7 +302,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         $order->addItem((new OrderItem())->setSpecificationUuid(UUID::v4())->setQuantity(1)->setUnitPrice(100)->setPrice(100));
         $this->em->wrapInTransaction(function () use ($order): void {
             $this->em->persist($order);
-            $this->em->persist(new OrderStoreLifecycle($order->getUuid(), $this->context->storeUuid));
+            $this->em->persist((new OrderStoreLifecycle($order->getUuid(), $this->context->storeUuid))->markAccepted());
         });
         return $order;
     }

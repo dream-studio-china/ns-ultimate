@@ -10,6 +10,7 @@ use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderStoreLifecycle;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Printer\Entity\PrinterOrderRequest;
+use NsUltimate\Business\Counter\Entity\OrderMerge;
 
 /** Translates Trade lifecycle events and per-store print settings into durable print requests. */
 final class TradeOrderPrintAdapter
@@ -69,6 +70,8 @@ final class TradeOrderPrintAdapter
             return;
         }
         $productionTrigger = $this->requiresAcceptance($store) ? self::TRIGGER_ACCEPTED : self::TRIGGER_PAID;
+        // Metadata is client-writable; the persisted merge relation is authoritative.
+        $settlementOnly = $this->entityManager->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) > 0;
         $cases = [
             self::CASE_ORDER => self::SCENE_ORDER,
             self::CASE_PER_ITEM => self::SCENE_PER_ITEM,
@@ -77,6 +80,9 @@ final class TradeOrderPrintAdapter
             self::CASE_SETTLEMENT => self::SCENE_SETTLEMENT,
         ];
         foreach ($cases as $caseKey => $scene) {
+            if ($settlementOnly && $scene !== self::SCENE_SETTLEMENT) {
+                continue;
+            }
             $case = $printing[$caseKey] ?? null;
             if ($trigger !== ($scene === self::SCENE_SETTLEMENT ? self::TRIGGER_PAID : $productionTrigger)
                 || !is_array($case)

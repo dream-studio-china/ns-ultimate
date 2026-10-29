@@ -88,29 +88,22 @@ final class OrderCounterController extends RestController
             throw new \LogicException('Counter store context was not resolved.');
         }
 
-        $timezone = new \DateTimeZone($filter['storeTimezone']);
-        $startOfDay = new \DateTimeImmutable('today', $timezone);
-        $startOfTomorrow = $startOfDay->modify('+1 day');
-        $databaseTimezone = new \DateTimeZone(date_default_timezone_get());
-
         $orderQuery = $this->entityManager->createQueryBuilder()
             ->select('o.uuid')
             ->from(Order::class, 'o')
             ->where('o.uuid = oc.tradeOrderUuid')
-            ->andWhere('o.createdAt >= :startOfDay')
-            ->andWhere('o.createdAt < :startOfTomorrow')
             ->andWhere('o.status NOT IN (:closedStatuses)');
 
         return $this->entityManager->createQueryBuilder()
             ->select('oc')
             ->from(OrderCounter::class, 'oc')
+            ->join('oc.counterSession', 'session')
             ->where('oc.counter = :counter')
             ->andWhere('oc.storeUuid = :storeUuid')
+            ->andWhere('session.endedAt IS NULL')
             ->andWhere($this->entityManager->createQueryBuilder()->expr()->exists($orderQuery->getDQL()))
             ->setParameter('counter', $filter['counter'])
             ->setParameter('storeUuid', $filter['storeUuid'])
-            ->setParameter('startOfDay', $startOfDay->setTimezone($databaseTimezone))
-            ->setParameter('startOfTomorrow', $startOfTomorrow->setTimezone($databaseTimezone))
             ->setParameter('closedStatuses', [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED, Order::STATUS_REFUNDED])
             ->orderBy('oc.createdAt', 'ASC');
     }
