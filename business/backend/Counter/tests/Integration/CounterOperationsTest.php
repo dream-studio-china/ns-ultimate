@@ -56,7 +56,7 @@ final class CounterOperationsTest extends KernelTestCase
         $role = new Role('counter-session-test', 'Counter session test', Role::SCOPE_STORE);
         foreach ([
             'counter_session:read', 'counter_session:update', 'counter_session:end',
-            'counter_order:read', 'counter_order:create', 'counter_order:replace',
+            'counter_order:read', 'counter_order:create', 'counter_order:replace', 'counter_order:cancel',
         ] as $name) {
             [$resource, $action] = explode(':', $name);
             $permission = new Permission('store:'.$name, 'store', $resource, $action, $name);
@@ -329,6 +329,60 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(0, $this->em->getRepository(StaffOperation::class)->count([]));
     }
 
+    public function testEligibleOrderCancellationIsAuditedVersionedAndIdempotent(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $view = $this->view();
+        self::assertTrue($this->orderByUuid($uuid)['canCancel']);
+        $body = ['commandUuid' => UUID::v4(), 'version' => $view['version'], 'orderUuid' => $uuid, 'reason' => 'Guest left'];
+        $path = '/counters/'.$this->counter->getUuid().'/orders/cancel';
+        $result = $this->data($this->request('POST', $path, $body));
+        self::assertSame(['counterUuid' => $this->counter->getUuid(), 'sessionUuid' => $view['session']['uuid'], 'orderUuid' => $uuid, 'status' => 'cancelled'], $result);
+        self::assertSame($result, $this->data($this->request('POST', $path, $body)));
+        self::assertSame(409, $this->request('POST', $path, [...$body, 'reason' => 'Changed retry'])->getStatusCode());
+        self::assertSame(422, $this->request('POST', $path, [...$body, 'commandUuid' => UUID::v4(), 'version' => $this->view()['version'], 'reason' => ' '])->getStatusCode());
+        self::assertSame(422, $this->request('POST', $path, [...$body, 'commandUuid' => UUID::v4(), 'version' => $this->view()['version'], 'order' => $uuid])->getStatusCode());
+        self::assertSame(409, $this->request('POST', $path, [...$body, 'commandUuid' => UUID::v4(), 'version' => $this->view()['version'], 'orderUuid' => UUID::v4()])->getStatusCode());
+        $row = $this->orderByUuid($uuid);
+        self::assertSame('cancelled', $row['status']);
+        self::assertFalse($row['canCancel']);
+        self::assertTrue($this->view()['canEnd']);
+        $receipt = $this->em->getConnection()->fetchAssociative('SELECT action, actor_uuid, before_state, result FROM store_staff_operation WHERE command_uuid = ?', [$body['commandUuid']]);
+        $before = json_decode($receipt['before_state'], true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('counter_order.cancel.'.$this->counter->getUuid(), $receipt['action']);
+        self::assertSame($this->user->getUuid(), $receipt['actor_uuid']);
+        self::assertSame($uuid, $before['order']['uuid']);
+        self::assertSame('Guest left', $before['reason']);
+        self::assertSame($result, json_decode($receipt['result'], true, flags: JSON_THROW_ON_ERROR));
+        self::assertSame('cancelled', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $uuid])->getStatus());
+    }
+
+    public function testCancellationGrantIsIndependentFromOrderingAndModification(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $role = $this->em->getRepository(Role::class)->findOneBy(['code' => 'counter-session-test']);
+        foreach (['store:counter_order:create', 'store:counter_order:replace'] as $code) {
+            $role->removePermission($this->em->getRepository(Permission::class)->findOneBy(['code' => $code]));
+        }
+        $role->touch(); $this->em->flush();
+        $this->em->clear();
+        self::getContainer()->get('cache.app')->delete('authorization_effective_'.$this->user->getUuid());
+        $this->token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->em->getRepository(User::class)->findOneBy(['uuid' => $this->user->getUuid()]));
+        $path = '/counters/'.$this->counter->getUuid().'/orders/cancel';
+        $body = ['commandUuid' => UUID::v4(), 'version' => $this->view()['version'], 'orderUuid' => $uuid, 'reason' => 'Guest left'];
+        self::assertSame(200, $this->request('POST', $path, $body)->getStatusCode());
+        $role = $this->em->getRepository(Role::class)->findOneBy(['code' => 'counter-session-test']);
+        $role->removePermission($this->em->getRepository(Permission::class)->findOneBy(['code' => 'store:counter_order:cancel']));
+        foreach (['store:counter_order:create', 'store:counter_order:replace'] as $code) {
+            $role->addPermission($this->em->getRepository(Permission::class)->findOneBy(['code' => $code]));
+        }
+        $role->touch(); $this->em->flush();
+        $this->em->clear();
+        self::getContainer()->get('cache.app')->delete('authorization_effective_'.$this->user->getUuid());
+        $this->token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->em->getRepository(User::class)->findOneBy(['uuid' => $this->user->getUuid()]));
+        self::assertSame(403, $this->request('POST', $path, [...$body, 'commandUuid' => UUID::v4()])->getStatusCode());
+    }
+
     public function testCustomerOrdersCanBeReplacedWithOriginalCustomerAndAuditedLinks(): void
     {
         $customer = (new User())->setUsername('counter-customer')->setEmail('customer@example.test');
@@ -416,6 +470,7 @@ final class CounterOperationsTest extends KernelTestCase
             $old = $this->em->getConnection()->fetchOne("SELECT $column FROM $table WHERE $identity = ?", [$uuid]);
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$value, $uuid]); $this->em->clear();
             self::assertFalse($this->orderByUuid($uuid)['canReplace']);
+            self::assertFalse($this->orderByUuid($uuid)['canCancel']);
             self::assertSame(409, $this->request('POST', $path, [...$this->quoteInput(), 'replaceOrderUuid' => $uuid])->getStatusCode());
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$old, $uuid]); $this->em->clear();
         }
@@ -423,6 +478,7 @@ final class CounterOperationsTest extends KernelTestCase
         $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $uuid]);
         $order->setMetadata(['_store' => ['uuid' => UUID::v4()]]); $this->em->flush();
         self::assertFalse($this->orderByUuid($uuid)['canReplace']);
+        self::assertFalse($this->orderByUuid($uuid)['canCancel']);
         self::assertSame(0, $this->em->getRepository(StaffOperation::class)->count([]));
     }
 
@@ -473,6 +529,7 @@ final class CounterOperationsTest extends KernelTestCase
         $binding = (new \NsUltimate\Business\Counter\Entity\OrderCounter())->setCounter($otherCounter)->setStoreUuid($store->getUuid())->setTradeOrderUuid($uuid);
         $this->em->wrapInTransaction(fn() => $this->em->persist($binding));
         self::assertFalse($this->orderByUuid($uuid)['canReplace']);
+        self::assertFalse($this->orderByUuid($uuid)['canCancel']);
         self::assertSame(409, $this->request('POST', $path, [...$this->quoteInput(), 'replaceOrderUuid' => $uuid])->getStatusCode());
     }
 
@@ -488,18 +545,25 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(Role::SCOPE_STORE, $manager->getScopeType());
         self::assertTrue($manager->hasPermission('store:counter:update'));
         // Counter configuration must not silently grant session or order authority.
-        foreach (['store:counter_session:read', 'store:counter_session:update', 'store:counter_session:end', 'store:counter_order:read', 'store:counter_order:create', 'store:counter_order:replace'] as $code) {
+        foreach (['store:counter_session:read', 'store:counter_session:update', 'store:counter_session:end', 'store:counter_order:read', 'store:counter_order:create', 'store:counter_order:replace', 'store:counter_order:cancel'] as $code) {
             self::assertFalse($manager->hasPermission($code), $code);
         }
         $operator = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_counter_session_operator']);
         self::assertTrue($operator->hasPermission('store:counter_session:end'));
         self::assertTrue($operator->hasPermission('store:counter_order:create'));
         self::assertFalse($operator->hasPermission('store:counter_order:replace'));
+        self::assertFalse($operator->hasPermission('store:counter_order:cancel'));
         self::assertFalse($operator->hasPermission('store:counter:update'));
         $editor = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_counter_order_editor']);
         self::assertTrue($editor->hasPermission('store:counter_order:replace'));
         self::assertFalse($editor->hasPermission('store:counter_order:create'));
+        self::assertFalse($editor->hasPermission('store:counter_order:cancel'));
         self::assertFalse($editor->hasPermission('store:counter_session:end'));
+        $canceller = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_counter_order_canceller']);
+        self::assertTrue($canceller->hasPermission('store:counter_order:cancel'));
+        self::assertTrue($canceller->hasPermission('store:counter_order:read'));
+        self::assertFalse($canceller->hasPermission('store:counter_order:create'));
+        self::assertFalse($canceller->hasPermission('store:counter_order:replace'));
     }
 
     private function replacementInput(string $uuid): array

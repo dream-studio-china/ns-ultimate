@@ -33,6 +33,7 @@ final class SeedCounterAuthorizationCommand extends Command
         ['store:counter_order:read', 'counter_order', 'read', 'Read orders associated with counter sessions'],
         ['store:counter_order:create', 'counter_order', 'create', 'Create orders in an active counter session'],
         ['store:counter_order:replace', 'counter_order', 'replace', 'Replace eligible counter session orders'],
+        ['store:counter_order:cancel', 'counter_order', 'cancel', 'Cancel eligible unprocessed counter session orders'],
     ];
 
     private const ROLES = [
@@ -47,6 +48,9 @@ final class SeedCounterAuthorizationCommand extends Command
         ],
         'store_counter_order_editor' => [
             'store:counter_session:read', 'store:counter_order:read', 'store:counter_order:replace',
+        ],
+        'store_counter_order_canceller' => [
+            'store:counter_session:read', 'store:counter_order:read', 'store:counter_order:cancel',
         ],
     ];
 
