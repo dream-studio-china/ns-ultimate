@@ -2,7 +2,7 @@
 
 ## Status and ownership
 
-Implemented by `business/backend/Store/src/Controller/Staff/OperationsController.php` and consumed by `apps/store-console/`. Existing Core employee CRUD routes remain available and unchanged. No employee payment, checkout, order creation, item-editing, refund, financial report or print-command contract is enabled by this work.
+Implemented by `business/backend/Store/src/Controller/Staff/OperationsController.php` and consumed by `apps/store-console/`. Existing Core employee CRUD routes remain available and unchanged. Employee counter sessions and order entry have a separate [counter operations contract](store-console-counter-operations.md). No employee payment, checkout, refund, financial report or print-command contract is enabled.
 
 Business code owns operational validation, DTOs, availability policy, command receipts and permissions. The app owns presentation and its authenticated adapter. Integration discovers the module normally; there is no Core controller replacement or generic CRUD allowlist expansion.
 
@@ -21,7 +21,19 @@ All routes below have the prefix `/api/v1/store/{storeUuid}/operations`. They re
 
 Product update is the broader catalog-edit grant and includes availability fields; availability-only staff can use the dedicated batch endpoint without receiving general product editing. Receipt replay still requires the route's current permission.
 
-`app:store:seed-staff-authorization` idempotently registers store-scoped roles `store_catalog_operator`, `store_availability_operator`, `store_order_operator` and `store_operation_auditor`. It does not create users, memberships or assignments and does not modify the existing catalog/counter roles. Assign roles through the existing authorization management workflow. Audit access is intentionally separate. Do not replace scoped grants with `ROLE_ADMIN`.
+`app:store:seed-staff-authorization` idempotently registers store-scoped Store capability roles `store_catalog_operator`, `store_availability_operator`, `store_order_reader`, `store_order_operator` and `store_operation_auditor`. Counter configuration, counter-session and counter-order capability roles are registered by `app:counter:seed-authorization`; see the [counter operations contract](store-console-counter-operations.md).
+
+| Capability role | Default grants |
+| --- | --- |
+| `store_availability_operator` | `store:product:read`, `store:product:availability` |
+| `store_order_reader` | `store:order:read` |
+| `store_order_operator` | `store:order:read`, `accept`, `reject`, `fulfill`, `verify` |
+| `store_catalog_operator` | product/category/specification CRUD, `catalog_image:create`, `product:availability` |
+| `store_operation_auditor` | `store:operation:read` |
+
+No backend role encodes a frontend job title. The store console's "Kitchen" and "Cashier" views are combinations of these capability grants chosen per employee. None of these presets grants counter configuration writes, payment, refunds or financial reporting; order fulfillment is limited to `store_order_operator` and audit reads to `store_operation_auditor`. Counter-session and counter-order entry capabilities come from the Counter seed described in the counter operations contract. The seed is additive: extra permissions on an existing role are not removed. An existing preset code with a non-store scope fails validation before seed writes. It does not create users, memberships or assignments and does not modify the existing catalog/counter roles. Assign roles through the existing authorization management workflow. Audit access is intentionally separate. Do not replace scoped grants with `ROLE_ADMIN`.
+
+The live UI derives Kitchen visibility from product or category read grants, Cashier visibility from counter-session or counter-configuration read grants, and Orders visibility from order read grants. Individual controls retain their own per-action checks. Counter-session readers default to Cashier; otherwise the first accessible module is used, falling back to Account with a no-business-access notice. `?view=kitchen|cashier` only selects an accessible preferred page. Store reconnection refreshes the permission snapshot and reevaluates that preference; it cannot preserve an unauthorized page from a prior store. These labels do not change API authorization or enable financial commands. The customer payment build remains isolated and demo-only; no employee payment role or live payment link is introduced.
 
 ## Explicit reads and pagination
 
@@ -81,12 +93,10 @@ Apply Store migration `Version20261031090000` before enabling the new app/backen
 
 Backend integration tests cover scoped reads, literal full-store search, DTO redaction, versions, atomic batches, replay conflicts, order workflows, image ownership, seed repeatability and the SQLite migration. Browser tests use intercepted APIs, including denial/conflict, multipart images, editor fields and operational commands. Validate MySQL lock ordering/load, upload storage, workers and real employee roles separately before production.
 
-## Proposed employee transaction contract — not implemented
+## Proposed settlement and payment contract — not implemented
 
-The next phase must provide store-scoped employee commands rather than reusing customer-owned `/app/orders` or administrator CRUD. Required contracts are:
+Counter-session reads and quote/create/add/replace commands are implemented under the separate [counter operations contract](store-console-counter-operations.md). Standalone cancellations and the remaining financial phase must use store-scoped employee commands rather than reusing customer-owned `/app/orders` or administrator CRUD. Required contracts are:
 
-- A table-session view identifying the current session and explicitly distinguishing order, fulfillment and payment states.
-- Quote/create/add/change/cancel commands using server prices, currency/minor units, availability and inventory rules; explicit actor vs customer identity; version and durable idempotency keys.
 - Settlement previews with canonical discounts/fees and approval limits, a frozen payable order version and safe concurrent terminal access.
 - Restricted expiring customer payment sessions, durable payment-attempt identity and trusted callback/query recovery. Unknown outcomes must block duplicate collection. Staff credentials must never enter customer URLs or projections.
 - Separate store-scoped grants for order creation/change/cancellation, discounts, collection, refunds, reporting and reprints, with actor/reason auditing and appropriate limits/approvals.
