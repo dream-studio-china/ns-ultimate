@@ -13,7 +13,7 @@ async function generateLink(page: Page) {
   return (await page.getByRole('link', { name: '打开演示付款页' }).getAttribute('href'))!
 }
 
-test.beforeEach(async ({ page }) => { await page.goto('/') })
+test.beforeEach(async ({ page }) => { await page.goto('/?mode=demo') })
 
 test('mobile workspace and tabs render without overflow or runtime errors', async ({ page }) => {
   const errors: string[] = []
@@ -47,7 +47,11 @@ test('product filtering, sold-out toggling and product/variant editing', async (
   await expect(page.locator('.product-row')).toHaveCount(1)
 })
 
-test('category creation, sorting and table creation are usable', async ({ page }) => {
+test('category creation and sorting work while existing demo tables remain editable', async ({ page }) => {
+  const tableWrites: string[] = []
+  page.on('request', (request) => {
+    if (/\/counters(?:\/|\?|$)/.test(new URL(request.url()).pathname) && ['POST', 'DELETE'].includes(request.method())) tableWrites.push(request.method())
+  })
   await page.getByRole('link', { name: '商品', exact: true }).click()
   await page.getByRole('button', { name: '分类管理' }).click()
   await page.getByPlaceholder('分类名称').fill('Demo category')
@@ -56,10 +60,13 @@ test('category creation, sorting and table creation are usable', async ({ page }
   await page.getByRole('button', { name: '上移 Demo category' }).click()
   await page.getByRole('dialog').getByRole('button', { name: '关闭' }).click()
   await page.getByRole('link', { name: '桌台', exact: true }).click()
-  await page.getByRole('button', { name: '新增桌台', exact: true }).click()
-  await page.getByPlaceholder('A09').fill('B01')
-  await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'B01 空闲', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '新增桌台', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /删除桌台|^删除$/ })).toHaveCount(0)
+  await page.getByRole('button', { name: 'A01 用餐中', exact: true }).click()
+  await expect(page.getByRole('button', { name: /删除桌台|^删除$/ })).toHaveCount(0)
+  await page.getByRole('button', { name: '增加数量' }).first().click()
+  await page.getByLabel('整单优惠', { exact: true }).fill('2')
+  expect(tableWrites).toEqual([])
 })
 
 test('table editing and cross-entry demo payment settle once and populate reports', async ({ page, context }) => {
@@ -130,6 +137,28 @@ test('language and local color preferences work across navigation and reload', a
   await expect(page.getByRole('heading', { name: 'Your workspace' })).toBeVisible()
   await page.getByRole('link', { name: 'Products', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Fresh Beef Brisket', exact: true })).toBeVisible()
+})
+
+test('demo uses the same seven-color surfaces and themed portal forms without requiring storage', async ({ page }) => {
+  const colors: string[][] = []
+  for (const name of ['红', '橙', '黄', '绿', '靛', '紫', '蓝']) {
+    await page.getByRole('link', { name: '我的', exact: true }).click()
+    await page.getByRole('group', { name: '配色方案' }).getByRole('button', { name, exact: true }).click()
+    const sample = await page.evaluate(() => ['.store-account', '.profile-avatar', '.mobile-app'].map((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor))
+    await page.getByRole('link', { name: '商品', exact: true }).click()
+    await page.getByRole('button', { name: '新增商品', exact: true }).click()
+    sample.push(...await page.evaluate(() => ['.mobile-sheet', '.sheet-footer', '.field input', '.sheet-footer .adm-button-primary'].map((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor)))
+    colors.push(sample)
+    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+  }
+  for (let index = 0; index < colors[0]!.length; index++) expect(new Set(colors.map((sample) => sample[index])).size).toBe(7)
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'blue')
+  await page.getByRole('link', { name: '我的', exact: true }).click()
+  await page.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('Blocked storage') } })
+  await page.getByRole('button', { name: '红', exact: true }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'red')
+  await expect(page.getByRole('alert')).toContainText('本机存储不可用')
 })
 
 test('payment entry handles missing sessions and unavailable storage', async ({ page }) => {

@@ -12,7 +12,11 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-#[AsCommand(name: 'app:counter:seed-authorization', description: 'Seed Counter permissions and the store counter manager role')]
+/**
+ * Registers counter configuration and counter-session capabilities as separate store-scoped grants.
+ * Existing counter managers keep configuration rights only; session and order grants are opt-in.
+ */
+#[AsCommand(name: 'app:counter:seed-authorization', description: 'Register counter configuration, session and counter-order capability roles')]
 final class SeedCounterAuthorizationCommand extends Command
 {
     private const PERMISSIONS = [
@@ -23,6 +27,31 @@ final class SeedCounterAuthorizationCommand extends Command
         ['store:order_counter:read', 'order_counter', 'read', 'Read store order counter bindings'],
         ['store:order_counter:create', 'order_counter', 'create', 'Create store order counter bindings'],
         ['store:order_counter:delete', 'order_counter', 'delete', 'Delete store order counter bindings'],
+        ['store:counter_session:read', 'counter_session', 'read', 'Read store counter service sessions'],
+        ['store:counter_session:update', 'counter_session', 'update', 'Update counter session participants and notes'],
+        ['store:counter_session:end', 'counter_session', 'end', 'End closed counter service sessions'],
+        ['store:counter_order:read', 'counter_order', 'read', 'Read orders associated with counter sessions'],
+        ['store:counter_order:create', 'counter_order', 'create', 'Create orders in an active counter session'],
+        ['store:counter_order:replace', 'counter_order', 'replace', 'Replace eligible counter session orders'],
+        ['store:counter_order:cancel', 'counter_order', 'cancel', 'Cancel eligible unprocessed counter session orders'],
+    ];
+
+    private const ROLES = [
+        // Existing configuration role keeps its original grants.
+        'store_counter_manager' => [
+            'store:counter:read', 'store:counter:create', 'store:counter:update', 'store:counter:delete',
+            'store:order_counter:read', 'store:order_counter:create', 'store:order_counter:delete',
+        ],
+        'store_counter_session_operator' => [
+            'store:counter_session:read', 'store:counter_session:update', 'store:counter_session:end',
+            'store:counter_order:read', 'store:counter_order:create',
+        ],
+        'store_counter_order_editor' => [
+            'store:counter_session:read', 'store:counter_order:read', 'store:counter_order:replace',
+        ],
+        'store_counter_order_canceller' => [
+            'store:counter_session:read', 'store:counter_order:read', 'store:counter_order:cancel',
+        ],
     ];
 
     public function __construct(private readonly EntityManagerInterface $entityManager)
@@ -32,6 +61,13 @@ final class SeedCounterAuthorizationCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        foreach (self::ROLES as $code => $grants) {
+            $role = $this->entityManager->getRepository(Role::class)->findOneBy(['code' => $code]);
+            if ($role instanceof Role && $role->getScopeType() !== Role::SCOPE_STORE) {
+                $output->writeln('<error>Role '.$code.' exists with an incompatible scope.</error>');
+                return Command::FAILURE;
+            }
+        }
         $permissionRepository = $this->entityManager->getRepository(Permission::class);
         $permissions = [];
         foreach (self::PERMISSIONS as [$code, $resource, $action, $name]) {
@@ -41,27 +77,26 @@ final class SeedCounterAuthorizationCommand extends Command
                 $permission->setIsSystem(true);
                 $this->entityManager->persist($permission);
             }
-            $permissions[] = $permission;
+            $permissions[$code] = $permission;
         }
 
         $roleRepository = $this->entityManager->getRepository(Role::class);
-        $role = $roleRepository->findOneBy(['code' => 'store_counter_manager']);
-        if (!$role instanceof Role) {
-            $role = new Role('store_counter_manager', 'Store Counter Manager', Role::SCOPE_STORE);
-            $role->setIsSystem(true);
-            $this->entityManager->persist($role);
-        } elseif ($role->getScopeType() !== Role::SCOPE_STORE) {
-            $output->writeln('<error>Role store_counter_manager exists with an incompatible scope.</error>');
-            return Command::FAILURE;
+        foreach (self::ROLES as $code => $grants) {
+            $role = $roleRepository->findOneBy(['code' => $code]);
+            if (!$role instanceof Role) {
+                $role = new Role($code, ucwords(str_replace('_', ' ', $code)), Role::SCOPE_STORE);
+                $role->setIsSystem(true);
+                $this->entityManager->persist($role);
+            }
+            foreach ($grants as $grant) {
+                if (!isset($permissions[$grant])) throw new \LogicException('A required counter permission was not registered.');
+                $role->addPermission($permissions[$grant]);
+            }
+            $role->touch();
         }
-
-        foreach ($permissions as $permission) {
-            $role->addPermission($permission);
-        }
-        $role->touch();
         $this->entityManager->flush();
 
-        $output->writeln('<info>Counter permissions and store_counter_manager role are ready.</info>');
+        $output->writeln('<info>Counter configuration, session and counter-order roles are ready. No user assignments were created.</info>');
         return Command::SUCCESS;
     }
 }

@@ -1,3 +1,8 @@
 Recommendation level: おすすめレベル
 Is soldout: 売り切れ
 Settings: 設定
+Command uuid: 操作リクエスト UUID
+Before state: 変更前の状態
+Fingerprint: リクエスト指紋
+Result: 結果
+Media: メディア

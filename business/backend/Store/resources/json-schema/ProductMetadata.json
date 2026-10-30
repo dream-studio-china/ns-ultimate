@@ -5,7 +5,7 @@
     "subtitle": { "type": ["string", "null"] },
     "cover": {
       "type": ["string", "null"],
-      "pattern": "^(?:$|https?://|/uploads/images/)"
+      "pattern": "^(?:$|https?://|/uploads/(?!.*(?:\\.\\.|[?#]))[A-Za-z0-9_./-]+$)"
     }
   },
   "additionalProperties": true

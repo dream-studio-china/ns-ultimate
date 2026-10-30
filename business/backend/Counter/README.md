@@ -1,6 +1,6 @@
 # Counter business module
 
-Counter owns store-scoped counter records, dining sessions, and bindings between counters and Trade orders. Trade-specific orchestration stays in this module's adapters and merge service; Trade and the core subtree do not depend on this module.
+Counter owns store-scoped counter records, service sessions, and bindings between counters and Trade orders. Trade-specific orchestration stays in this module's adapters and merge service; Trade and the core subtree do not depend on this module.
 
 ## Manage counters
 
@@ -29,6 +29,14 @@ The `/api/v1` routes are the canonical API used by Admin. The earlier unprefixed
 The business Admin menu includes Counter management and immutable OrderCounter bindings. Collection files at `business/admin/config/collections/counter/*.js` export named entity maps. The composed Vite server watches the business Admin directory, including newly added glob matches outside the core root.
 
 ## Bind counters when creating an order
+
+### Employee counter sessions
+
+The store console uses the Counter-owned [counter operations contract](../../../docs/contracts/store-console-counter-operations.md), not customer-owned order APIs. Sessions open automatically through the existing binding path when the first customer order is bound; employees have no manual opening command. It supports participant counts and session notes, session inspection, anonymous server-priced staff orders, replacement or cancellation of eligible customer or employee orders, and ending fully closed sessions. Reusable catalog, pricing and order writes live in the Store module; Counter owns the session, binding and eligibility checks. Replacements retain the original customer for pricing and ownership, atomically cancel the old order and create the replacement, and track the reason and both order UUIDs through existing command receipts. Cancellation retains the order as cancelled with an audited reason. No new provenance entity is required. Paid, processed and inventory-gated orders are not editable or cancellable here. This does not enable employee checkout, collection or refunds.
+
+Apply `Version20261031100000` through the reviewed deployment workflow and register the session/order capability roles using `app:counter:seed-authorization`. `store_counter_manager` keeps configuration grants only; `store_counter_session_operator` and `store_counter_order_editor` are independent, opt-in capabilities. The seed does not assign users. Order-read visibility requires `store:counter_order:read`; without it, session reads omit order rows and amounts. See the contract for lock/worker/inventory limitations and release requirements.
+
+### Customer ordering
 
 Use the existing app order endpoint and include the counter UUID in order metadata:
 

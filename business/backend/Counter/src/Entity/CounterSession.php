@@ -34,6 +34,15 @@ class CounterSession
     #[ORM\Column(name: 'ended_at', type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $endedAt = null;
 
+    #[ORM\Column(name: 'participant_count', type: 'integer', nullable: true)]
+    private ?int $participantCount = null;
+
+    #[ORM\Column(name: 'notes', type: 'text', nullable: true)]
+    private ?string $notes = null;
+
+    #[ORM\Column(type: 'integer', options: ['default' => 0])]
+    private int $revision = 0;
+
     public function __construct(Counter $counter)
     {
         $this->uuid = UUID::v4();
@@ -47,9 +56,23 @@ class CounterSession
     public function getCounter(): Counter { return $this->counter; }
     public function getStartedAt(): \DateTimeImmutable { return $this->startedAt; }
     public function getEndedAt(): ?\DateTimeImmutable { return $this->endedAt; }
+    public function getParticipantCount(): ?int { return $this->participantCount; }
+    public function getNotes(): ?string { return $this->notes; }
+    public function getRevision(): int { return $this->revision; }
+    public function updateSession(int $participantCount, string $notes): void
+    {
+        if ($this->endedAt !== null) throw new \LogicException('An ended counter session cannot be edited.');
+        if ($participantCount < 1 || $participantCount > 100 || mb_strlen($notes) > 1000) throw new \InvalidArgumentException('Invalid counter session participants.');
+        $this->participantCount = $participantCount;
+        $notes = trim($notes);
+        $this->notes = $notes === '' ? null : $notes;
+        $this->changed();
+    }
+    public function changed(): void { ++$this->revision; }
     public function end(): void
     {
         $this->endedAt ??= new \DateTimeImmutable();
         $this->activeCounterUuid = null;
+        $this->changed();
     }
 }

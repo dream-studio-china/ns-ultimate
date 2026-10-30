@@ -38,3 +38,7 @@
 "Ended at": "終了日時"
 "Source order uuid": "元注文 UUID"
 "Target order uuid": "統合先注文 UUID"
+"Participant count": "人数"
+"Notes": "利用メモ"
+"Revision": "改訂番号"
+"Session": "テーブル利用"
