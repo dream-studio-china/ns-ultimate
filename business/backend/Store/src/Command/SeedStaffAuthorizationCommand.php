@@ -21,6 +21,7 @@ final class SeedStaffAuthorizationCommand extends Command
     {
         $roles = [
             'store_availability_operator' => ['store:product:read', 'store:product:availability'],
+            'store_order_reader' => ['store:order:read'],
             'store_order_operator' => ['store:order:read', 'store:order:accept', 'store:order:reject', 'store:order:fulfill', 'store:order:verify'],
             'store_catalog_operator' => ['store:catalog_image:create', 'store:product:availability'],
             'store_operation_auditor' => ['store:operation:read'],
@@ -52,7 +53,10 @@ final class SeedStaffAuthorizationCommand extends Command
                 $role = (new Role($code, ucwords(str_replace('_', ' ', $code)), Role::SCOPE_STORE))->setIsSystem(true);
                 $this->em->persist($role);
             }
-            foreach ($codes as $permission) $role->addPermission($permissions[$permission]);
+            foreach ($codes as $permission) {
+                if (!isset($permissions[$permission])) throw new \LogicException('A required staff permission was not registered.');
+                $role->addPermission($permissions[$permission]);
+            }
             $role->touch();
         }
         $this->em->flush();

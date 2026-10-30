@@ -192,10 +192,71 @@ final class StaffOperationsTest extends KernelTestCase
         self::assertSame(0, $tester->execute([]));
         self::assertSame($count, $this->em->getRepository(Permission::class)->count([]));
         self::assertSame(1, $this->em->getRepository(Assignment::class)->count([]));
+        self::assertSame(1, $this->em->getRepository(Membership::class)->count([]));
+        self::assertSame(1, $this->em->getRepository(User::class)->count([]));
         $role = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_order_operator']);
         self::assertSame(Role::SCOPE_STORE, $role->getScopeType());
         self::assertTrue($role->hasPermission('store:order:reject'));
         self::assertFalse($role->hasPermission('store:order:refund'));
+        $reader = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_order_reader']);
+        self::assertInstanceOf(Role::class, $reader);
+        self::assertSame(Role::SCOPE_STORE, $reader->getScopeType());
+        self::assertTrue($reader->hasPermission('store:order:read'));
+        self::assertFalse($reader->hasPermission('store:order:accept'));
+        self::assertFalse($reader->hasPermission('store:order:fulfill'));
+        $availability = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_availability_operator']);
+        self::assertInstanceOf(Role::class, $availability);
+        self::assertTrue($availability->hasPermission('store:product:read'));
+        self::assertTrue($availability->hasPermission('store:product:availability'));
+        self::assertFalse($availability->hasPermission('store:product:update'));
+        self::assertFalse($availability->hasPermission('store:product:create'));
+        // Job titles belong to the frontend; the backend only registers capability roles.
+        foreach (['store_kitchen', 'store_cashier', 'store_dining_operator', 'store_dining_editor'] as $code) {
+            self::assertNull($this->em->getRepository(Role::class)->findOneBy(['code' => $code]));
+        }
+    }
+
+    public function testCapabilityRolesEnforceStoreBoundariesWithoutCrossModuleWrites(): void
+    {
+        $tester = new CommandTester(self::getContainer()->get(\NsUltimate\Business\Store\Command\SeedStaffAuthorizationCommand::class));
+        self::assertSame(0, $tester->execute([]));
+        $this->em->persist(new Membership($this->other, $this->user->getUuid(), Membership::ROLE_MANAGER));
+        $this->em->flush();
+        foreach (['store_availability_operator', 'store_order_reader'] as $code) {
+            $this->em->getConnection()->executeStatement('DELETE FROM authorization_assignment');
+            $role = $this->em->getRepository(Role::class)->findOneBy(['code' => $code]);
+            self::assertInstanceOf(Role::class, $role);
+            $this->em->persist(new Assignment($role, $this->user->getUuid(), Assignment::SCOPE_STORE, $this->store->getUuid()));
+            $this->em->flush();
+            self::getContainer()->get('cache.app')->delete('authorization_effective_'.$this->user->getUuid());
+            $availability = $code === 'store_availability_operator';
+            self::assertSame($availability ? 200 : 403, $this->request('GET', '/products')->getStatusCode());
+            self::assertSame($availability ? 403 : 200, $this->request('GET', '/orders')->getStatusCode());
+            self::assertSame(403, $this->request('GET', '/products', null, $this->other->getUuid())->getStatusCode());
+            self::assertSame(403, $this->request('GET', '/orders', null, $this->other->getUuid())->getStatusCode());
+            self::assertSame(403, $this->request('POST', '/products', ['commandUuid' => UUID::v4(), 'name' => 'Forbidden'])->getStatusCode());
+            self::assertSame(403, $this->request('PUT', '/products/'.$this->product->getUuid(), ['commandUuid' => UUID::v4(), 'name' => 'Forbidden'])->getStatusCode());
+            foreach (['accept', 'reject', 'fulfill', 'verify'] as $action) {
+                self::assertSame(403, $this->request('POST', '/orders/'.UUID::v4().'/'.$action, ['commandUuid' => UUID::v4()])->getStatusCode());
+            }
+            $counter = self::$kernel->handle(Request::create('/api/v1/store/'.$this->store->getUuid().'/counter-operations/counters', 'GET', [], [], [], ['HTTP_AUTHORIZATION' => 'Bearer '.$this->token]));
+            self::assertSame(403, $counter->getStatusCode());
+            if ($availability) {
+                $product = $this->products()[0];
+                self::assertSame(200, $this->request('POST', '/products/availability', ['commandUuid' => UUID::v4(), 'items' => [['uuid' => $product['uuid'], 'version' => $product['version']]], 'isSoldout' => true])->getStatusCode());
+            }
+        }
+    }
+
+    public function testStaffSeedScopeConflictFailsWithoutCreatingOtherSeedData(): void
+    {
+        $this->em->persist(new Role('store_order_reader', 'Conflicting global role', Role::SCOPE_GLOBAL));
+        $this->em->flush();
+        $count = $this->em->getRepository(Permission::class)->count([]);
+        $tester = new CommandTester(self::getContainer()->get(\NsUltimate\Business\Store\Command\SeedStaffAuthorizationCommand::class));
+        self::assertSame(1, $tester->execute([]));
+        self::assertSame($count, $this->em->getRepository(Permission::class)->count([]));
+        self::assertNull($this->em->getRepository(Role::class)->findOneBy(['code' => 'store_availability_operator']));
     }
 
     public function testCreationAndHistoryDoNotDuplicateOrExposeOtherStores(): void

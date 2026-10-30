@@ -231,6 +231,7 @@ final class OperationsController extends RestController
                     'reject' => $this->orders->reject($order, 'staff_rejected', trim($data['reason'])),
                     'fulfill' => $this->orders->fulfill($order),
                     'verify' => $this->orders->verify($order, $this->actor()),
+                    default => throw new HttpException(409, 'invalid_transition'),
                 };
                 return ['before' => $before, 'result' => $this->order($order, $store)];
             });
