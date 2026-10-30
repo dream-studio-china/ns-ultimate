@@ -95,7 +95,7 @@ Backend integration tests cover scoped reads, literal full-store search, DTO red
 
 ## Proposed settlement and payment contract — not implemented
 
-Counter-session reads and quote/create/add/replace commands are implemented under the separate [counter operations contract](store-console-counter-operations.md). Standalone cancellations and the remaining financial phase must use store-scoped employee commands rather than reusing customer-owned `/app/orders` or administrator CRUD. Required contracts are:
+Counter-session reads, quote/create/add/replace and eligible order cancellation are implemented under the separate [counter operations contract](store-console-counter-operations.md). The remaining financial phase must use store-scoped employee commands rather than reusing customer-owned `/app/orders` or administrator CRUD. Required contracts are:
 
 - Settlement previews with canonical discounts/fees and approval limits, a frozen payable order version and safe concurrent terminal access.
 - Restricted expiring customer payment sessions, durable payment-attempt identity and trusted callback/query recovery. Unknown outcomes must block duplicate collection. Staff credentials must never enter customer URLs or projections.
