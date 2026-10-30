@@ -8,7 +8,7 @@
 - `core/crud-skeleton/` — Symfony 后端，以 Git subtree 方式跟踪 `immane/crud-skeleton`。
 - `integration/` — 项目自有的应用组合层及 core 与业务模块之间的适配器。
 - `business/` — 所有项目特定的前后端业务功能。
-- `apps/` — 应用包；`admin-agent/` 包含通用助手前后端，通过 integration 显式组合。
+- `apps/` — 独立应用包；`admin-agent/` 通过 integration 组合，并纳入 Docker 与 CI；`store-console/` 和 `cashier/` 独立构建和测试。
 - `docs/` — 架构、契约、运维流程和工作记录。
 - `infra/` — 项目自有部署资源（Docker Compose、PHP-FPM/Nginx、MySQL/Redis 拓扑）。
 
@@ -34,7 +34,7 @@ make dev
 - [Docker Compose/Nginx foundation](infra/docker/README.md) — 项目自有容器构建与服务拓扑。
 - [Docker Compose/Nginx 基础设施（简体中文）](infra/docker/README.zh-cn.md)
 - [本地开发与调试](docs/operations/development.md) — 环境文件优先级、调试和验证参考。
-- [CI 工作流](.github/workflows/ci.yaml) — 工作流/组合测试、后端集成测试、PHPStan 和组合后的管理端构建；有意不运行上游 core 测试套件。
+- [CI 工作流](.github/workflows/ci.yaml) — 项目工作流、助手、管理端组合、后端集成、PHPStan、组合后的管理端构建，以及独立的 store-console／cashier UI 检查；有意不运行上游 core 测试套件。
 
 ## 架构
 
@@ -59,7 +59,7 @@ flowchart LR
         ID["Docker Compose、PHP-FPM 和 Nginx"]
     end
 
-    Apps["apps/ — 应用包（admin-agent）"]
+    Apps["apps/ — 应用包（admin-agent、store-console、cashier）"]
     Browser["浏览器"]
 
     BA --> IA --> CA
@@ -70,11 +70,19 @@ flowchart LR
     CB --> DB[("数据库")]
 ```
 
-业务模块拥有领域行为；集成层只负责接线。管理前端和 API 由不同的上游 core 构建，并组合为一个可部署应用。部署时，Nginx 在 `/admin/` 提供组合后的管理端静态构建，并将后端请求转发至 integration 前端控制器。`apps/admin-agent/` 已显式接入主应用组合、Docker 上下文和测试；其他应用不会被自动发现或部署。详见[架构指南](docs/design/architecture.md)和[系统契约](docs/contracts/README.md)。
+业务模块拥有领域行为；集成层只负责接线。管理前端和 API 由不同的上游 core 构建，并组合为一个可部署应用。部署时，Nginx 在 `/admin/` 提供组合后的管理端静态构建，并将后端请求转发至 integration 前端控制器。`apps/admin-agent/` 已显式接入主应用组合、Docker 上下文和测试。`apps/store-console/` 与 `apps/cashier/` 是独立构建，拥有各自的 UI 检查，不会嵌入组合后的管理端／API 部署；其他应用不会被自动发现或部署。详见[架构指南](docs/design/architecture.md)和[系统契约](docs/contracts/README.md)。
+
+## 门店营业操作
+
+Store 业务模块提供按门店授权的员工 API，覆盖商品可售性、订单履约和场次点单。`apps/store-console/` 是独立构建的移动员工工作台，支持真实登录、按权限显示的厨房／收银／订单视图，以及隔离的演示付款入口。
+
+员工可查看进行中的服务场次、修改服务人数和备注、追加订单，并在符合条件且未支付时修改或取消订单；取消必须填写原因并写入审计。顾客首次下单绑定桌台时会自动开启场次。桌台配置、场次管理、点单、改单和取消使用相互独立的门店权限；「厨房」「收银」只是前端的权限组合，不是后端岗位角色。结账、真实收款、退款、财务报表和打印仍未实现，订单金额不代表支付结果。
+
+通过 `app:store:seed-staff-authorization` 和 `app:counter:seed-authorization` 注册能力角色，再通过现有授权管理只分配所需权限。种子命令不会创建用户或分配角色。详见[经营操作契约](docs/contracts/store-console-operations.md)、[场次操作契约](docs/contracts/store-console-counter-operations.md)和[应用说明](apps/store-console/README.md)。
 
 ## Store 商品字段
 
-Store 商品管理表单提供独立字段 `sortOrder`、`recommendationLevel` 和 `isSoldout`，并提供 `settings` JSON 对象以保存 `kitchenPrinterEnable`、`startSaleTime` 和 `endSaleTime`。仅用于展示的 `subtitle` 与 `cover` URL 仍保存在 `metadata` 中。售卖时间按 `HH:mm` 格式存储和校验；当前并未实现售卖时段行为。system 元数据接口（`/system/entities/App/Store/Entity/Product`）会返回业务扩展字段及其后端翻译，同时对 Admin 保持 core Product 实体名称不变。集成和迁移详情见[后端实体扩展契约](docs/contracts/backend-entity-extension.md)。
+Store 商品管理表单提供独立字段 `sortOrder`、`recommendationLevel` 和 `isSoldout`，并提供 `settings` JSON 对象以保存 `kitchenPrinterEnable`、`startSaleTime` 和 `endSaleTime`。仅用于展示的 `subtitle` 与 `cover` URL 仍保存在 `metadata` 中。售卖时间按成对的 `HH:mm` 格式存储和校验，并由业务计价解析器在新报价和下单时执行，支持按门店时区跨午夜；售罄状态同样会阻止新报价。后厨标记仅参与匹配的打印规则，不会自行触发打印。system 元数据接口（`/system/entities/App/Store/Entity/Product`）会返回业务扩展字段及其后端翻译，同时对 Admin 保持 core Product 实体名称不变。集成和迁移详情见[后端实体扩展契约](docs/contracts/backend-entity-extension.md)。
 
 ## 项目自有代码与上游许可证
 
