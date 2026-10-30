@@ -8,7 +8,7 @@ const item = { specificationUuid: id, productName: 'Soup', specificationName: 'R
 
 describe('live counter session boundary', () => {
   it('keeps historical non-catalog lines readable without making them valid new cart lines', () => {
-    const order = { uuid: id, status: 'pending', operationalStatus: null, paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', canReplace: false, items: [{ ...item, specificationUuid: null, quantity: 150 }] }
+    const order = { uuid: id, status: 'pending', operationalStatus: null, paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', canReplace: false, canCancel: false, items: [{ ...item, specificationUuid: null, quantity: 150 }] }
     expect(sessionOrderSchema.safeParse(order).success).toBe(true)
     expect(orderQuoteSchema.safeParse({ items: order.items, totalAmount: 1590, currency: 'USD', quoteToken: version }).success).toBe(false)
     expect(orderQuoteSchema.safeParse({ items: [item], totalAmount: Number.MAX_SAFE_INTEGER + 1, currency: 'USD', quoteToken: version }).success).toBe(false)
@@ -58,6 +58,8 @@ describe('live counter session boundary', () => {
     expect(data.mock.calls[2]![3]).toEqual(replacement)
     await api.counterCommand(id, 'end', { version, commandUuid: id })
     expect(data.mock.calls[3]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/session/end`)
+    await api.counterCommand(id, 'cancel', { version, orderUuid: id, reason: 'Guest left', commandUuid: id })
+    expect(data.mock.calls[4]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/orders/cancel`)
     expect(() => api.counterCommand('../other', 'create', command)).toThrow()
   })
 })

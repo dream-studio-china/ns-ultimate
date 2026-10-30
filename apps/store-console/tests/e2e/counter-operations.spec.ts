@@ -8,11 +8,11 @@ const store = { uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'U
 const item = { specificationUuid: specId, productName: 'Soup', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }
 const stamp = '2026-10-31T10:00:00+00:00'
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; editOnly?: boolean; noReplace?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   let session: { uuid: string; participantCount: number; notes: string; startedAt: string; revision: number } | null = options.empty ? null : { uuid: sessionId, participantCount: 3, notes: 'Birthday', startedAt: stamp, revision }
-  let orders: { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; canReplace: boolean }[] = options.empty ? [] : [{ uuid: '10000000-0000-4000-8000-000000000009', status: options.customerOrder ? 'pending' : 'completed', operationalStatus: options.customerOrder ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: '', createdAt: stamp, items: [item], canReplace: Boolean(options.customerOrder) }]
+  let orders: { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; canReplace: boolean; canCancel: boolean }[] = options.empty ? [] : [{ uuid: '10000000-0000-4000-8000-000000000009', status: options.customerOrder ? 'pending' : 'completed', operationalStatus: options.customerOrder ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: '', createdAt: stamp, items: [item], canReplace: Boolean(options.customerOrder), canCancel: Boolean(options.customerOrder) }]
   const receipts = new Map<string, Record<string, unknown>>()
   const version = () => revision.toString(16).padStart(64, 'a')
   const view = () => {
@@ -41,7 +41,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     if (path.endsWith('/users/me')) return respond({ uuid: storeId, username: 'counter-staff', roles: ['ROLE_USER'] })
     if (path.endsWith('/authorization/me')) {
       const sessionActions = options.sessionOnly || options.readOnly ? ['read'] : ['read', 'update', 'end']
-      const orderActions = options.sessionOnly ? [] : options.readOnly ? ['read'] : options.editOnly ? ['read', 'replace'] : options.noReplace ? ['read', 'create'] : ['read', 'create', 'replace']
+      const orderActions = options.sessionOnly ? [] : options.readOnly ? ['read'] : options.editOnly ? ['read', 'replace'] : options.cancelOnly ? ['read', 'cancel'] : options.noReplace ? ['read', 'create'] : ['read', 'create', 'replace', 'cancel']
       const storeScopes = {
         ...Object.fromEntries(sessionActions.map((action) => [`store:counter_session:${action}`, [storeId]])),
         ...Object.fromEntries(orderActions.map((action) => [`store:counter_order:${action}`, [storeId]])),
@@ -65,16 +65,23 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       if (path.endsWith('/session/update')) session = { ...session!, participantCount: Number(body!.participantCount), notes: String(body!.notes), revision }
       if (path.endsWith('/session/end')) { session = null; orders = [] }
       const result: Record<string, unknown> = { counterUuid: counterId, sessionUuid: sessionId }
-      expect(path.endsWith('/cancel')).toBe(false)
+      if (path.endsWith('/orders/cancel')) {
+        expect(body!.reason).toBeTruthy()
+        const target = orders.find((order) => order.uuid === body!.orderUuid)!
+        expect(target.canCancel).toBe(true)
+        orders = orders.map((order) => order.uuid === body!.orderUuid ? { ...order, status: 'cancelled', operationalStatus: 'cancelled', canReplace: false, canCancel: false } : order)
+        result.orderUuid = body!.orderUuid
+        result.status = 'cancelled'
+      }
       if (path.endsWith('/orders/create') || path.endsWith('/orders/replace')) {
         const uuid = `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
         const quantity = (body!.items as { quantity: number }[])[0]!.quantity
         if (path.endsWith('/orders/replace')) {
           expect(body!.reason).toBeTruthy()
-          orders = orders.map((order) => order.uuid === body!.replaceOrderUuid ? { ...order, status: 'cancelled', operationalStatus: 'cancelled', canReplace: false } : order)
+          orders = orders.map((order) => order.uuid === body!.replaceOrderUuid ? { ...order, status: 'cancelled', operationalStatus: 'cancelled', canReplace: false, canCancel: false } : order)
           result.replacedOrderUuid = body!.replaceOrderUuid
         }
-        orders.push({ uuid, status: 'pending', operationalStatus: 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true })
+        orders.push({ uuid, status: 'pending', operationalStatus: 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
         result.orderUuid = uuid
       }
       if (session) session.revision = revision
@@ -182,11 +189,39 @@ test('ordering permission alone does not enable customer-order modification', as
   await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
 })
 
+test('an eligible order can be cancelled only with a reason and the result stays visible', async ({ page }) => {
+  const requests = await setup(page, { customerOrder: true })
+  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
+  await page.getByRole('button', { name: '取消订单', exact: true }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  expect(requests.filter((request) => request.path.endsWith('/orders/cancel'))).toHaveLength(0)
+  await page.getByLabel('取消原因', { exact: true }).fill('Guest left')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('.dining-round').first()).toContainText('已取消')
+  const write = requests.find((request) => request.path.endsWith('/orders/cancel'))!
+  expect(write.body).toMatchObject({ orderUuid: '10000000-0000-4000-8000-000000000009', reason: 'Guest left', commandUuid: expect.any(String), version: expect.any(String) })
+})
+
+test('cancellation and replacement use independent grants', async ({ page }) => {
+  await setup(page, { customerOrder: true, editOnly: true })
+  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
+  await expect(page.getByRole('button', { name: '修改批次', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '取消订单', exact: true })).toHaveCount(0)
+})
+
+test('cancel-only staff can cancel without ordering or replacement access', async ({ page }) => {
+  await setup(page, { customerOrder: true, cancelOnly: true })
+  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
+  await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '点单／加菜', exact: true })).toHaveCount(0)
+})
+
 test('read-only dining grants never expose commands or load the menu', async ({ page }) => {
   const requests = await setup(page, { readOnly: true })
   await page.getByRole('button', { name: '查看桌次', exact: true }).click()
   await expect(page.locator('.dining-round')).toHaveCount(1)
-  for (const name of ['开台', '点单／加菜', '修改桌次', '结束桌次', '修改批次', '取消批次']) {
+  for (const name of ['开台', '点单／加菜', '修改桌次', '结束桌次', '修改批次', '取消订单', '取消批次']) {
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
   expect(requests.some((request) => request.path.endsWith('/catalog') || request.method !== 'GET' && request.path.includes('/counter-operations/'))).toBe(false)

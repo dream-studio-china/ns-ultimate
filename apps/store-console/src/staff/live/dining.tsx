@@ -6,7 +6,7 @@ import { can, StoreApi, type StoreAccess, type CounterSessionView, type SessionO
 import { EditorPreview, EditorSheet, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, PageHeading, PageScope, SearchField, StatusPill, useCommand, usePage } from './ui'
 import './dining.css'
 
-const labels: Record<CounterCommand, MessageKey> = { update: 'updateDining', end: 'endDining', create: 'placeDining', replace: 'replaceDining' }
+const labels: Record<CounterCommand, MessageKey> = { update: 'updateDining', end: 'endDining', create: 'placeDining', replace: 'replaceDining', cancel: 'cancelOrder' }
 const tradeLabels: Record<string, MessageKey> = { draft: 'diningDraft', pending: 'diningPending', confirmed: 'diningConfirmed', paid: 'diningPaid', fulfilled: 'stateFulfilled', completed: 'diningCompleted', cancelled: 'stateCancelled', refunded: 'diningRefunded', merged: 'diningMerged' }
 const operationLabels: Record<string, MessageKey> = { pending_validation: 'statePendingValidation', awaiting_inventory: 'stateAwaitingInventory', accepted: 'stateAccepted', rejected: 'stateRejected', fulfillment_pending: 'stateFulfillmentPending', fulfilling: 'stateFulfilling', fulfilled: 'stateFulfilled', verified: 'stateVerified', cancelled: 'stateCancelled' }
 
@@ -61,10 +61,11 @@ function DiningDetail({ api, access, id, changed }: { api: StoreApi; access: Sto
         <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
         {order.notes && <p className="dining-notes">{order.notes}</p>}
         {order.canReplace && permitted(access, 'replace') && <Button disabled={!table.counter.enabled || table.paymentHold} onClick={() => setOperation({ table, order, command: 'replace' })}>{t('replaceDining')}</Button>}
+        {order.canCancel && permitted(access, 'cancel') && <Button onClick={() => setOperation({ table, order, command: 'cancel' })}>{t('cancelOrder')}</Button>}
       </article>)}
     </>}
     <Notice subtle>{t('diningScopeHint')}</Notice>
-  </section>)}<PageControls state={detail} detail />{operation && (operation.command === 'create' || operation.command === 'replace' ? <DiningEditor api={api} currency={operation.table.currency} {...operation} onClose={() => setOperation(null)} done={done} /> : <DiningOperation api={api} {...operation} onClose={() => setOperation(null)} done={done} />)}</>
+  </section>)}<PageControls state={detail} detail />{operation && (operation.command === 'create' || operation.command === 'replace' ? <DiningEditor api={api} currency={operation.table.currency} {...operation} onClose={() => setOperation(null)} done={done} /> : operation.command === 'cancel' ? <OrderCancel api={api} table={operation.table} order={operation.order!} onClose={() => setOperation(null)} done={done} /> : <DiningOperation api={api} {...operation} onClose={() => setOperation(null)} done={done} />)}</>
 }
 
 function DiningLines({ items, currency }: { items: SessionOrder['items']; currency: string }) {
@@ -81,6 +82,17 @@ function DiningOperation({ api, table, command, onClose, done }: { api: StoreApi
   return <EditorSheet title={t(labels[command])} description="diningCommandHint" preview={<EditorPreview icon={UsersRound} label="diningBoard" name={table.counter.name} />} onClose={onClose} onDone={done} submit={() => api.counterCommand(table.counter.uuid, command, { ...payload, commandUuid })}>
     {command === 'update' && <><label className="field">{t('people')}<input required type="number" min={1} max={100} step={1} value={participantCount} onChange={(event) => setParticipantCount(Number(event.target.value))} /></label><label className="field">{t('diningPartyNotes')}<textarea maxLength={1000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label></>}
     {command === 'end' && <Notice>{t('diningEndHint')}</Notice>}
+  </EditorSheet>
+}
+
+function OrderCancel({ api, table, order, onClose, done }: { api: StoreApi; table: CounterSessionView; order: SessionOrder; onClose: () => void; done: () => void }) {
+  const { t, locale } = useI18n()
+  const [reason, setReason] = useState('')
+  const payload = { version: table.version, orderUuid: order.uuid, reason: reason.trim() }
+  const commandUuid = useCommand(payload)
+  return <EditorSheet title={t('cancelOrder')} description="orderCancelHint" preview={<EditorPreview icon={ReceiptText} label="orderReference" name={`#${order.uuid.slice(0, 8).toUpperCase()}`} detail={new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)} />} onClose={onClose} onDone={done} submit={() => api.counterCommand(table.counter.uuid, 'cancel', { ...payload, commandUuid })}>
+    <Notice>{t('orderCancelHint')}</Notice>
+    <label className="field">{t('cancelReason')}<textarea required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
   </EditorSheet>
 }
 

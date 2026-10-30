@@ -34,7 +34,7 @@ export const orderableItemSchema = sessionOrderItemSchema.extend({ specification
 export const sessionOrderSchema = z.object({
   uuid, status: z.string(), operationalStatus: z.string().nullable(), paymentStatus: z.string().nullable(), hasInvoice: z.boolean(),
   currency, totalAmount: cents, notes: z.string().nullable(), createdAt: z.string(), items: z.array(sessionOrderItemSchema),
-  canReplace: z.boolean(),
+  canReplace: z.boolean(), canCancel: z.boolean(),
 })
 const counterSessionBase = z.object({
   counter: counterSchema.omit({ sort: true }),
@@ -58,7 +58,7 @@ export type CounterSessionView = z.infer<typeof counterSessionSchema>
 export type SessionOrder = z.infer<typeof sessionOrderSchema>
 export type OrderQuote = z.infer<typeof orderQuoteSchema>
 export interface OrderCart { version: string; items: { specificationUuid: string; quantity: number }[]; notes: string; replaceOrderUuid?: string }
-export type CounterCommand = 'update' | 'end' | 'create' | 'replace'
+export type CounterCommand = 'update' | 'end' | 'create' | 'replace' | 'cancel'
 export type LiveStore = z.infer<typeof storeSchema>
 export type LiveProduct = z.infer<typeof productSchema>
 export type LiveSpecification = z.infer<typeof specificationSchema>
