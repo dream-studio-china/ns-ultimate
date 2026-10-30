@@ -29,6 +29,36 @@ export const orderSchema = z.object({
   uuid, tradeOrderUuid: uuid, operationalStatus: z.string(), totalAmount: cents, currency,
   createdAt: z.string(), orderSnapshot: z.unknown().optional(), version, allowedActions: z.array(z.enum(orderActions)), verificationRequired: z.boolean(), rejectionReason: z.string().nullable(),
 })
+const sessionOrderItemSchema = z.object({ specificationUuid: uuid.nullable(), productName: z.string(), specificationName: z.string(), quantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), unitPrice: cents, amount: cents })
+export const orderableItemSchema = sessionOrderItemSchema.extend({ specificationUuid: uuid, quantity: z.number().int().min(1).max(99) })
+export const sessionOrderSchema = z.object({
+  uuid, status: z.string(), operationalStatus: z.string().nullable(), paymentStatus: z.string().nullable(), hasInvoice: z.boolean(),
+  currency, totalAmount: cents, notes: z.string().nullable(), createdAt: z.string(), items: z.array(sessionOrderItemSchema),
+  canReplace: z.boolean(),
+})
+const counterSessionBase = z.object({
+  counter: counterSchema.omit({ sort: true }),
+  session: z.object({ uuid, participantCount: z.number().int().min(1).max(100).nullable(), notes: z.string().nullable(), startedAt: z.string(), revision: z.number().int().nonnegative() }).nullable(),
+  currency, canEnd: z.boolean(), version,
+})
+export const counterSessionSchema = z.discriminatedUnion('ordersVisible', [
+  // Order readers receive complete rows and amounts; a missing field is a contract error, not zero data.
+  counterSessionBase.extend({
+    ordersVisible: z.literal(true),
+    orders: z.array(sessionOrderSchema).max(200),
+    openAmount: cents, orderedAmount: cents,
+    openOrderCount: z.number().int().nonnegative(), paymentHold: z.boolean(),
+  }),
+  // Session-only readers receive an explicit redaction, never inferred empty orders or amounts.
+  counterSessionBase.extend({ ordersVisible: z.literal(false) }),
+])
+export const orderQuoteSchema = z.object({ items: z.array(orderableItemSchema).min(1).max(30), totalAmount: cents, currency, quoteToken: version })
+export const orderableCatalogSchema = z.object({ uuid, productName: z.string(), name: z.string(), price: cents, available: z.boolean() })
+export type CounterSessionView = z.infer<typeof counterSessionSchema>
+export type SessionOrder = z.infer<typeof sessionOrderSchema>
+export type OrderQuote = z.infer<typeof orderQuoteSchema>
+export interface OrderCart { version: string; items: { specificationUuid: string; quantity: number }[]; notes: string; replaceOrderUuid?: string }
+export type CounterCommand = 'update' | 'end' | 'create' | 'replace'
 export type LiveStore = z.infer<typeof storeSchema>
 export type LiveProduct = z.infer<typeof productSchema>
 export type LiveSpecification = z.infer<typeof specificationSchema>
@@ -88,6 +118,19 @@ export class StoreApi {
     return this.client.list(`${this.base}/products/${uuid.parse(productUuid)}/specifications`, specificationSchema, page)
   }
   order(orderUuid: string) { return this.client.data(`${this.base}/operations/orders/${uuid.parse(orderUuid)}`, orderSchema) }
+  private async sessionList<T>(resource: string, schema: z.ZodType<T>, page: number, q: string) {
+    const result = await this.client.data(`${this.base}/counter-operations/${resource}?${new URLSearchParams({ page: String(page), q: q.trim() })}`, z.object({ items: z.array(schema), page: z.number().int().positive(), hasNext: z.boolean(), total: z.number().int().nonnegative() }))
+    if (result.page !== page) throw new ApiError('invalid')
+    return result
+  }
+  counterSessions(page: number, q = '') { return this.sessionList('counters', counterSessionSchema, page, q) }
+  orderableCatalog(page: number, q = '') { return this.sessionList('catalog', orderableCatalogSchema, page, q) }
+  counterSession(id: string) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}`, counterSessionSchema) }
+  orderQuote(id: string, cart: OrderCart) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/orders/quote`, orderQuoteSchema, 'POST', cart) }
+  counterCommand(id: string, command: CounterCommand, body: Record<string, unknown>) {
+    const path = command === 'update' || command === 'end' ? `session/${command}` : `orders/${command}`
+    return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/${path}`, z.object({ counterUuid: uuid, sessionUuid: uuid, orderUuid: uuid.optional(), replacedOrderUuid: uuid.optional() }), 'POST', body)
+  }
   saveProduct(id: string | null, body: Record<string, unknown>) {
     return this.client.data(`${this.base}/operations/products${id ? `/${uuid.parse(id)}` : ''}`, productSchema, id ? 'PUT' : 'POST', body)
   }

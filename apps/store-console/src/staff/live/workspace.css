@@ -116,7 +116,7 @@
 .workspace-connection { margin-top: 23px; border: 0; padding-top: 0; }
 .workspace-signature { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 28px; color: var(--theme-muted); font-size: 8px; letter-spacing: .07em; line-height: 1.8; }
 .workspace-signature > i { width: 3px; height: 3px; border-radius: 50%; background: var(--theme-faint); }
-.workspace-nav { position: fixed; z-index: 40; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: calc(100% - 28px); max-width: 480px; display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--theme-line); border-radius: 21px; padding: 8px 10px; background: var(--theme-header); backdrop-filter: blur(18px); box-shadow: 0 8px 40px #25342110, 0 2px 5px #25342104; }
+.workspace-nav { position: fixed; z-index: 40; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: calc(100% - 28px); max-width: 480px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--theme-line); border-radius: 21px; padding: 8px 10px; background: var(--theme-header); backdrop-filter: blur(18px); box-shadow: 0 8px 40px #25342110, 0 2px 5px #25342104; }
 .workspace-nav button { min-height: 53px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; color: var(--theme-muted); border-radius: 12px; }
 .workspace-nav button > span { display: grid; place-items: center; width: 42px; height: 29px; border-radius: 9px; transition: background .15s; }
 .workspace-nav button small { font-size: 9px; }

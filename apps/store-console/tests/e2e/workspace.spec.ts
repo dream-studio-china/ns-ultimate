@@ -47,7 +47,11 @@ test('product filtering, sold-out toggling and product/variant editing', async (
   await expect(page.locator('.product-row')).toHaveCount(1)
 })
 
-test('category creation, sorting and table creation are usable', async ({ page }) => {
+test('category creation and sorting work while existing demo tables remain editable', async ({ page }) => {
+  const tableWrites: string[] = []
+  page.on('request', (request) => {
+    if (/\/counters(?:\/|\?|$)/.test(new URL(request.url()).pathname) && ['POST', 'DELETE'].includes(request.method())) tableWrites.push(request.method())
+  })
   await page.getByRole('link', { name: '商品', exact: true }).click()
   await page.getByRole('button', { name: '分类管理' }).click()
   await page.getByPlaceholder('分类名称').fill('Demo category')
@@ -56,10 +60,13 @@ test('category creation, sorting and table creation are usable', async ({ page }
   await page.getByRole('button', { name: '上移 Demo category' }).click()
   await page.getByRole('dialog').getByRole('button', { name: '关闭' }).click()
   await page.getByRole('link', { name: '桌台', exact: true }).click()
-  await page.getByRole('button', { name: '新增桌台', exact: true }).click()
-  await page.getByPlaceholder('A09').fill('B01')
-  await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'B01 空闲', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '新增桌台', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /删除桌台|^删除$/ })).toHaveCount(0)
+  await page.getByRole('button', { name: 'A01 用餐中', exact: true }).click()
+  await expect(page.getByRole('button', { name: /删除桌台|^删除$/ })).toHaveCount(0)
+  await page.getByRole('button', { name: '增加数量' }).first().click()
+  await page.getByLabel('整单优惠', { exact: true }).fill('2')
+  expect(tableWrites).toEqual([])
 })
 
 test('table editing and cross-entry demo payment settle once and populate reports', async ({ page, context }) => {

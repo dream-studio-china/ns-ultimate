@@ -1,19 +1,20 @@
 import { useCallback, useId, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ChevronDown, Clock3, LayoutGrid, LockKeyhole, Minus, Pencil, Plus, ReceiptText, Trash2, UsersRound } from 'lucide-react'
+import { ChevronDown, Clock3, LayoutGrid, LockKeyhole, Minus, Pencil, Plus, ReceiptText, UsersRound } from 'lucide-react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, orderActions, type OrderAction, type StoreAccess, StoreApi, type LiveCounter, type LiveOrder } from '../adapters/live'
-import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, RecordIdentity, SearchField, StatusPill, useCommand, useDelete, usePage, LiveSheet as Sheet } from './ui'
+import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, RecordIdentity, SearchField, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
+import { LiveDining } from './dining'
 
-function CounterForm({ api, counter, done, onClose }: { api: StoreApi; counter: LiveCounter | null; done: () => void; onClose: () => void }) {
+function CounterForm({ api, counter, done, onClose }: { api: StoreApi; counter: LiveCounter; done: () => void; onClose: () => void }) {
   const { t } = useI18n()
-  const [name, setName] = useState(counter?.name ?? '')
-  const [code, setCode] = useState(counter?.code ?? '')
-  const [capacity, setCapacity] = useState(counter?.capacity?.toString() ?? '')
-  const [sort, setSort] = useState(counter?.sort ?? 0)
-  const [enabled, setEnabled] = useState(counter?.enabled ?? true)
+  const [name, setName] = useState(counter.name)
+  const [code, setCode] = useState(counter.code)
+  const [capacity, setCapacity] = useState(counter.capacity?.toString() ?? '')
+  const [sort, setSort] = useState(counter.sort)
+  const [enabled, setEnabled] = useState(counter.enabled)
   const capacityId = useId()
-  return <EditorSheet title={t('tableDetail')} description="tableFormHint" onClose={onClose} onDone={done} submit={() => api.save('counters', counter?.uuid ?? null, { name: name.trim(), code: code.trim(), capacity: capacity === '' ? null : Number(capacity), sort, enabled })} preview={<div className="editor-preview counter-preview"><div className="counter-preview-art"><TableGlyph /></div><div><p>{t('editorTablePreview')}</p><h3>{name.trim() || t('editorNewTable')}</h3><small>{code || '—'}<span>·</span>{capacity ? `${capacity} ${t('editorSeatUnit')}` : t('seatsUnknown')}</small></div><StatusPill muted={!enabled}>{t(enabled ? 'tableEnabled' : 'tableDisabled')}</StatusPill></div>}>
+  return <EditorSheet title={t('tableDetail')} description="tableFormHint" onClose={onClose} onDone={done} submit={() => api.save('counters', counter.uuid, { name: name.trim(), code: code.trim(), capacity: capacity === '' ? null : Number(capacity), sort, enabled })} preview={<div className="editor-preview counter-preview"><div className="counter-preview-art"><TableGlyph /></div><div><p>{t('editorTablePreview')}</p><h3>{name.trim() || t('editorNewTable')}</h3><small>{code || '—'}<span>·</span>{capacity ? `${capacity} ${t('editorSeatUnit')}` : t('seatsUnknown')}</small></div><StatusPill muted={!enabled}>{t(enabled ? 'tableEnabled' : 'tableDisabled')}</StatusPill></div>}>
     <EditorSection title="editorBasics" index="01"><div className="editor-field-grid"><label className="field">{t('tableName')}<input required maxLength={120} value={name} placeholder={t('tableName')} onChange={(event) => setName(event.target.value)} /></label><label className="field">{t('tableCode')}<input required maxLength={50} value={code} placeholder="A01" onChange={(event) => setCode(event.target.value)} /></label></div></EditorSection>
     <EditorSection title="editorSeats" index="02"><div className="editor-capacity"><div><label htmlFor={capacityId}>{t('capacity')}</label><p>{t('seatsHint')}</p></div><div className="capacity-stepper"><button type="button" aria-label={t('decreaseSeats')} disabled={!capacity || Number(capacity) <= 1} onClick={() => setCapacity(String(Number(capacity) - 1))}><Minus size={16} /></button><input id={capacityId} type="number" min="1" max="100" step="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} /><button type="button" aria-label={t('increaseSeats')} disabled={Number(capacity) >= 100} onClick={() => setCapacity(String(Number(capacity) + 1))}><Plus size={16} /></button></div></div><EditorToggle label="enabledField" hint="tableEnabledHint" checked={enabled} onChange={setEnabled} /></EditorSection>
     <EditorAdvanced><label className="field">{t('sortOrder')}<input required type="number" step="1" value={sort} onChange={(event) => setSort(Number(event.target.value))} /></label></EditorAdvanced>
@@ -24,24 +25,28 @@ function TableGlyph() {
 }
 export function LiveTables({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t } = useI18n()
+  const [configuration, setConfiguration] = useState(!can(access, 'counter_session', 'read'))
+  return <>{can(access, 'counter_session', 'read') && can(access, 'counter', 'read') && <div className="workspace-filters">{([false, true] as const).map((value) => <button key={String(value)} aria-pressed={configuration === value} className={configuration === value ? 'active' : ''} onClick={() => setConfiguration(value)}>{t(value ? 'tableConfiguration' : 'diningBoard')}</button>)}</div>}{configuration ? <CounterConfiguration api={api} access={access} /> : <LiveDining api={api} access={access} />}</>
+}
+function CounterConfiguration({ api, access }: { api: StoreApi; access: StoreAccess }) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const load = useCallback((page: number) => api.counters(page, query, filter), [api, query, filter])
   const list = usePage(load, can(access, 'counter', 'read'))
-  const deletion = useDelete(list.reload)
-  const [editing, setEditing] = useState<LiveCounter | null | undefined>()
+  const [editing, setEditing] = useState<LiveCounter | null>(null)
   const visible = list.items
   return <><PageHeading eyebrow="tablesEyebrow" title="tables" subtitle="tablesLiveSubtitle"><span className="configuration-badge"><LayoutGrid size={13} />{t('configurationOnly')}</span></PageHeading>
     {!can(access, 'counter', 'read') ? <AccessNotice /> : <>
-      <PageScope count={list.items.length} total={list.total} /><div className="workspace-toolbar"><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /><Button className="workspace-primary" color="primary" disabled={!can(access, 'counter', 'create') || deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addTable')}</Button></div>
+      <PageScope count={list.items.length} total={list.total} /><div className="workspace-toolbar"><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /></div>
       <div className="workspace-filters">{(['all', 'enabled', 'disabled'] as const).map((value) => <button key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} onClick={() => { setFilter(value); list.setPage(1) }}>{t(value === 'all' ? 'allStatuses' : value === 'enabled' ? 'tableEnabled' : 'tableDisabled')}</button>)}</div>
-      {deletion.feedback}<ListFeedback state={{ ...list, items: visible }} empty={query.trim() || filter !== 'all' ? 'noSearchResults' : 'firstTable'} hint={query.trim() || filter !== 'all' ? 'adjustSearch' : 'firstTableHint'} icon={LayoutGrid} />
+      <ListFeedback state={{ ...list, items: visible }} empty={query.trim() || filter !== 'all' ? 'noSearchResults' : 'firstTable'} hint={query.trim() || filter !== 'all' ? 'adjustSearch' : 'existingTablesHint'} icon={LayoutGrid} />
       <div className="workspace-table-grid">{visible.map((counter) => <article className={`workspace-table-card ${counter.enabled ? '' : 'is-disabled'}`} key={counter.uuid}>
         <div className="table-config-top"><strong title={counter.code}>{counter.code}</strong><StatusPill muted={!counter.enabled}>{t(counter.enabled ? 'tableEnabled' : 'tableDisabled')}</StatusPill></div><TableGlyph /><h2>{counter.name}</h2><p className="table-config-seats"><UsersRound size={14} />{counter.capacity ?? '—'} {t('capacity')}</p>
-        <div className="table-config-actions"><Button disabled={!can(access, 'counter', 'update') || deletion.busy} onClick={() => setEditing(counter)}><Pencil size={14} />{t('edit')}</Button><button className="workspace-icon danger" aria-label={t('delete')} disabled={!can(access, 'counter', 'delete') || deletion.busy} onClick={() => void deletion.remove(() => api.remove('counters', counter.uuid))}><Trash2 size={16} /></button></div><RecordIdentity id={counter.uuid}><dt>{t('tableCode')}</dt><dd>{counter.code}</dd></RecordIdentity>
+        <div className="table-config-actions"><Button disabled={!can(access, 'counter', 'update')} onClick={() => setEditing(counter)}><Pencil size={14} />{t('edit')}</Button></div><RecordIdentity id={counter.uuid}><dt>{t('tableCode')}</dt><dd>{counter.code}</dd></RecordIdentity>
       </article>)}</div><PageControls state={list} /><Notice subtle icon={LayoutGrid}>{t('basicTableHint')}</Notice>
     </>}
-    {editing !== undefined && <CounterForm api={api} counter={editing} onClose={() => setEditing(undefined)} done={() => { setEditing(undefined); list.reload() }} />}
+    {editing && <CounterForm api={api} counter={editing} onClose={() => setEditing(null)} done={() => { setEditing(null); list.reload() }} />}
   </>
 }
 

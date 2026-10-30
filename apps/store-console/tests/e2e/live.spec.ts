@@ -20,12 +20,12 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean } = {}) {
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[] } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active' }]
   let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
-  let counters: { uuid: string; name: string; code: string; capacity: number; sort: number; enabled: boolean }[] = []
+  let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -51,6 +51,7 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
     if (path.endsWith('/membership')) return respond({ status: options.membership ?? 'active', role: 'manager' })
     if (path === '/api/v1/app/users/me') return respond({ uuid: storeId, username: 'contract-staff', roles: ['ROLE_USER'] })
     if (path === '/api/v1/app/authorization/me') {
+      if (options.grants) return respond({ permissions: options.grants, storeScopes: Object.fromEntries(options.grants.map((code) => [code, [storeId]])) })
       const scopes: Record<string, string[]> = {}
       for (const resource of ['product', 'product_category', 'specification', 'counter', 'order']) {
         for (const action of options.readOnly || resource === 'order' ? ['read'] : ['read', 'create', 'update', 'delete']) scopes[`store:${resource}:${action}`] = [storeId]
@@ -89,7 +90,6 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
     }
     if (path.endsWith(`/product-categories/${categoryId}`) && method === 'PUT') { categories = categories.map((item) => ({ ...item, ...body })); return respond(categories[0]) }
     if (path.endsWith('/counters')) {
-      if (method === 'POST') { counters.push({ uuid: counterId, name: String(body!.name), code: String(body!.code), capacity: Number(body!.capacity), sort: Number(body!.sort), enabled: Boolean(body!.enabled) }); return respond(counters.at(-1)) }
       return respond(counters, true)
     }
     if (path.endsWith(`/counters/${counterId}`) && method === 'PUT') { counters = counters.map((item) => ({ ...item, ...body })); return respond(counters[0]) }
@@ -105,8 +105,8 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
   })
   return requests
 }
-async function login(page: Page) {
-  await page.goto('/')
+async function login(page: Page, entry = '/') {
+  await page.goto(entry)
   await page.getByLabel('账号', { exact: true }).fill('contract-staff')
   await page.getByLabel('密码', { exact: true }).fill('test-only-password')
   await page.getByRole('button', { name: '登录', exact: true }).click()
@@ -139,17 +139,16 @@ test('live catalog, separate variants, categories, tables and read-only orders u
   await page.getByLabel('分类标识', { exact: true }).fill('new-live-category')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'New live category', exact: true })).toBeVisible()
-  await page.getByRole('navigation').getByRole('button', { name: '桌台', exact: true }).click()
-  await page.getByRole('button', { name: '新增桌台', exact: true }).click()
-  await page.getByLabel('桌台名称', { exact: true }).fill('Real A01')
-  await page.getByLabel('桌台编号', { exact: true }).fill('A01')
-  await page.getByLabel('座位数', { exact: true }).fill('4')
-  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByRole('navigation').getByRole('button', { name: '收银', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Real A01', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '新增桌台', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByLabel('桌台名称', { exact: true }).fill('Real A02')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Real A02', exact: true })).toBeVisible()
+  expect(requests.find((request) => request.method === 'PUT' && request.path.endsWith(`/counters/${counterId}`))?.body).toMatchObject({ name: 'Real A02', code: 'A01', capacity: 4 })
+  expect(requests.filter((request) => /\/counters(?:\/|$)/.test(request.path) && ['POST', 'DELETE'].includes(request.method))).toHaveLength(0)
   await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
   await page.getByRole('button', { name: '查看', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('pending_validation')
@@ -159,16 +158,94 @@ test('live catalog, separate variants, categories, tables and read-only orders u
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
-test('read-only grants disable all mutations, and reload clears staff authentication', async ({ page }) => {
+test('read-only grants hide mutations, and reload clears staff authentication', async ({ page }) => {
   await mockApi(page, { readOnly: true })
   await login(page)
-  await expect(page.getByRole('button', { name: '新增商品', exact: true })).toBeDisabled()
-  await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeDisabled()
-  await expect(page.getByRole('button', { name: '删除', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '新增商品', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '设为售罄', exact: true })).toHaveCount(0)
   await page.reload()
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'API product', exact: true })).toHaveCount(0)
+})
+
+test('kitchen-only staff see availability without catalog management or cashier access', async ({ page }) => {
+  const requests = await mockApi(page, { grants: ['store:product:read', 'store:product:availability'] })
+  await login(page, '/?view=cashier')
+  const nav = page.getByRole('navigation')
+  await expect(nav.getByRole('button')).toHaveText(['厨房', '我的'])
+  await expect(nav.getByRole('button', { name: '厨房', exact: true })).toHaveAttribute('aria-current', 'page')
+  for (const name of ['新增商品', '编辑', '删除', '管理规格', '分类管理', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '设为售罄', exact: true }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('button', { name: '恢复售卖', exact: true })).toBeVisible()
+  for (const width of [320, 768, 1280]) {
+    await page.setViewportSize({ width, height: 800 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  expect(requests.filter((request) => request.path.startsWith('/api/v1/store/')).every((request) => /\/operations\/products(?:[/?]|$)/.test(request.path))).toBe(true)
+})
+
+test('cashier staff land on dining without product configuration, fulfillment or payment', async ({ page }) => {
+  const requests = await mockApi(page, { grants: ['store:counter_session:read', 'store:counter_session:update', 'store:counter_session:end', 'store:counter_order:read', 'store:counter_order:create', 'store:counter_order:replace', 'store:order:read'] })
+  await page.route('**/counter-operations/counters?**', (route) => route.fulfill({ json: { code: 0, data: { items: [], total: 0, page: 1, hasNext: false } } }))
+  await login(page, '/?view=kitchen')
+  const nav = page.getByRole('navigation')
+  await expect(nav.getByRole('button')).toHaveText(['收银', '交易订单', '我的'])
+  await expect(nav.getByRole('button', { name: '收银', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('heading', { name: '营业桌台', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '桌台配置', exact: true })).toHaveCount(0)
+  await nav.getByRole('button', { name: '门店订单（只读）', exact: true }).click()
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  for (const name of ['接单', '拒单', '完成履约', '核销', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  expect(requests.some((request) => /products|specifications|payment|refund/.test(request.path))).toBe(false)
+})
+
+test('dual workspace grants allow switching and respect the kitchen entry preference', async ({ page }) => {
+  await mockApi(page, { grants: ['store:product:read', 'store:counter_session:read'] })
+  await page.route('**/counter-operations/counters?**', (route) => route.fulfill({ json: { code: 0, data: { items: [], total: 0, page: 1, hasNext: false } } }))
+  await login(page, '/?view=kitchen')
+  const nav = page.getByRole('navigation')
+  await expect(nav.getByRole('button', { name: '厨房', exact: true })).toHaveAttribute('aria-current', 'page')
+  await nav.getByRole('button', { name: '收银', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '营业桌台', exact: true })).toBeVisible()
+  await nav.getByRole('button', { name: '厨房', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toBeVisible()
+})
+
+test('reconnecting a store discards the selected workspace and uses fresh grants', async ({ page }) => {
+  const grants = ['store:product:read', 'store:counter:read']
+  const requests = await mockApi(page, { grants })
+  await login(page, '/?view=kitchen')
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
+  await page.getByRole('button', { name: '切换门店', exact: true }).click()
+  grants.splice(0, grants.length, 'store:order:read')
+  const before = requests.length
+  await page.getByRole('button', { name: 'Contract store S1', exact: true }).click()
+  await page.getByRole('button', { name: '连接门店', exact: true }).click()
+  await expect(page.getByRole('navigation').getByRole('button')).toHaveText(['交易订单', '我的'])
+  await expect(page.getByRole('heading', { name: '门店订单（只读）', exact: true })).toBeVisible()
+  expect(requests.slice(before).some((request) => /products|counters/.test(request.path))).toBe(false)
+})
+
+test('another store scopes and job labels cannot unlock a workspace through its URL', async ({ page }) => {
+  const requests = await mockApi(page)
+  await page.route('**/api/v1/app/users/me', (route) => route.fulfill({ json: { code: 0, data: { uuid: storeId, username: 'contract-staff', roles: ['ROLE_USER', 'store_counter_session_operator', 'store_counter_order_editor'] } } }))
+  await page.route('**/api/v1/app/authorization/me', (route) => route.fulfill({ json: { code: 0, data: { permissions: ['store:product:read', 'store:counter_session:read'], storeScopes: { 'store:product:read': [productId], 'store:counter_session:read': [productId] } } } }))
+  await login(page, '/?view=cashier')
+  await expect(page.getByRole('navigation').getByRole('button')).toHaveText(['我的'])
+  await expect(page.getByText('当前门店未授权厨房、桌台或订单功能', { exact: false })).toBeVisible()
+  expect(requests.some((request) => request.path.startsWith('/api/v1/store/'))).toBe(false)
+})
+
+test('the customer payment entry ignores staff view preferences and never calls staff APIs', async ({ page }) => {
+  const requests = await mockApi(page)
+  await page.goto('/payment.html?view=cashier')
+  await expect(page.getByRole('navigation')).toHaveCount(0)
+  await expect(page.getByLabel('账号', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '确认付款', exact: true })).toHaveCount(0)
+  expect(requests).toEqual([])
 })
 
 test('catalog operating fields and raster image uploads save through one versioned staff command', async ({ page }) => {
@@ -289,7 +366,8 @@ test('empty PHP authorization scopes connect safely without granting employee pe
   await page.route('**/api/v1/app/authorization/me', (route) => route.fulfill({ json: { code: 0, data: { permissions: [], storeScopes: [] } } }))
   await login(page)
   await expect(page.getByRole('navigation')).toBeVisible()
-  await expect(page.getByRole('alert')).toContainText('没有此项门店权限')
+  await expect(page.getByRole('navigation').getByRole('button')).toHaveCount(1)
+  await expect(page.getByText('当前门店未授权厨房、桌台或订单功能', { exact: false })).toBeVisible()
   expect(requests.some((request) => request.path.startsWith('/api/v1/store/'))).toBe(false)
 })
 
@@ -320,7 +398,7 @@ test('all seven themes change rendered surfaces, controls and portal editors and
     await expect(page.locator('.workspace-nav button[aria-current] > span')).toHaveCSS('background-color', soft)
     const colors = await page.evaluate(() => ['.account-store-card', '.profile-monogram', '.live-app', '.workspace-logo', '.workspace-nav button[aria-current] > span'].map((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor))
     if (theme === 'orange' || theme === 'blue') await page.screenshot({ path: `test-results/theme-${theme}-account.png` })
-    await page.getByRole('navigation').getByRole('button', { name: '商品', exact: true }).click()
+    await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
     await page.getByRole('button', { name: '编辑', exact: true }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     colors.push(...await page.evaluate(() => ['.resource-editor', '.editor-preview', '.editor-toggle button', '.editor-footer .adm-button-primary', '.resource-editor input'].map((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor)))
@@ -423,10 +501,11 @@ test('category and specification edits preserve payloads and table seating contr
   await expect(page.getByRole('dialog')).toHaveCount(1)
   expect(requests.find((request) => request.method === 'PUT' && request.path.endsWith(`/specifications/${specId}`))?.body).toEqual({ name: 'Regular', price: 1230, status: 'inactive', sort: 0 })
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
-  await page.getByRole('navigation').getByRole('button', { name: '桌台', exact: true }).click()
-  await page.getByRole('button', { name: '新增桌台', exact: true }).click()
+  await page.getByRole('navigation').getByRole('button', { name: '收银', exact: true }).click()
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByLabel('桌台名称', { exact: true }).fill('Blank capacity')
   await page.getByLabel('桌台编号', { exact: true }).fill('B01')
+  await page.getByLabel('座位数', { exact: true }).fill('')
   await expect(page.getByRole('button', { name: '减少座位', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '增加座位', exact: true }).click()
   await expect(page.getByLabel('座位数', { exact: true })).toHaveValue('1')
@@ -435,7 +514,8 @@ test('category and specification edits preserve payloads and table seating contr
   await page.getByLabel('座位数', { exact: true }).fill('')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  expect(requests.find((request) => request.method === 'POST' && request.path.endsWith('/counters'))?.body).toEqual({ name: 'Blank capacity', code: 'B01', capacity: null, sort: 0, enabled: true })
+  expect(requests.find((request) => request.method === 'PUT' && request.path.endsWith(`/counters/${counterId}`))?.body).toEqual({ name: 'Blank capacity', code: 'B01', capacity: null, sort: 0, enabled: true })
+  expect(requests.filter((request) => /\/counters(?:\/|$)/.test(request.path) && ['POST', 'DELETE'].includes(request.method))).toHaveLength(0)
 })
 
 test('every resource editor keeps fixed actions reachable on small phones and centered on desktop', async ({ page }) => {
@@ -458,7 +538,7 @@ test('every resource editor keeps fixed actions reachable on small phones and ce
       expect(await sheet.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
       await sheet.getByRole('button', { name: '取消', exact: true }).click()
     }
-    await page.getByRole('navigation').getByRole('button', { name: '商品', exact: true }).click()
+    await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
     await page.getByRole('button', { name: '新增商品', exact: true }).click()
     await inspect('product')
     await page.getByRole('button', { name: '管理规格', exact: true }).click()
@@ -468,8 +548,8 @@ test('every resource editor keeps fixed actions reachable on small phones and ce
     await page.getByRole('button', { name: '分类管理', exact: true }).click()
     await page.getByRole('button', { name: '新增分类', exact: true }).click()
     await inspect('category')
-    await page.getByRole('navigation').getByRole('button', { name: '桌台', exact: true }).click()
-    await page.getByRole('button', { name: '新增桌台', exact: true }).click()
+    await page.getByRole('navigation').getByRole('button', { name: '收银', exact: true }).click()
+    await page.getByRole('button', { name: '编辑', exact: true }).click()
     await inspect('table')
   }
 })
@@ -582,16 +662,16 @@ test('redesigned workspace remains usable across phone, tablet and desktop layou
   await expect(page.getByRole('dialog')).toHaveCount(0)
   for (const width of [320, 390, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 })
-    for (const name of ['商品', '桌台', '门店订单（只读）', '我的']) {
+    for (const name of ['厨房', '收银', '门店订单（只读）', '我的']) {
       await page.getByRole('navigation').getByRole('button', { name, exact: true }).click()
       await expect(page.locator('.workspace-skeleton')).toHaveCount(0)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       const bounds = await page.getByRole('navigation').getByRole('button', { name, exact: true }).boundingBox()
       expect(bounds!.height).toBeGreaterThanOrEqual(44)
-      if (width === 390) await page.screenshot({ path: `test-results/ui-${name === '桌台' ? 'tables' : name === '我的' ? 'account' : name === '商品' ? 'products' : 'orders'}.png`, fullPage: true })
+      if (width === 390) await page.screenshot({ path: `test-results/ui-${name === '收银' ? 'tables' : name === '我的' ? 'account' : name === '厨房' ? 'products' : 'orders'}.png`, fullPage: true })
     }
   }
-  await page.getByRole('navigation').getByRole('button', { name: '商品', exact: true }).click()
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
   await expect(page.locator('.catalog-product-card')).toHaveCount(3)
   await page.screenshot({ path: 'test-results/ui-desktop.png', fullPage: true })
   await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()

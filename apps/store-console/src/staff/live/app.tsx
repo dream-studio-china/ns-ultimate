@@ -10,11 +10,12 @@ import { LiveCatalog } from './catalog'
 import { LiveTables, LiveOrders } from './tables'
 import { errorKey, ListFeedback, Notice, PageControls, PageHeading, StatusPill, usePage, LiveSheet } from './ui'
 import { BrandArt } from './brand-art'
+import { defaultWorkspacePage, workspacePages, type WorkspacePage } from './navigation'
 import './workspace.css'
 
 const navigation = [
-  { key: 'products', icon: CookingPot, title: 'products' },
-  { key: 'tables', icon: LayoutGrid, title: 'tables' },
+  { key: 'products', icon: CookingPot, title: 'kitchenView' },
+  { key: 'tables', icon: LayoutGrid, title: 'cashierView' },
   { key: 'orders', icon: ReceiptText, title: 'readOnlyOrders' },
   { key: 'mine', icon: UserRound, title: 'mine' },
 ] as const
@@ -26,7 +27,8 @@ export function LiveApp() {
   const [access, setAccess] = useState<StoreAccess | null>(null)
   const [error, setError] = useState<MessageKey | null>(null)
   const [client] = useState(() => new ApiClient(fetch, () => { setSignedIn(false); setAccess(null); setError('sessionExpired') }))
-  const [page, setPage] = useState<'products' | 'tables' | 'orders' | 'mine'>('products')
+  const [page, setPage] = useState<WorkspacePage>('mine')
+  const visibleNavigation = access ? navigation.filter(({ key }) => workspacePages(access).includes(key)) : []
   const api = useRef<StoreApi | null>(null)
   useLayoutEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }) }, [signedIn, access?.store.uuid, page])
   const logout = async () => {
@@ -42,10 +44,10 @@ export function LiveApp() {
       {signedIn && !access && <button className="workspace-icon" aria-label={t('logout')} onClick={() => void logout()}><LogOut size={18} /></button>}
     </header>
     {!online && <div role="alert" className="workspace-offline"><WifiOff size={16} /><span>{t('offline')}</span></div>}
-    {access && <nav className="workspace-nav" aria-label={t('app')}>{navigation.map(({ key, icon: Icon, title }) => <button aria-label={t(key === 'orders' && orderActions.some((action) => can(access, 'order', action)) ? 'storeOrders' : title)} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => setPage(key)}><span><Icon size={21} strokeWidth={page === key ? 1.9 : 1.6} /></span><small>{t(key === 'orders' ? 'orderReference' : key)}</small></button>)}</nav>}
+    {access && <nav className="workspace-nav" aria-label={t('app')}>{visibleNavigation.map(({ key, icon: Icon, title }) => <button aria-label={t(key === 'orders' && orderActions.some((action) => can(access, 'order', action)) ? 'storeOrders' : title)} aria-current={page === key ? 'page' : undefined} key={key} onClick={() => setPage(key)}><span><Icon size={21} strokeWidth={page === key ? 1.9 : 1.6} /></span><small>{t(key === 'orders' ? 'orderReference' : title)}</small></button>)}</nav>}
     <div className="workspace-body">
       {error && <div className="workspace-error" role="alert"><CircleHelp size={19} /><p>{t(error)}</p></div>}
-      {!signedIn ? <Login client={client} done={() => { setError(null); setSignedIn(true) }} /> : !access ? <StoreSelection client={client} connected={(next) => { api.current = new StoreApi(client, next.store.uuid); setAccess(next); setPage('products') }} /> : <>
+      {!signedIn ? <Login client={client} done={() => { setError(null); setSignedIn(true) }} /> : !access ? <StoreSelection client={client} connected={(next) => { api.current = new StoreApi(client, next.store.uuid); setAccess(next); setPage(defaultWorkspacePage(next, new URLSearchParams(window.location.search).get('view'))) }} /> : <>
         <div className="workspace-page" key={`${access.store.uuid}:${page}`}>
           {page === 'products' && <LiveCatalog api={api.current!} access={access} />}
           {page === 'tables' && <LiveTables api={api.current!} access={access} />}
@@ -122,13 +124,14 @@ function StoreSelection({ client, connected }: { client: ApiClient; connected: (
 }
 
 const roleLabels: Record<string, MessageKey> = { owner: 'membershipOwner', manager: 'membershipManager', clerk: 'membershipClerk', fulfillment: 'membershipFulfillment' }
-const resourceLabels: Record<string, MessageKey> = { product: 'products', product_category: 'categoryManagement', specification: 'specifications', counter: 'tables', order: 'orderReference', catalog_image: 'coverUpload', operation: 'operationHistory' }
-const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', create: 'permissionCreate', update: 'permissionUpdate', delete: 'permissionDelete', availability: 'availabilityControl', accept: 'acceptOrder', reject: 'rejectOrder', fulfill: 'fulfillOrder', verify: 'verifyOrder' }
+const resourceLabels: Record<string, MessageKey> = { product: 'products', product_category: 'categoryManagement', specification: 'specifications', counter: 'tables', order: 'orderReference', catalog_image: 'coverUpload', operation: 'operationHistory', counter_session: 'serviceSessions', counter_order: 'sessionOrders' }
+const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', create: 'permissionCreate', update: 'permissionUpdate', delete: 'permissionDelete', availability: 'availabilityControl', accept: 'acceptOrder', reject: 'rejectOrder', fulfill: 'fulfillOrder', verify: 'verifyOrder', place: 'placeDining', replace: 'replaceDining', end: 'endDining' }
 function LiveAccount({ api, access, logout }: { api: StoreApi; access: StoreAccess; logout: () => void }) {
   const { t, locale, setLocale } = useI18n()
   const [history, setHistory] = useState(false)
   return <>
     <PageHeading eyebrow="accountEyebrow" title="liveAccount" subtitle="accountSubtitle" />
+    {workspacePages(access).length === 1 && <Notice>{t('noWorkspaceAccess')}</Notice>}
     <section className="workspace-profile"><div className="profile-monogram">{(access.profile.username ?? 'NS').slice(0, 1).toUpperCase()}<span><ShieldCheck size={13} /></span></div><div><h2>{access.profile.username ?? access.profile.uuid}</h2><p>{t(roleLabels[access.membership.role] ?? 'liveAccount')}</p></div><StatusPill>{t('liveMode')}</StatusPill></section>
     <section className="account-store-card"><span><Store size={25} strokeWidth={1.5} /></span><div><strong>{access.store.name}</strong><small>{access.store.code} · {access.store.currency}</small></div><MapPin size={17} /><p>{t('storeContextHint')}</p></section>
     <div className="account-section-title"><h2>{t('devicePreferences')}</h2><span>{t('preferences')}</span></div>
