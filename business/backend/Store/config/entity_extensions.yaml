@@ -12,3 +12,4 @@ entities:
 
 controllers:
     App\Store\Controller\Manage\ProductController: NsUltimate\Business\Store\Adapter\ManageProductController
+    App\Store\Controller\Manage\ProductCategoryController: NsUltimate\Business\Store\Adapter\ManageProductCategoryController
