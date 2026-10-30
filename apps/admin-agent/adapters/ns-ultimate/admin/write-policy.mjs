@@ -17,9 +17,10 @@ export function isAgentActionAllowed(entity, action) {
 
 /*
  * Ordinary admin forms also contain fields that the corresponding CRUD
- * controller does not accept. Sending them would produce a successful response
- * while silently discarding the value, so the assistant omits exactly those
- * fields. The effective admin form remains the primary field source.
+ * controller does not accept, plus a few deliberate host-policy exclusions.
+ * Sending them would produce a successful response while silently discarding
+ * the value, so the assistant omits exactly those fields. The effective admin
+ * form remains the primary field source.
  */
 const ACTION_FIELD_DENYLIST = Object.freeze({
   Store: Object.freeze({ create: ['paymentSetting'], update: ['code', 'paymentSetting'] }),
@@ -29,6 +30,8 @@ const ACTION_FIELD_DENYLIST = Object.freeze({
   // different writable sets. Only the shared price field can be verified.
   OrderItem: Object.freeze({ update: ['quantity', 'unitPrice', 'cost', 'profit', 'specSnapshot', 'productSnapshot', 'metadata'] }),
   Counter: Object.freeze({ update: ['storeUuid'] }),
+  // The management API supports category store changes, but assistant writes
+  // deliberately keep cross-store reassignment out of scope.
   ProductCategory: Object.freeze({ update: ['store'] }),
   PrinterDevice: Object.freeze({ update: ['account', 'serialNumber', 'kind'] }),
   PrinterTemplate: Object.freeze({ update: ['kind'] }),
