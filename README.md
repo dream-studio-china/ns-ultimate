@@ -8,7 +8,7 @@ Integrated application built from two upstream cores and project-owned business 
 - `core/crud-skeleton/` — Symfony backend, tracked as a Git subtree of `immane/crud-skeleton`.
 - `integration/` — project-owned application wiring and adapters between core and business modules.
 - `business/` — all project-specific frontend and backend business functionality.
-- `apps/` — application packages; `admin-agent/` contains the generic assistant frontend and backend, explicitly composed through integration.
+- `apps/` — self-contained application packages. `admin-agent/` is composed through integration and included in Docker and CI; `store-console/` and `cashier/` are built and tested independently.
 - `docs/` — architecture, contracts, operations, and work records.
 - `infra/` — project-owned deployment assets (Docker Compose, PHP-FPM/Nginx, MySQL/Redis topology).
 
@@ -35,7 +35,7 @@ On first run, `make dev` prompts for a loopback MySQL connection and admin ident
 - [Docker Compose/Nginx foundation](infra/docker/README.md) — project-owned container build and service topology.
 - [Docker Compose/Nginx 基础设施（简体中文）](infra/docker/README.zh-cn.md)
 - [Local development and debugging](docs/operations/development.md) — env precedence, debugging, and validation reference.
-- [CI workflow](.github/workflows/ci.yaml) — workflow/composition tests, backend integration tests, PHPStan, and the composed admin build; upstream core test suites are intentionally excluded.
+- [CI workflow](.github/workflows/ci.yaml) — project workflow, assistant, admin composition, backend integration, PHPStan, composed admin build, and the independent store-console/cashier UI checks; upstream core test suites are intentionally excluded.
 
 ## Architecture
 
@@ -60,7 +60,7 @@ flowchart LR
         ID["Docker Compose, PHP-FPM and Nginx"]
     end
 
-    Apps["apps/ — application packages (admin-agent)"]
+    Apps["apps/ — application packages (admin-agent, store-console, cashier)"]
     Browser["Browser"]
 
     BA --> IA --> CA
@@ -71,11 +71,19 @@ flowchart LR
     CB --> DB[("Database")]
 ```
 
-Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. In deployment, Nginx serves the composed admin build at `/admin/` and routes backend requests to the integration front controller. The `apps/admin-agent/` package is explicitly included in this composition, Docker context and tests; other apps are not automatically discovered or deployed. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
+Business modules own domain behavior; integration owns only wiring. The admin and API are built from separate upstream cores and composed into one deployable application. In deployment, Nginx serves the composed admin build at `/admin/` and routes backend requests to the integration front controller. `apps/admin-agent/` is explicitly included in this composition, Docker context and tests. `apps/store-console/` and `apps/cashier/` are independent builds with their own UI checks and are not embedded in the composed admin/API deployment; other apps are not automatically discovered or deployed. See the [architecture guide](docs/design/architecture.md) and [system contracts](docs/contracts/README.md).
+
+## Store operations
+
+The Store business modules provide scoped employee APIs for catalog availability, order fulfillment and counter-session ordering. `apps/store-console/` is a separately built mobile staff workspace with live login, permission-based Kitchen/Cashier/Orders views, and an isolated demo-only customer payment entry.
+
+Employees can view active counter sessions, update participant counts and notes, create additional orders, replace eligible unpaid orders and cancel eligible unpaid orders with an audited reason. Counter sessions open automatically when the first customer order is bound. Counter configuration, session management, ordering, replacement and cancellation use independent store-scoped permissions; job titles such as "Kitchen" and "Cashier" are frontend compositions, not backend roles. Checkout, real collection, refunds, financial reports and printing remain unimplemented, and order amounts are not payment results.
+
+Register the capability roles with `app:store:seed-staff-authorization` and `app:counter:seed-authorization`, then assign only the needed grants through existing authorization management. The seeds create no users or assignments. See the [operations contract](docs/contracts/store-console-operations.md), [counter operations contract](docs/contracts/store-console-counter-operations.md) and [app guide](apps/store-console/README.md).
 
 ## Store Product fields
 
-The Store Product admin form exposes `sortOrder`, `recommendationLevel`, and `isSoldout` as dedicated fields, plus a `settings` JSON object for `kitchenPrinterEnable`, `startSaleTime`, and `endSaleTime`. Display-only `subtitle` and the `cover` URL remain under `metadata`. Sale times are stored and validated as `HH:mm`; this does not implement sale-window behavior. The system metadata endpoint (`/system/entities/App/Store/Entity/Product`) includes the business extension fields and their backend translations while keeping the core Product entity name stable for Admin. See the [backend entity extension contract](docs/contracts/backend-entity-extension.md) for the integration and migration details.
+The Store Product admin form exposes `sortOrder`, `recommendationLevel`, and `isSoldout` as dedicated fields, plus a `settings` JSON object for `kitchenPrinterEnable`, `startSaleTime`, and `endSaleTime`. Display-only `subtitle` and the `cover` URL remain under `metadata`. Sale times are stored and validated as paired `HH:mm` values and enforced by the business pricing resolver for new quotes/orders, including overnight windows in the store timezone; sold-out state also blocks new quotes. The kitchen flag only participates in matching print rules and does not print by itself. The system metadata endpoint (`/system/entities/App/Store/Entity/Product`) includes the business extension fields and their backend translations while keeping the core Product entity name stable for Admin. See the [backend entity extension contract](docs/contracts/backend-entity-extension.md) for the integration and migration details.
 
 ## Project-owned code and upstream licenses
 

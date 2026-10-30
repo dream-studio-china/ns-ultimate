@@ -1,6 +1,6 @@
 # 快速开始
 
-本指南帮助你在本地运行组合后的管理前端和 API。非容器化服务器部署请参阅 [DEPLOY.md](DEPLOY.md) 和[简体中文部署指南](DEPLOY.zh-cn.md)。Docker Compose 部署基础方案见 [`infra/docker/README.md`](infra/docker/README.md) 及其[简体中文说明](infra/docker/README.zh-cn.md)。
+本指南帮助你在本地运行组合后的管理前端和 API，并说明如何启动 `apps/` 下的独立应用。非容器化服务器部署请参阅 [DEPLOY.md](DEPLOY.md) 和[简体中文部署指南](DEPLOY.zh-cn.md)。Docker Compose 部署基础方案见 [`infra/docker/README.md`](infra/docker/README.md) 及其[简体中文说明](infra/docker/README.zh-cn.md)。
 
 ## 1. 安装本地开发环境
 
@@ -43,7 +43,7 @@ cd ns-ultimate
 make install
 ```
 
-`make install` 根据 core 自有的 npm 锁文件安装管理前端依赖，并根据 Composer 锁文件安装后端依赖。该命令会禁用 Composer 自动脚本；根目录 npm 配置仅用于编排安装。
+`make install` 根据 core 自有的 npm 锁文件安装管理前端依赖，并根据 Composer 锁文件安装后端依赖。该命令会禁用 Composer 自动脚本；根目录 npm 配置仅用于编排安装。`apps/` 下的独立应用使用各自的锁文件，需按下文单独安装依赖。
 
 如果 Composer 提示缺少扩展，请为 `php -v` 显示的同一个 PHP 安装对应扩展；不要通过 `--ignore-platform-reqs` 绕过检查。如果机器上安装了多个 PHP 版本，请检查 `which php`、`which composer` 和 `composer diagnose`。
 
@@ -73,7 +73,35 @@ make dev ADMIN_PORT=9529 BACKEND_PORT=8001
 
 更改后端端口时，还需在 `integration/admin/.env.local` 中覆盖 `VITE_PROXY_TARGET`，例如：`VITE_PROXY_TARGET=http://127.0.0.1:8001`。
 
-## 4. 运行检查
+## 4. 启动独立应用
+
+`apps/` 下的应用与组合后的管理前端／API 相互独立。`make dev` 不会启动它们，`make install` 也不会安装它们的依赖。
+
+### Store Console（移动员工工作台）
+
+```sh
+npm ci --prefix apps/store-console
+npm run dev --prefix apps/store-console
+```
+
+打开 `http://127.0.0.1:5180/`。真实员工入口默认将 `/api` 代理到 `http://127.0.0.1:8000`，因此请先通过 `make dev` 或 `make backend` 启动后端。如需使用其他可信的开发后端，在 `apps/store-console/.env.local` 中设置 `STORE_CONSOLE_API_TARGET` 并重启 Vite。登录、门店成员身份和权限均由后端校验。
+
+`http://127.0.0.1:5180/?mode=demo` 是隔离演示；其顾客付款入口（`payment.html?session=<演示场次 ID>`）仅用于演示，不会连接任何支付渠道。`npm run build --prefix apps/store-console` 会构建两个入口；`npm run preview --prefix apps/store-console` 在 `http://127.0.0.1:4180` 预览构建结果，但不代理 API。
+
+### Cashier（Electron 桌面演示）
+
+```sh
+npm ci --prefix apps/cashier
+npm run dev --prefix apps/cashier
+```
+
+`dev` 会启动 Electron，并由 Vite 在 `http://127.0.0.1:5178` 提供渲染进程。该应用是明确的演示：不连接后端认证、不调用门店 API，也不处理真实收款。仅做浏览器 UI 调试时，改用 `npm run dev:web --prefix apps/cashier`。
+
+### 管理端助手
+
+助手没有独立服务端，已组合进管理前端。使用 `make dev` 启动组合应用后打开 `http://127.0.0.1:9528`。如需禁用，在 `integration/admin/.env.local` 中设置 `VITE_ADMIN_AGENT_ENABLED=false`，然后重启 Vite 或重新构建。提供商、模型和 API 文档地址在助手界面中配置。
+
+## 5. 运行检查
 
 ```sh
 make test-workflow   # 环境和 Vite 配置测试
@@ -84,11 +112,20 @@ make type-check
 make build
 ```
 
+安装依赖后，可运行独立应用检查：
+
+```sh
+npm test --prefix apps/store-console && npm run build --prefix apps/store-console
+npm test --prefix apps/cashier && npm run build --prefix apps/cashier
+```
+
+浏览器套件需要各应用安装 Playwright Chromium：先执行 `npx playwright install chromium`，再在 `apps/store-console` 或 `apps/cashier` 目录中运行 `npm run test:e2e`。
+
 `make test-backend` 使用临时 SQLite 数据库，并在测试结束时清理；它不会迁移或连接本地开发数据库。`make migrate-status` 和 `make migrate` 是针对当前应用数据库的显式操作；执行前务必确认数据库目标。
 
-GitHub Actions 会运行项目 workflow/admin 组合测试、后端集成/业务测试和组合管理前端构建；不会运行上游 core 自带的测试套件。
+GitHub Actions 会运行项目 workflow/admin 组合测试、后端集成/业务测试、组合管理前端构建，以及独立的 store-console 和 cashier UI 检查；不会运行上游 core 自带的测试套件。
 
-## 5. 调试与常用命令
+## 6. 调试与常用命令
 
 ```sh
 make help

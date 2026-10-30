@@ -1,6 +1,6 @@
 # Quickstart
 
-This guide gets the composed admin and API running on a local workstation. For a non-containerized server deployment, see [DEPLOY.md](DEPLOY.md). A Docker Compose deployment baseline is available in [`infra/docker/README.md`](infra/docker/README.md). The Simplified Chinese translation is [QUICKSTART.zh-cn.md](QUICKSTART.zh-cn.md).
+This guide gets the composed admin and API running on a local workstation and shows how to start the independent apps under `apps/`. For a non-containerized server deployment, see [DEPLOY.md](DEPLOY.md). A Docker Compose deployment baseline is available in [`infra/docker/README.md`](infra/docker/README.md). The Simplified Chinese translation is [QUICKSTART.zh-cn.md](QUICKSTART.zh-cn.md).
 
 ## 1. Install local prerequisites
 
@@ -43,7 +43,7 @@ cd ns-ultimate
 make install
 ```
 
-`make install` installs the admin dependencies from the core npm lockfile and backend dependencies from the core Composer lockfile. It intentionally disables Composer auto-scripts; the root npm manifest only orchestrates these installs.
+`make install` installs the admin dependencies from the core npm lockfile and backend dependencies from the core Composer lockfile. It intentionally disables Composer auto-scripts; the root npm manifest only orchestrates these installs. Dependencies for the independent apps under `apps/` use their own lockfiles and are installed separately, as shown below.
 
 If Composer reports missing extensions, install them for the same PHP binary shown by `php -v`; do not bypass checks with `--ignore-platform-reqs`. If multiple PHP versions are installed, verify `which php`, `which composer`, and `composer diagnose`.
 
@@ -73,7 +73,35 @@ make dev ADMIN_PORT=9529 BACKEND_PORT=8001
 
 When changing the backend port, also override `VITE_PROXY_TARGET` in `integration/admin/.env.local`, for example `VITE_PROXY_TARGET=http://127.0.0.1:8001`.
 
-## 4. Run checks
+## 4. Start the independent apps
+
+Packages under `apps/` are separate from the composed admin/API. `make dev` does not start them, and `make install` does not install their dependencies.
+
+### Store console (mobile staff workspace)
+
+```sh
+npm ci --prefix apps/store-console
+npm run dev --prefix apps/store-console
+```
+
+Open `http://127.0.0.1:5180/`. The live employee entry proxies `/api` to `http://127.0.0.1:8000` by default, so start the backend first with `make dev` or `make backend`. To use another trusted development backend, set `STORE_CONSOLE_API_TARGET` in `apps/store-console/.env.local` and restart Vite. Staff sign-in, membership and permissions are checked by the backend.
+
+Open `http://127.0.0.1:5180/?mode=demo` for the isolated demo. Its customer payment entry (`payment.html?session=<demo-session-id>`) is demo-only and never reaches a payment provider. `npm run build --prefix apps/store-console` produces both entries; `npm run preview --prefix apps/store-console` serves the build at `http://127.0.0.1:4180` without an API proxy.
+
+### Cashier (Electron desktop demo)
+
+```sh
+npm ci --prefix apps/cashier
+npm run dev --prefix apps/cashier
+```
+
+`dev` starts Electron with Vite at `http://127.0.0.1:5178`. This app is an explicit demo: it does not authenticate against the backend, call store APIs or collect real payments. For browser-only UI work, use `npm run dev:web --prefix apps/cashier` instead.
+
+### Admin assistant
+
+The assistant has no standalone server. It is composed into the admin application; start the composed admin with `make dev` and open `http://127.0.0.1:9528`. To disable it, set `VITE_ADMIN_AGENT_ENABLED=false` in `integration/admin/.env.local` and restart Vite or rebuild. Provider, model and API-document settings are configured in the assistant UI.
+
+## 5. Run checks
 
 ```sh
 make test-workflow   # Environment and Vite configuration tests
@@ -84,11 +112,20 @@ make type-check
 make build
 ```
 
+Independent app checks, after installing their dependencies:
+
+```sh
+npm test --prefix apps/store-console && npm run build --prefix apps/store-console
+npm test --prefix apps/cashier && npm run build --prefix apps/cashier
+```
+
+Browser suites need Playwright's Chromium in each package; run `npm run test:e2e` from `apps/store-console` or `apps/cashier` after `npx playwright install chromium`.
+
 `make test-backend` uses a temporary SQLite database and removes it at shutdown. It does not migrate or connect to the local development database. `make migrate-status` and `make migrate` are explicit commands for the configured application database; review the target before applying migrations.
 
-GitHub Actions runs the project workflow/admin composition tests, backend integration/business tests, and composed admin build. It intentionally does not run the upstream core test suites.
+GitHub Actions runs the project workflow/admin composition tests, backend integration/business tests, composed admin build, and the independent store-console and cashier UI checks. It intentionally does not run the upstream core test suites.
 
-## 5. Debugging and common commands
+## 6. Debugging and common commands
 
 ```sh
 make help
