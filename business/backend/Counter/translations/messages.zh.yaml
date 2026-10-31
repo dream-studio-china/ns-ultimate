@@ -39,6 +39,8 @@
 "Source order uuid": "来源订单 UUID"
 "Target order uuid": "目标订单 UUID"
 "Participant count": "服务人数"
+"Dining mode uuid": "点餐模式 UUID"
+"Dining mode snapshot": "点餐模式快照"
 "Notes": "场次备注"
 "Revision": "修订版本"
 "Session": "桌次"

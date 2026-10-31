@@ -18,6 +18,8 @@ use App\Store\Entity\StoreOrder;
 use App\Trade\Service\Catalog\CatalogResolverInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Store\Entity\Product;
 use NsUltimate\Business\Store\Entity\StaffOperation;
 use NsUltimate\Business\Store\Service\ProductAvailability;
@@ -165,6 +167,26 @@ final class StaffOperationsTest extends KernelTestCase
         self::assertSame('verified', $verified['operationalStatus']);
         self::assertSame([], $verified['allowedActions']);
         self::assertSame(3, $this->em->getRepository(StaffOperation::class)->count([]));
+    }
+
+    public function testOrderProjectionsExposeCounterSnapshotsAndKeepUnboundOrdersReadable(): void
+    {
+        $bound = new StoreOrder($this->store, UUID::v4(), $this->store->getCode(), 'Store', UUID::v4(), 'CNY', 1230, ['items' => []], true);
+        $unbound = new StoreOrder($this->store, UUID::v4(), $this->store->getCode(), 'Store', UUID::v4(), 'CNY', 680, ['items' => []], true);
+        $counter = (new Counter())->setStoreUuid($this->store->getUuid())->setCode('A01')->setName('Window seat');
+        $binding = (new OrderCounter())->setTradeOrderUuid($bound->getTradeOrderUuid())->setStoreUuid($this->store->getUuid())->setCounter($counter);
+        $this->em->persist($bound);
+        $this->em->persist($unbound);
+        $this->em->persist($counter);
+        $this->em->flush();
+        $this->em->wrapInTransaction(function () use ($binding): void { $this->em->persist($binding); });
+
+        $orders = [];
+        foreach ($this->data($this->request('GET', '/orders'))['items'] as $order) $orders[$order['uuid']] = $order;
+        self::assertSame(['code' => 'A01', 'name' => 'Window seat'], $orders[$bound->getUuid()]['counter']);
+        self::assertNull($orders[$unbound->getUuid()]['counter']);
+        self::assertSame(['code' => 'A01', 'name' => 'Window seat'], $this->data($this->request('GET', '/orders/'.$bound->getUuid()))['counter']);
+        self::assertNull($this->data($this->request('GET', '/orders/'.$unbound->getUuid()))['counter']);
     }
 
     public function testAvailabilityIsEnforcedByTheComposedPricingPort(): void

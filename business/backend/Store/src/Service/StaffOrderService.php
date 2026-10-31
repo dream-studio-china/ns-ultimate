@@ -37,6 +37,18 @@ final class StaffOrderService
         return $this->orders->createOrder($calculation->items, $customer, $calculation->totalAmount, $store->getCurrency(), $notes, $metadata, $context);
     }
 
+    /**
+     * Sources were accepted and checked for inventory before a merged settlement order is created.
+     *
+     * @param array<string, mixed> $metadata
+     */
+    public function createSettlement(Store $store, PriceCalculationResult $calculation, ?User $customer, ?string $notes, array $metadata): Order
+    {
+        $settings = StoreSettings::from($store->getSettings());
+        $context = new StoreContext($store->getUuid(), $store->getCode(), $store->getName(), 'staff', $store->getCurrency(), false, false, $settings->requireVerification);
+        return $this->orders->createOrder($calculation->items, $customer, $calculation->totalAmount, $store->getCurrency(), $notes, $metadata, $context);
+    }
+
     /** Cancels the Trade order and its projected Store order in the caller's transaction. */
     public function cancel(Order $order, StoreOrder $storeOrder): void
     {

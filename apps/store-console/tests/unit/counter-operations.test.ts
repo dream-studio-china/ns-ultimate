@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClient } from '../../src/staff/adapters/api-client'
-import { can, counterSessionSchema, orderQuoteSchema, sessionOrderSchema, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
+import { can, counterMergeQuoteSchema, counterSessionSchema, orderQuoteSchema, sessionOrderSchema, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
 
 const id = '00000000-0000-4000-8000-000000000001'
 const version = 'a'.repeat(64)
@@ -27,6 +27,22 @@ describe('live counter session boundary', () => {
     expect(counterSessionSchema.safeParse(base).success).toBe(false)
     expect(counterSessionSchema.safeParse({ ...base, orders: [], openAmount: 0, orderedAmount: 0, openOrderCount: 0 }).success).toBe(false)
     expect(counterSessionSchema.safeParse({ ...base, orders: [], openAmount: 0, orderedAmount: 0, openOrderCount: 0, paymentHold: false }).success).toBe(true)
+  })
+
+  it('accepts the normalized diningModeSnapshot field and maps it to the session dining mode', () => {
+    const mode = {
+      uuid: id, name: 'Hotpot', enabled: true, priority: 10, switchButtonLabel: 'Hotpot',
+      availability: { allDay: true, daysOfWeek: [1, 2, 3, 4, 5, 6, 7], timeWindows: [] },
+      catalog: { categoryUuids: [], productUuids: [] }, rules: [], checkoutRules: [],
+    }
+    const base = {
+      counter: { uuid: id, code: 'A01', name: 'Window', capacity: 4, enabled: true },
+      session: { uuid: id, participantCount: 2, notes: null, startedAt: '2026-10-31T10:00:00Z', revision: 1, diningModeUuid: id, diningMode: null, diningModeSnapshot: JSON.stringify(mode) },
+      ordersVisible: true, orders: [], openAmount: 0, orderedAmount: 0, openOrderCount: 0, paymentHold: false, currency: 'USD', canEnd: true, version,
+    }
+    const parsed = counterSessionSchema.parse(base)
+
+    expect(parsed.session?.diningMode).toMatchObject({ uuid: id, name: 'Hotpot' })
   })
 
   it('separates session and order grants from catalog, fulfillment and membership labels', () => {
@@ -60,6 +76,11 @@ describe('live counter session boundary', () => {
     expect(data.mock.calls[3]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/session/end`)
     await api.counterCommand(id, 'cancel', { version, orderUuid: id, reason: 'Guest left', commandUuid: id })
     expect(data.mock.calls[4]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/orders/cancel`)
+    await api.previewCounterMerge(id, version)
+    expect(data.mock.calls[5]).toEqual([`/api/v1/store/${id}/counter-operations/counters/${id}/merge/preview`, counterMergeQuoteSchema, 'POST', { version }])
+    const mergeConfirm = { version, commandUuid: id, quoteToken: version }
+    await api.confirmCounterMerge(id, mergeConfirm)
+    expect(data.mock.calls[6]).toEqual([`/api/v1/store/${id}/counter-operations/counters/${id}/merge/confirm`, expect.anything(), 'POST', mergeConfirm])
     expect(() => api.counterCommand('../other', 'create', command)).toThrow()
   })
 })

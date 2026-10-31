@@ -22,13 +22,27 @@ describe('permission-based workspace navigation', () => {
     expect(defaultWorkspacePage(counter, 'kitchen')).toBe('tables')
   })
 
-  it('uses counter sessions by default and honors only accessible entry preferences', () => {
+  it('uses counter sessions by default even when an old kitchen entry preference is present', () => {
     const both = access(['store:product:read', 'store:counter_session:read', 'store:order:read'])
     expect(workspacePages(both)).toEqual(['products', 'tables', 'orders', 'mine'])
     expect(defaultWorkspacePage(both, null)).toBe('tables')
-    expect(defaultWorkspacePage(both, 'kitchen')).toBe('products')
+    expect(defaultWorkspacePage(both, 'kitchen')).toBe('tables')
     expect(defaultWorkspacePage(both, 'cashier')).toBe('tables')
     expect(defaultWorkspacePage(both, 'payment')).toBe('tables')
+  })
+
+  it('uses cashier for table configuration access even without session read permission', () => {
+    const both = access(['store:product:read', 'store:counter:read'])
+    expect(workspacePages(both)).toEqual(['products', 'tables', 'mine'])
+    expect(defaultWorkspacePage(both, null)).toBe('tables')
+    expect(defaultWorkspacePage(both, 'kitchen')).toBe('tables')
+  })
+
+  it('does not expose cashier operations from counter-order grants alone', () => {
+    const cashier = access(['store:counter_order:read', 'store:counter_order:create'])
+    expect(workspacePages(cashier)).toEqual(['mine'])
+    expect(defaultWorkspacePage(cashier, null)).toBe('mine')
+    expect(defaultWorkspacePage(cashier, 'kitchen')).toBe('mine')
   })
 
   it('retains category-only, counter-configuration-only and order-only users', () => {
