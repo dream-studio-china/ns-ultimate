@@ -354,6 +354,19 @@ test('ordering permission alone does not enable customer-order modification', as
   await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
 })
 
+test('the cancel entry stays after add order for cashiers without a cancellation grant', async ({ page }) => {
+  await setup(page, { noReplace: true })
+  await viewTable(page)
+  const detail = page.getByRole('dialog', { name: '查看桌次' })
+  const actions = detail.locator('.order-operation-actions')
+  const cancel = actions.getByRole('button', { name: '取消订单', exact: true })
+  await expect(cancel).toBeVisible()
+  await expect(cancel).toBeDisabled()
+  await expect(detail.getByText('当前账号缺少取消订单权限，请联系管理员开通。', { exact: true })).toBeVisible()
+  const labels = await actions.getByRole('button').allTextContents()
+  expect(labels.indexOf('加单')).toBeLessThan(labels.indexOf('取消订单'))
+})
+
 test('a selected eligible order is removed from the open orders after confirmation', async ({ page }) => {
   const requests = await setup(page, { customerOrder: true })
   await page.locator('.dining-card-title').click()
