@@ -29,7 +29,7 @@ const diningMode = {
   ],
 }
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   let session: { uuid: string; participantCount: number | null; notes: string | null; startedAt: string; revision: number; diningModeUuid: string | null; diningMode: typeof diningMode | null } | null = options.empty ? null : {
@@ -42,7 +42,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     ? { ...store, settings: options.stringSettings ? JSON.stringify({ diningModes }) : { diningModes } }
     : store
   type TestOrder = { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; canReplace: boolean; canCancel: boolean }
-  const testOrder = (uuid: string, status: string): TestOrder => ({ uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : status === 'pending' ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: '', createdAt: stamp, items: [item], canReplace: status === 'pending', canCancel: status === 'pending' })
+  const testOrder = (uuid: string, status: string, quantity = 1): TestOrder => ({ uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : status === 'pending' ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: '', createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: status === 'pending', canCancel: status === 'pending' })
   let orders: TestOrder[] = options.empty || options.emptySession ? [] : options.batchPending
     ? [
         testOrder('10000000-0000-4000-8000-000000000026', 'pending'),
@@ -61,8 +61,9 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
           testOrder('10000000-0000-4000-8000-000000000024', 'refunded'),
           testOrder('10000000-0000-4000-8000-000000000025', 'merged'),
         ]
-      : [testOrder('10000000-0000-4000-8000-000000000009', options.terminal ? 'completed' : options.customerOrder ? 'pending' : 'confirmed')]
+      : [testOrder('10000000-0000-4000-8000-000000000009', options.terminal ? 'completed' : options.customerOrder ? 'pending' : 'confirmed', options.checkoutQuantity)]
   const receipts = new Map<string, Record<string, unknown>>()
+  let delayedProjectionReads = 0
   const version = () => revision.toString(16).padStart(64, 'a')
   const view = () => {
     const base = { counter: { uuid: counterId, code: 'A01', name: 'Window table', capacity: 4, enabled: true }, session,
@@ -94,21 +95,36 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', metadata: null,
       product: { uuid: productId, __toString: '#1 Soup' },
     })
-    if (method === 'POST' && path === `/api/v1/store/${storeId}/counter-operations/counters/${counterId}/orders/merge`) {
+    if (method === 'POST' && path.endsWith('/merge/preview')) {
       expect(body!.version).toBe(version())
       const sources = orders.filter((order) => order.status === 'confirmed')
       expect(sources.length).toBeGreaterThanOrEqual(2)
-      const target: TestOrder = { ...testOrder('10000000-0000-4000-8000-000000000019', 'confirmed'), totalAmount: sources.reduce((sum, order) => sum + order.totalAmount, 0), items: sources.flatMap((order) => order.items) }
+      const quantity = sources.flatMap((order) => order.items).reduce((sum, line) => sum + line.quantity, 0)
+      const totalAmount = sources.reduce((sum, order) => sum + order.totalAmount, 0)
+      return respond({
+        sourceOrderUuids: sources.map((order) => order.uuid), targetUserUuid: storeId,
+        items: [{ ...item, quantity, amount: totalAmount }], sourceTotalAmount: totalAmount,
+        totalAmount, differenceAmount: 0, currency: 'USD', quoteToken: 'f'.repeat(64),
+      })
+    }
+    if (method === 'POST' && path.endsWith('/merge/confirm')) {
+      expect(body!.version).toBe(version())
+      expect(body!.quoteToken).toBe('f'.repeat(64))
+      const sources = orders.filter((order) => order.status === 'confirmed')
+      expect(sources.length).toBeGreaterThanOrEqual(2)
+      const quantity = sources.flatMap((order) => order.items).reduce((sum, line) => sum + line.quantity, 0)
+      const totalAmount = sources.reduce((sum, order) => sum + order.totalAmount, 0)
+      const target: TestOrder = { ...testOrder('10000000-0000-4000-8000-000000000019', 'confirmed', quantity), totalAmount, canReplace: !options.delayedCheckoutProjection }
       orders = [...orders.map((order) => order.status === 'confirmed' ? { ...order, status: 'merged', canReplace: false, canCancel: false } : order), target]
       revision += 1
       if (session) session = { ...session, revision }
-      return respond({ uuid: target.uuid, status: target.status, totalAmount: target.totalAmount, currency: target.currency })
+      return respond({ counterUuid: counterId, sessionUuid: sessionId, orderUuid: target.uuid })
     }
     if (path.endsWith('/membership')) return respond({ status: 'active', role: 'manager' })
     if (path.endsWith('/users/me')) return respond({ uuid: storeId, username: 'counter-staff', roles: ['ROLE_USER'] })
     if (path.endsWith('/authorization/me')) {
       const sessionActions = options.sessionOnly || options.readOnly ? ['read'] : ['read', 'update', 'end']
-      const orderActions = options.sessionOnly ? [] : options.createWithoutRead ? ['create'] : options.readOnly ? ['read'] : options.editOnly ? ['read', 'replace'] : options.cancelOnly ? ['read', 'cancel'] : options.noReplace ? ['read', 'create'] : ['read', 'create', 'replace', 'cancel']
+      const orderActions = options.sessionOnly ? [] : options.createWithoutRead ? ['create'] : options.readOnly ? ['read'] : options.editOnly ? ['read', 'replace'] : options.cancelOnly ? ['read', 'cancel'] : options.noReplace ? ['read', 'create'] : ['read', 'create', 'replace', 'cancel', 'merge']
       const storeScopes = {
         ...Object.fromEntries(sessionActions.map((action) => [`store:counter_session:${action}`, [storeId]])),
         ...Object.fromEntries(orderActions.map((action) => [`store:counter_order:${action}`, [storeId]])),
@@ -116,7 +132,14 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       return respond({ permissions: Object.keys(storeScopes), storeScopes })
     }
     if (path.endsWith('/counter-operations/counters')) return list([view()])
-    if (path.endsWith(`/counter-operations/counters/${counterId}`)) return respond(view())
+    if (path.endsWith(`/counter-operations/counters/${counterId}`)) {
+      if (options.delayedCheckoutProjection && orders.some((order) => order.uuid.endsWith('0019') && !order.canReplace) && ++delayedProjectionReads >= 3) {
+        orders = orders.map((order) => order.uuid.endsWith('0019') ? { ...order, canReplace: true } : order)
+        revision += 1
+        if (session) session = { ...session, revision }
+      }
+      return respond(view())
+    }
     if (path.endsWith('/counter-operations/catalog')) return list([{ uuid: specId, productName: 'Soup', name: 'Regular', price: 1590, available: true }])
     if (method === 'POST' && path === '/api/v1/app/orders') {
       if (options.conflict) return route.fulfill({ status: 409, json: { code: 409, message: 'order_changed' } })
@@ -159,7 +182,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
           orders = orders.map((order) => order.uuid === body!.replaceOrderUuid ? { ...order, status: 'cancelled', operationalStatus: 'cancelled', canReplace: false, canCancel: false } : order)
           result.replacedOrderUuid = body!.replaceOrderUuid
         }
-        orders.push({ uuid, status: 'pending', operationalStatus: 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
+        orders.push({ uuid, status: 'confirmed', operationalStatus: 'accepted', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
         result.orderUuid = uuid
         if (body!.diningModeUuid === diningModeId) session = { ...session!, diningModeUuid: diningModeId, diningMode, revision }
       }
@@ -474,6 +497,11 @@ test('order submission stores the selected dining mode and checkout uses its sav
   const detail = page.getByRole('dialog', { name: '查看桌次' })
   await expect(detail).toContainText('待处理')
   await detail.getByRole('button', { name: '结账', exact: true }).click()
+  const editorCheckout = page.getByRole('dialog', { name: '结账', exact: true })
+  await expect(editorCheckout).toContainText('先按本桌点餐方式核对并调整最终菜品')
+  await expect(editorCheckout.locator('.dining-product-quantity')).toContainText('×1')
+  await editorCheckout.getByRole('button', { name: '核对结账菜品', exact: true }).click()
+  await editorCheckout.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
   const checkout = page.getByRole('dialog', { name: '结账', exact: true })
   await expect(checkout).toContainText('按本桌点餐模式核对')
   await expect(checkout).toContainText('请确认用餐人数')
@@ -496,16 +524,58 @@ test('staff can clear an unordered cart from the ordering sheet', async ({ page 
   expect(requests.some((request) => request.path === '/api/v1/app/orders')).toBe(false)
 })
 
-test('checkout automatically merges confirmed orders when the session has no dining mode', async ({ page }) => {
+test('checkout review merges confirmed orders when the session has no dining mode', async ({ page }) => {
   const requests = await setup(page, { mergeOnCheckout: true })
   await page.locator('.dining-card-title').click()
   await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const editor = page.getByRole('dialog', { name: '结账', exact: true })
+  await editor.getByRole('button', { name: '核对结账菜品', exact: true }).click()
+  await editor.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
   const checkout = page.getByRole('dialog', { name: '结账', exact: true })
-  await expect(checkout).toContainText('已按合并订单结账')
-  await expect(checkout).toContainText('没有对应的点餐模式')
   await expect(checkout).toContainText('#10000000')
   await expect(checkout).toContainText('$31.80')
-  expect(requests.filter((request) => request.method === 'POST' && request.path === `/api/v1/store/${storeId}/counter-operations/counters/${counterId}/orders/merge`)).toHaveLength(1)
+  expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/preview'))).toHaveLength(1)
+  expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/confirm'))).toHaveLength(1)
+})
+
+test('checkout additions create a separate order and then merge it with the table orders', async ({ page }) => {
+  const requests = await setup(page)
+  await page.locator('.dining-card-title').click()
+  await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const editor = page.getByRole('dialog', { name: '结账', exact: true })
+  await editor.getByRole('button', { name: '增加数量 Soup Regular', exact: true }).click()
+  await expect(editor.locator('.dining-product-quantity')).toContainText('×2')
+  await editor.getByRole('button', { name: '核对结账菜品', exact: true }).click()
+  await editor.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
+
+  const checkout = page.getByRole('dialog', { name: '结账', exact: true })
+  await expect(checkout).toContainText('#10000000')
+  await expect(checkout).toContainText('$31.80')
+  const create = requests.find((request) => request.path.endsWith('/orders/create'))!
+  expect(create.body).toMatchObject({ items: [{ specificationUuid: specId, quantity: 1 }] })
+  expect(requests.filter((request) => request.path.endsWith('/merge/preview'))).toHaveLength(1)
+  expect(requests.filter((request) => request.path.endsWith('/merge/confirm'))).toHaveLength(1)
+  expect(requests.some((request) => request.path.endsWith('/orders/replace'))).toBe(false)
+})
+
+test('checkout reductions wait for projection, merge, and then replace the consolidated order', async ({ page }) => {
+  const requests = await setup(page, { mergeOnCheckout: true, delayedCheckoutProjection: true })
+  await page.locator('.dining-card-title').click()
+  await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const editor = page.getByRole('dialog', { name: '结账', exact: true })
+  await expect(editor.locator('.dining-product-quantity')).toContainText('×2')
+  await editor.getByRole('button', { name: '减少数量 Soup Regular', exact: true }).click()
+  await editor.getByRole('button', { name: '核对结账菜品', exact: true }).click()
+  await editor.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
+
+  const checkout = page.getByRole('dialog', { name: '结账', exact: true })
+  await expect(checkout).toContainText('#10000000')
+  await expect(checkout).toContainText('$15.90')
+  const writes = requests.filter((request) => request.method === 'POST').map((request) => request.path)
+  expect(writes.indexOf(`/api/v1/store/${storeId}/counter-operations/counters/${counterId}/merge/confirm`)).toBeLessThan(writes.indexOf(`/api/v1/store/${storeId}/counter-operations/counters/${counterId}/orders/replace`))
+  const replace = requests.find((request) => request.path.endsWith('/orders/replace'))!
+  expect(replace.body).toMatchObject({ replaceOrderUuid: '10000000-0000-4000-8000-000000000019', items: [{ specificationUuid: specId, quantity: 1 }] })
+  expect(requests.some((request) => request.path.endsWith('/orders/create'))).toBe(false)
 })
 
 test('an empty table still offers ordering when order rows are redacted', async ({ page }) => {

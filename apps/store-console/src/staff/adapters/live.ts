@@ -131,10 +131,18 @@ const legacySpecificationSchema = z.object({
 export interface LegacyCatalogItem { uuid: string; specificationId: number; productUuid: string; categoryUuid: string | null; categoryName: string | null; productName: string; name: string; price: number; available: boolean }
 export type LegacyCounterOrder = z.infer<typeof legacyCounterOrderSchema>
 export const orderQuoteSchema = z.object({ items: z.array(orderableItemSchema).min(1).max(30), totalAmount: cents, currency, quoteToken: version })
+export const counterMergeQuoteSchema = z.object({
+  sourceOrderUuids: z.array(uuid).min(2), targetUserUuid: uuid,
+  items: z.array(orderableItemSchema).min(1).max(30),
+  sourceTotalAmount: cents, totalAmount: cents, differenceAmount: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
+  currency, quoteToken: version,
+})
+const counterCommandResultSchema = z.object({ counterUuid: uuid, sessionUuid: uuid, orderUuid: uuid.optional(), replacedOrderUuid: uuid.optional(), status: z.string().optional() })
 export const orderableCatalogSchema = z.object({ uuid, productName: z.string(), name: z.string(), price: cents, available: z.boolean() })
 export type CounterSessionView = z.infer<typeof counterSessionSchema>
 export type SessionOrder = z.infer<typeof sessionOrderSchema>
 export type OrderQuote = z.infer<typeof orderQuoteSchema>
+export type CounterMergeQuote = z.infer<typeof counterMergeQuoteSchema>
 export interface OrderCart { version: string; items: { specificationUuid: string; quantity: number }[]; notes: string; diningModeUuid?: string; replaceOrderUuid?: string }
 export type CounterCommand = 'update' | 'end' | 'create' | 'replace' | 'cancel'
 export type LiveStore = z.infer<typeof storeSchema>
@@ -342,15 +350,12 @@ export class StoreApi {
       },
     }, { 'X-Store-Code': storeCode })
   }
-  mergeCounterOrders(id: string, version?: string) {
-    return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/orders/merge`, z.object({
-      uuid, status: z.string(), totalAmount: cents, currency,
-    }), 'POST', { version: version ?? null })
-  }
+  previewCounterMerge(id: string, version: string) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/merge/preview`, counterMergeQuoteSchema, 'POST', { version }) }
+  confirmCounterMerge(id: string, body: { version: string; commandUuid: string; quoteToken: string }) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/merge/confirm`, counterCommandResultSchema, 'POST', body) }
   orderQuote(id: string, cart: OrderCart) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/orders/quote`, orderQuoteSchema, 'POST', cart) }
   counterCommand(id: string, command: CounterCommand, body: Record<string, unknown>) {
     const path = command === 'update' || command === 'end' ? `session/${command}` : `orders/${command}`
-    return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/${path}`, z.object({ counterUuid: uuid, sessionUuid: uuid, orderUuid: uuid.optional(), replacedOrderUuid: uuid.optional() }), 'POST', body)
+    return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/${path}`, counterCommandResultSchema, 'POST', body)
   }
   saveProduct(id: string | null, body: Record<string, unknown>) {
     return this.client.data(`${this.base}/operations/products${id ? `/${uuid.parse(id)}` : ''}`, productSchema, id ? 'PUT' : 'POST', body)

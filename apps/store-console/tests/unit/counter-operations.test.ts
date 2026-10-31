@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClient } from '../../src/staff/adapters/api-client'
-import { can, counterSessionSchema, orderQuoteSchema, sessionOrderSchema, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
+import { can, counterMergeQuoteSchema, counterSessionSchema, orderQuoteSchema, sessionOrderSchema, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
 
 const id = '00000000-0000-4000-8000-000000000001'
 const version = 'a'.repeat(64)
@@ -60,8 +60,11 @@ describe('live counter session boundary', () => {
     expect(data.mock.calls[3]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/session/end`)
     await api.counterCommand(id, 'cancel', { version, orderUuid: id, reason: 'Guest left', commandUuid: id })
     expect(data.mock.calls[4]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/orders/cancel`)
-    await api.mergeCounterOrders(id, version)
-    expect(data.mock.calls[5]).toEqual([`/api/v1/store/${id}/counter-operations/counters/${id}/orders/merge`, expect.anything(), 'POST', { version }])
+    await api.previewCounterMerge(id, version)
+    expect(data.mock.calls[5]).toEqual([`/api/v1/store/${id}/counter-operations/counters/${id}/merge/preview`, counterMergeQuoteSchema, 'POST', { version }])
+    const mergeConfirm = { version, commandUuid: id, quoteToken: version }
+    await api.confirmCounterMerge(id, mergeConfirm)
+    expect(data.mock.calls[6]).toEqual([`/api/v1/store/${id}/counter-operations/counters/${id}/merge/confirm`, expect.anything(), 'POST', mergeConfirm])
     expect(() => api.counterCommand('../other', 'create', command)).toThrow()
   })
 })

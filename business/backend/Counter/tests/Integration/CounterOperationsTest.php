@@ -151,6 +151,15 @@ final class CounterOperationsTest extends KernelTestCase
         $sourceUuids = array_column([$first, $second], 'orderUuid');
         sort($sourceUuids);
         self::assertSame($sourceUuids, $this->orderByUuid($result['orderUuid'])['mergedSourceOrderUuids']);
+
+        // Checkout may reduce the merged aggregate after additions have been consolidated.
+        $this->project($result['orderUuid']);
+        self::assertTrue($this->orderByUuid($result['orderUuid'])['canReplace']);
+        $replacementBody = $this->replacementInput($result['orderUuid']);
+        $replaced = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $replacementBody));
+        self::assertSame($result['orderUuid'], $replaced['replacedOrderUuid']);
+        self::assertSame('cancelled', $this->orderByUuid($result['orderUuid'])['status']);
+        self::assertSame(3180, $this->orderByUuid($replaced['orderUuid'])['totalAmount']);
     }
 
     public function testStaffMergeRejectsInvalidOwnerAndUnprojectedSources(): void
@@ -217,7 +226,7 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(1, $view['openOrderCount']);
     }
 
-    public function testStaffMergeEndpointCombinesCustomerOwnedOrdersWithoutADiningMode(): void
+    public function testStaffMergeConfirmationCombinesCustomerOwnedOrdersWithoutADiningMode(): void
     {
         if (getenv('INVENTORY_ENABLED') === '1') {
             self::markTestSkipped('Customer-owned fixture orders have no inventory reservation.');
@@ -230,19 +239,25 @@ final class CounterOperationsTest extends KernelTestCase
         }
         $this->em->flush();
         $sources = [$this->startCustomerSession(false, $customers[0]), $this->startCustomerSession(false, $customers[1])];
-        foreach ($sources as $uuid) $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $uuid]);
+        foreach ($sources as $uuid) {
+            $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $uuid]);
+            $this->project($uuid);
+        }
         $this->em->clear();
 
-        $merged = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/merge', ['version' => $this->view()['version']]));
-        self::assertSame('confirmed', $merged['status']);
-        self::assertSame(3180, $merged['totalAmount']);
+        $base = '/counters/'.$this->counter->getUuid().'/merge/';
+        $input = ['version' => $this->view()['version']];
+        $quote = $this->data($this->request('POST', $base.'preview', $input));
+        $merged = $this->data($this->request('POST', $base.'confirm', [...$input,
+            'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()]));
         $view = $this->view();
         self::assertNull($view['session']['diningMode']);
         $byUuid = array_column($view['orders'], null, 'uuid');
         foreach ($sources as $uuid) {
             self::assertSame('merged', $byUuid[$uuid]['status']);
         }
-        self::assertSame('confirmed', $byUuid[$merged['uuid']]['status']);
+        self::assertSame('confirmed', $byUuid[$merged['orderUuid']]['status']);
+        self::assertSame(3180, $byUuid[$merged['orderUuid']]['totalAmount']);
     }
 
     public function testDiningModeIsSnapshottedAtFirstOrderAndLockedForTheSession(): void

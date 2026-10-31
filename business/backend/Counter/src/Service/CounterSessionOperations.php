@@ -155,7 +155,9 @@ final class CounterSessionOperations
 
     private function canReplace(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): bool
     {
-        if (!$this->canChange($order, $lifecycle, $storeOrder)) return false;
+        // Checkout consolidates source orders into one target before applying quantity
+        // reductions with replacement, so a merge target is a valid replacement source.
+        if (!$this->canChange($order, $lifecycle, $storeOrder, true)) return false;
         // Never silently omit legacy/non-catalog lines while prefilling the replacement cart.
         if ($order->getItems()->isEmpty() || $order->getItems()->count() > 30) return false;
         $seen = [];
@@ -173,12 +175,12 @@ final class CounterSessionOperations
     }
 
     /** Shared eligibility for changing or cancelling an unprocessed, unpaid session order. */
-    private function canChange(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): bool
+    private function canChange(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder, bool $allowMergeTarget = false): bool
     {
-        return $this->changeBlockedReason($order, $lifecycle, $storeOrder) === null;
+        return $this->changeBlockedReason($order, $lifecycle, $storeOrder, $allowMergeTarget) === null;
     }
 
-    private function changeBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
+    private function changeBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder, bool $allowMergeTarget = false): ?string
     {
         if ($order->getInvoiceId() !== null || $order->getPaymentStatus() !== null) return 'payment_started';
         if ($storeOrder === null) return 'projection_pending';
@@ -192,7 +194,7 @@ final class CounterSessionOperations
         if (!in_array($order->getStatus(), [Order::STATUS_PENDING, Order::STATUS_CONFIRMED], true)
             || $this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1
             || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $order->getUuid()]) !== 0
-            || $this->em->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) !== 0) return 'order_ineligible';
+            || (!$allowMergeTarget && $this->em->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) !== 0)) return 'order_ineligible';
         $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $order->getUuid(), 'topic' => 'trade.order.created.v1']);
         $snapshot = $event?->getPayload()['store'] ?? null;
         $valid = is_array($snapshot) && ($snapshot['uuid'] ?? null) === $lifecycle->getStoreUuid()
@@ -359,7 +361,7 @@ final class CounterSessionOperations
         $prepared = $this->prepareMerge($store, $counterUuid, $actor, $data);
         if (!is_string($data['quoteToken'] ?? null) || !hash_equals($prepared['quote']['quoteToken'], $data['quoteToken'])) throw new HttpException(409, 'staff_order_quote_changed');
         $session = $prepared['session'];
-        $target = $this->orders->create($store, $prepared['calculation'], $prepared['owner'], null,
+        $target = $this->orders->createSettlement($store, $prepared['calculation'], $prepared['owner'], null,
             ['counterUuid' => $counterUuid, 'counterSessionUuid' => $session->getUuid(), 'counterSettlement' => true]);
         foreach ($prepared['sources'] as $source) $this->em->persist(new OrderMerge($source->getUuid(), $target->getUuid()));
         $this->em->flush();
