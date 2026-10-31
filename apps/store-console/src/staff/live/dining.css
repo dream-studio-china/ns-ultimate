@@ -138,6 +138,8 @@
 .dining-editor .live-sheet-content { display: grid; gap: 12px; }
 .dining-editor .sheet-scroll { scroll-padding-top: 64px; }
 .dining-settlement .live-sheet-content { display: grid; gap: 16px; }
+.dining-settlement-actions { display: flex; gap: 9px; align-items: center; }
+.dining-settlement-actions .adm-button:first-child { flex: 0 0 auto; }
 .dining-settlement-total { display: grid; gap: 6px; padding: 20px; border: 1px solid var(--ws-line); border-radius: 18px; background: var(--theme-soft); }
 .dining-settlement-total span, .dining-settlement-total small { color: var(--ws-muted); font-size: 12px; }
 .dining-settlement-total strong { color: var(--brand); font-size: 30px; font-variant-numeric: tabular-nums; }
@@ -163,7 +165,27 @@
 .dining-checkout-confirm { display: flex; align-items: center; gap: 8px; min-height: 35px; padding: 7px 9px; border: 1px solid var(--ws-line); border-radius: 9px; color: var(--ws-muted); background: color-mix(in srgb, var(--theme-paper) 70%, transparent); font-size: 10px; font-weight: 600; cursor: pointer; }
 .dining-checkout-confirm input { width: 17px; height: 17px; margin: 0; accent-color: var(--brand); }
 .dining-checkout-confirm:has(input:disabled) { cursor: not-allowed; opacity: .62; }
+.dining-checkout-order, .dining-checkout-plan { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--ws-line); border-radius: 15px; background: var(--theme-paper); }
+.dining-checkout-order > header, .dining-checkout-plan > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.dining-checkout-order h3, .dining-checkout-plan h3 { color: var(--ws-ink); font-size: 14px; }
+.dining-checkout-order header small, .dining-checkout-plan header span { color: var(--ws-muted); font-size: 9px; text-align: right; }
+.dining-checkout-order ul { display: grid; gap: 7px; }
+.dining-checkout-order li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 9px; border-radius: 10px; background: var(--ws-soft); }
+.dining-checkout-order li > span { display: grid; min-width: 0; }
+.dining-checkout-order li strong { color: var(--ws-ink); font-size: 11px; overflow-wrap: anywhere; }
+.dining-checkout-order li small { color: var(--ws-muted); font-size: 9px; }
+.dining-checkout-order li b { color: var(--ws-ink); font-size: 11px; }
+.dining-checkout-order li em { color: var(--brand); font-size: 10px; font-style: normal; font-variant-numeric: tabular-nums; }
+.dining-checkout-plan { border-style: dashed; background: color-mix(in srgb, var(--brand) 3%, var(--theme-paper)); }
+.dining-checkout-plan.has-changes { border-style: solid; border-color: color-mix(in srgb, var(--brand) 28%, var(--ws-line)); }
+.dining-checkout-plan p { padding: 9px 10px; border-radius: 9px; color: var(--ws-muted); background: var(--ws-soft); font-size: 10px; line-height: 1.65; }
+.dining-checkout-plan p.is-addition { color: #416c35; background: #f1f8ed; }
+.dining-checkout-plan p.is-reduction { color: #954a36; background: #fcf1ed; }
 .dining-settlement-orders { display: grid; gap: 10px; }
+.dining-settlement-current-order { display: grid; gap: 10px; }
+.dining-settlement-current-order > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 0 2px; }
+.dining-settlement-current-order h3 { color: var(--ws-ink); font-size: 15px; }
+.dining-settlement-current-order header small { color: var(--ws-muted); font-size: 10px; }
 .dining-settlement-orders section { padding: 14px; border: 1px solid var(--ws-line); border-radius: 15px; }
 .dining-settlement-orders header { display: flex; justify-content: space-between; gap: 10px; color: var(--ws-muted); font-size: 11px; }
 .dining-settlement-orders header strong { color: var(--ws-ink); }

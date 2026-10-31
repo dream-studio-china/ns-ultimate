@@ -39,15 +39,19 @@ async function retryCheckoutConflict<T>(attempt: () => Promise<T>): Promise<T> {
   }
 }
 
-async function waitForCheckoutReplacement(api: StoreApi, counterUuid: string, orderUuid: string): Promise<{ table: CounterSessionView; order: SessionOrder }> {
+async function waitForCheckoutOrder(api: StoreApi, counterUuid: string, matches: (order: SessionOrder) => boolean): Promise<{ table: CounterSessionView; order: SessionOrder }> {
   const deadline = Date.now() + staffProjectionTimeout
   while (true) {
     const table = await api.counterSession(counterUuid)
-    const order = effectiveDiningOrders(table).find((entry) => entry.uuid === orderUuid && entry.canReplace)
+    const order = effectiveDiningOrders(table).find(matches)
     if (order) return { table, order }
     if (Date.now() >= deadline) throw new ApiError('request', 409)
     await wait(staffProjectionInterval)
   }
+}
+
+async function waitForCheckoutReplacement(api: StoreApi, counterUuid: string, orderUuid: string) {
+  return waitForCheckoutOrder(api, counterUuid, (order) => order.uuid === orderUuid && order.canReplace)
 }
 
 /** Session commands and order commands use different resources, so each action is checked separately. */
@@ -179,9 +183,10 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
     setActionError(null)
     if (!navigator.onLine) { setActionError('offline'); return }
     try {
-      // Legacy reads do not expose the versioned counter session; resolve it before the
-      // checkout editor starts so create/merge/replace commands can share one contract.
-      setCheckoutEditing(list.legacy ? await api.counterSession(table.counter.uuid) : table)
+      // Rules and their matching order content are reviewed before any checkout edit starts.
+      // Legacy reads do not expose the versioned session, so resolve it first.
+      const current = list.legacy ? await api.counterSession(table.counter.uuid) : table
+      setSettling({ table: current, autoMerged: false })
     } catch (error) {
       setActionError(errorKey(error))
     }
@@ -216,7 +221,7 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
     {selected && <LiveSheet open title={t('viewDining')} onClose={() => setSelected(null)}><DiningDetail api={api} access={access} legacy={list.legacy} orderable={orderable} id={selected} changed={list.reload} onOrder={(table) => { setReturnTo(table.counter.uuid); setSelected(null); startOrder(table) }} onCheckout={(table) => void startCheckout(table)} /></LiveSheet>}
     {ordering && <LegacyDiningEditor api={api} access={access} table={ordering.table} mode={ordering.mode} onClose={() => { setOrdering(null); setReturnTo(null) }} done={() => { setOrdering(null); list.reload(); setSelected(returnTo); setReturnTo(null) }} />}
     {checkoutEditing && <DiningEditor api={api} access={access} table={checkoutEditing} mode="checkout" onClose={() => setCheckoutEditing(null)} done={() => void finishCheckoutEdit()} />}
-    {settling && <DiningSettlement table={settling.table} autoMerged={settling.autoMerged} onClose={() => setSettling(null)} />}
+    {settling && <DiningSettlement table={settling.table} autoMerged={settling.autoMerged} onClose={() => setSettling(null)} onAdjust={(table) => { setSettling(null); setCheckoutEditing(table) }} />}
   </>
 }
 
@@ -323,30 +328,31 @@ function CancelPendingOrders({ api, access, legacy, table, pendingOrders, onDone
   </>
 }
 
-function DiningSettlement({ table, autoMerged, onClose }: { table: CounterSessionView; autoMerged: boolean; onClose: () => void }) {
+function DiningSettlement({ table, autoMerged, onClose, onAdjust }: { table: CounterSessionView; autoMerged: boolean; onClose: () => void; onAdjust: (table: CounterSessionView) => void }) {
   const { t, locale } = useI18n()
   const currency = table.currency
   const diningMode = table.session?.diningMode ?? null
   const currentOrders = effectiveDiningOrders(table)
   return <LiveSheet open title={t('checkoutDining')} className="dining-settlement" onClose={onClose}>
-    <div className="dining-settlement-total"><span>{t('diningOpenAmount')}</span><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency }).format(effectiveDiningAmount(table) / 100)}</strong><small>{table.counter.name}{diningMode ? ` · ${diningMode.name}` : ''}</small></div>
     {autoMerged && <Notice title="diningMergedWithoutModeTitle">{t('diningMergedWithoutModeHint')}</Notice>}
     {diningMode && diningMode.checkoutRules.length > 0 && <DiningCheckoutRules table={table} mode={diningMode} />}
-    {table.ordersVisible && currentOrders.length > 0 && <div className="dining-settlement-orders">{currentOrders.map((order) => <section key={order.uuid}><header><strong>#{order.uuid.slice(0, 8).toUpperCase()}</strong><time dateTime={order.createdAt}>{formatDiningDate(order.createdAt, locale)}</time></header><DiningLines items={order.items} currency={order.currency} /><b>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</b></section>)}</div>}
+    {!diningMode && <Notice subtle>{t('checkoutNoModeHint')}</Notice>}
+    {table.ordersVisible && currentOrders.length > 0 && <section className="dining-settlement-current-order"><header><h3>{t('checkoutRuleOrderTitle')}</h3><small>{currentOrders.length} {t('diningBatches')}</small></header><div className="dining-settlement-orders">{currentOrders.map((order) => <section key={order.uuid}><header><strong>#{order.uuid.slice(0, 8).toUpperCase()}</strong><time dateTime={order.createdAt}>{formatDiningDate(order.createdAt, locale)}</time></header><DiningLines items={order.items} currency={order.currency} /><b>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</b></section>)}</div></section>}
+    <div className="dining-settlement-total"><span>{t('diningOpenAmount')}</span><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency }).format(effectiveDiningAmount(table) / 100)}</strong><small>{table.counter.name}{diningMode ? ` · ${diningMode.name}` : ''}</small></div>
     <Notice title="checkoutUnavailableTitle">{t('checkoutUnavailableHint')}</Notice>
-    <Button block onClick={onClose}>{t('back')}</Button>
+    <div className="dining-settlement-actions"><Button onClick={onClose}>{t('back')}</Button><Button block color="primary" onClick={() => onAdjust(table)}>{t('checkoutAdjustOrder')}</Button></div>
   </LiveSheet>
 }
 
-function DiningCheckoutRules({ table, mode }: { table: CounterSessionView; mode: DiningMode }) {
+interface CheckoutRuleLine { specificationUuid: string | null; quantity: number; productName?: string; specificationName?: string }
+
+function DiningCheckoutRules({ table, mode, lines, participantCount: participantOverride }: { table: CounterSessionView; mode: DiningMode; lines?: CheckoutRuleLine[]; participantCount?: number | null }) {
   const { t } = useI18n()
   const [confirmed, setConfirmed] = useState<Set<string>>(() => new Set())
-  const orderItems = table.ordersVisible
-    ? effectiveDiningOrders(table).flatMap((order) => order.items)
-    : []
+  const orderItems: CheckoutRuleLine[] = lines ?? (table.ordersVisible ? effectiveDiningOrders(table).flatMap((order) => order.items) : [])
   const quantities = new Map<string, number>()
   for (const item of orderItems) if (item.specificationUuid) quantities.set(item.specificationUuid, (quantities.get(item.specificationUuid) ?? 0) + item.quantity)
-  const participantCount = table.session?.participantCount ?? null
+  const participantCount = participantOverride === undefined ? table.session?.participantCount ?? null : participantOverride
   const requiredItems = mode.rules.filter((rule): rule is FixedDiningRule | PerGuestDiningRule => (
     (rule.type === 'fixed_item' || rule.type === 'per_guest_item') && rule.required
   )).map((rule) => {
@@ -361,7 +367,7 @@ function DiningCheckoutRules({ table, mode }: { table: CounterSessionView; mode:
     return next
   })
   const itemLabel = (specificationUuid: string, fallback: string) => {
-    const item = orderItems.find((entry) => entry.specificationUuid === specificationUuid)
+    const item = orderItems.find((entry) => entry.specificationUuid === specificationUuid && entry.productName)
     return item ? `${item.productName}${item.specificationName ? ` · ${item.specificationName}` : ''}` : fallback || t('checkoutRequiredItem')
   }
   const ruleTitle = (rule: CheckoutRule) => rule.title.trim() || rule.name.trim() || t(rule.type === 'confirm_participants' ? 'checkoutGuestRule' : rule.type === 'confirm_required_items' ? 'checkoutRequiredItemsRule' : 'checkoutCategoryRule')
@@ -414,14 +420,14 @@ function OrderCancel({ api, table, order, onClose, done }: { api: StoreApi; tabl
 interface RuleCatalogEntry { rule: FixedDiningRule | PerGuestDiningRule; item: LegacyCatalogItem }
 interface ModeCartLine extends LegacyCatalogItem { specificationUuid: string; quantity: number; ruleUuids: string[]; locked: boolean }
 
-function useDiningModeState(source: unknown, timeZone: string, boundMode: DiningMode | null = null) {
+function useDiningModeState(source: unknown, timeZone: string, boundMode: DiningMode | null = null, allowStoreFallback = true) {
   const [now, setNow] = useState(() => Date.now())
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null)
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000)
     return () => window.clearInterval(timer)
   }, [])
-  const modes = useMemo(() => boundMode ? [boundMode] : normalizeDiningModes(source), [boundMode, source])
+  const modes = useMemo(() => boundMode ? [boundMode] : allowStoreFallback ? normalizeDiningModes(source) : [], [allowStoreFallback, boundMode, source])
   const available = useMemo(() => boundMode ? [boundMode] : availableDiningModes(modes, new Date(now), timeZone), [boundMode, modes, now, timeZone])
   const selected = available.find((mode) => mode.uuid === selectedUuid) ?? available[0] ?? null
   return { modes, available, selected, selectedUuid, setSelectedUuid, configured: modes.length > 0, locked: boundMode !== null }
@@ -547,8 +553,8 @@ function ChoiceRulePicker({ rule, items, lines, currency, invalid, disabled, onS
   </section>
 }
 
-function DiningModePicker({ state, timeZone, participantCount, onParticipantCount, showGuests = false, onSelect }: {
-  state: ReturnType<typeof useDiningModeState>; timeZone: string; participantCount: number; onParticipantCount: (value: number) => void; showGuests?: boolean; onSelect: (mode: DiningMode) => void
+function DiningModePicker({ state, timeZone, participantCount, onParticipantCount, showGuests = false, forceGuests = false, onSelect }: {
+  state: ReturnType<typeof useDiningModeState>; timeZone: string; participantCount: number; onParticipantCount: (value: number) => void; showGuests?: boolean; forceGuests?: boolean; onSelect: (mode: DiningMode) => void
 }) {
   const { t } = useI18n()
   if (!state.configured) return null
@@ -557,7 +563,7 @@ function DiningModePicker({ state, timeZone, participantCount, onParticipantCoun
   return <section className="dining-mode-picker" aria-label={t('diningMode')}>
     <div className="dining-mode-current"><span>{t('diningMode')}</span><strong>{state.selected.name}</strong><small>{t('diningModeStoreTimezone').replace('{timezone}', timeZone)}</small></div>
     {!state.locked && state.available.length > 1 && <div className="dining-mode-switches">{state.available.map((mode) => <button type="button" key={mode.uuid} aria-pressed={mode.uuid === state.selected?.uuid} className={mode.uuid === state.selected?.uuid ? 'is-active' : ''} onClick={() => onSelect(mode)}>{diningModeLabel(mode)}</button>)}</div>}
-    {showGuests && guestBased && <div className="dining-guest-picker"><span>{t('diningGuestCount')}</span><div className="dining-guest-quick" role="group" aria-label={t('diningGuestQuick')}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((value) => <button type="button" key={value} className={participantCount === value ? 'is-active' : ''} aria-pressed={participantCount === value} onClick={() => onParticipantCount(value)}>{value}</button>)}</div><label className="dining-guest-input"><span>{t('diningOtherGuests')}</span><input aria-label={t('diningGuestCount')} required inputMode="numeric" pattern="[0-9]*" type="number" min={1} max={100} step={1} value={participantCount} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = Number(event.target.value); if (Number.isInteger(value) && value >= 1) onParticipantCount(Math.min(100, value)) }} /></label></div>}
+    {showGuests && (guestBased || forceGuests) && <div className="dining-guest-picker"><span>{t('diningGuestCount')}</span><div className="dining-guest-quick" role="group" aria-label={t('diningGuestQuick')}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((value) => <button type="button" key={value} className={participantCount === value ? 'is-active' : ''} aria-pressed={participantCount === value} onClick={() => onParticipantCount(value)}>{value}</button>)}</div><label className="dining-guest-input"><span>{t('diningOtherGuests')}</span><input aria-label={t('diningGuestCount')} required inputMode="numeric" pattern="[0-9]*" type="number" min={1} max={100} step={1} value={participantCount} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = Number(event.target.value); if (Number.isInteger(value) && value >= 1) onParticipantCount(Math.min(100, value)) }} /></label></div>}
   </section>
 }
 
@@ -620,6 +626,36 @@ function checkoutCartLines(table: CounterSessionView): ModernCartLine[] {
   }])))
 }
 
+function CheckoutOrderReview({ lines, currency }: { lines: ModernCartLine[]; currency: string }) {
+  const { t, locale } = useI18n()
+  return <section className="dining-checkout-order" aria-label={t('checkoutRuleOrderTitle')}>
+    <header><h3>{t('checkoutRuleOrderTitle')}</h3><small>{lines.length} {t('recordsUnit')}</small></header>
+    <ul>{lines.map((line) => <li key={line.specificationUuid}>
+      <span><strong>{line.productName}</strong>{line.specificationName && <small>{line.specificationName}</small>}</span>
+      <b>×{line.quantity}</b>
+      {line.price !== undefined && <em>{new Intl.NumberFormat(locale, { style: 'currency', currency }).format(line.price * line.quantity / 100)}</em>}
+    </li>)}</ul>
+  </section>
+}
+
+function CheckoutChangePlan({ table, lines }: { table: CounterSessionView; lines: ModernCartLine[] }) {
+  const { t } = useI18n()
+  const currentLines = checkoutCartLines(table)
+  const reconciliation = reconcileCheckoutQuantities(currentLines, lines.map(({ specificationUuid, quantity }) => ({ specificationUuid, quantity })))
+  const names = new Map<string, string>()
+  for (const item of effectiveDiningOrders(table).flatMap((order) => order.items)) {
+    if (item.specificationUuid) names.set(item.specificationUuid, `${item.productName}${item.specificationName ? ` · ${item.specificationName}` : ''}`)
+  }
+  for (const line of lines) names.set(line.specificationUuid, `${line.productName}${line.specificationName ? ` · ${line.specificationName}` : ''}`)
+  const describe = (items: { specificationUuid: string; quantity: number }[]) => items.map((item) => `${names.get(item.specificationUuid) ?? item.specificationUuid} ×${item.quantity}`).join('、')
+  return <section className={`dining-checkout-plan ${reconciliation.changed ? 'has-changes' : ''}`} aria-label={t('checkoutChangePlan')}>
+    <header><h3>{t('checkoutChangePlan')}</h3><span>{t('checkoutPlanHint')}</span></header>
+    {!reconciliation.changed && <p>{t('checkoutNoChangesPlan')}</p>}
+    {reconciliation.additions.length > 0 && <p className="is-addition">{t('checkoutAdditionsPlan').replace('{items}', describe(reconciliation.additions))}</p>}
+    {reconciliation.reductions.length > 0 && <p className="is-reduction">{t('checkoutReductionsPlan').replace('{items}', describe(reconciliation.reductions))}</p>}
+  </section>
+}
+
 function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'add', onClose, done }: { api: StoreApi; access: StoreAccess; table: CounterSessionView; order?: SessionOrder; mode?: DiningEditorMode; onClose: () => void; done: () => void }) {
   const { t, locale } = useI18n()
   const formId = useId()
@@ -631,7 +667,9 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [participantCount, setParticipantCount] = useState(table.session?.participantCount ?? 1)
   const [removedRules, setRemovedRules] = useState<Set<string>>(() => new Set())
-  const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, table.session?.diningMode ?? null)
+  // Checkout must use the mode snapshotted when the first order was placed. A historical
+  // session without that snapshot goes directly through the order-merge path.
+  const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, table.session?.diningMode ?? null, !isCheckout || Boolean(table.session?.diningMode))
   const ruleCatalog = useRuleCatalog(api, access.store.code, isAdd ? null : diningMode.selected)
   const [items, setItems] = useState<ModernCartLine[]>(initialLines)
   const [notes, setNotes] = useState(order?.notes ?? '')
@@ -732,11 +770,25 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
   }
   const submitCheckout = async () => {
     setAttempted(true)
-    const intended = orderLines.map(({ specificationUuid, quantity }) => ({ specificationUuid, quantity }))
-    const reconciliation = reconcileCheckoutQuantities(checkoutCartLines(table), intended)
-    const diningModeUuid = diningMode.selected?.uuid
     const refresh = () => api.counterSession(table.counter.uuid)
     let current = table
+    const participantManagedByMode = Boolean(diningMode.selected && (
+      diningMode.selected.rules.some((rule) => rule.type === 'per_guest_item')
+      || diningMode.selected.checkoutRules.some((rule) => rule.type === 'confirm_participants')
+    ))
+    if (participantManagedByMode && current.session && participantCount !== current.session.participantCount) {
+      if (!permitted(access, 'update')) throw new ApiError('forbidden', 403)
+      await api.counterCommand(table.counter.uuid, 'update', {
+        version: current.version,
+        participantCount,
+        notes: current.session.notes ?? '',
+        commandUuid: crypto.randomUUID(),
+      })
+      current = await refresh()
+    }
+    const intended = orderLines.map(({ specificationUuid, quantity }) => ({ specificationUuid, quantity }))
+    const reconciliation = reconcileCheckoutQuantities(checkoutCartLines(current), intended)
+    const diningModeUuid = diningMode.selected?.uuid
     let mergedOrderUuid: string | null = null
 
     // Additions are a separate round. This preserves the original order history and
@@ -744,8 +796,13 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
     if (reconciliation.additions.length > 0) {
       const additionCart: OrderCart = { version: current.version, items: reconciliation.additions, notes, ...(diningModeUuid ? { diningModeUuid } : {}) }
       const additionQuote = await api.orderQuote(table.counter.uuid, additionCart)
-      await api.counterCommand(table.counter.uuid, 'create', { ...additionCart, quoteToken: additionQuote.quoteToken, commandUuid: crypto.randomUUID() })
-      current = await refresh()
+      const existingUuids = new Set(effectiveDiningOrders(current).map((order) => order.uuid))
+      const created = await api.counterCommand(table.counter.uuid, 'create', { ...additionCart, quoteToken: additionQuote.quoteToken, commandUuid: crypto.randomUUID() })
+      // Order projection is asynchronous. Wait until the new round is visible before
+      // deciding whether a merge is needed, otherwise a later reduction could target
+      // the pre-addition order while the new round is still pending projection.
+      const projectedAddition = await waitForCheckoutOrder(api, table.counter.uuid, (order) => created.orderUuid ? order.uuid === created.orderUuid : !existingUuids.has(order.uuid))
+      current = projectedAddition.table
     }
 
     const openOrders = effectiveDiningOrders(current)
@@ -791,7 +848,11 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
   const primaryLabel: MessageKey = quote ? (isCheckout ? 'checkoutConfirmCart' : 'diningConfirm') : isAdd ? 'diningConfirm' : isCheckout ? 'checkoutReviewCart' : 'diningQuote'
   return <LiveSheet open title={t(title)} className="dining-editor" toolbar={!quote && categories.length >= 2 && <MenuCategoryFilter categories={categories} selected={categoryFilter} onChange={setCategoryFilter} />} footer={<div className="dining-confirm-bar">{quote ? <Button disabled={attempted || submitting} onClick={() => setQuote(null)}>{t('diningEditCart')}</Button> : !order ? <Button disabled={submitting} onClick={() => void clearCurrentCart()}>{t('clearCart')}</Button> : null}<Button block type="submit" form={formId} color="primary" loading={submitting} disabled={quote ? submitting : quoteDisabled}>{t(primaryLabel)}</Button></div>} onClose={onClose}>
     <Notice subtle>{t(hint)}</Notice>
-    <DiningModePicker state={diningMode} timeZone={access.store.timezone} participantCount={participantCount} onParticipantCount={setParticipantCount} showGuests={!isAdd} onSelect={switchMode} />
+    {isCheckout && diningMode.selected && diningMode.selected.checkoutRules.length > 0 && <DiningCheckoutRules table={table} mode={diningMode.selected} lines={orderLines} participantCount={participantCount} />}
+    {isCheckout && !diningMode.selected && <Notice subtle>{t('checkoutNoModeHint')}</Notice>}
+    {isCheckout && <CheckoutOrderReview lines={orderLines} currency={table.currency} />}
+    {isCheckout && <CheckoutChangePlan table={table} lines={orderLines} />}
+    <DiningModePicker state={diningMode} timeZone={access.store.timezone} participantCount={participantCount} onParticipantCount={setParticipantCount} showGuests={!isAdd} forceGuests={isCheckout && Boolean(diningMode.selected?.checkoutRules.some((rule) => rule.type === 'confirm_participants'))} onSelect={switchMode} />
     {!isAdd && diningMode.selected && <ModeRuleGuide mode={diningMode.selected} lines={orderLines} issues={issues} />}
     {!isAdd && choiceRules.map((rule) => <ChoiceRulePicker key={rule.uuid} rule={rule} items={menu.items as LegacyCatalogItem[]} lines={orderLines} currency={table.currency} invalid={invalidRules.has(rule.uuid)} disabled={ruleCatalog.loading} onSelect={(item) => addItem({ specificationUuid: item.uuid, productName: item.productName, specificationName: item.name, productUuid: item.productUuid, categoryUuid: item.categoryUuid, price: item.price, available: item.available })} onClear={clearItem} />)}
     {ruleCatalog.error && <Notice>{t(ruleCatalog.error)}</Notice>}
