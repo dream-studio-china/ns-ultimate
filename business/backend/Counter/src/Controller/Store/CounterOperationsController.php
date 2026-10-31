@@ -6,13 +6,10 @@ namespace NsUltimate\Business\Counter\Controller\Store;
 
 use App\Core\Controller\RestController;
 use App\Identity\Entity\User;
-use App\Store\DTO\StoreSettings;
 use App\Store\Entity\Store;
-use App\Trade\DTO\StoreContext;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Entity\Counter;
-use NsUltimate\Business\Counter\Service\CounterOrderMergeService;
 use NsUltimate\Business\Counter\Service\CounterSessionOperations;
 use NsUltimate\Business\Store\Service\StaffCommandService;
 use NsUltimate\Business\Store\Service\StaffOrderCatalog;
@@ -31,7 +28,6 @@ final class CounterOperationsController extends RestController
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly CounterSessionOperations $operations,
-        private readonly CounterOrderMergeService $merges,
         private readonly StaffOrderCatalog $catalog,
         private readonly StaffCommandService $commands,
         private readonly LoggerInterface $logger,
@@ -172,26 +168,31 @@ final class CounterOperationsController extends RestController
         });
     }
 
-    #[Route('/counters/{uuid}/orders/merge', name: 'merge', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}'])]
-    public function merge(Request $request, string $scopeId, string $uuid): JsonResponse
+    #[Route('/counters/{uuid}/merge/{action}', name: 'merge', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}', 'action' => 'preview|confirm'])]
+    public function merge(Request $request, string $scopeId, string $uuid, string $action): JsonResponse
     {
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $scopeId]);
-        if (!$store instanceof Store
-            || (!$this->isGranted('store:counter_order:create', $store) && !$this->isGranted('store:counter:create', $store))) {
-            throw new AccessDeniedException();
-        }
-        return $this->respond(function () use ($request, $store, $uuid): array {
+        if (!$store instanceof Store || !$this->isGranted('store:counter_order:merge', $store)) throw new AccessDeniedException();
+        return $this->respond(function () use ($request, $store, $uuid, $action): array {
             $actor = $this->getUser();
             if (!$actor instanceof User) throw new AccessDeniedException();
             $data = $this->body($request);
-            $counter = $this->operations->counter($store, $uuid);
-            $version = $data['version'] ?? null;
-            if ($version !== null) StaffCommandService::expectVersion($data, $this->operations->view($counter)['version']);
-            $settings = StoreSettings::from($store->getSettings());
-            $context = new StoreContext($store->getUuid(), $store->getCode(), $store->getName(), 'staff', $store->getCurrency(),
-                $settings->requireAcceptance, $settings->requireInventory, $settings->requireVerification);
-            $order = $this->merges->mergeForStaff($counter, $actor, $context);
-            return ['uuid' => $order->getUuid(), 'status' => $order->getStatus(), 'totalAmount' => $order->getTotalAmount(), 'currency' => $order->getCurrency()];
+            if ($action === 'confirm') {
+                return $this->commands->run($store, $actor->getUuid(), 'counter_order.merge.'.$uuid, $data,
+                    fn(): array => $this->operations->mergeConfirm($store, $uuid, $actor, $data));
+            }
+            $connection = $this->em->getConnection();
+            $connection->beginTransaction();
+            try {
+                $this->em->refresh($store, LockMode::PESSIMISTIC_WRITE);
+                $quote = $this->operations->mergePreview($store, $uuid, $actor, $data);
+                $connection->commit();
+                return $quote;
+            } catch (\Throwable $error) {
+                if ($connection->isTransactionActive()) $connection->rollBack();
+                $this->em->clear();
+                throw $error;
+            }
         });
     }
 }
