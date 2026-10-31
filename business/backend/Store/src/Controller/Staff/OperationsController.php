@@ -9,6 +9,7 @@ use App\Core\Controller\RestController;
 use App\Identity\Entity\User;
 use App\Store\Entity\Product as CoreProduct;
 use App\Store\Entity\ProductCategory;
+use App\Store\Entity\Membership;
 use App\Store\Entity\Store;
 use App\Store\Entity\StoreOrder;
 use App\Store\Service\StoreOrderServiceInterface;
@@ -84,6 +85,43 @@ final class OperationsController extends RestController
             $this->logger->error('Store operational request failed.', ['exception' => $error]);
             return new JsonResponse(['code' => 500, 'message' => 'operation_failed'], 500, $headers);
         }
+    }
+
+    #[Route('/commands/{commandUuid}', name: 'command-result', methods: ['GET'], requirements: ['commandUuid' => '[0-9a-fA-F-]{36}'])]
+    public function commandResult(string $scopeId, string $commandUuid): JsonResponse
+    {
+        $actor = $this->actor();
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $scopeId]);
+        if (!$store instanceof Store || !$this->em->getRepository(Membership::class)->findOneBy([
+            'store' => $store, 'userUuid' => $actor, 'status' => Membership::STATUS_ACTIVE,
+        ])) throw new AccessDeniedException();
+
+        return $this->respond(function () use ($store, $actor, $commandUuid): array {
+            $receipt = $this->em->getRepository(StaffOperation::class)->findOneBy([
+                'storeUuid' => $store->getUuid(), 'actorUuid' => $actor, 'commandUuid' => $commandUuid,
+            ]);
+            // Absence can also mean the original transaction is still in flight.
+            if (!$receipt instanceof StaffOperation) return ['status' => 'unknown'];
+            $action = $receipt->summary()['action'];
+            $permission = match (true) {
+                $action === 'product.create' => 'store:product:create',
+                $action === 'product.availability' => 'store:product:availability',
+                $action === 'catalog_image.upload' => 'store:catalog_image:create',
+                (bool) preg_match('/^product\.update\.[0-9a-fA-F-]{36}$/D', $action) => 'store:product:update',
+                (bool) preg_match('/^order\.(accept|reject|fulfill|verify)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:order:'.$matches[1],
+                (bool) preg_match('/^counter_session\.(update|end)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:counter_session:'.$matches[1],
+                (bool) preg_match('/^counter_order\.(create|replace|cancel|merge)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:counter_order:'.$matches[1],
+                default => null,
+            };
+            if ($permission === null) throw new AccessDeniedException();
+            $this->denyAccessUnlessGranted($permission, $store);
+            $result = [];
+            foreach (['uuid', 'counterUuid', 'sessionUuid', 'orderUuid', 'replacedOrderUuid'] as $key) {
+                $value = $receipt->getResult()[$key] ?? null;
+                if (is_string($value) && \App\Core\Utils\UUID::is_valid($value)) $result[$key] = $value;
+            }
+            return ['status' => 'succeeded', 'result' => $result];
+        });
     }
 
     #[Route('/{resource}', name: 'list', methods: ['GET'], requirements: ['resource' => 'products|product-categories|counters|orders|history'])]

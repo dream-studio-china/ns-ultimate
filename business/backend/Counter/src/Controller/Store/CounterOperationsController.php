@@ -161,4 +161,32 @@ final class CounterOperationsController extends RestController
                     : $this->operations->submit($store, $uuid, $data, $action === 'replace'));
         });
     }
+
+    #[Route('/counters/{uuid}/merge/{action}', name: 'merge', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}', 'action' => 'preview|confirm'])]
+    public function merge(Request $request, string $scopeId, string $uuid, string $action): JsonResponse
+    {
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $scopeId]);
+        if (!$store instanceof Store || !$this->isGranted('store:counter_order:merge', $store)) throw new AccessDeniedException();
+        return $this->respond(function () use ($request, $store, $uuid, $action): array {
+            $actor = $this->getUser();
+            if (!$actor instanceof User) throw new AccessDeniedException();
+            $data = $this->body($request);
+            if ($action === 'confirm') {
+                return $this->commands->run($store, $actor->getUuid(), 'counter_order.merge.'.$uuid, $data,
+                    fn(): array => $this->operations->mergeConfirm($store, $uuid, $actor, $data));
+            }
+            $connection = $this->em->getConnection();
+            $connection->beginTransaction();
+            try {
+                $this->em->refresh($store, LockMode::PESSIMISTIC_WRITE);
+                $quote = $this->operations->mergePreview($store, $uuid, $actor, $data);
+                $connection->commit();
+                return $quote;
+            } catch (\Throwable $error) {
+                if ($connection->isTransactionActive()) $connection->rollBack();
+                $this->em->clear();
+                throw $error;
+            }
+        });
+    }
 }
