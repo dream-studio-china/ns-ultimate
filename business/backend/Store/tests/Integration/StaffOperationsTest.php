@@ -275,6 +275,63 @@ final class StaffOperationsTest extends KernelTestCase
         self::assertSame(403, $this->request('GET', '/history', null, $this->other->getUuid())->getStatusCode());
     }
 
+    public function testCommandResultIsActorScopedRestrictedAndRequiresCurrentAuthorization(): void
+    {
+        $command = UUID::v4();
+        $id = UUID::v4();
+        $this->em->persist(new StaffOperation($this->store->getUuid(), $this->user->getUuid(), $command, 'product.create', str_repeat('a', 64), ['secret' => 'before'], ['uuid' => $id, 'secret' => 'private', 'orderUuid' => ['unsafe']]));
+        $otherCommand = UUID::v4();
+        $this->em->persist(new StaffOperation($this->store->getUuid(), UUID::v4(), $otherCommand, 'product.create', str_repeat('a', 64), [], ['uuid' => UUID::v4()]));
+        $unknownAction = UUID::v4();
+        $this->em->persist(new StaffOperation($this->store->getUuid(), $this->user->getUuid(), $unknownAction, 'product.delete', str_repeat('a', 64), [], []));
+        $this->em->flush();
+        $response = $this->request('GET', '/commands/'.$command);
+        self::assertSame(['status' => 'succeeded', 'result' => ['uuid' => $id]], $this->data($response));
+        self::assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        self::assertSame(['status' => 'unknown'], $this->data($this->request('GET', '/commands/'.$otherCommand)));
+        self::assertSame(['status' => 'unknown'], $this->data($this->request('GET', '/commands/'.UUID::v4())));
+        self::assertSame(403, $this->request('GET', '/commands/'.$unknownAction)->getStatusCode());
+        self::assertSame(403, $this->request('GET', '/commands/'.$command, null, $this->other->getUuid())->getStatusCode());
+        $this->em->getConnection()->executeStatement('DELETE FROM authorization_assignment');
+        self::getContainer()->get('cache.app')->delete('authorization_effective_'.$this->user->getUuid());
+        self::assertSame(403, $this->request('GET', '/commands/'.$command)->getStatusCode());
+        $membership = $this->em->getRepository(Membership::class)->findOneBy(['store' => $this->store, 'userUuid' => $this->user->getUuid()]);
+        $membership->suspend();
+        $this->em->flush();
+        self::assertSame(403, $this->request('GET', '/commands/'.UUID::v4())->getStatusCode());
+    }
+
+    public function testCommandResultChecksPermissionForEachRecordedAction(): void
+    {
+        $cases = [
+            'product.create' => true, 'product.availability' => true, 'catalog_image.upload' => true,
+            'product.update.'.UUID::v4() => true, 'order.accept.'.UUID::v4() => true,
+            'counter_session.update.'.UUID::v4() => false, 'counter_session.end.'.UUID::v4() => false,
+            'counter_order.create.'.UUID::v4() => false, 'counter_order.replace.'.UUID::v4() => false,
+            'counter_order.cancel.'.UUID::v4() => false, 'counter_order.merge.'.UUID::v4() => false,
+            'order.refund.'.UUID::v4() => false,
+        ];
+        foreach ($cases as $action => $allowed) {
+            $command = UUID::v4();
+            $this->em->persist(new StaffOperation($this->store->getUuid(), $this->user->getUuid(), $command, $action, str_repeat('a', 64), [], []));
+            $this->em->flush();
+            self::assertSame($allowed ? 200 : 403, $this->request('GET', '/commands/'.$command)->getStatusCode(), $action);
+        }
+
+    }
+
+    public function testMergeReceiptRequiresCurrentMergePermission(): void
+    {
+        $permission = new Permission('store:counter_order:merge', 'store', 'counter_order', 'merge', 'Merge counter orders');
+        $this->em->persist($permission);
+        $this->role->addPermission($permission);
+        $command = UUID::v4();
+        $orderUuid = UUID::v4();
+        $this->em->persist(new StaffOperation($this->store->getUuid(), $this->user->getUuid(), $command, 'counter_order.merge.'.UUID::v4(), str_repeat('a', 64), [], ['orderUuid' => $orderUuid]));
+        $this->em->flush();
+        self::assertSame(['status' => 'succeeded', 'result' => ['orderUuid' => $orderUuid]], $this->data($this->request('GET', '/commands/'.$command)));
+    }
+
     public function testCoreOnlyRowsRemainVisibleWithoutSilentlyAddingExtensionFields(): void
     {
         $core = (new \App\Store\Entity\Product($this->store))->setName('Core-only item');

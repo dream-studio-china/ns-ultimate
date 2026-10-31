@@ -56,7 +56,7 @@ final class CounterOperationsTest extends KernelTestCase
         $role = new Role('counter-session-test', 'Counter session test', Role::SCOPE_STORE);
         foreach ([
             'counter_session:read', 'counter_session:update', 'counter_session:end',
-            'counter_order:read', 'counter_order:create', 'counter_order:replace', 'counter_order:cancel',
+            'counter_order:read', 'counter_order:create', 'counter_order:replace', 'counter_order:cancel', 'counter_order:merge',
         ] as $name) {
             [$resource, $action] = explode(':', $name);
             $permission = new Permission('store:'.$name, 'store', $resource, $action, $name);
@@ -87,6 +87,101 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertFalse($view['canEnd']);
         self::assertSame(409, $this->request('POST', '/counters/'.$this->counter->getUuid().'/session/end', ['commandUuid' => UUID::v4(), 'version' => $view['version']])->getStatusCode());
         self::assertSame(2, $this->em->getRepository(StaffOperation::class)->count([]));
+    }
+
+    public function testStaffOrderMetadataIsBoundToQuoteAndPreservedOnReplacement(): void
+    {
+        $this->startCustomerSession();
+        $base = '/counters/'.$this->counter->getUuid().'/orders/';
+        $input = [...$this->quoteInput(), 'metadata' => ['source' => 'staff', 'custom' => ['label' => 'priority']]];
+        $quote = $this->data($this->request('POST', $base.'quote', $input));
+        $body = [...$input, 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()];
+        self::assertSame(409, $this->request('POST', $base.'create', [...$body, 'metadata' => ['source' => 'changed']])->getStatusCode());
+        $created = $this->data($this->request('POST', $base.'create', $body));
+        $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $created['orderUuid']]);
+        self::assertSame('staff', $order->getMetadata()['source']);
+        self::assertSame(['label' => 'priority'], $order->getMetadata()['custom']);
+        self::assertSame($this->counter->getUuid(), $order->getMetadata()['counterUuid']);
+        $this->project($created['orderUuid']);
+        $replacement = [...$this->quoteInput(), 'replaceOrderUuid' => $created['orderUuid'], 'metadata' => ['source' => 'updated']];
+        $newQuote = $this->data($this->request('POST', $base.'quote', $replacement));
+        $result = $this->data($this->request('POST', $base.'replace', [...$replacement, 'quoteToken' => $newQuote['quoteToken'], 'commandUuid' => UUID::v4(), 'reason' => 'Update order']));
+        $updated = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']]);
+        self::assertSame('updated', $updated->getMetadata()['source']);
+        self::assertSame(['label' => 'priority'], $updated->getMetadata()['custom']);
+        self::assertSame($this->counter->getUuid(), $updated->getMetadata()['counterUuid']);
+    }
+
+    public function testStaffOrderMetadataRejectsInvalidAndReservedFields(): void
+    {
+        $this->startCustomerSession();
+        $path = '/counters/'.$this->counter->getUuid().'/orders/quote';
+        foreach ([null, 'text', [1, 2], ['_store' => []], ['counterUuid' => UUID::v4()], ['counterUuids' => []], ['counterSessionUuid' => UUID::v4()], ['counterSettlement' => true], ['mergedIntoOrderUuid' => UUID::v4()]] as $metadata) {
+            self::assertSame(422, $this->request('POST', $path, [...$this->quoteInput(), 'metadata' => $metadata])->getStatusCode());
+        }
+    }
+
+    public function testStaffMergePreviewConfirmAndReplayWithExplicitOwner(): void
+    {
+        $this->startCustomerSession();
+        $first = $this->place(); $this->project($first['orderUuid']);
+        $second = $this->place(); $this->project($second['orderUuid']);
+        foreach ([$first, $second] as $source) $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
+        $owner = (new User())->setUsername('merge-owner')->setEmail('merge-owner@example.test');
+        $this->em->persist($owner); $this->em->flush(); $ownerUuid = $owner->getUuid();
+        $this->em->clear();
+        $base = '/counters/'.$this->counter->getUuid().'/merge/';
+        $input = ['version' => $this->view()['version'], 'user' => $ownerUuid];
+        $quote = $this->data($this->request('POST', $base.'preview', $input));
+        self::assertCount(2, $quote['sourceOrderUuids']);
+        self::assertSame(6360, $quote['totalAmount']);
+        self::assertSame(6360, $quote['sourceTotalAmount']);
+        self::assertSame(0, $quote['differenceAmount']);
+        $body = [...$input, 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()];
+        self::assertSame(409, $this->request('POST', $base.'confirm', [...$body, 'user' => $this->user->getUuid()])->getStatusCode());
+        $result = $this->data($this->request('POST', $base.'confirm', $body));
+        self::assertSame($result, $this->data($this->request('POST', $base.'confirm', $body)));
+        $target = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']]);
+        self::assertSame($ownerUuid, $target->getUser()->getUuid());
+        foreach ([$first, $second] as $source) {
+            self::assertSame('merged', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $source['orderUuid']])->getStatus());
+            self::assertSame('cancelled', $this->em->getRepository(\App\Store\Entity\StoreOrder::class)->findOneBy(['tradeOrderUuid' => $source['orderUuid']])->getOperationalStatus());
+            self::assertSame($result['orderUuid'], $this->orderByUuid($source['orderUuid'])['mergedIntoOrderUuid']);
+        }
+        $sourceUuids = array_column([$first, $second], 'orderUuid');
+        sort($sourceUuids);
+        self::assertSame($sourceUuids, $this->orderByUuid($result['orderUuid'])['mergedSourceOrderUuids']);
+    }
+
+    public function testStaffMergeRejectsInvalidOwnerAndUnprojectedSources(): void
+    {
+        $this->startCustomerSession(); $first = $this->place(); $second = $this->place();
+        foreach ([$first, $second] as $source) $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
+        $this->em->clear();
+        $path = '/counters/'.$this->counter->getUuid().'/merge/preview';
+        $input = ['version' => $this->view()['version']];
+        self::assertSame(422, $this->request('POST', $path, [...$input, 'user' => UUID::v4()])->getStatusCode());
+        self::assertSame(422, $this->request('POST', $path, [...$input, 'user' => null])->getStatusCode());
+        self::assertSame(409, $this->request('POST', $path, $input)->getStatusCode());
+    }
+
+    public function testStaffMergeDefaultsOwnerAndRejectsChangedQuote(): void
+    {
+        $this->startCustomerSession();
+        $first = $this->place(); $this->project($first['orderUuid']);
+        $second = $this->place(); $this->project($second['orderUuid']);
+        foreach ([$first, $second] as $source) $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
+        $this->em->clear();
+        $base = '/counters/'.$this->counter->getUuid().'/merge/';
+        $input = ['version' => $this->view()['version']];
+        $quote = $this->data($this->request('POST', $base.'preview', $input));
+        self::assertSame($this->user->getUuid(), $quote['targetUserUuid']);
+        $this->em->getConnection()->executeStatement('UPDATE trade_specification SET price = 2000 WHERE uuid = ?', [$this->spec->getUuid()]);
+        $body = [...$input, 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()];
+        self::assertSame(409, $this->request('POST', $base.'confirm', $body)->getStatusCode());
+        $quote = $this->data($this->request('POST', $base.'preview', $input));
+        $result = $this->data($this->request('POST', $base.'confirm', [...$body, 'quoteToken' => $quote['quoteToken']]));
+        self::assertSame($this->user->getUuid(), $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']])->getUser()->getUuid());
     }
 
     public function testSessionCanEndAfterOrdersAreCompleted(): void
@@ -463,6 +558,7 @@ final class CounterOperationsTest extends KernelTestCase
     {
         $uuid = $this->startCustomerSession(false);
         self::assertFalse($this->orderByUuid($uuid)['canReplace']);
+        self::assertSame('projection_pending', $this->orderByUuid($uuid)['changeBlockedReason']);
         $this->project($uuid);
         $path = '/counters/'.$this->counter->getUuid().'/orders/quote';
         foreach ([['trade_order', 'invoice_id', UUID::v4()], ['trade_order', 'payment_status', 'paid'], ['trade_order', 'status', 'paid'], ['store_order', 'operational_status', 'accepted'], ['store_order', 'reservation_id', UUID::v4()], ['trade_order_store_lifecycle', 'acceptance_status', 'accepted']] as [$table, $column, $value]) {
@@ -471,6 +567,13 @@ final class CounterOperationsTest extends KernelTestCase
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$value, $uuid]); $this->em->clear();
             self::assertFalse($this->orderByUuid($uuid)['canReplace']);
             self::assertFalse($this->orderByUuid($uuid)['canCancel']);
+            $expectedReason = match ($column) {
+                'invoice_id', 'payment_status' => 'payment_started',
+                'operational_status', 'acceptance_status' => 'order_processed',
+                'reservation_id' => 'inventory_reserved',
+                default => 'order_ineligible',
+            };
+            self::assertSame($expectedReason, $this->orderByUuid($uuid)['changeBlockedReason']);
             self::assertSame(409, $this->request('POST', $path, [...$this->quoteInput(), 'replaceOrderUuid' => $uuid])->getStatusCode());
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$old, $uuid]); $this->em->clear();
         }
@@ -500,6 +603,7 @@ final class CounterOperationsTest extends KernelTestCase
             $container->get(\NsUltimate\Business\Counter\Service\CounterSessionService::class),
             $container->get(StaffOrderPricing::class),
             new StaffOrderService($container->get(OrderServiceInterface::class), $storeOrders, $container->get('state_machine.order')),
+            $storeOrders,
             $container->get('state_machine.order'));
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
         $events = $this->em->getRepository(TradeOutboxMessage::class)->count([]);
