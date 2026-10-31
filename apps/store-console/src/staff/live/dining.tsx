@@ -242,12 +242,12 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, on
     const orders = effectiveDiningOrders(table)
     const hasOrders = orders.length > 0
     const hasAnyOrders = table.ordersVisible && table.orders.length > 0
-    const pendingOrders = table.ordersVisible ? table.orders.filter((order) => order.status === 'pending') : []
+    const cancellableOrders = table.ordersVisible ? effectiveDiningOrders(table).filter((order) => order.canCancel) : []
     return <section className="dining-detail" key={table.counter.uuid}>
     <div className="dining-detail-hero"><div className="dining-detail-heading"><div><h3>{table.counter.name}</h3></div><StatusPill muted={!table.session}>{t(table.session ? 'dining' : table.counter.enabled ? 'idle' : 'tableDisabled')}</StatusPill></div><div className="dining-detail-summary"><span><UsersRound size={15} />{table.session?.participantCount ?? '—'} {t('guestUnit')}</span>{table.session && <span><Clock3 size={15} /><time dateTime={table.session.startedAt}>{formatDiningDate(table.session.startedAt, locale)}</time></span>}</div>{hasOrders && <div className="dining-detail-amount"><span>{t('diningOpenAmount')}</span><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: table.currency }).format(effectiveDiningAmount(table) / 100)}</strong></div>}</div>
     {table.session?.notes && <p className="dining-notes dining-party-notes"><strong>{t('diningPartyNotes')}</strong>{table.session.notes}</p>}
     <div className="order-operation-actions">{orderable && <Button color="primary" disabled={!table.counter.enabled || (table.ordersVisible && table.paymentHold)} onClick={() => onOrder(table)}>{t(hasOrders ? 'addDining' : 'placeNewDining')}</Button>}{!legacy && table.session && (['update', 'end'] as const).filter((command) => permitted(access, command)).map((command) => <Button key={command} disabled={command === 'end' && !table.canEnd} onClick={() => setOperation({ table, command })}>{t(command === 'end' && !hasAnyOrders ? 'clearDining' : labels[command])}</Button>)}{hasOrders && <Button onClick={() => onCheckout(table)}>{t('checkoutDining')}</Button>}</div>
-    {pendingOrders.length > 0 && permitted(access, 'cancel') && <CancelPendingOrders api={api} access={access} legacy={legacy} table={table} pendingOrders={pendingOrders} onDone={done} />}
+    {cancellableOrders.length > 0 && permitted(access, 'cancel') && <CancelUnsettledOrders api={api} access={access} legacy={legacy} table={table} cancellableOrders={cancellableOrders} onDone={done} />}
     {table.ordersVisible && table.paymentHold && <Notice>{t('diningPaymentHold')}</Notice>}{table.session && !table.canEnd && <p className="helper">{t('diningEndBlocked')}</p>}
     {!table.ordersVisible ? <Notice subtle>{t('sessionOrdersRestricted')}</Notice> : <>
       <div className="dining-section-heading"><h3>{t('diningBatches')}</h3><span>{orders.length}</span></div>{!orders.length && <p className="dining-empty-orders">{t('noItems')}</p>}
@@ -265,19 +265,19 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, on
   </section>})}<PageControls state={detail} detail />{operation && (operation.command === 'replace' ? <DiningEditor api={api} access={access} mode="replace" {...operation} onClose={() => setOperation(null)} done={done} /> : operation.command === 'cancel' ? <OrderCancel api={api} table={operation.table} order={operation.order!} onClose={() => setOperation(null)} done={done} /> : <DiningOperation api={api} {...operation} onClose={() => setOperation(null)} done={done} />)}</>
 }
 
-function CancelPendingOrders({ api, access, legacy, table, pendingOrders, onDone }: { api: StoreApi; access: StoreAccess; legacy: boolean; table: CounterSessionView; pendingOrders: SessionOrder[]; onDone: () => void }) {
+function CancelUnsettledOrders({ api, access, legacy, table, cancellableOrders, onDone }: { api: StoreApi; access: StoreAccess; legacy: boolean; table: CounterSessionView; cancellableOrders: SessionOrder[]; onDone: () => void }) {
   const { t, locale } = useI18n()
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const commandUuids = useRef(new Map<string, string>())
-  const amount = pendingOrders.reduce((total, order) => total + order.totalAmount, 0)
-  const formattedAmount = new Intl.NumberFormat(locale, { style: 'currency', currency: pendingOrders[0]?.currency ?? table.currency }).format(amount / 100)
+  const amount = cancellableOrders.reduce((total, order) => total + order.totalAmount, 0)
+  const formattedAmount = new Intl.NumberFormat(locale, { style: 'currency', currency: cancellableOrders[0]?.currency ?? table.currency }).format(amount / 100)
   const loadTable = async () => legacy
     ? legacyCounterSession(await api.legacyCounter(table.counter.uuid, access.store.code), await api.legacyCounterOrders(table.counter.uuid, access.store.code), access.store.currency)
     : api.counterSession(table.counter.uuid)
-  const cancelPending = async () => {
-    if (busy || !pendingOrders.length) return
+  const cancelUnsettled = async () => {
+    if (busy || !cancellableOrders.length) return
     if (!navigator.onLine) {
       setResult(t('networkFailed'))
       return
@@ -287,14 +287,14 @@ function CancelPendingOrders({ api, access, legacy, table, pendingOrders, onDone
     let cancelled = 0
     let failed = 0
     try {
-      for (const target of pendingOrders) {
+      for (const target of cancellableOrders) {
         try {
           const current = await loadTable()
           if (!current.ordersVisible) { failed += 1; continue }
           const order = current.orders.find((entry) => entry.uuid === target.uuid)
           if (!order) { failed += 1; continue }
           if (order.status === 'cancelled') { cancelled += 1; continue }
-          if (order.status !== 'pending' || !order.canCancel) { failed += 1; continue }
+          if (!effectiveDiningStatuses.has(order.status) || !order.canCancel) { failed += 1; continue }
           let commandUuid = commandUuids.current.get(order.uuid)
           if (!commandUuid) {
             commandUuid = crypto.randomUUID()
@@ -321,8 +321,8 @@ function CancelPendingOrders({ api, access, legacy, table, pendingOrders, onDone
     }
   }
   return <><div className="dining-batch-cancel"><Button block color="danger" fill="outline" disabled={busy} onClick={() => { setResult(null); setConfirming(true) }}>{t('cancelPendingOrders')}</Button></div>
-    <LiveSheet open={confirming} title={t('cancelPendingTitle')} className="dining-batch-cancel-confirm" onClose={() => { if (!busy) setConfirming(false) }} footer={<div className="dining-confirm-bar"><Button disabled={busy} onClick={() => setConfirming(false)}>{t('cancel')}</Button><Button block color="danger" loading={busy} disabled={busy} onClick={() => void cancelPending()}>{t('cancelPendingConfirm')}</Button></div>}>
-      <Notice>{t('cancelPendingHint').replace('{count}', String(pendingOrders.length)).replace('{amount}', formattedAmount)}</Notice>
+    <LiveSheet open={confirming} title={t('cancelPendingTitle')} className="dining-batch-cancel-confirm" onClose={() => { if (!busy) setConfirming(false) }} footer={<div className="dining-confirm-bar"><Button disabled={busy} onClick={() => setConfirming(false)}>{t('cancel')}</Button><Button block color="danger" loading={busy} disabled={busy} onClick={() => void cancelUnsettled()}>{t('cancelPendingConfirm')}</Button></div>}>
+      <Notice>{t('cancelPendingHint').replace('{count}', String(cancellableOrders.length)).replace('{amount}', formattedAmount)}</Notice>
       {result && <Notice>{result}</Notice>}
     </LiveSheet>
   </>

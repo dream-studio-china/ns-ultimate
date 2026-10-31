@@ -29,7 +29,7 @@ const diningMode = {
   ],
 }
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   const hasBoundDiningMode = options.diningMode || options.boundModeSnapshotMissing
@@ -43,12 +43,12 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     ? { ...store, settings: options.stringSettings ? JSON.stringify({ diningModes }) : { diningModes } }
     : store
   type TestOrder = { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; canReplace: boolean; canCancel: boolean }
-  const testOrder = (uuid: string, status: string, quantity = 1): TestOrder => ({ uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : status === 'pending' ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: '', createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: status === 'pending', canCancel: status === 'pending' })
+  const testOrder = (uuid: string, status: string, quantity = 1, cancellable = status === 'pending'): TestOrder => ({ uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : status === 'pending' ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: '', createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: status === 'pending', canCancel: cancellable })
   let orders: TestOrder[] = options.empty || options.emptySession ? [] : options.batchPending
     ? [
         testOrder('10000000-0000-4000-8000-000000000026', 'pending'),
         testOrder('10000000-0000-4000-8000-000000000027', 'pending'),
-        testOrder('10000000-0000-4000-8000-000000000028', 'confirmed'),
+        testOrder('10000000-0000-4000-8000-000000000028', 'confirmed', 1, options.batchConfirmedCancellable),
       ]
     : options.mergeOnCheckout
     ? [testOrder('10000000-0000-4000-8000-000000000008', 'confirmed'), testOrder('10000000-0000-4000-8000-000000000009', 'confirmed')]
@@ -367,33 +367,33 @@ test('an eligible order can be cancelled only with a reason and is removed from 
   expect(write.body).toMatchObject({ orderUuid: '10000000-0000-4000-8000-000000000009', reason: 'Guest left', commandUuid: expect.any(String), version: expect.any(String) })
 })
 
-test('staff can cancel every pending order for one table after confirmation', async ({ page }) => {
-  const requests = await setup(page, { batchPending: true })
+test('staff can cancel every eligible unsettled order for one table after confirmation', async ({ page }) => {
+  const requests = await setup(page, { batchPending: true, batchConfirmedCancellable: true })
   await page.locator('.dining-card-title').click()
   const detail = page.getByRole('dialog', { name: '查看桌次' })
   await expect(detail.locator('.dining-round')).toHaveCount(3)
   const cancelRequests = () => requests.filter((request) => request.path.endsWith('/orders/cancel'))
 
-  await detail.getByRole('button', { name: '取消待处理订单', exact: true }).click()
+  await detail.getByRole('button', { name: '取消整桌未结订单', exact: true }).click()
   expect(cancelRequests()).toHaveLength(0)
-  const confirmation = page.getByRole('dialog', { name: '取消本桌待处理订单？' })
+  const confirmation = page.getByRole('dialog', { name: '取消本桌全部可取消的未结订单？' })
   await expect(confirmation).toBeVisible()
-  await expect(page.getByText('将取消当前桌台 2 笔待处理订单', { exact: false })).toBeVisible()
-  await confirmation.getByRole('button', { name: '确认取消', exact: true }).click()
+  await expect(page.getByText('将取消当前桌台 3 笔符合条件的未结订单', { exact: false })).toBeVisible()
+  await confirmation.getByRole('button', { name: '确认取消整桌未结订单', exact: true }).click()
 
-  await expect.poll(() => cancelRequests().length).toBe(2)
+  await expect.poll(() => cancelRequests().length).toBe(3)
   await expect(confirmation).toHaveCount(0)
-  await expect(detail.locator('.dining-round')).toHaveCount(1)
-  await expect(detail.locator('.dining-round')).toContainText('已确认')
-  await expect(detail.getByRole('button', { name: '取消待处理订单', exact: true })).toHaveCount(0)
+  await expect(detail.locator('.dining-round')).toHaveCount(0)
+  await expect(detail.getByRole('button', { name: '取消整桌未结订单', exact: true })).toHaveCount(0)
 
   const writes = cancelRequests()
   expect(writes.map((request) => request.body?.orderUuid)).toEqual([
     '10000000-0000-4000-8000-000000000026',
     '10000000-0000-4000-8000-000000000027',
+    '10000000-0000-4000-8000-000000000028',
   ])
-  expect(new Set(writes.map((request) => request.body?.version)).size).toBe(2)
-  expect(writes.every((request) => request.body?.reason === '收银端批量取消本桌待处理订单')).toBe(true)
+  expect(new Set(writes.map((request) => request.body?.version)).size).toBe(3)
+  expect(writes.every((request) => request.body?.reason === '收银端取消整桌未结订单')).toBe(true)
 })
 
 test('table details show only effective unsettled orders', async ({ page }) => {
