@@ -68,7 +68,11 @@ final class DiningModeSnapshotResolver
         throw new \DomainException('dining_mode_not_configured');
     }
 
-    /** Binds the selected mode only when the order starts a new table session. */
+    /**
+     * Binds the selected mode only when the order starts a new table session.
+     *
+     * @return array<string, mixed>|null
+     */
     public function bind(?Store $store, CounterSession $session, mixed $requested): ?array
     {
         $snapshot = $this->resolve($store, $session, $requested);
