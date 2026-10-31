@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ArrowUpDown, Ban, ChevronDown, CookingPot, Layers3, Pencil, Plus, RotateCcw, Tag, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Ban, ChevronDown, CookingPot, Layers3, Pencil, Plus, RotateCcw, Tag, Trash2 } from 'lucide-react'
 import { useI18n } from '../../shared/i18n'
 import { can, type StoreAccess, StoreApi, type LiveProduct, type LiveCategory, type LiveSpecification } from '../adapters/live'
 import { parseAmount } from '../domain'
-import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageScope, RecordIdentity, SearchField, StatusPill, useCommand, useDelete, usePage, LiveSheet as Sheet } from './ui'
+import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, errorKey, ListFeedback, Notice, PageControls, PageScope, RecordIdentity, SearchField, StatusPill, useCommand, useDelete, usePage, LiveSheet as Sheet } from './ui'
 import { categorySlug } from './category-slug'
+
+function moveItem<T>(items: readonly T[], index: number, direction: -1 | 1): T[] {
+  const destination = index + direction
+  if (index < 0 || destination < 0 || destination >= items.length) return [...items]
+  const moved = [...items]
+  ;[moved[index], moved[destination]] = [moved[destination], moved[index]]
+  return moved
+}
 
 function StatusField({ value, set }: { value: 'active' | 'inactive'; set: (value: 'active' | 'inactive') => void }) {
   return <EditorToggle label="productStatus" hint="listingHint" checked={value === 'active'} onChange={(enabled) => set(enabled ? 'active' : 'inactive')} />
@@ -114,9 +122,13 @@ function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const [editing, setEditing] = useState<LiveProduct | null | undefined>()
   const [specs, setSpecs] = useState<LiveProduct | null>(null)
   const [availability, setAvailability] = useState<{ products: LiveProduct[]; soldout: boolean } | null>(null)
+  const [sorting, setSorting] = useState(false)
+  const [sortError, setSortError] = useState<ReturnType<typeof errorKey> | null>(null)
+  const sortLock = useRef(false)
   if (!can(access, 'product', 'read')) return <AccessNotice />
-  const categoryNames = new Map(categoryList.items.map((item) => [item.uuid, item.name]))
-  const categoryOrder = new Map(categoryList.items.map((item, index) => [item.uuid, index]))
+  const orderedCategories = [...categoryList.items].sort((left, right) => left.sortOrder - right.sortOrder)
+  const categoryNames = new Map(orderedCategories.map((item) => [item.uuid, item.name]))
+  const categoryOrder = new Map(orderedCategories.map((item, index) => [item.uuid, index]))
   const grouped = new Map<string, { uuid: string | null; name: string; sort: number; products: LiveProduct[] }>()
   for (const product of list.items) {
     const uuid = product.category?.uuid ?? null
@@ -130,11 +142,33 @@ function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
     group.products.push(product)
     grouped.set(key, group)
   }
+  for (const group of grouped.values()) group.products.sort((left, right) => left.sortOrder - right.sortOrder)
   const categoryGroups = [...grouped.values()].sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name))
   const visibleGroups = category === 'all' ? categoryGroups : categoryGroups.filter((group) => (group.uuid ?? 'uncategorized') === category)
   const visible = visibleGroups.flatMap((group) => group.products)
   const restoreTargets = visible.filter((product) => product.isSoldout && product.extensionEditable)
+  const reorderProducts = async (products: LiveProduct[], index: number, direction: -1 | 1) => {
+    if (sortLock.current || !can(access, 'product', 'update') || products.some((product) => !product.extensionEditable)) return
+    const reordered = moveItem(products, index, direction)
+    const changes = reordered.flatMap((product, sortOrder) => product.sortOrder === sortOrder ? [] : [{ product, sortOrder }])
+    if (!changes.length) return
+    sortLock.current = true
+    setSorting(true)
+    setSortError(null)
+    try {
+      await Promise.all(changes.map(({ product, sortOrder }) => api.saveProduct(product.uuid, { commandUuid: crypto.randomUUID(), version: product.version, sortOrder })))
+      list.reload()
+    } catch (error) {
+      setSortError(errorKey(error))
+      list.reload()
+    } finally {
+      sortLock.current = false
+      setSorting(false)
+    }
+  }
   return <>
+    {sortError && <p className="workspace-sort-status error" role="alert">{t(sortError)}</p>}
+    {sorting && <p className="workspace-sort-status" role="status">{t('sortingRecords')}</p>}
     {can(access, 'product', 'create') && <div className="workspace-toolbar catalog-toolbar"><Button className="workspace-primary" color="primary" disabled={deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addProduct')}</Button></div>}
     {categoryGroups.length > 0 && <div className="workspace-filters catalog-category-filters" aria-label={t('diningCategoryFilter')}><button className={category === 'all' ? 'active' : ''} aria-pressed={category === 'all'} onClick={() => setCategory('all')}>{t('all')}</button>{categoryGroups.map((group) => <button key={group.uuid ?? 'uncategorized'} className={category === (group.uuid ?? 'uncategorized') ? 'active' : ''} aria-pressed={category === (group.uuid ?? 'uncategorized')} onClick={() => setCategory(group.uuid ?? 'uncategorized')}>{group.name}</button>)}</div>}
     {can(access, 'product', 'availability') && restoreTargets.length > 0 && <button className="text-action catalog-restore-all" disabled={!restoreTargets.length} onClick={() => setAvailability({ products: restoreTargets, soldout: false })}>{t('restoreLoadedSoldout')}</button>}
@@ -142,9 +176,9 @@ function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
     <ListFeedback state={{ ...list, items: visible }} empty={category !== 'all' ? 'noSearchResults' : 'firstProduct'} hint={category !== 'all' ? 'adjustSearch' : 'firstProductHint'} icon={CookingPot} />
     <div className="catalog-category-sections">{visibleGroups.map((group) => <section className="catalog-category-section" key={group.uuid ?? 'uncategorized'}>
       <div className="catalog-category-heading"><h2>{group.name}</h2><span>{group.products.length}</span></div>
-      <div className="catalog-product-grid">{group.products.map((product) => <article className="catalog-product-card" key={product.uuid}>
+      <div className="catalog-product-grid">{group.products.map((product, index) => <article className="catalog-product-card" key={product.uuid}>
         <div className="catalog-product-top"><ProductVisual product={product} /><div className="catalog-product-info"><div className="catalog-product-statuses"><StatusPill muted={product.status !== 'active'}>{t(product.status === 'active' ? 'listingActive' : 'listingInactive')}</StatusPill><StatusPill muted={!product.isSoldout}>{t(product.isSoldout ? 'soldOut' : 'onSale')}</StatusPill></div><h2>{product.name}</h2><p>{product.metadata?.subtitle || t('specifications')}</p></div></div>
-        {['update', 'delete'].some((action) => can(access, 'product', action)) || can(access, 'specification', 'read') ? <div className="catalog-product-actions">{can(access, 'product', 'update') && <Button disabled={deletion.busy} onClick={() => setEditing(product)}><Pencil size={14} />{t('edit')}</Button>}{can(access, 'specification', 'read') && <Button disabled={deletion.busy} onClick={() => setSpecs(product)}><Layers3 size={14} />{t('specManagement')}</Button>}{can(access, 'product', 'delete') && <button className="workspace-icon danger" aria-label={t('delete')} disabled={deletion.busy} onClick={() => void deletion.remove(() => api.remove('products', product.uuid))}><Trash2 size={16} /></button>}</div> : null}
+        {['update', 'delete'].some((action) => can(access, 'product', action)) || can(access, 'specification', 'read') ? <div className="catalog-product-actions">{can(access, 'product', 'update') && <div className="catalog-sort-actions" role="group" aria-label={`${t('sortOrder')} ${product.name}`}><button type="button" className="workspace-icon" aria-label={`${t('moveUp')} ${product.name}`} disabled={sorting || index === 0 || group.products.some((item) => !item.extensionEditable)} onClick={() => void reorderProducts(group.products, index, -1)}><ArrowUp size={16} /></button><button type="button" className="workspace-icon" aria-label={`${t('moveDown')} ${product.name}`} disabled={sorting || index === group.products.length - 1 || group.products.some((item) => !item.extensionEditable)} onClick={() => void reorderProducts(group.products, index, 1)}><ArrowDown size={16} /></button></div>}{can(access, 'product', 'update') && <Button disabled={deletion.busy || sorting} onClick={() => setEditing(product)}><Pencil size={14} />{t('edit')}</Button>}{can(access, 'specification', 'read') && <Button disabled={deletion.busy || sorting} onClick={() => setSpecs(product)}><Layers3 size={14} />{t('specManagement')}</Button>}{can(access, 'product', 'delete') && <button className="workspace-icon danger" aria-label={t('delete')} disabled={deletion.busy || sorting} onClick={() => void deletion.remove(() => api.remove('products', product.uuid))}><Trash2 size={16} /></button>}</div> : null}
         {can(access, 'product', 'availability') && product.extensionEditable && <Button block className={`catalog-availability-action ${product.isSoldout ? 'is-restore' : ''}`} onClick={() => setAvailability({ products: [product], soldout: !product.isSoldout })}>{product.isSoldout ? <RotateCcw size={15} /> : <Ban size={15} />}{t(product.isSoldout ? 'restoreAvailability' : 'markSoldout')}</Button>}<RecordIdentity id={product.uuid} />
       </article>)}</div>
     </section>)}</div>
@@ -161,11 +195,36 @@ function CategoryList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const list = usePage(load, can(access, 'product_category', 'read'))
   const deletion = useDelete(list.reload)
   const [editing, setEditing] = useState<LiveCategory | null | undefined>()
-  const visible = list.items
+  const [sorting, setSorting] = useState(false)
+  const [sortError, setSortError] = useState<ReturnType<typeof errorKey> | null>(null)
+  const sortLock = useRef(false)
+  const visible = [...list.items].sort((left, right) => left.sortOrder - right.sortOrder)
+  const reorderCategories = async (uuid: string, direction: -1 | 1) => {
+    if (sortLock.current || !can(access, 'product_category', 'update')) return
+    sortLock.current = true
+    setSorting(true)
+    setSortError(null)
+    try {
+      const all = (await api.allCategories()).items
+      const index = all.findIndex((category) => category.uuid === uuid)
+      const reordered = moveItem(all, index, direction)
+      const changes = reordered.flatMap((category, sortOrder) => category.sortOrder === sortOrder ? [] : [{ category, sortOrder }])
+      await Promise.all(changes.map(({ category, sortOrder }) => api.save('product-categories', category.uuid, { name: category.name, slug: category.slug, sortOrder, enabled: category.enabled })))
+      list.reload()
+    } catch (error) {
+      setSortError(errorKey(error))
+      list.reload()
+    } finally {
+      sortLock.current = false
+      setSorting(false)
+    }
+  }
   if (!can(access, 'product_category', 'read')) return <AccessNotice />
   return <><PageScope count={list.items.length} total={list.total} /><div className="workspace-toolbar"><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} />{can(access, 'product_category', 'create') && <Button color="primary" className="workspace-primary" disabled={deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addCategory')}</Button>}</div>{deletion.feedback}
+    {sortError && <p className="workspace-sort-status error" role="alert">{t(sortError)}</p>}
+    {sorting && <p className="workspace-sort-status" role="status">{t('sortingRecords')}</p>}
     <ListFeedback state={{ ...list, items: visible }} empty={query.trim() ? 'noSearchResults' : 'firstCategory'} hint={query.trim() ? 'adjustSearch' : 'firstCategoryHint'} icon={Tag} />
-    <div className="workspace-category-list">{visible.map((category) => <article key={category.uuid}><div className="category-main"><span className="category-symbol"><Tag size={21} strokeWidth={1.5} /></span><div><h2>{category.name}</h2></div><StatusPill muted={!category.enabled}>{t(category.enabled ? 'enabled' : 'disabled')}</StatusPill></div><div className="category-meta"><span><ArrowUpDown size={13} />{t('sortOrder')} {category.sortOrder}</span><div>{can(access, 'product_category', 'update') && <Button disabled={deletion.busy} onClick={() => setEditing(category)}><Pencil size={14} />{t('edit')}</Button>}{can(access, 'product_category', 'delete') && <button className="workspace-icon danger" aria-label={t('delete')} disabled={deletion.busy} onClick={() => void deletion.remove(() => api.remove('product-categories', category.uuid))}><Trash2 size={16} /></button>}</div></div><RecordIdentity id={category.uuid} /></article>)}</div>
+    <div className="workspace-category-list">{visible.map((category, index) => <article key={category.uuid}><div className="category-main"><span className="category-symbol"><Tag size={21} strokeWidth={1.5} /></span><div><h2>{category.name}</h2></div><StatusPill muted={!category.enabled}>{t(category.enabled ? 'enabled' : 'disabled')}</StatusPill></div><div className="category-meta"><span><ArrowUpDown size={13} />{t('sortOrder')} {category.sortOrder}</span><div>{can(access, 'product_category', 'update') && <div className="category-sort-actions" role="group" aria-label={`${t('sortOrder')} ${category.name}`}><button type="button" className="workspace-icon" aria-label={`${t('moveUp')} ${category.name}`} disabled={sorting || index === 0} onClick={() => void reorderCategories(category.uuid, -1)}><ArrowUp size={16} /></button><button type="button" className="workspace-icon" aria-label={`${t('moveDown')} ${category.name}`} disabled={sorting || index === visible.length - 1} onClick={() => void reorderCategories(category.uuid, 1)}><ArrowDown size={16} /></button></div>}{can(access, 'product_category', 'update') && <Button disabled={deletion.busy || sorting} onClick={() => setEditing(category)}><Pencil size={14} />{t('edit')}</Button>}{can(access, 'product_category', 'delete') && <button className="workspace-icon danger" aria-label={t('delete')} disabled={deletion.busy || sorting} onClick={() => void deletion.remove(() => api.remove('product-categories', category.uuid))}><Trash2 size={16} /></button>}</div></div><RecordIdentity id={category.uuid} /></article>)}</div>
     <PageControls state={list} />
     {editing !== undefined && <CategoryForm api={api} category={editing} onClose={() => setEditing(undefined)} done={() => { setEditing(undefined); list.reload() }} />}
   </>

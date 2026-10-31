@@ -10,6 +10,8 @@ const store = { uuid: storeId, name: 'Contract store', code: 'S1', currency: 'CN
 const version = 'a'.repeat(64)
 const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '10:00', endSaleTime: '20:00' }, ...item })
 const operationalOrder = (item: Record<string, unknown>) => ({ version, counter: null, allowedActions: [], verificationRequired: false, rejectionReason: null, ...item })
+type MockProduct = { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }
+type MockCategory = { uuid: string; name: string; slug: string; sortOrder: number; enabled: boolean }
 function operationalList(route: Route, records: Record<string, unknown>[], hasNext = false) {
   const url = new URL(route.request().url())
   const q = (url.searchParams.get('q') ?? '').toLowerCase()
@@ -20,10 +22,10 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; counterAccess?: boolean; grants?: string[]; counterOrders?: Record<string, unknown>[]; mergeCounterOrders?: boolean; legacyProducts?: Record<string, unknown>[]; diningModes?: Record<string, unknown> } = {}) {
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; counterAccess?: boolean; grants?: string[]; counterOrders?: Record<string, unknown>[]; mergeCounterOrders?: boolean; legacyProducts?: Record<string, unknown>[]; diningModes?: Record<string, unknown>; products?: MockProduct[]; categories?: MockCategory[] } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null; storeCode?: string }[] = []
-  let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active' }]
-  let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
+  let products = structuredClone(options.products ?? [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active' }])
+  let categories = structuredClone(options.categories ?? [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }])
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let counterOrders = structuredClone(options.counterOrders ?? [])
@@ -95,12 +97,18 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
       if (method === 'POST') { products.push({ ...body, uuid: '00000000-0000-4000-8000-000000000007', name: String(body!.name), status: String(body!.status), category: body!.category ? { uuid: String(body!.category) } : null }); return respond(products.at(-1)) }
       return respond(options.malformed ? [{ uuid: 'not-a-uuid' }] : products, true)
     }
-    if (path === `/api/v1/store/${storeId}/products/${productId}`) {
-      if (method === 'PUT') { products = products.map((item) => ({ ...item, ...body, category: body!.category ? { uuid: String(body!.category) } : null,
-        metadata: { subtitle: body!.subtitle ?? null, cover: body!.coverImageUuid ? '/uploads/test-image.png' : null },
-        settings: { kitchenPrinterEnable: body!.kitchenPrinterEnable ?? false, startSaleTime: body!.startSaleTime ?? '', endSaleTime: body!.endSaleTime ?? '' },
-      })); return respond(products[0]) }
-      if (method === 'DELETE') { products = []; return route.fulfill({ status: 204 }) }
+    if (path.startsWith(`/api/v1/store/${storeId}/products/`)) {
+      const productUuid = path.split('/').at(-1)!
+      if (method === 'PUT') {
+        products = products.map((item) => item.uuid === productUuid ? {
+          ...item, ...body,
+          category: Object.hasOwn(body!, 'category') ? body!.category ? { uuid: String(body!.category) } : null : item.category,
+          ...(Object.hasOwn(body!, 'subtitle') || Object.hasOwn(body!, 'coverImageUuid') ? { metadata: { subtitle: body!.subtitle ?? null, cover: body!.coverImageUuid ? '/uploads/test-image.png' : null } } : {}),
+          ...(Object.hasOwn(body!, 'kitchenPrinterEnable') || Object.hasOwn(body!, 'startSaleTime') || Object.hasOwn(body!, 'endSaleTime') ? { settings: { kitchenPrinterEnable: body!.kitchenPrinterEnable ?? false, startSaleTime: body!.startSaleTime ?? '', endSaleTime: body!.endSaleTime ?? '' } } : {}),
+        } : item)
+        return respond(products.find((item) => item.uuid === productUuid))
+      }
+      if (method === 'DELETE') { products = products.filter((item) => item.uuid !== productUuid); return route.fulfill({ status: 204 }) }
     }
     if (path.endsWith('/specifications')) {
       if (method === 'POST') { specifications.push({ uuid: specId, name: String(body!.name), price: Number(body!.price), status: String(body!.status), sort: Number(body!.sort) }); return respond(specifications.at(-1)) }
@@ -111,7 +119,11 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
       if (method === 'POST') { categories.push({ uuid: categoryId, name: String(body!.name), slug: String(body!.slug), sortOrder: Number(body!.sortOrder), enabled: Boolean(body!.enabled) }); return respond(categories.at(-1)) }
       return respond(categories, true)
     }
-    if (path.endsWith(`/product-categories/${categoryId}`) && method === 'PUT') { categories = categories.map((item) => ({ ...item, ...body })); return respond(categories[0]) }
+    if (path.includes('/product-categories/') && method === 'PUT') {
+      const categoryUuid = path.split('/').at(-1)!
+      categories = categories.map((item) => item.uuid === categoryUuid ? { ...item, ...body } : item)
+      return respond(categories.find((item) => item.uuid === categoryUuid))
+    }
     if (path.endsWith('/counters')) {
       return respond(counters, true)
     }
@@ -676,6 +688,42 @@ test('kitchen catalog removes its page heading and search while grouping product
   await page.getByRole('button', { name: 'Drinks', exact: true }).click()
   await expect(page.locator('.catalog-product-card')).toHaveCount(1)
   await expect(page.getByRole('heading', { name: 'Iced tea', exact: true })).toBeVisible()
+})
+
+test('products and categories follow sortOrder and persist arrow moves', async ({ page }) => {
+  const drinksCategoryId = '00000000-0000-4000-8000-000000000021'
+  const secondProductId = '00000000-0000-4000-8000-000000000022'
+  const requests = await mockApi(page, {
+    products: [
+      { uuid: secondProductId, name: 'Second product', category: { uuid: categoryId }, status: 'active', sortOrder: 20 },
+      { uuid: productId, name: 'First product', category: { uuid: categoryId }, status: 'active', sortOrder: 10 },
+    ],
+    categories: [
+      { uuid: drinksCategoryId, name: 'Drinks', slug: 'drinks', sortOrder: 20, enabled: true },
+      { uuid: categoryId, name: 'Food', slug: 'food', sortOrder: 10, enabled: true },
+    ],
+  })
+  await login(page)
+  const productNames = page.locator('.catalog-product-card h2')
+  await expect(productNames).toHaveText(['First product', 'Second product'])
+  await expect(page.getByRole('button', { name: '上移 First product', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: '上移 Second product', exact: true }).click()
+  await expect(productNames).toHaveText(['Second product', 'First product'])
+  await expect.poll(() => requests.filter((request) => request.method === 'PUT' && /\/operations\/products\/[0-9a-f-]{36}$/.test(request.path)).length).toBe(2)
+  const productUpdates = requests.filter((request) => request.method === 'PUT' && /\/operations\/products\/[0-9a-f-]{36}$/.test(request.path))
+  expect(productUpdates.map((request) => request.body?.sortOrder).sort()).toEqual([0, 1])
+  expect(productUpdates.every((request) => typeof request.body?.commandUuid === 'string' && request.body?.version === version)).toBe(true)
+
+  await page.locator('.workspace-tabs').getByRole('button', { name: '分类管理', exact: true }).click()
+  const categoryNames = page.locator('.workspace-category-list h2')
+  await expect(categoryNames).toHaveText(['Food', 'Drinks'])
+  await expect(page.getByRole('button', { name: '下移 Drinks', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: '下移 Food', exact: true }).click()
+  await expect(categoryNames).toHaveText(['Drinks', 'Food'])
+  await expect.poll(() => requests.filter((request) => request.method === 'PUT' && request.path.includes('/product-categories/')).length).toBe(2)
+  const categoryUpdates = requests.filter((request) => request.method === 'PUT' && request.path.includes('/product-categories/'))
+  expect(categoryUpdates.map((request) => request.body?.sortOrder).sort()).toEqual([0, 1])
+  expect(categoryUpdates.every((request) => request.body?.name && request.body?.slug && typeof request.body?.enabled === 'boolean')).toBe(true)
 })
 
 test('inactive membership cannot enter a store and never enrolls automatically', async ({ page }) => {
