@@ -17,6 +17,7 @@ use App\Storage\Service\MediaStorageRegistry;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Store\Entity\CatalogImage;
 use NsUltimate\Business\Store\Entity\Product;
 use NsUltimate\Business\Store\Entity\StaffOperation;
@@ -167,16 +168,21 @@ final class OperationsController extends RestController
             $count = clone $query;
             $total = (int) $count->select('COUNT(item.uuid)')->resetDQLPart('orderBy')->getQuery()->getSingleScalarResult();
             $query->addOrderBy($resource === 'history' ? 'item.uuid' : 'item.id', 'ASC')->setFirstResult(($page - 1) * $limit)->setMaxResults($limit);
-            $items = array_map(fn(object $item): array => $this->row($item, $store), $query->getQuery()->getResult());
+            $rows = $query->getQuery()->getResult();
+            $counterBindings = $resource === 'orders' ? $this->counterBindings($store, $rows) : null;
+            $items = array_map(fn(object $item): array => $this->row($item, $store, $counterBindings), $rows);
             return ['items' => $items, 'page' => $page, 'hasNext' => $page * $limit < $total, 'total' => $total];
         });
     }
 
-    /** @return array<string, mixed> */
-    private function row(object $item, Store $store): array
+    /**
+     * @param array<string, OrderCounter>|null $counterBindings
+     * @return array<string, mixed>
+     */
+    private function row(object $item, Store $store, ?array $counterBindings = null): array
     {
         if ($item instanceof CoreProduct) return $this->catalog->product($item);
-        if ($item instanceof StoreOrder) return $this->order($item, $store);
+        if ($item instanceof StoreOrder) return $this->order($item, $store, $counterBindings);
         if ($item instanceof StaffOperation) return $item->summary();
         if ($item instanceof ProductCategory) return ['uuid' => $item->getUuid(), 'name' => $item->getName(), 'slug' => $item->getSlug(), 'sortOrder' => $item->getSortOrder(), 'enabled' => $item->isEnabled()];
         if ($item instanceof Counter) return ['uuid' => $item->getUuid(), 'name' => $item->getName(), 'code' => $item->getCode(), 'capacity' => $item->getCapacity(), 'sort' => $item->getSort(), 'enabled' => $item->isEnabled()];
@@ -283,9 +289,15 @@ final class OperationsController extends RestController
         return $order;
     }
 
-    /** @return array<string, mixed> */
-    private function order(StoreOrder $order, Store $store): array
+    /**
+     * @param array<string, OrderCounter>|null $counterBindings
+     * @return array<string, mixed>
+     */
+    private function order(StoreOrder $order, Store $store, ?array $counterBindings = null): array
     {
+        $binding = $counterBindings === null
+            ? $this->em->getRepository(OrderCounter::class)->findOneBy(['tradeOrderUuid' => $order->getTradeOrderUuid(), 'storeUuid' => $store->getUuid()])
+            : ($counterBindings[$order->getTradeOrderUuid()] ?? null);
         $actions = [];
         foreach (['accept', 'reject', 'fulfill', 'verify'] as $action) {
             if ($this->isGranted('store:order:'.$action, $store) && $this->workflow->can($order, $action)
@@ -301,8 +313,25 @@ final class OperationsController extends RestController
         }
         $state = ['uuid' => $order->getUuid(), 'tradeOrderUuid' => $order->getTradeOrderUuid(), 'operationalStatus' => $order->getOperationalStatus(),
             'totalAmount' => $order->getTotalAmount(), 'currency' => $order->getCurrency(), 'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
+            'counter' => $binding instanceof OrderCounter ? ['code' => $binding->getCounterCodeSnapshot(), 'name' => $binding->getCounterNameSnapshot()] : null,
             'orderSnapshot' => ['items' => $items], 'verificationRequired' => $order->isVerificationRequired(), 'rejectionReason' => $order->getRejectionReason()];
         $state['version'] = StaffCommandService::version($state + ['updatedAt' => $order->getUpdatedAt()?->format(DATE_ATOM)]);
         return $state + ['allowedActions' => $actions];
+    }
+
+    /** @param list<object> $rows
+     * @return array<string, OrderCounter> */
+    private function counterBindings(Store $store, array $rows): array
+    {
+        $tradeOrderUuids = [];
+        foreach ($rows as $row) if ($row instanceof StoreOrder) $tradeOrderUuids[] = $row->getTradeOrderUuid();
+        if ($tradeOrderUuids === []) return [];
+        $bindings = $this->em->getRepository(OrderCounter::class)->createQueryBuilder('binding')
+            ->where('binding.storeUuid = :store')->andWhere('binding.tradeOrderUuid IN (:orders)')
+            ->setParameter('store', $store->getUuid())->setParameter('orders', $tradeOrderUuids)
+            ->getQuery()->getResult();
+        $indexed = [];
+        foreach ($bindings as $binding) if ($binding instanceof OrderCounter) $indexed[$binding->getTradeOrderUuid()] = $binding;
+        return $indexed;
     }
 }

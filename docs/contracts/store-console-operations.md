@@ -49,7 +49,7 @@ History lists expose only receipt UUID, actor/command UUIDs, action and timestam
 
 Product status filters are `all`, `active`, `inactive`, `soldout`. Category/counter filters are `all`, `enabled`, `disabled`. Orders accept `all` or a known Store operational status. Counts describe matching records, not whole-store sales or revenue.
 
-`GET /orders/{storeOrderUuid}` returns a restricted order DTO. Both list and detail identify the Trade order separately, expose operational status, verification requirement, rejection reason, a version token and permitted workflow actions. Snapshots contain only item names and quantities, not customer identities, delivery details or arbitrary metadata. Operational state is not payment state.
+`GET /orders/{storeOrderUuid}` returns a restricted order DTO. Both list and detail identify the Trade order separately, expose operational status, verification requirement, rejection reason, a version token and permitted workflow actions. They also expose `counter` as `{"code": "A01", "name": "Window seat"}` when a Counter order binding exists, or `null` for an unbound order. Only the binding's code and name snapshots are returned; the counter UUID, customer identities, delivery details and arbitrary metadata are not exposed. Operational state is not payment state.
 
 ## Versioned, durable commands
 

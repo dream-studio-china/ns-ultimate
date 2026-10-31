@@ -2,8 +2,8 @@ import { useCallback, useId, useState } from 'react'
 import { Button } from 'antd-mobile'
 import { ChevronDown, Clock3, LayoutGrid, LockKeyhole, Minus, Pencil, Plus, ReceiptText, UsersRound } from 'lucide-react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
-import { can, orderActions, type OrderAction, type StoreAccess, StoreApi, type LiveCounter, type LiveOrder } from '../adapters/live'
-import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, SearchField, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
+import { can, type OrderAction, type StoreAccess, StoreApi, type LiveCounter, type LiveOrder } from '../adapters/live'
+import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageScope, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
 import { DiningSummary, LiveDining } from './dining'
 
 function CounterForm({ api, counter, done, onClose }: { api: StoreApi; counter: LiveCounter; done: () => void; onClose: () => void }) {
@@ -55,17 +55,15 @@ function CounterConfiguration({ api, access }: { api: StoreApi; access: StoreAcc
 const statusLabels: Record<string, MessageKey> = { pending_validation: 'statePendingValidation', awaiting_inventory: 'stateAwaitingInventory', accepted: 'stateAccepted', rejected: 'stateRejected', fulfillment_pending: 'stateFulfillmentPending', fulfilling: 'stateFulfilling', fulfilled: 'stateFulfilled', verified: 'stateVerified', cancelled: 'stateCancelled' }
 export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t, locale } = useI18n()
-  const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
-  const load = useCallback((page: number) => api.orders(page, query, status), [api, query, status])
+  const load = useCallback((page: number) => api.orders(page, '', status), [api, status])
   const list = usePage(load, can(access, 'order', 'read'))
   const [selected, setSelected] = useState<string | null>(null)
   const visible = list.items
-  const writable = orderActions.some((action) => can(access, 'order', action))
-  return <><PageHeading eyebrow="ordersEyebrow" title={writable ? 'storeOrders' : 'readOnlyOrders'} subtitle="ordersLiveSubtitle"><span className="configuration-badge"><LockKeyhole size={13} />{t(writable ? 'orderOperations' : 'readOnly')}</span></PageHeading>
+  return <>
     {!can(access, 'order', 'read') ? <AccessNotice /> : <>
-      <PageScope count={list.items.length} total={list.total} /><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /><label className="field order-status-filter">{t('orderStatus')}<select value={status} onChange={(event) => { setStatus(event.target.value); list.setPage(1) }}><option value="all">{t('allStatuses')}</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label><ListFeedback state={{ ...list, items: visible }} empty={query.trim() || status !== 'all' ? 'noSearchResults' : 'firstOrder'} hint={query.trim() || status !== 'all' ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
-      <div className="workspace-order-list">{visible.map((order) => <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('orderReference')}</span><StatusPill muted={['cancelled', 'rejected'].includes(order.operationalStatus)}>{statusLabels[order.operationalStatus] ? t(statusLabels[order.operationalStatus]) : order.operationalStatus}</StatusPill></div><div className="order-card-body"><div><h2 title={order.tradeOrderUuid}>#{order.tradeOrderUuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, locale)}</strong></div><div className="order-card-footer"><span>{t('operationalStatusHint')}</span><Button onClick={() => setSelected(order.uuid)}>{t('view')}<ChevronDown size={14} /></Button></div></article>)}</div>
+      <PageScope count={list.items.length} total={list.total} /><label className="field order-status-filter">{t('orderStatus')}<select value={status} onChange={(event) => { setStatus(event.target.value); list.setPage(1) }}><option value="all">{t('allStatuses')}</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label><ListFeedback state={{ ...list, items: visible }} empty={status !== 'all' ? 'noSearchResults' : 'firstOrder'} hint={status !== 'all' ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
+      <div className="workspace-order-list">{visible.map((order) => <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{order.counter ? `${t('tableNumber')} ${order.counter.code}` : t('orderReference')}</span><StatusPill muted={['cancelled', 'rejected'].includes(order.operationalStatus)}>{statusLabels[order.operationalStatus] ? t(statusLabels[order.operationalStatus]) : order.operationalStatus}</StatusPill></div><div className="order-card-body"><div><h2 title={order.tradeOrderUuid}>#{order.tradeOrderUuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, locale)}</strong></div><div className="order-card-footer"><span>{t('operationalStatusHint')}</span><Button onClick={() => setSelected(order.uuid)}>{t('view')}<ChevronDown size={14} /></Button></div></article>)}</div>
       <PageControls state={list} /><Notice subtle icon={LockKeyhole}>{t('operationalStatusHint')}</Notice>
     </>}
     {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail api={api} access={access} id={selected} changed={list.reload} /></Sheet>}
@@ -95,7 +93,7 @@ function OrderDetail({ api, access, id, changed }: { api: StoreApi; access: Stor
   const [operation, setOperation] = useState<{ order: LiveOrder; action: OrderAction } | null>(null)
   return <><ListFeedback state={detail} empty="emptyLive" hint="firstOrderHint" icon={ReceiptText} />{detail.items.map((order) => <div className="workspace-order-detail" key={order.uuid}>
     <div className="order-detail-hero"><span><ReceiptText size={28} strokeWidth={1.3} /></span><p>{t('amount')}</p><strong>{formatOrderAmount(order, locale)}</strong><StatusPill>{statusLabels[order.operationalStatus] ? t(statusLabels[order.operationalStatus]) : order.operationalStatus}</StatusPill><small>{order.operationalStatus}</small></div>
-    <dl className="order-detail-meta"><dt>{t('orderNo')}</dt><dd>{order.tradeOrderUuid}</dd><dt>{t('createdAt')}</dt><dd>{formatDate(order.createdAt, locale)}</dd></dl>
+    <dl className="order-detail-meta"><dt>{t('tableNumber')}</dt><dd>{order.counter ? `${order.counter.name} · ${order.counter.code}` : '—'}</dd><dt>{t('orderNo')}</dt><dd>{order.tradeOrderUuid}</dd><dt>{t('createdAt')}</dt><dd>{formatDate(order.createdAt, locale)}</dd></dl>
     <h3>{t('orderItems')}</h3><div className="order-snapshot-items">{snapshotItems(order.orderSnapshot).length ? snapshotItems(order.orderSnapshot).map((item, index) => <div key={index}><span className="snapshot-item-index">{String(index + 1).padStart(2, '0')}</span><span>{item.name ?? t('orderItem')}</span>{item.quantity !== undefined && <strong>×{item.quantity}</strong>}</div>) : <p className="helper">{t('noSnapshotItems')}</p>}</div>
     {order.rejectionReason && <p className="helper">{t('rejectionReason')} · {order.rejectionReason}</p>}
     <div className="order-operation-actions">{order.allowedActions.filter((action) => can(access, 'order', action)).map((action) => <Button key={action} color={action === 'reject' ? 'default' : 'primary'} onClick={() => setOperation({ order, action })}>{t(actionLabels[action])}</Button>)}</div>

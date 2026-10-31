@@ -35,7 +35,8 @@ export const categorySchema = z.object({ uuid, name: z.string(), slug: z.string(
 export const counterSchema = z.object({ uuid, code: z.string(), name: z.string(), capacity: z.number().int().nullable(), sort: z.number().int(), enabled: z.boolean() })
 export const orderSchema = z.object({
   uuid, tradeOrderUuid: uuid, operationalStatus: z.string(), totalAmount: cents, currency,
-  createdAt: z.string(), orderSnapshot: z.unknown().optional(), version, allowedActions: z.array(z.enum(orderActions)), verificationRequired: z.boolean(), rejectionReason: z.string().nullable(),
+  createdAt: z.string(), counter: z.object({ code: z.string(), name: z.string() }).nullable(),
+  orderSnapshot: z.unknown().optional(), version, allowedActions: z.array(z.enum(orderActions)), verificationRequired: z.boolean(), rejectionReason: z.string().nullable(),
 })
 const sessionOrderItemSchema = z.object({ specificationUuid: uuid.nullable(), productName: z.string(), specificationName: z.string(), quantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), unitPrice: cents, amount: cents })
 export const orderableItemSchema = sessionOrderItemSchema.extend({ specificationUuid: uuid, quantity: z.number().int().min(1).max(99) })

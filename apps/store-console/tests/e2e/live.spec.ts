@@ -9,7 +9,7 @@ const counterId = '00000000-0000-4000-8000-000000000006'
 const store = { uuid: storeId, name: 'Contract store', code: 'S1', currency: 'CNY', timezone: 'Asia/Shanghai' }
 const version = 'a'.repeat(64)
 const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '10:00', endSaleTime: '20:00' }, ...item })
-const operationalOrder = (item: Record<string, unknown>) => ({ version, allowedActions: [], verificationRequired: false, rejectionReason: null, ...item })
+const operationalOrder = (item: Record<string, unknown>) => ({ version, counter: null, allowedActions: [], verificationRequired: false, rejectionReason: null, ...item })
 function operationalList(route: Route, records: Record<string, unknown>[], hasNext = false) {
   const url = new URL(route.request().url())
   const q = (url.searchParams.get('q') ?? '').toLowerCase()
@@ -27,7 +27,7 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let counterOrders = structuredClone(options.counterOrders ?? [])
-  let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
+  let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', counter: { code: 'A01', name: 'Real A01' }, orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
   const storePayload = options.diningModes ? { ...store, settings: { diningModes: options.diningModes } } : store
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -175,8 +175,12 @@ test('live catalog, separate variants, categories, tables and read-only orders u
   expect(requests.find((request) => request.method === 'PUT' && request.path.endsWith(`/counters/${counterId}`))?.body).toMatchObject({ name: 'Real A02', code: 'A01', capacity: 4 })
   expect(requests.filter((request) => /\/counters(?:\/|$)/.test(request.path) && ['POST', 'DELETE'].includes(request.method))).toHaveLength(0)
   await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '门店订单（只读）', exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('搜索全店记录', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('台号 A01', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '查看', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('pending_validation')
+  await expect(page.getByRole('dialog')).toContainText('Real A01 · A01')
   await expect(page.getByRole('button', { name: '确认结账', exact: true })).toHaveCount(0)
   expect(requests.some((request) => request.path.includes('/manage/') || request.path.includes('/payment') || request.path.includes('/app/orders'))).toBe(false)
   const storedSession = await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))
@@ -538,7 +542,9 @@ test('reconnecting a store discards the selected workspace and uses fresh grants
   await page.getByRole('button', { name: 'Contract store S1', exact: true }).click()
   await page.getByRole('button', { name: '连接门店', exact: true }).click()
   await expect(page.getByRole('navigation').getByRole('button')).toHaveText(['交易订单', '我的'])
-  await expect(page.getByRole('heading', { name: '门店订单（只读）', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '门店订单（只读）', exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('搜索全店记录', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('台号 A01', { exact: true })).toBeVisible()
   expect(requests.slice(before).some((request) => /products|counters/.test(request.path))).toBe(false)
 })
 
