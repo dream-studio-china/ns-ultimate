@@ -73,7 +73,7 @@ final class CounterOrderBindingTest extends KernelTestCase
             'app-counters-list' => '/app/counters',
             'app-counter-orders-list' => '/app/counters/{counterUuid}/orders',
             'app-counter-orders-merge' => '/app/counters/{counterUuid}/orders/merge',
-            'store-counter-operations-merge' => '/store/{scopeId}/counter-operations/counters/{uuid}/orders/merge',
+            'store-counter-operations-merge' => '/store/{scopeId}/counter-operations/counters/{uuid}/merge/{action}',
             'store-counters-session-end' => '/store/{scopeId}/counters/{counterUuid}/sessions/end',
         ] as $name => $path) {
             self::assertSame($path, $routes->get($name)?->getPath());

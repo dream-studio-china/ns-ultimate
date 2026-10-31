@@ -29,7 +29,7 @@ const diningMode = {
   ],
 }
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   let session: { uuid: string; participantCount: number | null; notes: string | null; startedAt: string; revision: number; diningModeUuid: string | null; diningMode: typeof diningMode | null } | null = options.empty ? null : {
@@ -182,7 +182,8 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
           orders = orders.map((order) => order.uuid === body!.replaceOrderUuid ? { ...order, status: 'cancelled', operationalStatus: 'cancelled', canReplace: false, canCancel: false } : order)
           result.replacedOrderUuid = body!.replaceOrderUuid
         }
-        orders.push({ uuid, status: 'confirmed', operationalStatus: 'accepted', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
+        const status = options.confirmedCheckoutAdditions ? 'confirmed' : 'pending'
+        orders.push({ uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
         result.orderUuid = uuid
         if (body!.diningModeUuid === diningModeId) session = { ...session!, diningModeUuid: diningModeId, diningMode, revision }
       }
@@ -539,7 +540,7 @@ test('checkout review merges confirmed orders when the session has no dining mod
 })
 
 test('checkout additions create a separate order and then merge it with the table orders', async ({ page }) => {
-  const requests = await setup(page)
+  const requests = await setup(page, { confirmedCheckoutAdditions: true })
   await page.locator('.dining-card-title').click()
   await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
   const editor = page.getByRole('dialog', { name: '结账', exact: true })

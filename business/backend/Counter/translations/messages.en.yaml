@@ -39,6 +39,8 @@
 "Source order uuid": "Source order UUID"
 "Target order uuid": "Target order UUID"
 "Participant count": "Participant count"
+"Dining mode uuid": "Dining mode UUID"
+"Dining mode snapshot": "Dining mode snapshot"
 "Notes": "Notes"
 "Revision": "Revision"
 "Session": "Session"
