@@ -6,10 +6,13 @@ namespace NsUltimate\Business\Counter\Controller\Store;
 
 use App\Core\Controller\RestController;
 use App\Identity\Entity\User;
+use App\Store\DTO\StoreSettings;
 use App\Store\Entity\Store;
+use App\Trade\DTO\StoreContext;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Service\CounterOrderMergeService;
 use NsUltimate\Business\Counter\Service\CounterSessionOperations;
 use NsUltimate\Business\Store\Service\StaffCommandService;
 use NsUltimate\Business\Store\Service\StaffOrderCatalog;
@@ -28,6 +31,7 @@ final class CounterOperationsController extends RestController
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly CounterSessionOperations $operations,
+        private readonly CounterOrderMergeService $merges,
         private readonly StaffOrderCatalog $catalog,
         private readonly StaffCommandService $commands,
         private readonly LoggerInterface $logger,
@@ -37,7 +41,13 @@ final class CounterOperationsController extends RestController
     {
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $scopeId]);
         if (!$store instanceof Store) throw new AccessDeniedException();
-        $this->denyAccessUnlessGranted('store:counter_session:'.$action, $store);
+        if ($action === 'read') {
+            if (!$this->isGranted('store:counter_session:read', $store) && !$this->isGranted('store:counter_order:read', $store)) throw new AccessDeniedException();
+        } elseif ($action === 'open') {
+            if (!$this->isGranted('store:counter_session:update', $store) && !$this->isGranted('store:counter_order:create', $store)) throw new AccessDeniedException();
+        } else {
+            $this->denyAccessUnlessGranted('store:counter_session:'.$action, $store);
+        }
         return $store;
     }
 
@@ -114,10 +124,10 @@ final class CounterOperationsController extends RestController
         return $this->respond(fn(): array => $this->present($store, $this->operations->view($this->operations->counter($store, $uuid))));
     }
 
-    #[Route('/counters/{uuid}/session/{action}', name: 'session', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}', 'action' => 'update|end'])]
+    #[Route('/counters/{uuid}/session/{action}', name: 'session', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}', 'action' => 'open|update|end'])]
     public function session(Request $request, string $scopeId, string $uuid, string $action): JsonResponse
     {
-        $store = $this->store($scopeId, $action);
+        $store = $this->store($scopeId, $action === 'open' ? 'open' : $action);
         return $this->respond(function () use ($request, $store, $uuid, $action): array {
             $actor = $this->getUser();
             if (!$actor instanceof User) throw new AccessDeniedException();
@@ -159,6 +169,29 @@ final class CounterOperationsController extends RestController
                 fn(): array => $action === 'cancel'
                     ? $this->operations->cancel($store, $uuid, $data)
                     : $this->operations->submit($store, $uuid, $data, $action === 'replace'));
+        });
+    }
+
+    #[Route('/counters/{uuid}/orders/merge', name: 'merge', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}'])]
+    public function merge(Request $request, string $scopeId, string $uuid): JsonResponse
+    {
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $scopeId]);
+        if (!$store instanceof Store
+            || (!$this->isGranted('store:counter_order:create', $store) && !$this->isGranted('store:counter:create', $store))) {
+            throw new AccessDeniedException();
+        }
+        return $this->respond(function () use ($request, $store, $uuid): array {
+            $actor = $this->getUser();
+            if (!$actor instanceof User) throw new AccessDeniedException();
+            $data = $this->body($request);
+            $counter = $this->operations->counter($store, $uuid);
+            $version = $data['version'] ?? null;
+            if ($version !== null) StaffCommandService::expectVersion($data, $this->operations->view($counter)['version']);
+            $settings = StoreSettings::from($store->getSettings());
+            $context = new StoreContext($store->getUuid(), $store->getCode(), $store->getName(), 'staff', $store->getCurrency(),
+                $settings->requireAcceptance, $settings->requireInventory, $settings->requireVerification);
+            $order = $this->merges->mergeForStaff($counter, $actor, $context);
+            return ['uuid' => $order->getUuid(), 'status' => $order->getStatus(), 'totalAmount' => $order->getTotalAmount(), 'currency' => $order->getCurrency()];
         });
     }
 }

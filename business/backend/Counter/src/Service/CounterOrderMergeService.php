@@ -35,6 +35,17 @@ final class CounterOrderMergeService
 
     public function merge(Counter $counter, User $user): Order
     {
+        return $this->mergeOrders($counter, $user, true);
+    }
+
+    /** Store-authorized staff may merge customer orders they do not own. */
+    public function mergeForStaff(Counter $counter, User $user, StoreContext $storeContext): Order
+    {
+        return $this->mergeOrders($counter, $user, false, $storeContext);
+    }
+
+    private function mergeOrders(Counter $counter, User $user, bool $requireOwnedSource, ?StoreContext $storeContext = null): Order
+    {
         $this->em->getConnection()->beginTransaction();
         try {
             $session = $this->sessions->activeSession($counter);
@@ -79,7 +90,7 @@ final class CounterOrderMergeService
                     $items[] = ['specificationId' => $item->getSpecificationUuid(), 'quantity' => $item->getQuantity()];
                 }
             }
-            if (!$eligibleUser) {
+            if ($requireOwnedSource && !$eligibleUser) {
                 throw new \DomainException('You must have an eligible unpaid order in this counter session to merge orders.');
             }
             if ($orders === [] || $items === []) {
@@ -88,16 +99,16 @@ final class CounterOrderMergeService
             if (count($orders) < 2) {
                 throw new \DomainException('At least two unpaid orders are required to merge.');
             }
-            $store = $this->storeContextResolver->resolve();
+            $store = $storeContext ?? $this->storeContextResolver->resolve();
             if ($store === null || $store->storeUuid !== $counter->getStoreUuid()) {
                 throw new \DomainException('The counter is not in the active store context.');
             }
             $calculation = $this->orders->calculatePrices($items, $store->currency, $store->storeCode);
-            // Preserve the ordinary Store order flow, but do not reserve inventory
-            // a second time for items already present in the source orders.
+            // The sources have already passed store acceptance and inventory checks.
+            // Do not send their merged settlement aggregate through those checks again.
             $mergeStore = new StoreContext(
                 $store->storeUuid, $store->storeCode, $store->storeName, $store->channel,
-                $store->currency, $store->requireAcceptance, false, $store->requireVerification,
+                $store->currency, false, false, $store->requireVerification,
             );
             $target = $this->orders->createOrder(
                 $calculation->items, $user, $calculation->totalAmount, $store->currency,

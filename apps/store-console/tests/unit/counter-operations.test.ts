@@ -60,6 +60,8 @@ describe('live counter session boundary', () => {
     expect(data.mock.calls[3]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/session/end`)
     await api.counterCommand(id, 'cancel', { version, orderUuid: id, reason: 'Guest left', commandUuid: id })
     expect(data.mock.calls[4]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/orders/cancel`)
+    await api.mergeCounterOrders(id, version)
+    expect(data.mock.calls[5]).toEqual([`/api/v1/store/${id}/counter-operations/counters/${id}/orders/merge`, expect.anything(), 'POST', { version }])
     expect(() => api.counterCommand('../other', 'create', command)).toThrow()
   })
 })

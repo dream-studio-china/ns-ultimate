@@ -11,10 +11,12 @@ use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\ORM\Event\OnFlushEventArgs;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Events;
+use App\Store\Entity\Store;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\CounterSession;
 use NsUltimate\Business\Counter\Service\CounterSessionService;
+use NsUltimate\Business\Counter\Service\DiningModeSnapshotResolver;
 
 /**
  * Temporary monolith adapter. Trade-specific order metadata is intentionally
@@ -23,6 +25,8 @@ use NsUltimate\Business\Counter\Service\CounterSessionService;
 #[AsDoctrineListener(event: Events::onFlush)]
 final class TradeCounterAdapter
 {
+    public function __construct(private readonly DiningModeSnapshotResolver $diningModes) {}
+
     public function onFlush(OnFlushEventArgs $args): void
     {
         $entityManager = $args->getObjectManager();
@@ -31,9 +35,13 @@ final class TradeCounterAdapter
         }
         $unitOfWork = $entityManager->getUnitOfWork();
         $storeUuidByOrder = [];
+        $metadataByOrder = [];
         foreach ($unitOfWork->getScheduledEntityInsertions() as $entity) {
             if ($entity instanceof OrderStoreLifecycle) {
                 $storeUuidByOrder[$entity->getTradeOrderUuid()] = $entity->getStoreUuid();
+            }
+            if ($entity instanceof Order) {
+                $metadataByOrder[$entity->getUuid()] = $entity->getMetadata() ?? [];
             }
         }
 
@@ -93,8 +101,12 @@ final class TradeCounterAdapter
         usort($bindings, static fn (OrderCounter $a, OrderCounter $b): int => ($a->getCounter()?->getId() ?? 0) <=> ($b->getCounter()?->getId() ?? 0));
         foreach ($bindings as $binding) {
             $session = $sessions->assign($binding);
+            $store = $entityManager->getRepository(Store::class)->findOneBy(['uuid' => $binding->getStoreUuid()]);
+            $this->diningModes->bind($store, $session, ($metadataByOrder[$binding->getTradeOrderUuid()] ?? [])['diningModeUuid'] ?? null);
             if ($session->getId() === null) {
                 $unitOfWork->computeChangeSet($entityManager->getClassMetadata(CounterSession::class), $session);
+            } else {
+                $unitOfWork->recomputeSingleEntityChangeSet($entityManager->getClassMetadata(CounterSession::class), $session);
             }
             $unitOfWork->recomputeSingleEntityChangeSet($entityManager->getClassMetadata(OrderCounter::class), $binding);
         }

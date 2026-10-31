@@ -44,13 +44,14 @@ final class CounterController extends RestController
         return $filter;
     }
 
-    /** @return array{uuid: string, storeUuid: string, code: string, name: string, capacity: ?int, sort: int, metadata: array<string, mixed>|null}|null */
+    /** @return array{uuid: string, storeUuid: string, code: string, name: string, capacity: ?int, sort: int, metadata: array<string, mixed>|null, diningModes: array<string, mixed>|null}|null */
     protected function detailResponse(?object $entity): ?array
     {
         if (!$entity instanceof Counter) {
             return null;
         }
-        if ($this->storeService->findActiveByUuid($entity->getStoreUuid()) === null) {
+        $store = $this->storeService->findActiveByUuid($entity->getStoreUuid());
+        if ($store === null) {
             return null;
         }
 
@@ -62,6 +63,41 @@ final class CounterController extends RestController
             'capacity' => $entity->getCapacity(),
             'sort' => $entity->getSort(),
             'metadata' => $entity->getMetadata(),
+            'diningModes' => $this->publicDiningModes($store->getSettings() ?? []),
+        ];
+    }
+
+    /**
+     * The customer app needs the selected mode and its ordering rules before
+     * authentication. Expose only that payload, never the rest of store settings.
+     *
+     * @param array<string, mixed> $settings
+     * @return array<string, mixed>|null
+     */
+    private function publicDiningModes(array $settings): ?array
+    {
+        $config = $settings['diningModes'] ?? null;
+        if (!is_array($config) || !is_array($config['modes'] ?? null)) {
+            return null;
+        }
+
+        $modes = [];
+        foreach ($config['modes'] as $mode) {
+            if (!is_array($mode) || !is_string($mode['uuid'] ?? null) || !is_string($mode['name'] ?? null)) {
+                continue;
+            }
+            $public = [];
+            foreach (['uuid', 'name', 'enabled', 'priority', 'switchButtonLabel', 'availability', 'catalog', 'rules'] as $key) {
+                if (array_key_exists($key, $mode)) {
+                    $public[$key] = $mode[$key];
+                }
+            }
+            $modes[] = $public;
+        }
+
+        return [
+            'version' => is_int($config['version'] ?? null) ? $config['version'] : 1,
+            'modes' => $modes,
         ];
     }
 }

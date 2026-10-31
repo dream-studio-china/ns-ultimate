@@ -5,6 +5,7 @@ import { useI18n } from '../../shared/i18n'
 import { can, type StoreAccess, StoreApi, type LiveProduct, type LiveCategory, type LiveSpecification } from '../adapters/live'
 import { parseAmount } from '../domain'
 import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, RecordIdentity, SearchField, StatusPill, useCommand, useDelete, usePage, LiveSheet as Sheet } from './ui'
+import { categorySlug } from './category-slug'
 
 function StatusField({ value, set }: { value: 'active' | 'inactive'; set: (value: 'active' | 'inactive') => void }) {
   return <EditorToggle label="productStatus" hint="listingHint" checked={value === 'active'} onChange={(enabled) => set(enabled ? 'active' : 'inactive')} />
@@ -60,11 +61,12 @@ function CategoryPicker({ api, value, choose, enabled }: { api: StoreApi; value:
 function CategoryForm({ api, category, done, onClose }: { api: StoreApi; category: LiveCategory | null; done: () => void; onClose: () => void }) {
   const { t } = useI18n()
   const [name, setName] = useState(category?.name ?? '')
-  const [slug, setSlug] = useState(category?.slug ?? '')
+  const [slugSeed] = useState(() => crypto.randomUUID())
   const [sort, setSort] = useState(category?.sortOrder ?? 0)
   const [enabled, setEnabled] = useState(category?.enabled ?? true)
-  return <EditorSheet title={t('categoryManagement')} description="categoryHint" onClose={onClose} onDone={done} submit={() => api.save('product-categories', category?.uuid ?? null, { name: name.trim(), slug: slug.trim(), sortOrder: sort, enabled })} preview={<EditorPreview icon={Tag} label="categoryManagement" name={name.trim() || t('editorNewCategory')} detail={slug}><StatusPill muted={!enabled}>{t(enabled ? 'enabled' : 'disabled')}</StatusPill></EditorPreview>}>
-    <EditorSection title="editorBasics" index="01"><label className="field">{t('categoryName')}<input required maxLength={100} value={name} placeholder={t('categoryName')} onChange={(event) => setName(event.target.value)} /></label><label className="field">{t('slug')}<input required maxLength={100} value={slug} placeholder="category-slug" onChange={(event) => setSlug(event.target.value)} /></label></EditorSection>
+  const slug = category?.slug ?? categorySlug(name, slugSeed)
+  return <EditorSheet title={t('categoryManagement')} description="categoryHint" onClose={onClose} onDone={done} submit={() => api.save('product-categories', category?.uuid ?? null, { name: name.trim(), slug, sortOrder: sort, enabled })} preview={<EditorPreview icon={Tag} label="categoryManagement" name={name.trim() || t('editorNewCategory')} detail={`${t('sortOrder')} ${sort}`}><StatusPill muted={!enabled}>{t(enabled ? 'enabled' : 'disabled')}</StatusPill></EditorPreview>}>
+    <EditorSection title="editorBasics" index="01"><label className="field">{t('categoryName')}<input required maxLength={100} value={name} placeholder={t('categoryName')} onChange={(event) => setName(event.target.value)} /></label></EditorSection>
     <EditorSection title="editorAvailability" index="02"><EditorToggle label="enabledField" hint="categoryEnabledHint" checked={enabled} onChange={setEnabled} /></EditorSection>
     <EditorAdvanced><label className="field">{t('sortOrder')}<input required type="number" step="1" value={sort} onChange={(event) => setSort(Number(event.target.value))} /></label></EditorAdvanced>
   </EditorSheet>
@@ -142,7 +144,7 @@ function CategoryList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   if (!can(access, 'product_category', 'read')) return <AccessNotice />
   return <><PageScope count={list.items.length} total={list.total} /><div className="workspace-toolbar"><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} />{can(access, 'product_category', 'create') && <Button color="primary" className="workspace-primary" disabled={deletion.busy} onClick={() => setEditing(null)}><Plus size={17} />{t('addCategory')}</Button>}</div>{deletion.feedback}
     <ListFeedback state={{ ...list, items: visible }} empty={query.trim() ? 'noSearchResults' : 'firstCategory'} hint={query.trim() ? 'adjustSearch' : 'firstCategoryHint'} icon={Tag} />
-    <div className="workspace-category-list">{visible.map((category) => <article key={category.uuid}><div className="category-main"><span className="category-symbol"><Tag size={21} strokeWidth={1.5} /></span><div><h2>{category.name}</h2><p>{category.slug}</p></div><StatusPill muted={!category.enabled}>{t(category.enabled ? 'enabled' : 'disabled')}</StatusPill></div><div className="category-meta"><span><ArrowUpDown size={13} />{t('sortOrder')} {category.sortOrder}</span><div>{can(access, 'product_category', 'update') && <Button disabled={deletion.busy} onClick={() => setEditing(category)}><Pencil size={14} />{t('edit')}</Button>}{can(access, 'product_category', 'delete') && <button className="workspace-icon danger" aria-label={t('delete')} disabled={deletion.busy} onClick={() => void deletion.remove(() => api.remove('product-categories', category.uuid))}><Trash2 size={16} /></button>}</div></div><RecordIdentity id={category.uuid} /></article>)}</div>
+    <div className="workspace-category-list">{visible.map((category) => <article key={category.uuid}><div className="category-main"><span className="category-symbol"><Tag size={21} strokeWidth={1.5} /></span><div><h2>{category.name}</h2></div><StatusPill muted={!category.enabled}>{t(category.enabled ? 'enabled' : 'disabled')}</StatusPill></div><div className="category-meta"><span><ArrowUpDown size={13} />{t('sortOrder')} {category.sortOrder}</span><div>{can(access, 'product_category', 'update') && <Button disabled={deletion.busy} onClick={() => setEditing(category)}><Pencil size={14} />{t('edit')}</Button>}{can(access, 'product_category', 'delete') && <button className="workspace-icon danger" aria-label={t('delete')} disabled={deletion.busy} onClick={() => void deletion.remove(() => api.remove('product-categories', category.uuid))}><Trash2 size={16} /></button>}</div></div><RecordIdentity id={category.uuid} /></article>)}</div>
     <PageControls state={list} />
     {editing !== undefined && <CategoryForm api={api} category={editing} onClose={() => setEditing(undefined)} done={() => { setEditing(undefined); list.reload() }} />}
   </>

@@ -360,23 +360,18 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertSame(Order::STATUS_COMPLETED, $target->getStatus());
     }
 
-    public function testMergeRetainsStoreAcceptancePolicy(): void
+    public function testMergeDoesNotRepeatStoreAcceptanceForPreviouslyAcceptedSources(): void
     {
         $this->context = new StoreContext($this->context->storeUuid, $this->context->storeCode, $this->context->storeName, requireAcceptance: true, requireInventory: true);
         $this->source(true);
         $this->source(true);
         $target = $this->merger()->merge($this->counter, $this->user);
         $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $target->getUuid()]);
-        self::assertSame(Order::STATUS_PENDING, $target->getStatus());
-        self::assertTrue($event->getPayload()['store']['requireAcceptance']);
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+        self::assertFalse($event->getPayload()['store']['requireAcceptance']);
         self::assertFalse($event->getPayload()['store']['requireInventory']);
         $workflow = self::getContainer()->get('state_machine.order');
         self::assertFalse($workflow->can($target, 'confirm'));
-        $lifecycle = $this->em->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $target->getUuid()]);
-        $lifecycle->markAccepted();
-        $this->em->flush();
-        $this->em->wrapInTransaction(fn () => $workflow->apply($target, 'confirm'));
-        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
     }
 
     public function testInventoryConfirmationRequiresLiveMatchingReservation(): void
@@ -505,6 +500,22 @@ final class CounterOrderMergeTest extends KernelTestCase
         $this->expectException(\DomainException::class);
         $this->expectExceptionMessage('eligible unpaid order');
         $this->merger()->merge($this->counter, $other);
+    }
+
+    public function testAuthorizedStaffCanMergeOrdersOwnedByCustomers(): void
+    {
+        $customer = (new User())->setEmail('customer-merge@example.test')->setUsername('customer-merge');
+        $this->em->persist($customer);
+        $first = $this->source()->setUser($customer);
+        $second = $this->source()->setUser($customer);
+        $this->em->flush();
+
+        $target = $this->merger()->mergeForStaff($this->counter, $this->user, $this->context);
+
+        self::assertSame($this->user->getUuid(), $target->getUser()?->getUuid());
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+        self::assertSame('merged', $first->getStatus());
+        self::assertSame('merged', $second->getStatus());
     }
 
     public function testSingleOrderCannotBeMergedAgain(): void
