@@ -8,7 +8,7 @@ const specId = '00000000-0000-4000-8000-000000000005'
 const counterId = '00000000-0000-4000-8000-000000000006'
 const store = { uuid: storeId, name: 'Contract store', code: 'S1', currency: 'CNY', timezone: 'Asia/Shanghai' }
 const version = 'a'.repeat(64)
-const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '', endSaleTime: '' }, ...item })
+const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '10:00', endSaleTime: '20:00' }, ...item })
 const operationalOrder = (item: Record<string, unknown>) => ({ version, allowedActions: [], verificationRequired: false, rejectionReason: null, ...item })
 function operationalList(route: Route, records: Record<string, unknown>[], hasNext = false) {
   const url = new URL(route.request().url())
@@ -206,7 +206,7 @@ test('kitchen-only staff see availability without catalog management or cashier 
   for (const name of ['新增商品', '编辑', '删除', '管理规格', '分类管理', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '设为售罄', exact: true }).click()
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.getByRole('button', { name: '恢复售卖', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
   for (const width of [320, 768, 1280]) {
     await page.setViewportSize({ width, height: 800 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -569,15 +569,15 @@ test('catalog operating fields and raster image uploads save through one version
   await page.getByLabel('商品描述', { exact: true }).fill('Freshly prepared')
   await page.locator('.resource-editor input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64') })
   await page.getByRole('switch', { name: '后厨打印标记', exact: true }).click()
-  await page.getByLabel('开始售卖时间', { exact: true }).fill('22:00')
-  await page.getByLabel('结束售卖时间', { exact: true }).fill('02:00')
+  await expect(page.getByLabel('开始售卖时间', { exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('结束售卖时间', { exact: true })).toHaveCount(0)
   await page.locator('.editor-advanced summary').click()
   await page.getByLabel('排序值', { exact: true }).fill('5')
   await page.getByLabel('推荐等级', { exact: true }).fill('2')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   const save = requests.find((request) => request.method === 'PUT')!
-  expect(save.body).toMatchObject({ subtitle: 'Lunch special', description: 'Freshly prepared', sortOrder: 5, recommendationLevel: 2, kitchenPrinterEnable: true, startSaleTime: '22:00', endSaleTime: '02:00', coverImageUuid: counterId, version, commandUuid: expect.any(String) })
+  expect(save.body).toMatchObject({ subtitle: 'Lunch special', description: 'Freshly prepared', sortOrder: 5, recommendationLevel: 2, kitchenPrinterEnable: true, startSaleTime: '10:00', endSaleTime: '20:00', coverImageUuid: counterId, version, commandUuid: expect.any(String) })
   expect(requests.filter((request) => request.path.endsWith('/operations/images'))).toHaveLength(1)
   await expect(page.locator('.catalog-product-info')).toContainText('Lunch special')
 })
@@ -589,8 +589,8 @@ test('single and explicit-page batch availability use selected record versions a
   await expect(page.getByRole('dialog')).toContainText('API product')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '恢复售卖', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '恢复本页售罄商品', exact: true }).click()
+  await expect(page.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '恢复当前分类售罄商品', exact: true }).click()
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(requests.filter((request) => request.path.endsWith('/availability')).map((request) => request.body)).toEqual([
@@ -647,13 +647,29 @@ test('auditors can inspect successful store operations without receiving financi
   await expect(page.getByRole('dialog')).toContainText('不是所有历史 CRUD 或财务流水')
 })
 
-test('a server search miss never pretends that the store has no products', async ({ page }) => {
-  const requests = await mockApi(page)
+test('kitchen catalog removes its page heading and search while grouping products by category', async ({ page }) => {
+  const drinksCategoryId = '00000000-0000-4000-8000-000000000021'
+  const drinksProductId = '00000000-0000-4000-8000-000000000022'
+  await mockApi(page)
+  await page.route('**/operations/products?**', (route) => operationalList(route, [
+    { uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active', isSoldout: false },
+    { uuid: drinksProductId, name: 'Iced tea', category: { uuid: drinksCategoryId }, status: 'active', isSoldout: true },
+  ]))
+  await page.route('**/operations/product-categories?**', (route) => operationalList(route, [
+    { uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true },
+    { uuid: drinksCategoryId, name: 'Drinks', slug: 'drinks', sortOrder: 1, enabled: true },
+  ]))
   await login(page)
-  await page.getByLabel('搜索全店记录', { exact: true }).fill('No matching item')
-  await expect(page.getByRole('heading', { name: '没有匹配的记录', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '从第一件商品开始', exact: true })).toHaveCount(0)
-  expect(requests.filter((request) => request.path.endsWith('/operations/products')).length).toBeGreaterThan(0)
+  await expect(page.getByRole('heading', { name: '商品与售卖', exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('搜索全店记录', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.catalog-category-heading h2')).toHaveText(['API category', 'Drinks'])
+  await expect(page.locator('.catalog-product-statuses').first()).toContainText('在售')
+  await expect(page.locator('.catalog-product-statuses').last()).toContainText('已售罄')
+  await expect(page.getByRole('button', { name: '设为售罄', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Drinks', exact: true }).click()
+  await expect(page.locator('.catalog-product-card')).toHaveCount(1)
+  await expect(page.getByRole('heading', { name: 'Iced tea', exact: true })).toBeVisible()
 })
 
 test('inactive membership cannot enter a store and never enrolls automatically', async ({ page }) => {
@@ -897,7 +913,7 @@ test('demo entry stays independent and never sends staff API requests', async ({
   expect(requests).toEqual([])
 })
 
-test('live lists request the next backend page and clear data on store switching and logout', async ({ page }) => {
+test('live kitchen loads all backend pages and clears data on store switching and logout', async ({ page }) => {
   const requests = await mockApi(page)
   await page.route('**/api/v1/store/**/products?**', (route) => {
     const pageNumber = Number(new URL(route.request().url()).searchParams.get('page'))
@@ -905,11 +921,11 @@ test('live lists request the next backend page and clear data on store switching
   })
   await login(page)
   await expect(page.getByRole('heading', { name: 'Live page 1', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '下一页', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Live page 2', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Live page 1', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '下一页', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '切换门店', exact: true }).click()
   await expect(page.getByRole('heading', { name: '选择门店', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Live page 1', exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Live page 2', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '退出登录', exact: true }).click()
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
@@ -966,13 +982,11 @@ test('redesigned workspace remains usable across phone, tablet and desktop layou
   await expect.poll(() => page.evaluate(() => scrollY)).toBe(0)
   await expect(page.locator('.record-identity dd').first()).not.toBeVisible()
   await page.screenshot({ path: 'test-results/ui-catalog.png', fullPage: true })
-  await page.getByLabel('搜索全店记录', { exact: true }).fill('Garden')
-  await expect(page.locator('.catalog-product-card')).toHaveCount(1)
-  await page.getByLabel('搜索全店记录', { exact: true }).fill('')
-  await page.getByRole('button', { name: '已下架', exact: true }).click()
-  await expect(page.locator('.catalog-product-card')).toHaveCount(1)
-  await expect(page.getByRole('heading', { name: 'House broth', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '全部状态', exact: true }).click()
+  await expect(page.getByLabel('搜索全店记录', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '全部状态', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '未分类', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '未分类', exact: true }).click()
+  await expect(page.locator('.catalog-product-card')).toHaveCount(3)
   await page.getByRole('button', { name: '编辑', exact: true }).first().click()
   await expect(page.getByRole('dialog').getByRole('combobox', { name: '所属分类', exact: true })).toHaveValue('')
   await page.screenshot({ path: 'test-results/ui-product-form.png', fullPage: true })

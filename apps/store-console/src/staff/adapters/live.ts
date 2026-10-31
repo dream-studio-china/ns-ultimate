@@ -245,8 +245,21 @@ export class StoreApi {
     if (result.page !== page) throw new ApiError('invalid')
     return result
   }
+  private async operationalAll<T>(resource: string, schema: z.ZodType<T>) {
+    const items: T[] = []
+    let total = 0
+    for (let page = 1; ; page += 1) {
+      const result = await this.operationalList(resource, schema, page)
+      items.push(...result.items)
+      total = result.total
+      if (!result.hasNext) return { items, page: 1, hasNext: false, total }
+      if (!result.items.length || page >= 100000) throw new ApiError('invalid')
+    }
+  }
   products(page: number, q = '', status = 'all') { return this.operationalList('products', productSchema, page, q, status) }
+  allProducts() { return this.operationalAll('products', productSchema) }
   categories(page: number, q = '') { return this.operationalList('product-categories', categorySchema, page, q) }
+  allCategories() { return this.operationalAll('product-categories', categorySchema) }
   counters(page: number, q = '', status = 'all') { return this.operationalList('counters', counterSchema, page, q, status) }
   orders(page: number, q = '', status = 'all') { return this.operationalList('orders', orderSchema, page, q, status) }
   history(page: number) {
