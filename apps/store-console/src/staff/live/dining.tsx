@@ -237,47 +237,61 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, on
     : await api.counterSession(id)], hasNext: false }), [access.store.code, access.store.currency, api, id, legacy])
   const detail = usePage(load)
   const [operation, setOperation] = useState<{ table: CounterSessionView; command: CounterCommand; order?: SessionOrder } | null>(null)
+  const [cancelMode, setCancelMode] = useState(false)
+  const [cancelSelection, setCancelSelection] = useState<Set<string>>(() => new Set())
   const done = () => { setOperation(null); detail.reload(); changed() }
+  const closeCancelSelection = () => { setCancelMode(false); setCancelSelection(new Set()) }
   return <><ListFeedback state={detail} empty="emptyLive" hint="diningScopeHint" icon={LayoutGrid} />{detail.items.map((table) => {
     const orders = effectiveDiningOrders(table)
     const hasOrders = orders.length > 0
     const hasAnyOrders = table.ordersVisible && table.orders.length > 0
     const cancellableOrders = table.ordersVisible ? effectiveDiningOrders(table).filter((order) => order.canCancel) : []
+    const selectedCancelOrders = cancellableOrders.filter((order) => cancelSelection.has(order.uuid))
+    const allCancellableSelected = cancellableOrders.length > 0 && selectedCancelOrders.length === cancellableOrders.length
+    const toggleCancelOrder = (uuid: string) => setCancelSelection((current) => {
+      const next = new Set(current)
+      if (next.has(uuid)) next.delete(uuid)
+      else next.add(uuid)
+      return next
+    })
     return <section className="dining-detail" key={table.counter.uuid}>
     <div className="dining-detail-hero"><div className="dining-detail-heading"><div><h3>{table.counter.name}</h3></div><StatusPill muted={!table.session}>{t(table.session ? 'dining' : table.counter.enabled ? 'idle' : 'tableDisabled')}</StatusPill></div><div className="dining-detail-summary"><span><UsersRound size={15} />{table.session?.participantCount ?? '—'} {t('guestUnit')}</span>{table.session && <span><Clock3 size={15} /><time dateTime={table.session.startedAt}>{formatDiningDate(table.session.startedAt, locale)}</time></span>}</div>{hasOrders && <div className="dining-detail-amount"><span>{t('diningOpenAmount')}</span><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: table.currency }).format(effectiveDiningAmount(table) / 100)}</strong></div>}</div>
     {table.session?.notes && <p className="dining-notes dining-party-notes"><strong>{t('diningPartyNotes')}</strong>{table.session.notes}</p>}
-    <div className="order-operation-actions">{orderable && <Button color="primary" disabled={!table.counter.enabled || (table.ordersVisible && table.paymentHold)} onClick={() => onOrder(table)}>{t(hasOrders ? 'addDining' : 'placeNewDining')}</Button>}{!legacy && table.session && (['update', 'end'] as const).filter((command) => permitted(access, command)).map((command) => <Button key={command} disabled={command === 'end' && !table.canEnd} onClick={() => setOperation({ table, command })}>{t(command === 'end' && !hasAnyOrders ? 'clearDining' : labels[command])}</Button>)}{hasOrders && <Button onClick={() => onCheckout(table)}>{t('checkoutDining')}</Button>}</div>
-    {cancellableOrders.length > 0 && permitted(access, 'cancel') && <CancelUnsettledOrders api={api} access={access} legacy={legacy} table={table} cancellableOrders={cancellableOrders} onDone={done} />}
+    <div className="order-operation-actions">{orderable && <Button color="primary" disabled={!table.counter.enabled || (table.ordersVisible && table.paymentHold)} onClick={() => onOrder(table)}>{t(hasOrders ? 'addDining' : 'placeNewDining')}</Button>}{!legacy && table.session && (['update', 'end'] as const).filter((command) => permitted(access, command)).map((command) => <Button key={command} disabled={command === 'end' && !table.canEnd} onClick={() => setOperation({ table, command })}>{t(command === 'end' && !hasAnyOrders ? 'clearDining' : labels[command])}</Button>)}{hasOrders && <Button onClick={() => onCheckout(table)}>{t('checkoutDining')}</Button>}{hasOrders && permitted(access, 'cancel') && <Button color="danger" fill="outline" onClick={() => cancelMode ? closeCancelSelection() : setCancelMode(true)}>{t(cancelMode ? 'cancelSelectionExit' : 'cancelOrder')}</Button>}</div>
     {table.ordersVisible && table.paymentHold && <Notice>{t('diningPaymentHold')}</Notice>}{table.session && !table.canEnd && <p className="helper">{t('diningEndBlocked')}</p>}
     {!table.ordersVisible ? <Notice subtle>{t('sessionOrdersRestricted')}</Notice> : <>
       <div className="dining-section-heading"><h3>{t('diningBatches')}</h3><span>{orders.length}</span></div>{!orders.length && <p className="dining-empty-orders">{t('noItems')}</p>}
-      {[...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.uuid.localeCompare(b.uuid)).map((order, index) => <article className="dining-round" key={order.uuid}>
-        <header><strong>{String(index + 1).padStart(2, '0')} · #{order.uuid.slice(0, 8)}</strong><StatusPill>{tradeLabels[order.status] ? t(tradeLabels[order.status]) : order.status}</StatusPill></header>
+      {[...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.uuid.localeCompare(b.uuid)).map((order, index) => <article className={`dining-round ${cancelMode ? 'is-cancel-selectable' : ''} ${cancelSelection.has(order.uuid) ? 'is-cancel-selected' : ''}`} key={order.uuid}>
+        <header><div className="dining-round-heading">{cancelMode && <input className="dining-cancel-checkbox" aria-label={`${t('selectOrder')} #${order.uuid.slice(0, 8).toUpperCase()}`} type="checkbox" checked={cancelSelection.has(order.uuid)} disabled={!order.canCancel} onChange={() => toggleCancelOrder(order.uuid)} />}<strong>{String(index + 1).padStart(2, '0')} · #{order.uuid.slice(0, 8)}</strong></div><StatusPill>{tradeLabels[order.status] ? t(tradeLabels[order.status]) : order.status}</StatusPill></header>
         <p><time dateTime={order.createdAt}>{formatDiningDate(order.createdAt, locale)}</time></p>
         <p>{t('diningOperationalState')} · {order.operationalStatus ? t(operationLabels[order.operationalStatus] ?? 'orderStatus') : t('diningProjecting')}</p>
         <p>{t('diningPaymentState')} · {order.paymentStatus ?? t('diningNoPayment')}{order.hasInvoice && ` · ${t('diningHasInvoice')}`}</p>
         <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
         {order.notes && <p className="dining-notes">{order.notes}</p>}
         {order.canReplace && permitted(access, 'replace') && <Button disabled={!table.counter.enabled || table.paymentHold} onClick={() => setOperation({ table, order, command: 'replace' })}>{t('replaceDining')}</Button>}
-        {order.canCancel && permitted(access, 'cancel') && <Button onClick={() => setOperation({ table, order, command: 'cancel' })}>{t('cancelOrder')}</Button>}
+        {cancelMode && !order.canCancel && <p className="dining-cancel-unavailable">{t('cancelOrderUnavailable')}</p>}
       </article>)}
+      {cancelMode && <div className="dining-cancel-selection">
+        <header><span>{selectedCancelOrders.length} / {cancellableOrders.length} · {t('selectedOrders')}</span><button type="button" disabled={!cancellableOrders.length} onClick={() => setCancelSelection(allCancellableSelected ? new Set() : new Set(cancellableOrders.map((order) => order.uuid)))}>{t(allCancellableSelected ? 'cancelClearSelection' : 'cancelSelectAll')}</button></header>
+        {cancellableOrders.length > 0 ? <CancelSelectedOrders api={api} access={access} legacy={legacy} table={table} selectedOrders={selectedCancelOrders} onDone={() => { closeCancelSelection(); detail.reload(); changed() }} /> : <Notice>{t('cancelPendingNoEligible')}</Notice>}
+      </div>}
     </>}
-  </section>})}<PageControls state={detail} detail />{operation && (operation.command === 'replace' ? <DiningEditor api={api} access={access} mode="replace" {...operation} onClose={() => setOperation(null)} done={done} /> : operation.command === 'cancel' ? <OrderCancel api={api} table={operation.table} order={operation.order!} onClose={() => setOperation(null)} done={done} /> : <DiningOperation api={api} {...operation} onClose={() => setOperation(null)} done={done} />)}</>
+  </section>})}<PageControls state={detail} detail />{operation && (operation.command === 'replace' ? <DiningEditor api={api} access={access} mode="replace" {...operation} onClose={() => setOperation(null)} done={done} /> : <DiningOperation api={api} {...operation} onClose={() => setOperation(null)} done={done} />)}</>
 }
 
-function CancelUnsettledOrders({ api, access, legacy, table, cancellableOrders, onDone }: { api: StoreApi; access: StoreAccess; legacy: boolean; table: CounterSessionView; cancellableOrders: SessionOrder[]; onDone: () => void }) {
+function CancelSelectedOrders({ api, access, legacy, table, selectedOrders, onDone }: { api: StoreApi; access: StoreAccess; legacy: boolean; table: CounterSessionView; selectedOrders: SessionOrder[]; onDone: () => void }) {
   const { t, locale } = useI18n()
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const commandUuids = useRef(new Map<string, string>())
-  const amount = cancellableOrders.reduce((total, order) => total + order.totalAmount, 0)
-  const formattedAmount = new Intl.NumberFormat(locale, { style: 'currency', currency: cancellableOrders[0]?.currency ?? table.currency }).format(amount / 100)
+  const amount = selectedOrders.reduce((total, order) => total + order.totalAmount, 0)
+  const formattedAmount = new Intl.NumberFormat(locale, { style: 'currency', currency: selectedOrders[0]?.currency ?? table.currency }).format(amount / 100)
   const loadTable = async () => legacy
     ? legacyCounterSession(await api.legacyCounter(table.counter.uuid, access.store.code), await api.legacyCounterOrders(table.counter.uuid, access.store.code), access.store.currency)
     : api.counterSession(table.counter.uuid)
-  const cancelUnsettled = async () => {
-    if (busy || !cancellableOrders.length) return
+  const cancelSelected = async () => {
+    if (busy || !selectedOrders.length) return
     if (!navigator.onLine) {
       setResult(t('networkFailed'))
       return
@@ -287,7 +301,7 @@ function CancelUnsettledOrders({ api, access, legacy, table, cancellableOrders, 
     let cancelled = 0
     let failed = 0
     try {
-      for (const target of cancellableOrders) {
+      for (const target of selectedOrders) {
         try {
           const current = await loadTable()
           if (!current.ordersVisible) { failed += 1; continue }
@@ -314,15 +328,17 @@ function CancelUnsettledOrders({ api, access, legacy, table, cancellableOrders, 
       setResult(failed
         ? t('cancelPendingPartial').replace('{cancelled}', String(cancelled)).replace('{failed}', String(failed))
         : t('cancelPendingSuccess').replace('{count}', String(cancelled)))
-      onDone()
-      if (!failed) setConfirming(false)
+      if (!failed) {
+        setConfirming(false)
+        onDone()
+      }
     } finally {
       setBusy(false)
     }
   }
   return <><div className="dining-batch-cancel"><Button block color="danger" fill="outline" disabled={busy} onClick={() => { setResult(null); setConfirming(true) }}>{t('cancelPendingOrders')}</Button></div>
-    <LiveSheet open={confirming} title={t('cancelPendingTitle')} className="dining-batch-cancel-confirm" onClose={() => { if (!busy) setConfirming(false) }} footer={<div className="dining-confirm-bar"><Button disabled={busy} onClick={() => setConfirming(false)}>{t('cancel')}</Button><Button block color="danger" loading={busy} disabled={busy} onClick={() => void cancelUnsettled()}>{t('cancelPendingConfirm')}</Button></div>}>
-      <Notice>{t('cancelPendingHint').replace('{count}', String(cancellableOrders.length)).replace('{amount}', formattedAmount)}</Notice>
+    <LiveSheet open={confirming} title={t('cancelPendingTitle')} className="dining-batch-cancel-confirm" onClose={() => { if (!busy) setConfirming(false) }} footer={<div className="dining-confirm-bar"><Button disabled={busy} onClick={() => setConfirming(false)}>{t('cancel')}</Button><Button block color="danger" loading={busy} disabled={busy || !selectedOrders.length} onClick={() => void cancelSelected()}>{t('cancelPendingConfirm')}</Button></div>}>
+      <Notice>{t('cancelPendingHint').replace('{count}', String(selectedOrders.length)).replace('{amount}', formattedAmount)}</Notice>
       {result && <Notice>{result}</Notice>}
     </LiveSheet>
   </>
@@ -403,17 +419,6 @@ function DiningOperation({ api, table, command, onClose, done }: { api: StoreApi
   return <EditorSheet title={t(clear ? 'clearDining' : labels[command])} description={clear ? 'diningClearHint' : command === 'end' ? 'diningEndHint' : 'diningCommandHint'} preview={<EditorPreview icon={clear ? RotateCcw : UsersRound} label={clear ? 'clearDining' : 'diningBoard'} name={table.counter.name} />} onClose={onClose} onDone={done} submitLabel={clear ? 'confirmClearDining' : 'save'} submit={() => api.counterCommand(table.counter.uuid, command, { ...payload, commandUuid })}>
     {command === 'update' && <><label className="field">{t('people')}<input required type="number" min={1} max={100} step={1} value={participantCount} onChange={(event) => setParticipantCount(Number(event.target.value))} /></label><label className="field">{t('diningPartyNotes')}<textarea maxLength={1000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label></>}
     {command === 'end' && <Notice>{t(clear ? 'diningClearHint' : 'diningEndHint')}</Notice>}
-  </EditorSheet>
-}
-
-function OrderCancel({ api, table, order, onClose, done }: { api: StoreApi; table: CounterSessionView; order: SessionOrder; onClose: () => void; done: () => void }) {
-  const { t, locale } = useI18n()
-  const [reason, setReason] = useState('')
-  const payload = { version: table.version, orderUuid: order.uuid, reason: reason.trim() }
-  const commandUuid = useCommand(payload)
-  return <EditorSheet title={t('cancelOrder')} description="orderCancelHint" preview={<EditorPreview icon={ReceiptText} label="orderReference" name={`#${order.uuid.slice(0, 8).toUpperCase()}`} detail={new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)} />} onClose={onClose} onDone={done} submit={() => api.counterCommand(table.counter.uuid, 'cancel', { ...payload, commandUuid })}>
-    <Notice>{t('orderCancelHint')}</Notice>
-    <label className="field">{t('cancelReason')}<textarea required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
   </EditorSheet>
 }
 

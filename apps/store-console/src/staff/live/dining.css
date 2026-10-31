@@ -56,6 +56,16 @@
 .dining-batch-cancel { display: grid; gap: 10px; }
 .live-app .dining-batch-cancel .adm-button { min-height: 42px; color: #a63a27; border-color: color-mix(in srgb, #c44932 36%, var(--ws-line)); background: color-mix(in srgb, #c44932 4%, var(--theme-paper)); }
 .dining-batch-cancel-confirm .live-sheet-content { display: grid; gap: 10px; }
+.dining-round.is-cancel-selectable { border-color: color-mix(in srgb, #c44932 22%, var(--ws-line)); }
+.dining-round.is-cancel-selected { border-color: color-mix(in srgb, #c44932 58%, var(--ws-line)); background: color-mix(in srgb, #c44932 5%, var(--theme-paper)); box-shadow: 0 0 0 2px color-mix(in srgb, #c44932 8%, transparent); }
+.dining-round-heading { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.dining-cancel-checkbox { width: 19px; height: 19px; margin: 0; flex: 0 0 auto; accent-color: #c44932; cursor: pointer; }
+.dining-cancel-checkbox:disabled { cursor: not-allowed; opacity: .45; }
+.dining-cancel-unavailable { color: #a63a27 !important; font-size: 10px !important; }
+.dining-cancel-selection { display: grid; gap: 10px; padding: 13px; border: 1px solid color-mix(in srgb, #c44932 24%, var(--ws-line)); border-radius: 15px; background: color-mix(in srgb, #c44932 3%, var(--theme-paper)); }
+.dining-cancel-selection > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ws-muted); font-size: 11px; }
+.dining-cancel-selection > header button { min-height: 32px; padding: 5px 10px; border: 1px solid color-mix(in srgb, #c44932 28%, var(--ws-line)); border-radius: 9px; color: #a63a27; background: var(--theme-paper); font-size: 10px; font-weight: 650; cursor: pointer; }
+.dining-cancel-selection > header button:disabled { cursor: not-allowed; opacity: .5; }
 .dining-round { border: 1px solid var(--ws-line); border-radius: 18px; padding: 16px; min-width: 0; }
 .dining-round header { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
 .dining-round p { margin: 10px 0; overflow-wrap: anywhere; }

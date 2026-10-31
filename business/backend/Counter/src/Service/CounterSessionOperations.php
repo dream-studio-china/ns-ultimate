@@ -171,13 +171,39 @@ final class CounterSessionOperations
 
     private function canCancel(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): bool
     {
-        return $this->canChange($order, $lifecycle, $storeOrder);
+        return $this->cancellationBlockedReason($order, $lifecycle, $storeOrder) === null;
     }
 
-    /** Shared eligibility for changing or cancelling an unprocessed, unpaid session order. */
+    /** Shared eligibility for replacing an unprocessed, unpaid session order. */
     private function canChange(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder, bool $allowMergeTarget = false): bool
     {
         return $this->changeBlockedReason($order, $lifecycle, $storeOrder, $allowMergeTarget) === null;
+    }
+
+    /**
+     * A cashier may clear an unpaid table after the store has accepted it. Replacement remains
+     * restricted to unprocessed orders because it reuses the original cart and customer.
+     */
+    private function cancellationBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
+    {
+        if ($order->getInvoiceId() !== null || $order->getPaymentStatus() !== null) return 'payment_started';
+        if ($storeOrder === null) return 'projection_pending';
+        if (!in_array($lifecycle->getAcceptanceStatus(), [OrderStoreLifecycle::ACCEPTANCE_PENDING, OrderStoreLifecycle::ACCEPTANCE_ACCEPTED], true)
+            || $lifecycle->getFulfillmentStatus() !== OrderStoreLifecycle::FULFILLMENT_PENDING
+            || $lifecycle->getVerificationStatus() === OrderStoreLifecycle::VERIFICATION_VERIFIED
+            || !in_array($storeOrder->getOperationalStatus(), [StoreOrder::STATUS_PENDING_VALIDATION, StoreOrder::STATUS_ACCEPTED], true)) return 'order_processed';
+        if ($storeOrder->getReservationId() !== null
+            || $this->em->getRepository(Reservation::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 0) return 'inventory_reserved';
+        if (!in_array($order->getStatus(), [Order::STATUS_PENDING, Order::STATUS_CONFIRMED], true)
+            || $this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1
+            || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $order->getUuid()]) !== 0) return 'order_ineligible';
+        $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $order->getUuid(), 'topic' => 'trade.order.created.v1']);
+        $snapshot = $event?->getPayload()['store'] ?? null;
+        $valid = is_array($snapshot) && ($snapshot['uuid'] ?? null) === $lifecycle->getStoreUuid()
+            && ($order->getMetadata()['_store']['uuid'] ?? null) === $lifecycle->getStoreUuid()
+            && ($snapshot['requireInventory'] ?? null) === false
+            && $this->workflow->can($order, 'cancel');
+        return $valid ? null : 'order_ineligible';
     }
 
     private function changeBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder, bool $allowMergeTarget = false): ?string

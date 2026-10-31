@@ -13,8 +13,10 @@ use App\Identity\Security\TokenManager;
 use App\Store\Entity\Membership;
 use App\Store\Entity\Specification;
 use App\Store\Entity\Store;
+use App\Store\Entity\StoreOrder;
 use App\Store\Service\StoreOrderServiceInterface;
 use App\Trade\Entity\Order;
+use App\Trade\Entity\OrderStoreLifecycle;
 use App\Trade\Entity\TradeOutboxMessage;
 use App\Trade\Service\OrderServiceInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -657,6 +659,23 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame('cancelled', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $uuid])->getStatus());
     }
 
+    public function testAcceptedUnpaidOrderCanBeCancelledButNotReplaced(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $this->em->getConnection()->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', [StoreOrder::STATUS_ACCEPTED, $uuid]);
+        $this->em->getConnection()->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', [OrderStoreLifecycle::ACCEPTANCE_ACCEPTED, $uuid]);
+        $this->em->clear();
+
+        $row = $this->orderByUuid($uuid);
+        self::assertFalse($row['canReplace']);
+        self::assertTrue($row['canCancel']);
+        $body = ['commandUuid' => UUID::v4(), 'version' => $this->view()['version'], 'orderUuid' => $uuid, 'reason' => 'Table cleared'];
+        self::assertSame(200, $this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/cancel', $body)->getStatusCode());
+        self::assertSame('cancelled', $this->em->getConnection()->fetchOne('SELECT status FROM trade_order WHERE uuid = ?', [$uuid]));
+        self::assertSame('cancelled', $this->em->getConnection()->fetchOne('SELECT operational_status FROM store_order WHERE trade_order_uuid = ?', [$uuid]));
+        self::assertSame(0, $this->view()['openOrderCount']);
+    }
+
     public function testCancellationGrantIsIndependentFromOrderingAndModification(): void
     {
         $uuid = $this->startCustomerSession(false); $this->project($uuid);
@@ -771,7 +790,7 @@ final class CounterOperationsTest extends KernelTestCase
             $old = $this->em->getConnection()->fetchOne("SELECT $column FROM $table WHERE $identity = ?", [$uuid]);
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$value, $uuid]); $this->em->clear();
             self::assertFalse($this->orderByUuid($uuid)['canReplace']);
-            self::assertFalse($this->orderByUuid($uuid)['canCancel']);
+            self::assertSame(in_array($column, ['operational_status', 'acceptance_status'], true), $this->orderByUuid($uuid)['canCancel']);
             $expectedReason = match ($column) {
                 'invoice_id', 'payment_status' => 'payment_started',
                 'operational_status', 'acceptance_status' => 'order_processed',

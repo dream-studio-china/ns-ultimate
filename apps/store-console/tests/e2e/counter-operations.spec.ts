@@ -354,37 +354,45 @@ test('ordering permission alone does not enable customer-order modification', as
   await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
 })
 
-test('an eligible order can be cancelled only with a reason and is removed from the open orders', async ({ page }) => {
+test('a selected eligible order is removed from the open orders after confirmation', async ({ page }) => {
   const requests = await setup(page, { customerOrder: true })
   await page.locator('.dining-card-title').click()
-  await page.getByRole('button', { name: '取消订单', exact: true }).click()
-  await page.getByRole('button', { name: '保存', exact: true }).click()
-  expect(requests.filter((request) => request.path.endsWith('/orders/cancel'))).toHaveLength(0)
-  await page.getByLabel('取消原因', { exact: true }).fill('Guest left')
-  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const detail = page.getByRole('dialog', { name: '查看桌次' })
+  await detail.getByRole('button', { name: '取消订单', exact: true }).click()
+  await detail.getByRole('checkbox').check()
+  await detail.getByRole('button', { name: '取消所选订单', exact: true }).click()
+  const confirmation = page.getByRole('dialog', { name: '确认取消所选订单？' })
+  await expect(confirmation).toBeVisible()
+  await confirmation.getByRole('button', { name: '确认取消', exact: true }).click()
+  await expect.poll(() => requests.filter((request) => request.path.endsWith('/orders/cancel')).length).toBe(1)
   await expect(page.locator('.dining-round')).toHaveCount(0)
   const write = requests.find((request) => request.path.endsWith('/orders/cancel'))!
-  expect(write.body).toMatchObject({ orderUuid: '10000000-0000-4000-8000-000000000009', reason: 'Guest left', commandUuid: expect.any(String), version: expect.any(String) })
+  expect(write.body).toMatchObject({ orderUuid: '10000000-0000-4000-8000-000000000009', reason: '收银端取消所选未结订单', commandUuid: expect.any(String), version: expect.any(String) })
 })
 
-test('staff can cancel every eligible unsettled order for one table after confirmation', async ({ page }) => {
+test('staff can select and cancel eligible unsettled orders for one table after confirmation', async ({ page }) => {
   const requests = await setup(page, { batchPending: true, batchConfirmedCancellable: true })
   await page.locator('.dining-card-title').click()
   const detail = page.getByRole('dialog', { name: '查看桌次' })
   await expect(detail.locator('.dining-round')).toHaveCount(3)
   const cancelRequests = () => requests.filter((request) => request.path.endsWith('/orders/cancel'))
 
-  await detail.getByRole('button', { name: '取消整桌未结订单', exact: true }).click()
+  await detail.getByRole('button', { name: '取消订单', exact: true }).click()
+  await expect(detail.getByRole('checkbox')).toHaveCount(3)
+  await detail.getByRole('button', { name: '全选可取消', exact: true }).click()
+  await expect(detail.getByRole('checkbox')).toHaveCount(3)
+  for (const checkbox of await detail.getByRole('checkbox').all()) await expect(checkbox).toBeChecked()
+  await detail.getByRole('button', { name: '取消所选订单', exact: true }).click()
   expect(cancelRequests()).toHaveLength(0)
-  const confirmation = page.getByRole('dialog', { name: '取消本桌全部可取消的未结订单？' })
+  const confirmation = page.getByRole('dialog', { name: '确认取消所选订单？' })
   await expect(confirmation).toBeVisible()
-  await expect(page.getByText('将取消当前桌台 3 笔符合条件的未结订单', { exact: false })).toBeVisible()
-  await confirmation.getByRole('button', { name: '确认取消整桌未结订单', exact: true }).click()
+  await expect(page.getByText('将取消已选择的 3 笔未结订单', { exact: false })).toBeVisible()
+  await confirmation.getByRole('button', { name: '确认取消', exact: true }).click()
 
   await expect.poll(() => cancelRequests().length).toBe(3)
   await expect(confirmation).toHaveCount(0)
   await expect(detail.locator('.dining-round')).toHaveCount(0)
-  await expect(detail.getByRole('button', { name: '取消整桌未结订单', exact: true })).toHaveCount(0)
+  await expect(detail.getByRole('button', { name: '取消订单', exact: true })).toHaveCount(0)
 
   const writes = cancelRequests()
   expect(writes.map((request) => request.body?.orderUuid)).toEqual([
@@ -393,7 +401,18 @@ test('staff can cancel every eligible unsettled order for one table after confir
     '10000000-0000-4000-8000-000000000028',
   ])
   expect(new Set(writes.map((request) => request.body?.version)).size).toBe(3)
-  expect(writes.every((request) => request.body?.reason === '收银端取消整桌未结订单')).toBe(true)
+  expect(writes.every((request) => request.body?.reason === '收银端取消所选未结订单')).toBe(true)
+})
+
+test('the cancel entry remains visible when every open order is protected', async ({ page }) => {
+  await setup(page, { mergeOnCheckout: true })
+  await page.locator('.dining-card-title').click()
+  const detail = page.getByRole('dialog', { name: '查看桌次' })
+  await detail.getByRole('button', { name: '取消订单', exact: true }).click()
+  await expect(detail.getByRole('checkbox')).toHaveCount(2)
+  for (const checkbox of await detail.getByRole('checkbox').all()) await expect(checkbox).toBeDisabled()
+  await expect(detail.getByText('当前桌台没有符合取消条件的未结订单。', { exact: true })).toBeVisible()
+  await expect(detail.getByRole('button', { name: '取消所选订单', exact: true })).toHaveCount(0)
 })
 
 test('table details show only effective unsettled orders', async ({ page }) => {
