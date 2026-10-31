@@ -89,6 +89,10 @@ const jsonRecord = (value: unknown): unknown => {
   if (typeof value !== 'string' || !value.trim()) return value
   try { return JSON.parse(value) } catch { return {} }
 }
+const expandedRecord = (value: unknown): Record<string, unknown> => {
+  const source = record(jsonRecord(value))
+  return { ...source, ...record(source.__metadata) }
+}
 const text = (value: unknown) => typeof value === 'string' ? value : ''
 const integer = (value: unknown, fallback: number) => Number.isInteger(Number(value)) ? Number(value) : fallback
 const uniqueText = (value: unknown) => [...new Set((Array.isArray(value) ? value : []).filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map((item) => item.trim()))]
@@ -141,7 +145,7 @@ function normalizeCheckoutRule(value: unknown): CheckoutRule | null {
 }
 
 export function normalizeDiningMode(value: unknown): DiningMode | null {
-  const mode = record(value)
+  const mode = expandedRecord(value)
   const uuid = text(mode.uuid)
   if (!uuid) return null
   const availability = record(mode.availability)
@@ -181,6 +185,19 @@ export function normalizeDiningModes(value: unknown): DiningMode[] {
     const normalized = normalizeDiningMode(mode)
     return normalized ? [normalized] : []
   })
+}
+
+/**
+ * Resolve the mode bound to a session. A saved snapshot is authoritative; when an
+ * older endpoint returns only the bound UUID (or names the snapshot field
+ * `diningModeSnapshot`), resolve that exact UUID from the store configuration.
+ * No UUID and no snapshot still means a historical session with no bound mode.
+ */
+export function resolveBoundDiningMode(snapshot: unknown, uuid: unknown, storeModes: unknown): DiningMode | null {
+  const boundUuid = text(uuid).trim()
+  const saved = normalizeDiningMode(snapshot)
+  if (saved && (!boundUuid || saved.uuid === boundUuid)) return saved
+  return boundUuid ? normalizeDiningModes(storeModes).find((mode) => mode.uuid === boundUuid) ?? null : null
 }
 
 interface LocalClock { day: number; minute: number }

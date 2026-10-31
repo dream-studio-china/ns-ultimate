@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { availableDiningModes, diningModeLabel, inDiningCatalog, isChoiceSelectionBlocked, normalizeDiningModes, ruleQuantity, validateDiningRules, type DiningMode } from '../../src/staff/dining-mode'
+import { availableDiningModes, diningModeLabel, inDiningCatalog, isChoiceSelectionBlocked, normalizeDiningModes, resolveBoundDiningMode, ruleQuantity, validateDiningRules, type DiningMode } from '../../src/staff/dining-mode'
 
 const modes = normalizeDiningModes({
   version: 1,
@@ -87,5 +87,26 @@ describe('store dining modes', () => {
 
     expect(normalized).toHaveLength(1)
     expect(normalized[0]).toMatchObject({ name: '火锅', uuid: '00000000-0000-4000-8000-000000000001' })
+  })
+
+  it('resolves a bound mode from its UUID when the session snapshot field is absent', () => {
+    const storeModes = JSON.stringify({ version: 1, modes: [{
+      uuid: '00000000-0000-4000-8000-000000000002', name: '牛肉火锅', enabled: true, priority: 10,
+      availability: { allDay: true, daysOfWeek: [1, 2, 3, 4, 5, 6, 7], timeWindows: [] },
+      catalog: { categoryUuids: [], productUuids: [] }, rules: [], checkoutRules: [],
+    }] })
+
+    expect(resolveBoundDiningMode(null, '00000000-0000-4000-8000-000000000002', storeModes)).toMatchObject({ name: '牛肉火锅' })
+    expect(resolveBoundDiningMode(null, null, storeModes)).toBeNull()
+  })
+
+  it('reads an encoded metadata snapshot without changing its bound UUID', () => {
+    const snapshot = JSON.stringify({ __metadata: {
+      uuid: '00000000-0000-4000-8000-000000000003', name: '早餐', enabled: true, priority: 1,
+      availability: { allDay: true, daysOfWeek: [1, 2, 3, 4, 5, 6, 7], timeWindows: [] },
+      catalog: { categoryUuids: [], productUuids: [] }, rules: [], checkoutRules: [],
+    } })
+
+    expect(resolveBoundDiningMode(snapshot, '00000000-0000-4000-8000-000000000003', null)).toMatchObject({ name: '早餐' })
   })
 })

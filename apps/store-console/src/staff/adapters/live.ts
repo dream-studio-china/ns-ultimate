@@ -54,7 +54,12 @@ const counterSessionBase = z.object({
     uuid, participantCount: z.number().int().min(1).max(100).nullable(), notes: z.string().nullable(), startedAt: z.string(), revision: z.number().int().nonnegative(),
     diningModeUuid: uuid.nullable().optional().transform((value) => value ?? null),
     diningMode: diningModeSnapshotSchema,
-  }).nullable(),
+    // Some normalized Counter relations expose the database property name.
+    diningModeSnapshot: diningModeSnapshotSchema,
+  }).passthrough().transform(({ diningMode, diningModeSnapshot, ...session }) => ({
+    ...session,
+    diningMode: diningMode ?? diningModeSnapshot ?? null,
+  })).nullable(),
   currency, canEnd: z.boolean(), version,
 })
 export const counterSessionSchema = z.discriminatedUnion('ordersVisible', [

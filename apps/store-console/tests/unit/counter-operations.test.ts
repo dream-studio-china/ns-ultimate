@@ -29,6 +29,22 @@ describe('live counter session boundary', () => {
     expect(counterSessionSchema.safeParse({ ...base, orders: [], openAmount: 0, orderedAmount: 0, openOrderCount: 0, paymentHold: false }).success).toBe(true)
   })
 
+  it('accepts the normalized diningModeSnapshot field and maps it to the session dining mode', () => {
+    const mode = {
+      uuid: id, name: 'Hotpot', enabled: true, priority: 10, switchButtonLabel: 'Hotpot',
+      availability: { allDay: true, daysOfWeek: [1, 2, 3, 4, 5, 6, 7], timeWindows: [] },
+      catalog: { categoryUuids: [], productUuids: [] }, rules: [], checkoutRules: [],
+    }
+    const base = {
+      counter: { uuid: id, code: 'A01', name: 'Window', capacity: 4, enabled: true },
+      session: { uuid: id, participantCount: 2, notes: null, startedAt: '2026-10-31T10:00:00Z', revision: 1, diningModeUuid: id, diningMode: null, diningModeSnapshot: JSON.stringify(mode) },
+      ordersVisible: true, orders: [], openAmount: 0, orderedAmount: 0, openOrderCount: 0, paymentHold: false, currency: 'USD', canEnd: true, version,
+    }
+    const parsed = counterSessionSchema.parse(base)
+
+    expect(parsed.session?.diningMode).toMatchObject({ uuid: id, name: 'Hotpot' })
+  })
+
   it('separates session and order grants from catalog, fulfillment and membership labels', () => {
     const access: StoreAccess = { store: { uuid: id, name: 'Store', code: 'S1', currency: 'USD', timezone: 'UTC' }, membership: { status: 'active', role: 'owner' }, profile: { uuid: id, username: 'staff', roles: ['ROLE_USER'] }, authorization: { permissions: ['store:counter_order:create'], storeScopes: { 'store:counter_session:read': [id], 'store:counter_order:read': [id], 'store:order:accept': [id] } } }
     expect(can(access, 'counter_session', 'read')).toBe(true)

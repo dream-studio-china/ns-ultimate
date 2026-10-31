@@ -3,7 +3,7 @@ import { Button } from 'antd-mobile'
 import { ChevronDown, Clock3, LayoutGrid, Minus, Pencil, Plus, ReceiptText, RotateCcw, UsersRound } from 'lucide-react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, legacyCounterSession, StoreApi, type StoreAccess, type CounterSessionView, type SessionOrder, type OrderQuote, type OrderCart, type CounterCommand, type LegacyCatalogItem, type LiveCounter } from '../adapters/live'
-import { availableDiningModes, diningModeLabel, isChoiceRuleCandidate, isChoiceSelectionBlocked, normalizeDiningModes, ruleQuantity, validateDiningRules, type CheckoutRule, type ChoiceDiningRule, type DiningLine, type DiningMode, type DiningRule, type DiningRuleIssue, type FixedDiningRule, type PerGuestDiningRule } from '../dining-mode'
+import { availableDiningModes, diningModeLabel, isChoiceRuleCandidate, isChoiceSelectionBlocked, normalizeDiningModes, resolveBoundDiningMode, ruleQuantity, validateDiningRules, type CheckoutRule, type ChoiceDiningRule, type DiningLine, type DiningMode, type DiningRule, type DiningRuleIssue, type FixedDiningRule, type PerGuestDiningRule } from '../dining-mode'
 import { reconcileCheckoutQuantities } from '../checkout-reconciliation'
 import { ApiError } from '../adapters/api-client'
 import { EditorPreview, EditorSheet, errorKey, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, usePageRefresh } from './ui'
@@ -221,7 +221,7 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
     {selected && <LiveSheet open title={t('viewDining')} onClose={() => setSelected(null)}><DiningDetail api={api} access={access} legacy={list.legacy} orderable={orderable} id={selected} changed={list.reload} onOrder={(table) => { setReturnTo(table.counter.uuid); setSelected(null); startOrder(table) }} onCheckout={(table) => void startCheckout(table)} /></LiveSheet>}
     {ordering && <LegacyDiningEditor api={api} access={access} table={ordering.table} mode={ordering.mode} onClose={() => { setOrdering(null); setReturnTo(null) }} done={() => { setOrdering(null); list.reload(); setSelected(returnTo); setReturnTo(null) }} />}
     {checkoutEditing && <DiningEditor api={api} access={access} table={checkoutEditing} mode="checkout" onClose={() => setCheckoutEditing(null)} done={() => void finishCheckoutEdit()} />}
-    {settling && <DiningSettlement table={settling.table} autoMerged={settling.autoMerged} onClose={() => setSettling(null)} onAdjust={(table) => { setSettling(null); setCheckoutEditing(table) }} />}
+    {settling && <DiningSettlement table={settling.table} storeDiningModes={access.store.settings?.diningModes} autoMerged={settling.autoMerged} onClose={() => setSettling(null)} onAdjust={(table) => { setSettling(null); setCheckoutEditing(table) }} />}
   </>
 }
 
@@ -328,10 +328,10 @@ function CancelPendingOrders({ api, access, legacy, table, pendingOrders, onDone
   </>
 }
 
-function DiningSettlement({ table, autoMerged, onClose, onAdjust }: { table: CounterSessionView; autoMerged: boolean; onClose: () => void; onAdjust: (table: CounterSessionView) => void }) {
+function DiningSettlement({ table, storeDiningModes, autoMerged, onClose, onAdjust }: { table: CounterSessionView; storeDiningModes: unknown; autoMerged: boolean; onClose: () => void; onAdjust: (table: CounterSessionView) => void }) {
   const { t, locale } = useI18n()
   const currency = table.currency
-  const diningMode = table.session?.diningMode ?? null
+  const diningMode = resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, storeDiningModes)
   const currentOrders = effectiveDiningOrders(table)
   return <LiveSheet open title={t('checkoutDining')} className="dining-settlement" onClose={onClose}>
     {autoMerged && <Notice title="diningMergedWithoutModeTitle">{t('diningMergedWithoutModeHint')}</Notice>}
@@ -669,7 +669,11 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
   const [removedRules, setRemovedRules] = useState<Set<string>>(() => new Set())
   // Checkout must use the mode snapshotted when the first order was placed. A historical
   // session without that snapshot goes directly through the order-merge path.
-  const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, table.session?.diningMode ?? null, !isCheckout || Boolean(table.session?.diningMode))
+  const boundDiningMode = useMemo(
+    () => resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, access.store.settings?.diningModes),
+    [access.store.settings?.diningModes, table.session?.diningMode, table.session?.diningModeUuid],
+  )
+  const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, boundDiningMode, !isCheckout || Boolean(boundDiningMode))
   const ruleCatalog = useRuleCatalog(api, access.store.code, isAdd ? null : diningMode.selected)
   const [items, setItems] = useState<ModernCartLine[]>(initialLines)
   const [notes, setNotes] = useState(order?.notes ?? '')
@@ -884,7 +888,11 @@ function LegacyDiningEditor({ api, access, table, mode, onClose, done }: { api: 
   const [removedRules, setRemovedRules] = useState<Set<string>>(() => new Set())
   const [submitting, setSubmitting] = useState(false)
   const [reviewing, setReviewing] = useState(false)
-  const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, table.session?.diningMode ?? null)
+  const boundDiningMode = useMemo(
+    () => resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, access.store.settings?.diningModes),
+    [access.store.settings?.diningModes, table.session?.diningMode, table.session?.diningModeUuid],
+  )
+  const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, boundDiningMode)
   const ruleCatalog = useRuleCatalog(api, access.store.code, isAdd ? null : diningMode.selected)
   const ruleLines = useMemo(() => defaultRuleLines(ruleCatalog.items, participantCount, removedRules), [participantCount, removedRules, ruleCatalog.items])
   const manualLines = useMemo<ModeCartLine[]>(() => items.map((item) => ({ ...item, specificationUuid: item.uuid, ruleUuids: [], locked: false })), [items])

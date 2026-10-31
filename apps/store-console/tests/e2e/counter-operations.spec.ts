@@ -29,16 +29,17 @@ const diningMode = {
   ],
 }
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
+  const hasBoundDiningMode = options.diningMode || options.boundModeSnapshotMissing
   let session: { uuid: string; participantCount: number | null; notes: string | null; startedAt: string; revision: number; diningModeUuid: string | null; diningMode: typeof diningMode | null } | null = options.empty ? null : {
     uuid: sessionId, participantCount: options.participantMissing ? null : options.emptySession ? 4 : 3, notes: options.emptySession ? 'Guests left' : 'Birthday', startedAt: stamp, revision,
-    diningModeUuid: options.diningMode ? diningModeId : null,
+    diningModeUuid: hasBoundDiningMode ? diningModeId : null,
     diningMode: options.diningMode ? diningMode : null,
   }
   const diningModes = { version: 1, modes: [diningMode] }
-  const storeView = options.diningMode || options.storeModeOnly
+  const storeView = hasBoundDiningMode || options.storeModeOnly
     ? { ...store, settings: options.stringSettings ? JSON.stringify({ diningModes }) : { diningModes } }
     : store
   type TestOrder = { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; canReplace: boolean; canCancel: boolean }
@@ -594,6 +595,17 @@ test('checkout without a saved mode ignores current store modes and merges direc
   expect(requests.filter((request) => request.path.endsWith('/merge/preview'))).toHaveLength(1)
   expect(requests.filter((request) => request.path.endsWith('/merge/confirm'))).toHaveLength(1)
   expect(requests.some((request) => request.path.endsWith('/orders/create') || request.path.endsWith('/orders/replace'))).toBe(false)
+})
+
+test('checkout resolves the bound mode when the session response omits its snapshot', async ({ page }) => {
+  await setup(page, { boundModeSnapshotMissing: true })
+  await page.locator('.dining-card-title').click()
+  await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const review = page.getByRole('dialog', { name: '结账', exact: true })
+
+  await expect(review).not.toContainText('本桌订单没有保存点餐模式')
+  await expect(review).toContainText('请确认用餐人数')
+  await expect(review).toContainText('本次结账订单')
 })
 
 test('checkout additions create a separate order and then merge it with the table orders', async ({ page }) => {
