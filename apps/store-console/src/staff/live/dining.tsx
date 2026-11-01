@@ -543,6 +543,14 @@ interface ModernCartLine {
   locked: boolean
 }
 
+interface CheckoutDisplayLine {
+  key: string
+  specificationUuid: string | null
+  productName: string
+  specificationName: string
+  quantity: number
+}
+
 function DiningProductQuantity({ item, quantity, disabled, canDecrease, onIncrease, onDecrease }: {
   item: { productName: string; specificationName: string }; quantity: number; disabled: boolean; canDecrease: boolean; onIncrease: () => void; onDecrease: () => void
 }) {
@@ -587,6 +595,27 @@ function checkoutCartLines(table: CounterSessionView): ModernCartLine[] {
     ruleUuids: [],
     locked: false,
   }])))
+}
+
+function checkoutDisplayLines(table: CounterSessionView): CheckoutDisplayLine[] {
+  const merged = new Map<string, CheckoutDisplayLine>()
+  for (const item of effectiveDiningOrders(table).flatMap((order) => order.items)) {
+    const key = item.specificationUuid
+      ? `specification:${item.specificationUuid}`
+      : `product:${item.productName.trim().toLocaleLowerCase()}:${item.specificationName.trim().toLocaleLowerCase()}`
+    const current = merged.get(key)
+    merged.set(key, current ? {
+      ...current,
+      quantity: current.quantity + item.quantity,
+    } : {
+      key,
+      specificationUuid: item.specificationUuid,
+      productName: item.productName,
+      specificationName: item.specificationName,
+      quantity: item.quantity,
+    })
+  }
+  return [...merged.values()]
 }
 
 async function processCheckout(api: StoreApi, access: StoreAccess, table: CounterSessionView, lines: ModernCartLine[], mode: DiningMode | null, participantCount: number | null): Promise<CounterSessionView> {
@@ -693,6 +722,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   const [error, setError] = useState<MessageKey | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null)
   const originalLines = useMemo(() => checkoutCartLines(table), [table])
+  const originalDisplayLines = useMemo(() => checkoutDisplayLines(table), [table])
   const paymentMethods = useMemo(() => checkoutPaymentMethods(access.store), [access.store])
   const stage: CheckoutStage = result ? { kind: 'result' } : ruleIndex < checkoutRules.length ? { kind: 'rule', index: ruleIndex } : { kind: 'review' }
 
@@ -793,7 +823,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
     }
   }
   const finalCurrency = result?.currency ?? table.currency
-  const finalLines = result ? checkoutCartLines(result) : []
+  const finalLines = result ? checkoutDisplayLines(result) : []
   const finalAmount = result ? effectiveDiningAmount(result) : 0
   const finalOrders = result ? effectiveDiningOrders(result) : []
   const footer = stage.kind === 'result'
@@ -826,10 +856,10 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
     {stage.kind === 'review' && <section className="checkout-final-review">
       <header><span>{t('checkoutFinalReview')}</span><h3>{table.counter.name}</h3><small>{diningMode?.name ?? t('diningModeNotRecorded')}</small></header>
       {!diningMode && <Notice subtle>{t('checkoutNoModeHint')}</Notice>}
-      <div className="checkout-review-heading"><h4>{t('checkoutOriginalItems')}</h4><small>{originalLines.length} {t('recordsUnit')}</small></div>
-      <ul className="checkout-final-lines">{originalLines.map((line) => {
-        const reduction = reductionBySpecification.get(line.specificationUuid) ?? 0
-        return <li key={line.specificationUuid}><span><strong>{line.productName}</strong><small>{line.specificationName}</small></span><b>×{line.quantity}</b>{reduction > 0 && <em className="is-reduction">−{reduction}</em>}</li>
+      <div className="checkout-review-heading"><h4>{t('checkoutOriginalItems')}</h4><small>{originalDisplayLines.length} {t('recordsUnit')}</small></div>
+      <ul className="checkout-final-lines">{originalDisplayLines.map((line) => {
+        const reduction = line.specificationUuid ? reductionBySpecification.get(line.specificationUuid) ?? 0 : 0
+        return <li key={line.key}><span><strong>{line.productName}</strong><small>{line.specificationName}</small></span><b>×{line.quantity}</b>{reduction > 0 && <em className="is-reduction">−{reduction}</em>}</li>
       })}</ul>
       {reconciliation.additions.length > 0 && <><div className="checkout-review-heading"><h4>{t('checkoutAddedItems')}</h4><small>{reconciliation.additions.length} {t('recordsUnit')}</small></div><ul className="checkout-final-lines is-addition">{reconciliation.additions.map((line) => <li key={line.specificationUuid}><span><strong>{lineName(line.specificationUuid)}</strong></span><em>+{line.quantity}</em></li>)}</ul></>}
       {!reconciliation.changed && <Notice subtle>{t('checkoutNoChangesPlan')}</Notice>}
@@ -839,7 +869,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
       <Notice title="checkoutResultHintTitle">{t('checkoutResultHint')}</Notice>
       <div className="checkout-receipt-print">
         <header><strong>{access.store.name}</strong><span>{table.counter.name} · {formatDiningDate(new Date().toISOString(), locale)}</span></header>
-        <ul>{finalLines.map((line) => <li key={line.specificationUuid}><span>{line.productName}<small>{line.specificationName}</small></span><b>×{line.quantity}</b></li>)}</ul>
+        <ul>{finalLines.map((line) => <li key={line.key}><span>{line.productName}<small>{line.specificationName}</small></span><b>×{line.quantity}</b></li>)}</ul>
         <div className="dining-settlement-total"><span>{t('checkoutFinalAmount')}</span><strong>{money(finalAmount, finalCurrency)}</strong><small>{finalOrders.map((order) => `#${order.uuid.slice(0, 8).toUpperCase()}`).join(' · ')}</small></div>
       </div>
       <section className="checkout-payment-methods"><header><CreditCard size={17} /><h4>{t('checkoutPaymentMethods')}</h4></header>
