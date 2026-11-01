@@ -268,12 +268,12 @@ export class StoreApi {
   }
 
   /** Read the mode already recorded by the ordering app; no counter-session logic is inferred here. */
-  tradeOrderDiningMode(orderUuid: string, manageOrders: boolean): Promise<OrderDiningModeReference | null> {
+  tradeOrderDiningMode(orderUuid: string): Promise<OrderDiningModeReference | null> {
     const id = uuid.parse(orderUuid)
-    const key = `${manageOrders ? 'manage' : 'app'}:${id}`
+    const key = `manage:${id}`
     const cached = this.orderDiningModes.get(key)
     if (cached) return cached
-    const task = this.tradeOrderState(id, manageOrders)
+    const task = this.tradeOrderState(id, true)
       .then((record): OrderDiningModeReference | null => {
         if (!record) return null
         const metadata = record.metadata ?? {}
@@ -310,19 +310,19 @@ export class StoreApi {
   }
 
   /** Attach modes from existing Trade order metadata to counter rows that do not expose one. */
-  async hydrateCounterSessionDiningModes(table: CounterSessionView, manageOrders: boolean): Promise<CounterSessionView> {
-    // /app/orders/{uuid} is owner-scoped. A store-scoped cashier can read another
-    // guest's order through counter operations, but must not fall back to that
-    // endpoint or a valid trade-order UUID will produce a misleading 404.
-    if (!manageOrders || !table.ordersVisible || table.orders.length === 0) return table
+  async hydrateCounterSessionDiningModes(table: CounterSessionView): Promise<CounterSessionView> {
+    if (!table.ordersVisible || table.orders.length === 0) return table
     let changed = false
     const orders = await Promise.all(table.orders.map(async (order) => {
-      if (order.diningModeUuid || order.diningModeName) return order
       try {
-        const mode = await this.tradeOrderDiningMode(order.uuid, manageOrders)
+        const mode = await this.tradeOrderDiningMode(order.uuid)
         if (!mode?.uuid && !mode?.name) return order
         changed = true
-        return { ...order, diningModeUuid: mode.uuid, diningModeName: mode.name }
+        return {
+          ...order,
+          diningModeUuid: mode.uuid ?? order.diningModeUuid ?? null,
+          diningModeName: mode.name ?? order.diningModeName ?? null,
+        }
       } catch {
         return order
       }
