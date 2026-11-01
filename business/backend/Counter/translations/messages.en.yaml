@@ -42,3 +42,11 @@
 "Notes": "Notes"
 "Revision": "Revision"
 "Session": "Session"
+"OrderMerge": "Order merge"
+# Counter session order eligibility diagnostics.
+"payment_started": "Payment has already started."
+"projection_pending": "The Store order projection is pending."
+"inventory_reserved": "Inventory is already reserved."
+"order_processed": "The order has already progressed."
+"order_ineligible": "The order is not eligible for this operation."
+"unsupported_order_items": "The order items cannot be replaced."
