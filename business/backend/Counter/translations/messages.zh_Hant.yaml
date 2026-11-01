@@ -44,3 +44,11 @@
 "Notes": "場次備註"
 "Revision": "修訂版本"
 "Session": "桌次"
+"OrderMerge": "訂單合併"
+# Counter session order eligibility diagnostics.
+"payment_started": "付款已經開始。"
+"projection_pending": "門店訂單尚未同步。"
+"inventory_reserved": "庫存已經預留。"
+"order_processed": "訂單已經進入後續處理。"
+"order_ineligible": "訂單不符合目前操作條件。"
+"unsupported_order_items": "訂單商品不支援替換。"

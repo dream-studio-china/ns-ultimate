@@ -44,3 +44,11 @@
 "Notes": "利用メモ"
 "Revision": "改訂番号"
 "Session": "テーブル利用"
+"OrderMerge": "注文統合"
+# Counter session order eligibility diagnostics.
+"payment_started": "支払いがすでに開始されています。"
+"projection_pending": "店舗注文の同期を待っています。"
+"inventory_reserved": "在庫がすでに確保されています。"
+"order_processed": "注文はすでに後続処理へ進んでいます。"
+"order_ineligible": "注文は現在の操作対象ではありません。"
+"unsupported_order_items": "注文明細は置き換えできません。"
