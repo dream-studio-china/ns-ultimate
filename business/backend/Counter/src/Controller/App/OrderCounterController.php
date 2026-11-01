@@ -109,7 +109,7 @@ final class OrderCounterController extends RestController
     }
 
     /** @param mixed $entities
-     * @return list<array{uuid: string, status: string, totalAmount: int, currency: string, createdAt: string, mergedIntoOrderUuid: ?string, diningModeUuid: ?string, diningMode: array<string, mixed>|null, items: list<array{productName: ?string, specificationName: ?string, quantity: int, unitPrice: int, price: int}>}> */
+     * @return list<array{uuid: string, status: string, totalAmount: int, currency: string, createdAt: string, mergedIntoOrderUuid: ?string, items: list<array{productName: ?string, specificationName: ?string, quantity: int, unitPrice: int, price: int}>}> */
     protected function listProcessor(mixed $entities): array
     {
         if ($entities instanceof QueryBuilder) {
@@ -120,13 +120,11 @@ final class OrderCounterController extends RestController
         }
 
         $orderUuids = [];
-        $sessionsByOrder = [];
         foreach ($entities as $binding) {
             if (!$binding instanceof OrderCounter) {
                 throw new \UnexpectedValueException('Counter order list contains an unexpected entity.');
             }
             $orderUuids[] = $binding->getTradeOrderUuid();
-            $sessionsByOrder[$binding->getTradeOrderUuid()] = $binding->getCounterSession();
         }
         if ($orderUuids === []) {
             return [];
@@ -135,9 +133,8 @@ final class OrderCounterController extends RestController
         $orders = $this->entityManager->getRepository(Order::class)->findBy(['uuid' => $orderUuids]);
         usort($orders, static fn (Order $left, Order $right): int => $left->getCreatedAt() <=> $right->getCreatedAt());
 
-        return array_map(static function (Order $order) use ($sessionsByOrder): array {
+        return array_map(static function (Order $order): array {
             $targetUuid = ($order->getMetadata() ?? [])['mergedIntoOrderUuid'] ?? null;
-            $session = $sessionsByOrder[$order->getUuid()] ?? null;
             return [
                 'uuid' => $order->getUuid(),
                 'status' => $order->getStatus(),
@@ -145,8 +142,6 @@ final class OrderCounterController extends RestController
                 'currency' => $order->getCurrency(),
                 'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
                 'mergedIntoOrderUuid' => is_string($targetUuid) ? $targetUuid : null,
-                'diningModeUuid' => $session?->getDiningModeUuid(),
-                'diningMode' => $session?->getDiningModeSnapshot(),
                 'items' => array_values(array_map(static function (OrderItem $item): array {
                     $productSnapshot = $item->getProductSnapshot();
 

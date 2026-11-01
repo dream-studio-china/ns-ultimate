@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClient } from '../../src/staff/adapters/api-client'
-import { can, counterMergeQuoteSchema, counterSessionSchema, orderQuoteSchema, sessionOrderSchema, StoreApi, tradeOrderRecordSchema, type StoreAccess } from '../../src/staff/adapters/live'
+import { can, counterSessionSchema, orderQuoteSchema, sessionOrderSchema, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
 
 const id = '00000000-0000-4000-8000-000000000001'
 const version = 'a'.repeat(64)
@@ -8,7 +8,7 @@ const item = { specificationUuid: id, productName: 'Soup', specificationName: 'R
 
 describe('live counter session boundary', () => {
   it('keeps historical non-catalog lines readable without making them valid new cart lines', () => {
-    const order = { uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', canReplace: false, canCancel: false, items: [{ ...item, specificationUuid: null, quantity: 150 }] }
+    const order = { uuid: id, status: 'pending', operationalStatus: null, paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', canReplace: false, canCancel: false, items: [{ ...item, specificationUuid: null, quantity: 150 }] }
     expect(sessionOrderSchema.safeParse(order).success).toBe(true)
     expect(orderQuoteSchema.safeParse({ items: order.items, totalAmount: 1590, currency: 'USD', quoteToken: version }).success).toBe(false)
     expect(orderQuoteSchema.safeParse({ items: [item], totalAmount: Number.MAX_SAFE_INTEGER + 1, currency: 'USD', quoteToken: version }).success).toBe(false)
@@ -27,48 +27,6 @@ describe('live counter session boundary', () => {
     expect(counterSessionSchema.safeParse(base).success).toBe(false)
     expect(counterSessionSchema.safeParse({ ...base, orders: [], openAmount: 0, orderedAmount: 0, openOrderCount: 0 }).success).toBe(false)
     expect(counterSessionSchema.safeParse({ ...base, orders: [], openAmount: 0, orderedAmount: 0, openOrderCount: 0, paymentHold: false }).success).toBe(true)
-  })
-
-  it('accepts the normalized diningModeSnapshot field and maps it to the session dining mode', () => {
-    const mode = {
-      uuid: id, name: 'Hotpot', enabled: true, priority: 10, switchButtonLabel: 'Hotpot',
-      availability: { allDay: true, daysOfWeek: [1, 2, 3, 4, 5, 6, 7], timeWindows: [] },
-      catalog: { categoryUuids: [], productUuids: [] }, rules: [], checkoutRules: [],
-    }
-    const base = {
-      counter: { uuid: id, code: 'A01', name: 'Window', capacity: 4, enabled: true },
-      session: { uuid: id, participantCount: 2, notes: null, startedAt: '2026-10-31T10:00:00Z', revision: 1, diningModeUuid: id, diningMode: null, diningModeSnapshot: JSON.stringify(mode) },
-      ordersVisible: true, orders: [], openAmount: 0, orderedAmount: 0, openOrderCount: 0, paymentHold: false, currency: 'USD', canEnd: true, version,
-    }
-    const parsed = counterSessionSchema.parse(base)
-
-    expect(parsed.session?.diningMode).toMatchObject({ uuid: id, name: 'Hotpot' })
-  })
-
-  it('reads dining mode directly from the store counter session without order detail lookups', async () => {
-    const client = new ApiClient()
-    const table = counterSessionSchema.parse({
-      counter: { uuid: id, code: 'A01', name: 'Window', capacity: 4, enabled: true },
-      session: { uuid: id, participantCount: 2, notes: null, startedAt: '2026-10-31T10:00:00Z', revision: 1, diningModeUuid: id, diningMode: null },
-      ordersVisible: true,
-      orders: [{ uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', diningModeUuid: id, diningModeName: 'Hotpot', items: [item], canReplace: false, canCancel: false }],
-      openAmount: 1590, orderedAmount: 1590, openOrderCount: 1, paymentHold: false,
-      currency: 'USD', canEnd: false, version,
-    })
-    const data = vi.spyOn(client, 'data').mockResolvedValueOnce(table)
-    const api = new StoreApi(client, id)
-
-    const read = await api.counterSession(id)
-
-    expect(data).toHaveBeenCalledOnce()
-    expect(data).toHaveBeenCalledWith(`/api/v1/store/${id}/counter-operations/counters/${id}`, counterSessionSchema)
-    expect(read.session?.diningModeUuid).toBe(id)
-    expect(read.ordersVisible && read.orders[0]).toMatchObject({ diningModeUuid: id, diningModeName: 'Hotpot' })
-  })
-
-  it('parses nullable and JSON-encoded Trade order metadata', () => {
-    expect(tradeOrderRecordSchema.parse({ uuid: id, metadata: null }).metadata).toBeNull()
-    expect(tradeOrderRecordSchema.parse({ uuid: id, metadata: '{"diningModeUuid":"hotpot","diningModeName":"Hotpot"}' }).metadata).toMatchObject({ diningModeUuid: 'hotpot', diningModeName: 'Hotpot' })
   })
 
   it('separates session and order grants from catalog, fulfillment and membership labels', () => {
@@ -102,11 +60,6 @@ describe('live counter session boundary', () => {
     expect(data.mock.calls[3]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/session/end`)
     await api.counterCommand(id, 'cancel', { version, orderUuid: id, reason: 'Guest left', commandUuid: id })
     expect(data.mock.calls[4]![0]).toBe(`/api/v1/store/${id}/counter-operations/counters/${id}/orders/cancel`)
-    await api.previewCounterMerge(id, version)
-    expect(data.mock.calls[5]).toEqual([`/api/v1/store/${id}/counter-operations/counters/${id}/merge/preview`, counterMergeQuoteSchema, 'POST', { version }])
-    const mergeConfirm = { version, commandUuid: id, quoteToken: version }
-    await api.confirmCounterMerge(id, mergeConfirm)
-    expect(data.mock.calls[6]).toEqual([`/api/v1/store/${id}/counter-operations/counters/${id}/merge/confirm`, expect.anything(), 'POST', mergeConfirm])
     expect(() => api.counterCommand('../other', 'create', command)).toThrow()
   })
 })

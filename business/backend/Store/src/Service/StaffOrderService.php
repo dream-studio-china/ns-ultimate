@@ -6,7 +6,9 @@ namespace NsUltimate\Business\Store\Service;
 
 use App\Identity\Entity\User;
 use App\Store\Entity\Store;
+use App\Store\Entity\StoreOrder;
 use App\Store\DTO\StoreSettings;
+use App\Store\Service\StoreOrderServiceInterface;
 use App\Trade\DTO\StoreContext;
 use App\Trade\Entity\Order;
 use App\Trade\Service\OrderServiceInterface;
@@ -23,6 +25,7 @@ final class StaffOrderService
 {
     public function __construct(
         private readonly OrderServiceInterface $orders,
+        private readonly StoreOrderServiceInterface $storeOrders,
         #[Target('state_machine.order')] private readonly WorkflowInterface $workflow,
     ) {}
 
@@ -34,23 +37,12 @@ final class StaffOrderService
         return $this->orders->createOrder($calculation->items, $customer, $calculation->totalAmount, $store->getCurrency(), $notes, $metadata, $context);
     }
 
-    /**
-     * Sources were accepted and checked for inventory before a merged settlement order is created.
-     *
-     * @param array<string, mixed> $metadata
-     */
-    public function createSettlement(Store $store, PriceCalculationResult $calculation, ?User $customer, ?string $notes, array $metadata): Order
-    {
-        $settings = StoreSettings::from($store->getSettings());
-        $context = new StoreContext($store->getUuid(), $store->getCode(), $store->getName(), 'staff', $store->getCurrency(), false, false, $settings->requireVerification);
-        return $this->orders->createOrder($calculation->items, $customer, $calculation->totalAmount, $store->getCurrency(), $notes, $metadata, $context);
-    }
-
-    /** Cancels the Trade order in the caller's transaction. */
-    public function cancel(Order $order): void
+    /** Cancels the Trade order and its projected Store order in the caller's transaction. */
+    public function cancel(Order $order, StoreOrder $storeOrder): void
     {
         if (!$this->workflow->can($order, 'cancel')) throw new HttpException(409, 'staff_order_locked');
         $this->orders->cancel($order);
         $this->workflow->apply($order, 'cancel');
+        $this->storeOrders->cancel($storeOrder);
     }
 }

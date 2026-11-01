@@ -17,6 +17,7 @@ use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\CounterSession;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
+use NsUltimate\Business\Inventory\Service\OrderInventoryAvailability;
 use Symfony\Component\Workflow\WorkflowInterface;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
@@ -29,20 +30,10 @@ final class CounterOrderMergeService
         #[Target('state_machine.order')]
         private readonly WorkflowInterface $orderWorkflow,
         private readonly CounterSessionService $sessions,
+        private readonly OrderInventoryAvailability $inventory,
     ) {}
 
     public function merge(Counter $counter, User $user): Order
-    {
-        return $this->mergeOrders($counter, $user, true);
-    }
-
-    /** Store-authorized staff may merge customer orders they do not own. */
-    public function mergeForStaff(Counter $counter, User $user, StoreContext $storeContext): Order
-    {
-        return $this->mergeOrders($counter, $user, false, $storeContext);
-    }
-
-    private function mergeOrders(Counter $counter, User $user, bool $requireOwnedSource, ?StoreContext $storeContext = null): Order
     {
         $this->em->getConnection()->beginTransaction();
         try {
@@ -65,12 +56,13 @@ final class CounterOrderMergeService
                 if (isset($orders[$order->getUuid()])) {
                     continue;
                 }
-                // The merge guard intentionally only permits an order after its OrderMerge
-                // link exists. Source selection therefore uses the Trade lifecycle directly.
-                if (!in_array($order->getStatus(), [Order::STATUS_PENDING, Order::STATUS_CONFIRMED], true)) {
+                if ($order->getStatus() !== Order::STATUS_CONFIRMED) {
                     continue;
                 }
-                if ($order->getInvoiceId() !== null || $order->getPaymentStatus() !== null) {
+                if (!$this->inventory->hasValidInventory($order)) {
+                    throw new \DomainException('A valid inventory reservation is required for every source order.');
+                }
+                if ($order->getInvoiceId() !== null) {
                     throw new \DomainException('An order with an existing payment invoice cannot be merged.');
                 }
                 if ($this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1) {
@@ -87,7 +79,7 @@ final class CounterOrderMergeService
                     $items[] = ['specificationId' => $item->getSpecificationUuid(), 'quantity' => $item->getQuantity()];
                 }
             }
-            if ($requireOwnedSource && !$eligibleUser) {
+            if (!$eligibleUser) {
                 throw new \DomainException('You must have an eligible unpaid order in this counter session to merge orders.');
             }
             if ($orders === [] || $items === []) {
@@ -96,15 +88,16 @@ final class CounterOrderMergeService
             if (count($orders) < 2) {
                 throw new \DomainException('At least two unpaid orders are required to merge.');
             }
-            $store = $storeContext ?? $this->storeContextResolver->resolve();
+            $store = $this->storeContextResolver->resolve();
             if ($store === null || $store->storeUuid !== $counter->getStoreUuid()) {
                 throw new \DomainException('The counter is not in the active store context.');
             }
             $calculation = $this->orders->calculatePrices($items, $store->currency, $store->storeCode);
-            // Trade owns source eligibility. Store projections never gate a merge.
+            // Preserve the ordinary Store order flow, but do not reserve inventory
+            // a second time for items already present in the source orders.
             $mergeStore = new StoreContext(
                 $store->storeUuid, $store->storeCode, $store->storeName, $store->channel,
-                $store->currency, false, false, $store->requireVerification,
+                $store->currency, $store->requireAcceptance, false, $store->requireVerification,
             );
             $target = $this->orders->createOrder(
                 $calculation->items, $user, $calculation->totalAmount, $store->currency,
