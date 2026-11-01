@@ -44,6 +44,7 @@ final class CounterSessionOperations
         private readonly StaffOrderService $orders,
         private readonly StoreOrderServiceInterface $storeOrders,
         #[Target('state_machine.order')] private readonly WorkflowInterface $workflow,
+        #[Target('state_machine.store_order')] private readonly WorkflowInterface $storeOrderWorkflow,
     ) {}
 
     public function counter(Store $store, string $uuid, bool $lock = false): Counter
@@ -104,6 +105,7 @@ final class CounterSessionOperations
                     'createdAt' => $order->getCreatedAt()->format(DATE_ATOM), 'items' => $items,
                     'canReplace' => $this->canReplace($order, $lifecycle, $storeOrder), 'canCancel' => $this->canCancel($order, $lifecycle, $storeOrder),
                     'changeBlockedReason' => $this->changeBlockedReason($order, $lifecycle, $storeOrder),
+                    'cancelBlockedReason' => $this->cancelBlockedReason($order, $lifecycle, $storeOrder),
                     'replaceBlockedReason' => $this->canReplace($order, $lifecycle, $storeOrder) ? null : ($this->changeBlockedReason($order, $lifecycle, $storeOrder) ?? 'unsupported_order_items')];
                 if (!in_array($order->getStatus(), ['cancelled', 'refunded', 'merged'], true)) $orderedAmount += $order->getTotalAmount();
                 if (!in_array($order->getStatus(), self::CLOSED, true)) ++$openOrders;
@@ -153,7 +155,7 @@ final class CounterSessionOperations
 
     private function canReplace(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): bool
     {
-        if (!$this->canChange($order, $lifecycle, $storeOrder)) return false;
+        if ($this->changeBlockedReason($order, $lifecycle, $storeOrder) !== null) return false;
         // Never silently omit legacy/non-catalog lines while prefilling the replacement cart.
         if ($order->getItems()->isEmpty() || $order->getItems()->count() > 30) return false;
         $seen = [];
@@ -167,27 +169,44 @@ final class CounterSessionOperations
 
     private function canCancel(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): bool
     {
-        return $this->canChange($order, $lifecycle, $storeOrder);
+        return $this->cancelBlockedReason($order, $lifecycle, $storeOrder) === null;
     }
 
-    /** Shared eligibility for changing or cancelling an unprocessed, unpaid session order. */
-    private function canChange(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): bool
-    {
-        return $this->changeBlockedReason($order, $lifecycle, $storeOrder) === null;
-    }
-
+    /** Replacement remains limited to a Store order that has not progressed past validation. */
     private function changeBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
+    {
+        $common = $this->commonBlockedReason($order, $lifecycle, $storeOrder);
+        if ($common !== null) return $common;
+        if (!$storeOrder instanceof StoreOrder) return 'projection_pending';
+        if ($storeOrder->getOperationalStatus() !== StoreOrder::STATUS_PENDING_VALIDATION
+            || $lifecycle->getAcceptanceStatus() !== OrderStoreLifecycle::ACCEPTANCE_PENDING
+            || $lifecycle->getFulfillmentStatus() !== OrderStoreLifecycle::FULFILLMENT_PENDING
+            || $lifecycle->getVerificationStatus() === OrderStoreLifecycle::VERIFICATION_VERIFIED) return 'order_processed';
+        return null;
+    }
+
+    /** Cancellation defers the Store state transition to the Store order workflow. */
+    private function cancelBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
+    {
+        $common = $this->commonBlockedReason($order, $lifecycle, $storeOrder);
+        if ($common !== null) return $common;
+        if (!$storeOrder instanceof StoreOrder) return 'projection_pending';
+        if (!$this->storeOrderWorkflow->can($storeOrder, 'cancel')) return 'order_processed';
+        if (!in_array($lifecycle->getAcceptanceStatus(), [OrderStoreLifecycle::ACCEPTANCE_PENDING, OrderStoreLifecycle::ACCEPTANCE_ACCEPTED], true)
+            || $lifecycle->getFulfillmentStatus() !== OrderStoreLifecycle::FULFILLMENT_PENDING
+            || $lifecycle->getVerificationStatus() === OrderStoreLifecycle::VERIFICATION_VERIFIED) return 'order_processed';
+        return null;
+    }
+
+    /** Cross-aggregate checks shared by cancellation and replacement. */
+    private function commonBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
     {
         if ($order->getInvoiceId() !== null || $order->getPaymentStatus() !== null) return 'payment_started';
         if ($storeOrder === null) return 'projection_pending';
-        if ($lifecycle->getAcceptanceStatus() !== OrderStoreLifecycle::ACCEPTANCE_PENDING
-            || $lifecycle->getFulfillmentStatus() !== OrderStoreLifecycle::FULFILLMENT_PENDING
-            || $lifecycle->getVerificationStatus() === OrderStoreLifecycle::VERIFICATION_VERIFIED
-            || $storeOrder->getOperationalStatus() !== StoreOrder::STATUS_PENDING_VALIDATION) return 'order_processed';
         if ($storeOrder->getReservationId() !== null
             || $this->em->getRepository(Reservation::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 0) return 'inventory_reserved';
         // Eligibility is based on trusted ownership and processing state, not who placed the order.
-        if (!in_array($order->getStatus(), [Order::STATUS_PENDING, Order::STATUS_CONFIRMED], true)
+        if (!$this->workflow->can($order, 'cancel')
             || $this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1
             || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $order->getUuid()]) !== 0
             || $this->em->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) !== 0) return 'order_ineligible';
@@ -195,8 +214,7 @@ final class CounterSessionOperations
         $snapshot = $event?->getPayload()['store'] ?? null;
         $valid = is_array($snapshot) && ($snapshot['uuid'] ?? null) === $lifecycle->getStoreUuid()
             && ($order->getMetadata()['_store']['uuid'] ?? null) === $lifecycle->getStoreUuid()
-            && ($snapshot['requireInventory'] ?? null) === false
-            && $this->workflow->can($order, 'cancel');
+            && ($snapshot['requireInventory'] ?? null) === false;
         return $valid ? null : 'order_ineligible';
     }
 
