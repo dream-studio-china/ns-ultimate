@@ -2,37 +2,13 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "Business/PaymentChannels",
   "title": "Payment channels",
-  "description": "Per-channel credentials. Secrets are encrypted by the backend before storage.",
+  "description": "Per-channel credentials for the legacy payment setting record. Store Huifu credentials are managed in the Huifu configuration pages, not here.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "wechat": {
       "type": "object",
       "title": "WeChat Pay",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": false
-        },
-        "appId": {
-          "type": "string",
-          "maxLength": 64
-        },
-        "merchantId": {
-          "type": "string",
-          "maxLength": 64
-        },
-        "apiKey": {
-          "type": "string",
-          "maxLength": 256
-        }
-      },
-      "required": []
-    },
-    "huifu": {
-      "type": "object",
-      "title": "Huifu Pay",
       "additionalProperties": false,
       "properties": {
         "enabled": {

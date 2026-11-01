@@ -53,7 +53,8 @@ if ($command === 'env-init') {
     if (getenv('NS_SKIP_BACKEND_SECRET_FILE') !== '1') {
         $backendEnvFile = $resolvePath(getenv('NS_DEV_BACKEND_ENV_FILE') ?: 'integration/backend/.env.local');
         $backendSecrets = sprintf(
-            "# Generated development secrets. Do not commit this file.\nAPP_SECRET=%s\nREFRESH_TOKEN_SECRET=%s\nPRINTER_CONFIG_KEY=%s\n",
+            "# Generated development secrets. Do not commit this file.\nAPP_SECRET=%s\nREFRESH_TOKEN_SECRET=%s\nPRINTER_CONFIG_KEY=%s\nHUIFU_CONFIG_KEY=%s\n",
+            bin2hex(random_bytes(32)),
             bin2hex(random_bytes(32)),
             bin2hex(random_bytes(32)),
             bin2hex(random_bytes(32)),
