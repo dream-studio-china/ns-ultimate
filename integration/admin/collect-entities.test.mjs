@@ -243,7 +243,7 @@ test('places Counter after Product and WeChat and Huifu menus before user manage
 test('enlarges legacy and custom sidebar icons consistently', () => {
   const styles = readFileSync(new URL('./menu-icons.css', import.meta.url), 'utf8')
   assert.match(styles, /#app \.sidebar-container \.sub-el-icon,\s*#app \.sidebar-container \.svg-icon\s*\{\s*width:\s*16px;\s*height:\s*16px;/)
-  assert.match(styles, /#app \.sidebar-container li:has\(use\[href="#icon-wechat"\]\) \.svg-icon,\s*#app \.sidebar-container li:has\(use\[href="#icon-counter"\]\) \.svg-icon\s*\{\s*margin-right:\s*12px;\s*margin-left:\s*-2px;\s*vertical-align:\s*middle;/)
+  assert.match(styles, /#app \.sidebar-container li:has\(use\[href="#icon-wechat"\]\) \.svg-icon,\s*#app \.sidebar-container li:has\(use\[href="#icon-counter"\]\) \.svg-icon,\s*#app \.sidebar-container li:has\(use\[href="#icon-appearance"\]\) \.svg-icon\s*\{\s*margin-right:\s*12px;\s*margin-left:\s*-2px;\s*vertical-align:\s*middle;/)
   assert.match(readFileSync(new URL('../../business/admin/icons/counter.svg', import.meta.url), 'utf8'), /<svg[^>]+viewBox="0 0 24 24"/)
 })
 

@@ -5,6 +5,11 @@ import Layout from '@/layout'
 export default {
   add: [
     {
+      path: '/settings/appearance',
+      hidden: true,
+      redirect: '/system-option/appearance'
+    },
+    {
       path: '/printer',
       name: 'PrinterManage',
       component: Layout,
