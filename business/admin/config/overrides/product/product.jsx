@@ -16,7 +16,6 @@ import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin
 const ListAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/ListAdmin'))
 const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmin'))
 import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
-import ProductCatalogSyncAction from '../../components/ProductCatalogSyncAction.js'
 import ProductMetadataSchema from './ProductMetadata.json'
 import ProductSettingsSchema from './ProductSettings.json'
 
@@ -226,9 +225,6 @@ export default {
     },
     list: {
       query: orderByIdDesc,
-      actions: [
-        { name: 'product-catalog-sync', position: 'top', component: ProductCatalogSyncAction }
-      ],
       list_filter: {
         name: t('Product Name'),
         'category.id': () => axios

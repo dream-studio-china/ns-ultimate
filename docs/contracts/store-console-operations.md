@@ -15,7 +15,7 @@ All routes below have the prefix `/api/v1/store/{storeUuid}/operations`. They re
 | Product reads / creation / editing | Existing `store:product:read` / `create` / `update` |
 | Explicit selected-product availability batch | New `store:product:availability` |
 | Category / counter / order reads | Existing `store:product_category:read`, `store:counter:read`, `store:order:read` |
-| Accept / cancel / fulfill / verify | Existing `store:order:accept`, `reject`, `fulfill`, `verify` |
+| Accept / reject / fulfill / verify | Existing `store:order:accept`, `reject`, `fulfill`, `verify` |
 | Upload a store-owned catalog image | New `store:catalog_image:create` |
 | Read operational history | New `store:operation:read` |
 
@@ -47,13 +47,13 @@ This is a separate contract from legacy Core lists with a top-level `paginator`.
 
 History lists expose only receipt UUID, actor/command UUIDs, action and timestamp. Restricted before/result snapshots remain stored for audit/replay, not embedded in every history-list response. Authenticated operational responses use `Cache-Control: no-store, private`.
 
-Product status filters are `all`, `active`, `inactive`, `soldout`. Category/counter filters are `all`, `enabled`, `disabled`. Orders accept `all` or a known Trade order status: `draft`, `pending`, `confirmed`, `paid`, `fulfilled`, `completed`, `cancelled`, `refunded` or `merged`. Counts describe matching records, not whole-store sales or revenue.
+Product status filters are `all`, `active`, `inactive`, `soldout`. Category/counter filters are `all`, `enabled`, `disabled`. Orders accept `all` or a known Store operational status. Counts describe matching records, not whole-store sales or revenue.
 
-`GET /orders/{tradeOrderUuid}` returns a restricted DTO read directly from the Trade order. The store relationship is used only to scope which Trade orders the employee may read; Store Order lifecycle fields do not control order actions. List and detail expose the Trade `status`, payment fields, restricted item lines, cancellation reason, a version token and permitted actions. They also expose `counter` as `{"code": "A01", "name": "Window seat"}` when a Counter order binding exists, or `null` for an unbound order. Only the binding's code and name snapshots are returned; the counter UUID, customer identities, delivery details and arbitrary metadata are not exposed. Trade status is not by itself a payment confirmation.
+`GET /orders/{storeOrderUuid}` returns a restricted order DTO. Both list and detail identify the Trade order separately, expose operational status, verification requirement, rejection reason, a version token and permitted workflow actions. Snapshots contain only item names and quantities, not customer identities, delivery details or arbitrary metadata. Operational state is not payment state.
 
 ## Versioned, durable commands
 
-`POST /products`, `PUT /products/{productUuid}`, `POST /products/availability` and `POST /orders/{tradeOrderUuid}/{accept|reject|fulfill|verify}` require a UUID `commandUuid`. Product updates, availability rows and order commands also require the latest opaque `version` returned by a read. `reject` remains a compatibility route and permission name; the staff UI presents it as cancellation and the backend applies the Trade `cancel` transition.
+`POST /products`, `PUT /products/{productUuid}`, `POST /products/availability` and `POST /orders/{storeOrderUuid}/{accept|reject|fulfill|verify}` require a UUID `commandUuid`. Product updates, availability rows and order commands also require the latest opaque `version` returned by a read.
 
 Successful commands persist a `StaffOperation` receipt with store, actor, command, action, fingerprint, restricted before/result snapshots and timestamp in the **same database transaction** as the mutation and its outbox writes. Retrying the same actor/store/command/payload returns the stored result rather than mutating again. Reusing a key for a different action or payload returns 409. Permission failures, invalid requests and rolled-back commands do not create successful receipts. The frontend reuses its key for an unchanged manual retry and never automatically retries a network-failed write. A receipt's result is a historical command result, not necessarily the latest resource state; refresh after uncertain outcomes.
 
@@ -79,7 +79,7 @@ The business catalog resolver now enforces sold-out state and sale windows throu
 
 ### Order commands
 
-Commands operate on the Trade order and its workflow rather than changing status fields directly or operating on Store Order. The legacy action names map to Trade transitions: `accept` to `confirm`, `reject` to `cancel`, `fulfill` to `fulfill`, and `verify` to `complete`. `allowedActions` is calculated from current scoped grants and the Trade status, and is checked again under the command transaction. Cancellation requires a non-empty reason of at most 500 characters. The backend supplies the actor; callers cannot override reservation IDs, fulfillment snapshots or actor identity. Store Order projections are not cancelled or otherwise updated by these commands. Outbox consumers still require the normal operational worker setup. A fulfillment or completion result is not confirmation that settlement has completed.
+Commands call the existing Store order service/workflow rather than changing status fields directly. `allowedActions` is calculated from current scoped grants, workflow eligibility and verification configuration, and is checked again under the command transaction. Reject requires a non-empty reason of at most 500 characters. The backend supplies the rejection code and actor; callers cannot override reservation IDs, fulfillment snapshots or actor identity. Outbox consumers still require the normal operational worker setup. A fulfillment or verification result is not confirmation that Trade payment/settlement has completed.
 
 ## Catalog images
 

@@ -55,7 +55,7 @@ final class Kernel extends CoreKernel
         // Counter's terminal merge state is application composition, not a core workflow change.
         $container->extension('framework', ['workflows' => ['order' => [
             'places' => ['merged'],
-            'transitions' => ['merge' => ['from' => ['pending', 'confirmed'], 'to' => 'merged']],
+            'transitions' => ['merge' => ['from' => 'confirmed', 'to' => 'merged']],
         ]]]);
 
         $businessRoot = self::repositoryRoot().'/business/backend';
