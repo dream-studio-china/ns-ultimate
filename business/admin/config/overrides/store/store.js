@@ -3,6 +3,7 @@ import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collec
 import StoreContactSchema from '../../../../../core/crud-admin/src/configs/collections/store/StoreContact.json'
 import StoreAddressSchema from './StoreAddress.json'
 import StoreSettingsSchema from './StoreSettings.json'
+import StoreDiningModesAction from '../../components/StoreDiningModesAction.vue'
 
 // Business override of the core Store entity (declared explicitly in
 // business/admin/config/index.js `replace`). Only code, name and status are
@@ -30,13 +31,29 @@ export default {
       { property: 'timezone', type: 'string', default_value: 'Asia/Shanghai', required: false },
       { property: 'contact', type: 'json_schema', required: false, type_options: { schema: StoreContactSchema }, help: t('Store contact help') },
       { property: 'address', type: 'json_schema', required: false, type_options: { schema: StoreAddressSchema }, help: t('Store address help') },
-      { property: 'settings', type: 'json_schema', required: false, type_options: { schema: StoreSettingsSchema }, help: t('Store settings help') },
+      {
+        property: 'settings',
+        type: 'json_schema',
+        required: false,
+        type_options: {
+          schema: StoreSettingsSchema,
+          fields: [
+            // Dining modes are managed from the dedicated Store list action.
+            // Keep the value hidden here so editing another setting preserves it.
+            { property: 'diningModes', hidden: true }
+          ]
+        },
+        help: t('Store settings help')
+      },
       { property: 'paymentSetting', required: false, help: t('Payment setting help') }
     ]
   },
   list: {
     query: orderByIdDesc,
     disabled_actions: ['delete'],
+    actions: [
+      { name: 'store-dining-modes', position: 'list', component: StoreDiningModesAction }
+    ],
     list_filter: {
       code: t('Code'),
       name: t('Name'),

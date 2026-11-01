@@ -59,6 +59,7 @@ final class CounterOrderBindingTest extends KernelTestCase
         self::assertInstanceOf(Route::class, $routes->get('manage-order-counters-list'));
         self::assertInstanceOf(Route::class, $routes->get('app-counter-orders-list'));
         self::assertInstanceOf(Route::class, $routes->get('app-counter-orders-merge'));
+        self::assertInstanceOf(Route::class, $routes->get('store-counter-operations-merge'));
         self::assertInstanceOf(Route::class, $routes->get('store-counters-session-end'));
         self::assertContains(Counter::class, $entityNames);
         self::assertContains(OrderCounter::class, $entityNames);
@@ -72,6 +73,7 @@ final class CounterOrderBindingTest extends KernelTestCase
             'app-counters-list' => '/app/counters',
             'app-counter-orders-list' => '/app/counters/{counterUuid}/orders',
             'app-counter-orders-merge' => '/app/counters/{counterUuid}/orders/merge',
+            'store-counter-operations-merge' => '/store/{scopeId}/counter-operations/counters/{uuid}/merge/{action}',
             'store-counters-session-end' => '/store/{scopeId}/counters/{counterUuid}/sessions/end',
         ] as $name => $path) {
             self::assertSame($path, $routes->get($name)?->getPath());
@@ -173,7 +175,21 @@ final class CounterOrderBindingTest extends KernelTestCase
     public function testPublicCounterDetailExposesOnlyEnabledCountersOfActiveStoresWithoutId(): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $store = new Store('public-counter', 'Public counter store');
+        $modeUuid = '11111111-1111-4111-8111-111111111111';
+        $mode = [
+            'uuid' => $modeUuid,
+            'name' => 'Hotpot',
+            'enabled' => true,
+            'priority' => 100,
+            'availability' => ['allDay' => true, 'daysOfWeek' => [1, 2, 3, 4, 5, 6, 7], 'timeWindows' => []],
+            'catalog' => ['categoryUuids' => ['category-uuid'], 'productUuids' => []],
+            'rules' => [],
+            'checkoutRules' => [['type' => 'confirm_participants']],
+        ];
+        $store = (new Store('public-counter', 'Public counter store'))->setSettings([
+            'private' => ['server' => 'should-not-leak'],
+            'diningModes' => ['version' => 1, 'modes' => [$mode]],
+        ]);
         $suspendedStore = new Store('suspended-counter', 'Suspended store');
         $suspendedStore->suspend();
         $counter = (new Counter())->setStoreUuid($store->getUuid())->setCode('A01')->setName('Table A01')->setCapacity(4)->setSort(3)->setMetadata(['color' => 'red']);
@@ -200,6 +216,10 @@ final class CounterOrderBindingTest extends KernelTestCase
             'capacity' => 4,
             'sort' => 3,
             'metadata' => ['color' => 'red'],
+            'diningModes' => [
+                'version' => 1,
+                'modes' => [array_diff_key($mode, ['checkoutRules' => true])],
+            ],
         ], $payload['data']);
 
         self::assertSame(404, $get('/api/v1/public/counters/'.$disabled->getUuid())->getStatusCode());

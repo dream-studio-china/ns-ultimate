@@ -7,8 +7,10 @@ function loadComponent(list) {
   const source = readFileSync(new URL(
     '../../business/admin/config/components/StoreOrderCounterNumbers.js', import.meta.url
   ), 'utf8').replace(/^import .*$/gm, '')
+    .replace(/^export function /gm, 'function ')
     .replace('export default', 'globalThis.component =')
     .replace('export { loadCounterNumbers }', 'globalThis.load = loadCounterNumbers')
+    + '\n;globalThis.loadTradeOrder = loadTradeOrderRecord'
   const context = {
     defineComponent: config => config,
     h: (tag, props, children) => ({
@@ -45,7 +47,7 @@ test('renders expanded Counter relations with the UUID relation plugin and ignor
   assert.equal(rendered.children[0].props.value.uuid, 'counter-uuid-02')
   assert.equal(rendered.children[0].props.field.relation.valueKey, 'uuid')
   assert.equal(rendered.children[2].props.value.uuid, 'counter-uuid-03')
-  assert.equal(pending[1].params['@expands'], 'counter')
+  assert.equal(pending[1].params['@expands'], 'counter,counterSession')
   pending[0].resolve({ data: [{ counterCodeSnapshot: 'A01' }] })
   await first
   assert.equal(render().children[0].props.value.uuid, 'counter-uuid-02')
@@ -62,4 +64,19 @@ test('shows failed loads separately from unbound orders and allows retry', async
   await context.callback(uuid, '', () => {})
   assert.equal(render().children, '—')
   assert.equal(calls, 2)
+})
+
+test('loads the Trade order metadata by UUID for StoreOrder display', async() => {
+  const uuid = '11111111-1111-4111-8111-111111111111'
+  const calls = []
+  const context = loadComponent(params => {
+    calls.push(params)
+    return Promise.resolve({ data: [{ uuid, metadata: { diningModeUuid: 'mode-hotpot' } }] })
+  })
+
+  const order = await context.loadTradeOrder(uuid)
+  assert.equal(order.metadata.diningModeUuid, 'mode-hotpot')
+  assert.equal(calls.length, 1)
+  assert.match(calls[0]['@filter'], /getUuid\(\)/)
+  assert.equal(calls[0].limit, 1)
 })

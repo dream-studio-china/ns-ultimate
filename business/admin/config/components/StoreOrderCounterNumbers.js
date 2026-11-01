@@ -4,25 +4,50 @@ import CrudSkeletonAdapter from '@/easyadmin/adapters/crudskeleton/CrudSkeletonA
 import RelationToOne from '../../../../core/crud-admin/src/easyadmin/ui/vue/plugins/list/RelationToOne.vue'
 
 const counterNumbersByOrder = new Map()
+const tradeOrdersByOrder = new Map()
 
-function loadCounterNumbers(orderUuid) {
+export function loadOrderCounterBindings(orderUuid) {
+  if (typeof orderUuid !== 'string' || !/^[0-9a-f-]{36}$/i.test(orderUuid)) return Promise.resolve([])
   if (!counterNumbersByOrder.has(orderUuid)) {
     const adapter = new CrudSkeletonAdapter({ name: 'OrderCounter', plural: 'order-counters' })
     const expression = `entity.getTradeOrderUuid() == '${orderUuid}'`
-    counterNumbersByOrder.set(orderUuid, adapter.list({ '@filter': expression, '@expands': 'counter', limit: 100 }).then(response => {
-      const bindings = Array.isArray(response?.data) ? response.data : []
-      return bindings
-        .filter(binding => binding.counterCodeSnapshot)
-        .map(binding => ({
-          relation: binding.counter
-        }))
-    }).finally(() => {
-      // Deduplicate concurrent loads, but do not keep stale bindings or failed requests.
-      counterNumbersByOrder.delete(orderUuid)
-    }))
+    counterNumbersByOrder.set(orderUuid, adapter.list({ '@filter': expression, '@expands': 'counter,counterSession', limit: 100 })
+      .then(response => Array.isArray(response?.data) ? response.data : [])
+      .catch(error => {
+        // Failed loads must remain retryable.
+        counterNumbersByOrder.delete(orderUuid)
+        throw error
+      }))
   }
 
   return counterNumbersByOrder.get(orderUuid)
+}
+
+export function loadCounterNumbers(orderUuid) {
+  return loadOrderCounterBindings(orderUuid).then(bindings => bindings
+    .filter(binding => binding.counterCodeSnapshot)
+    .map(binding => ({
+      relation: binding.counter
+    })))
+}
+
+export function loadTradeOrderRecord(orderUuid) {
+  if (typeof orderUuid !== 'string' || !/^[0-9a-f-]{36}$/i.test(orderUuid)) return Promise.resolve(null)
+  if (!tradeOrdersByOrder.has(orderUuid)) {
+    const adapter = new CrudSkeletonAdapter({ name: 'Order', plural: 'orders' })
+    const expression = `entity.getUuid() == '${orderUuid}'`
+    tradeOrdersByOrder.set(orderUuid, adapter.list({ '@filter': expression, limit: 1 })
+      .then(response => {
+        const records = Array.isArray(response?.data) ? response.data : []
+        return records.find(record => record?.uuid === orderUuid) || null
+      })
+      .catch(error => {
+        tradeOrdersByOrder.delete(orderUuid)
+        throw error
+      }))
+  }
+
+  return tradeOrdersByOrder.get(orderUuid)
 }
 
 export default defineComponent({
@@ -68,5 +93,3 @@ export default defineComponent({
     }
   }
 })
-
-export { loadCounterNumbers }

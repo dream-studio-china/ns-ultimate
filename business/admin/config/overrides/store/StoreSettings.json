@@ -42,6 +42,133 @@
         }
       },
       "required": []
+    },
+    "diningModes": {
+      "type": "object",
+      "title": "Dining modes",
+      "description": "Store-local order modes. The highest-priority enabled mode that matches the current sales time is selected first.",
+      "additionalProperties": true,
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1,
+          "default": 1
+        },
+        "modes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "uuid": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "maxLength": 60 },
+              "enabled": { "type": "boolean", "default": true },
+              "priority": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9999,
+                "default": 10
+              },
+              "switchButtonLabel": { "type": "string", "maxLength": 60 },
+              "availability": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "allDay": { "type": "boolean", "default": true },
+                  "daysOfWeek": {
+                    "type": "array",
+                    "items": { "type": "integer", "minimum": 1, "maximum": 7 }
+                  },
+                  "timeWindows": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "start": { "type": "string", "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$" },
+                        "end": { "type": "string", "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$" }
+                      },
+                      "required": ["start", "end"]
+                    }
+                  }
+                },
+                "required": ["allDay", "daysOfWeek", "timeWindows"]
+              },
+              "catalog": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "categoryUuids": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  },
+                  "productUuids": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                },
+                "required": ["categoryUuids", "productUuids"]
+              },
+              "rules": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "uuid": { "type": "string", "minLength": 1 },
+                    "name": { "type": "string", "maxLength": 60 },
+                    "type": {
+                      "type": "string",
+                      "enum": ["fixed_item", "per_guest_item", "choice_group"]
+                    },
+                    "required": { "type": "boolean" },
+                    "allowRemove": { "type": "boolean" },
+                    "specificationUuid": { "type": "string" },
+                    "quantity": { "type": "integer", "minimum": 1, "maximum": 99 },
+                    "quantityPerGuest": { "type": "integer", "minimum": 1, "maximum": 99 },
+                    "targetType": {
+                      "type": "string",
+                      "enum": ["category", "specifications"]
+                    },
+                    "categoryUuid": { "type": "string" },
+                    "specificationUuids": {
+                      "type": "array",
+                      "items": { "type": "string", "minLength": 1 }
+                    },
+                    "minSelections": { "type": "integer", "minimum": 0, "maximum": 99 },
+                    "maxSelections": { "type": "integer", "minimum": 1, "maximum": 99 },
+                    "quantityPerSelection": { "type": "integer", "minimum": 1, "maximum": 99 }
+                  },
+                  "required": ["uuid", "type", "required", "allowRemove"]
+                }
+              },
+              "checkoutRules": {
+                "type": "array",
+                "description": "Ordered checks shown when staff opens a table using this dining mode for checkout.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "uuid": { "type": "string", "minLength": 1 },
+                    "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+                    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+                    "type": {
+                      "type": "string",
+                      "enum": ["confirm_participants", "confirm_required_items", "suggest_category"]
+                    },
+                    "required": { "type": "boolean" },
+                    "categoryUuid": { "type": "string" }
+                  },
+                  "required": ["uuid", "name", "title", "type", "required"]
+                }
+              }
+            },
+            "required": ["uuid", "name", "enabled", "priority", "availability", "catalog", "rules"]
+          }
+        }
+      },
+      "required": ["version", "modes"]
     }
   },
   "required": []

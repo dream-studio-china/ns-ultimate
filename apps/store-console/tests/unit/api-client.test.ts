@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { ApiClient, ApiError } from '../../src/staff/adapters/api-client'
-import { authorizationSchema, productSchema, can, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
+import { ApiClient, ApiError, STAFF_STORE_STORAGE_KEY, STAFF_TOKEN_STORAGE_KEY, type PersistedStorage } from '../../src/staff/adapters/api-client'
+import { authorizationSchema, productSchema, storeSchema, can, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
 
 const tokens = (suffix = 'one') => ({ access_token: `test-access-${suffix}`, refresh_token: `test-refresh-${suffix}`, expires_in: 60 })
 const json = (data: unknown, status = 200) => Response.json(data, { status })
@@ -11,6 +11,15 @@ function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((done) => { resolve = done })
   return { promise, resolve }
+}
+function memoryStorage() {
+  const values = new Map<string, string>()
+  const storage: PersistedStorage = {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value) },
+    removeItem: key => { values.delete(key) },
+  }
+  return { storage, values }
 }
 
 describe('staff API transport', () => {
@@ -88,11 +97,72 @@ describe('staff API transport', () => {
     expect(await client.list('/api/items', z.string(), 2)).toEqual({ items: ['value'], hasNext: true })
     expect(fetcher.mock.calls[1][0]).toBe('/api/items?page=2&limit=30')
   })
+  it('restores a saved staff session and store after a page reload', async () => {
+    const { storage, values } = memoryStorage()
+    const original = new ApiClient(vi.fn<typeof fetch>().mockResolvedValueOnce(json(tokens())), () => {}, storage)
+    await original.login('staff', 'test-only-password')
+    original.rememberStore(store)
+
+    expect(values.get(STAFF_TOKEN_STORAGE_KEY)).toContain('test-access-one')
+    expect(values.get(STAFF_TOKEN_STORAGE_KEY)).not.toContain('test-only-password')
+    expect(values.get(STAFF_STORE_STORAGE_KEY)).toBe(store)
+
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(success())
+    const restored = new ApiClient(fetcher, () => {}, storage)
+    expect(restored.hasSession()).toBe(true)
+    expect(restored.rememberedStoreUuid()).toBe(store)
+    await restored.request('/api/items')
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ headers: { Authorization: 'Bearer test-access-one' } })
+  })
+  it('persists rotated tokens and clears both saved values on logout', async () => {
+    const { storage, values } = memoryStorage()
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json(tokens()))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(json(tokens('two')))
+      .mockResolvedValueOnce(success())
+    const client = new ApiClient(fetcher, () => {}, storage)
+    await client.login('staff', 'test-only')
+    client.rememberStore(store)
+    await client.request('/api/items')
+    expect(values.get(STAFF_TOKEN_STORAGE_KEY)).toContain('test-access-two')
+
+    const logoutFetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const restored = new ApiClient(logoutFetcher, () => {}, storage)
+    await restored.logout()
+    expect(values.has(STAFF_TOKEN_STORAGE_KEY)).toBe(false)
+    expect(values.has(STAFF_STORE_STORAGE_KEY)).toBe(false)
+  })
+  it('fails closed and removes malformed persisted credentials', () => {
+    const { storage, values } = memoryStorage()
+    values.set(STAFF_TOKEN_STORAGE_KEY, 'not-json')
+    values.set(STAFF_STORE_STORAGE_KEY, 'not-a-store-uuid')
+    const client = new ApiClient(vi.fn<typeof fetch>(), () => {}, storage)
+    expect(client.hasSession()).toBe(false)
+    expect(client.rememberedStoreUuid()).toBeNull()
+    expect(values.has(STAFF_TOKEN_STORAGE_KEY)).toBe(false)
+  })
 })
 describe('store-scoped permissions and adapters', () => {
   it('accepts PHP empty product metadata without inventing a cover image', () => {
     const product = productSchema.parse({ uuid: store, name: 'Product', status: 'active', category: null, metadata: [], version: 'a'.repeat(64), isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '', endSaleTime: '' } })
     expect(product.metadata).toBeNull()
+  })
+  it('keeps the authenticated store dining-mode settings used by order entry', () => {
+    const parsed = storeSchema.parse({
+      uuid: store, name: 'Store', code: 'S1', currency: 'CNY', timezone: 'Asia/Shanghai',
+      settings: { diningModes: { version: 1, modes: [{ uuid: 'hotpot', name: '火锅' }] } },
+    })
+    expect(parsed.settings?.diningModes).toMatchObject({ modes: [{ uuid: 'hotpot', name: '火锅' }] })
+  })
+
+  it('accepts legacy JSON-string store settings without losing dining modes', () => {
+    const parsed = storeSchema.parse({
+      uuid: '00000000-0000-4000-8000-000000000001', name: 'Store', code: 'S1', currency: 'CNY', timezone: 'Asia/Shanghai',
+      settings: JSON.stringify({ diningModes: { version: 1, modes: [{ uuid: 'hotpot', name: '火锅' }] } }),
+    })
+
+    expect(parsed.settings?.diningModes).toMatchObject({ modes: [{ uuid: 'hotpot', name: '火锅' }] })
   })
   it('identifies membership lookup failures without exposing server messages or credentials', async () => {
     const client = new ApiClient()

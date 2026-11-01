@@ -7,10 +7,12 @@ namespace NsUltimate\Business\Counter\Tests\Integration;
 use App\Core\Utils\UUID;
 use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
-use App\Store\Entity\Store;
 use App\Store\Entity\Membership;
+use App\Store\Entity\Store;
+use App\Trade\DTO\StoreContext;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderStoreLifecycle;
+use App\Trade\Service\OrderServiceInterface;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -68,6 +70,55 @@ final class CounterSessionTest extends KernelTestCase
         });
         self::assertSame(1, $this->em->getRepository(CounterSession::class)->count([]));
         self::assertSame(2, $this->em->getRepository(OrderCounter::class)->count([]));
+    }
+
+    public function testLegacyOrderCreationSnapshotsTheConfiguredDiningMode(): void
+    {
+        $modeUuid = UUID::v4();
+        $ruleUuid = UUID::v4();
+        $store = (new Store('legacy-dining-mode', 'Legacy dining mode'))->setSettings([
+            'diningModes' => ['version' => 1, 'modes' => [[
+                'uuid' => $modeUuid,
+                'name' => 'Hotpot',
+                'enabled' => true,
+                'priority' => 10,
+                'switchButtonLabel' => 'Hotpot',
+                'availability' => ['allDay' => true, 'daysOfWeek' => [1, 2, 3, 4, 5, 6, 7], 'timeWindows' => []],
+                'catalog' => ['categoryUuids' => [], 'productUuids' => []],
+                'rules' => [],
+                'checkoutRules' => [[
+                    'uuid' => $ruleUuid,
+                    'name' => 'Confirm guests',
+                    'type' => 'confirm_participants',
+                    'required' => true,
+                    'categoryUuid' => '',
+                ]],
+            ]]],
+        ]);
+        $counter = (new Counter())->setStoreUuid($store->getUuid())->setCode('L01')->setName('Legacy table');
+        foreach ([$store, $counter] as $entity) $this->em->persist($entity);
+        $this->em->flush();
+
+        $context = new StoreContext($store->getUuid(), $store->getCode(), $store->getName(), 'customer', $store->getCurrency());
+        $orders = self::getContainer()->get(OrderServiceInterface::class);
+        $first = $orders->createOrder([], null, 0, $store->getCurrency(), null, [
+            'counterUuid' => $counter->getUuid(),
+            'diningModeUuid' => $modeUuid,
+        ], $context);
+        $session = $this->em->getRepository(OrderCounter::class)->findOneBy(['tradeOrderUuid' => $first->getUuid()])?->getCounterSession();
+        self::assertSame($modeUuid, $session?->getDiningModeUuid());
+        self::assertSame([$ruleUuid], array_column($session?->getDiningModeSnapshot()['checkoutRules'] ?? [], 'uuid'));
+
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $store->getUuid()]);
+        $settings = $store->getSettings();
+        $settings['diningModes']['modes'][0]['name'] = 'Changed after ordering';
+        $store->setSettings($settings);
+        $this->em->flush();
+        $addition = $orders->createOrder([], null, 0, $store->getCurrency(), null, ['counterUuid' => $counter->getUuid()], $context);
+        $additionSession = $this->em->getRepository(OrderCounter::class)->findOneBy(['tradeOrderUuid' => $addition->getUuid()])?->getCounterSession();
+        self::assertSame($session?->getUuid(), $additionSession?->getUuid());
+        self::assertSame('Hotpot', $additionSession?->getDiningModeSnapshot()['name'] ?? null);
+        self::assertSame([$ruleUuid], array_column($additionSession?->getDiningModeSnapshot()['checkoutRules'] ?? [], 'uuid'));
     }
 
     public function testAdminAndStorePartialCreatesAndAutomaticBindingUseTheSameSession(): void
