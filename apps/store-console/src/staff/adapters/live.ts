@@ -43,6 +43,8 @@ export const orderableItemSchema = sessionOrderItemSchema.extend({ specification
 export const sessionOrderSchema = z.object({
   uuid, status: z.string(), operationalStatus: z.string().nullable(), paymentStatus: z.string().nullable(), hasInvoice: z.boolean(),
   currency, totalAmount: cents, notes: z.string().nullable(), createdAt: z.string(), items: z.array(sessionOrderItemSchema),
+  diningModeUuid: uuid.nullable().optional().transform((value) => value ?? null),
+  diningModeName: z.string().max(120).nullable().optional().transform((value) => value ?? null),
   canReplace: z.boolean(), canCancel: z.boolean(),
 })
 const diningModeSnapshotSchema = z.unknown().nullable().optional().superRefine((value, context) => {
@@ -173,6 +175,8 @@ export function legacyCounterSession(counter: LiveCounter, orders: LegacyCounter
     totalAmount: order.totalAmount,
     notes: null,
     createdAt: order.createdAt,
+    diningModeUuid: order.diningModeUuid ?? null,
+    diningModeName: normalizeDiningMode(order.diningMode)?.name ?? null,
     items: order.items.map((item) => ({
       specificationUuid: null,
       productName: item.productName ?? '',

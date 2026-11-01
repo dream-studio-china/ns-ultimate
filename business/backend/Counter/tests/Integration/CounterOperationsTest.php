@@ -340,7 +340,36 @@ final class CounterOperationsTest extends KernelTestCase
         $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/create', [
             ...$addition, 'commandUuid' => UUID::v4(), 'quoteToken' => $additionQuote['quoteToken'],
         ]));
-        self::assertCount(2, $this->view()['orders']);
+        $orders = $this->view()['orders'];
+        self::assertCount(2, $orders);
+        foreach ($orders as $order) {
+            self::assertSame($modeUuid, $order['diningModeUuid']);
+            self::assertSame('Hotpot', $order['diningModeName']);
+        }
+    }
+
+    public function testLegacyOrderMetadataProvidesDiningModeWhenItsSessionHasNoSnapshot(): void
+    {
+        $modeUuid = UUID::v4();
+        $orderUuid = $this->startCustomerSession(false);
+        $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $orderUuid]);
+        self::assertInstanceOf(Order::class, $order);
+        $order->setMetadata([
+            ...($order->getMetadata() ?? []),
+            'diningModeUuid' => $modeUuid,
+            'diningModeName' => 'Legacy hotpot',
+        ]);
+        $this->em->flush();
+        $this->em->clear();
+
+        $view = $this->view();
+        self::assertNull($view['session']['diningModeUuid']);
+        self::assertNull($view['session']['diningMode']);
+        $matching = array_values(array_filter($view['orders'], static fn(array $entry): bool => $entry['uuid'] === $orderUuid));
+        self::assertCount(1, $matching);
+        $row = $matching[0];
+        self::assertSame($modeUuid, $row['diningModeUuid']);
+        self::assertSame('Legacy hotpot', $row['diningModeName']);
     }
 
     public function testDiningModeMigrationAddsNullableSnapshotColumns(): void

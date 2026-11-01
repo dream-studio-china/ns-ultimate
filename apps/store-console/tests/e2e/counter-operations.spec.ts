@@ -29,7 +29,7 @@ const diningMode = {
   ],
 }
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; orderMetadataMode?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   const hasBoundDiningMode = options.diningMode || options.boundModeSnapshotMissing
@@ -42,8 +42,8 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
   const storeView = hasBoundDiningMode || options.storeModeOnly
     ? { ...store, settings: options.stringSettings ? JSON.stringify({ diningModes }) : { diningModes } }
     : store
-  type TestOrder = { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; canReplace: boolean; canCancel: boolean }
-  const testOrder = (uuid: string, status: string, quantity = 1, cancellable = status === 'pending'): TestOrder => ({ uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : status === 'pending' ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: '', createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: status === 'pending', canCancel: cancellable })
+  type TestOrder = { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; diningModeUuid: string | null; diningModeName: string | null; items: typeof item[]; canReplace: boolean; canCancel: boolean }
+  const testOrder = (uuid: string, status: string, quantity = 1, cancellable = status === 'pending'): TestOrder => ({ uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : status === 'pending' ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: '', createdAt: stamp, diningModeUuid: null, diningModeName: null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: status === 'pending', canCancel: cancellable })
   let orders: TestOrder[] = options.empty || options.emptySession ? [] : options.batchPending
     ? [
         testOrder('10000000-0000-4000-8000-000000000026', 'pending'),
@@ -72,8 +72,9 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     const base = { counter: { uuid: counterId, code: 'A01', name: 'Window table', capacity: 4, enabled: true }, session,
       currency: 'USD', canEnd: session !== null && orders.every((order) => ['cancelled', 'completed'].includes(order.status)), version: version() }
     if (options.sessionOnly || options.createWithoutRead) return { ...base, ordersVisible: false }
+    const visibleOrders = options.orderMetadataMode ? orders.map((order) => ({ ...order, diningModeUuid: diningModeId, diningModeName: 'Hotpot' })) : orders
     return { ...base, ordersVisible: true,
-      orders, openAmount: orders.filter((order) => ['draft', 'pending', 'confirmed'].includes(order.status)).reduce((sum, order) => sum + order.totalAmount, 0), orderedAmount: orders.filter((order) => order.status !== 'cancelled').reduce((sum, order) => sum + order.totalAmount, 0), openOrderCount: orders.filter((order) => ['draft', 'pending', 'confirmed'].includes(order.status)).length,
+      orders: visibleOrders, openAmount: orders.filter((order) => ['draft', 'pending', 'confirmed'].includes(order.status)).reduce((sum, order) => sum + order.totalAmount, 0), orderedAmount: orders.filter((order) => order.status !== 'cancelled').reduce((sum, order) => sum + order.totalAmount, 0), openOrderCount: orders.filter((order) => ['draft', 'pending', 'confirmed'].includes(order.status)).length,
       paymentHold: false }
   }
   let failed = false
@@ -159,7 +160,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       if (!session) session = { uuid: sessionId, participantCount: null, notes: null, startedAt: stamp, revision, diningModeUuid: null, diningMode: null }
       if (metadata.diningModeUuid === diningModeId) session = { ...session, diningModeUuid: diningModeId, diningMode, revision }
       const uuid = `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
-      orders.push({ uuid, status: 'pending', operationalStatus: 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes ?? ''), createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
+      orders.push({ uuid, status: 'pending', operationalStatus: 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes ?? ''), createdAt: stamp, diningModeUuid: metadata.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: metadata.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
       return respond({ uuid })
     }
     if (method === 'POST' && path.includes('/counter-operations/counters/')) {
@@ -192,7 +193,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
           result.replacedOrderUuid = body!.replaceOrderUuid
         }
         const status = options.confirmedCheckoutAdditions ? 'confirmed' : 'pending'
-        const createdOrder: TestOrder = { uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true }
+        const createdOrder: TestOrder = { uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, diningModeUuid: body!.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: body!.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true }
         if (options.delayedCheckoutAdditionProjection && path.endsWith('/orders/create')) delayedAddition = createdOrder
         else orders.push(createdOrder)
         result.orderUuid = uuid
@@ -441,6 +442,13 @@ test('table details show only effective unsettled orders', async ({ page }) => {
   await expect(detail.locator('.dining-round')).not.toContainText('已退款')
   await expect(detail.locator('.dining-round')).not.toContainText('已并单')
   await expect(detail.locator('.dining-section-heading span')).toHaveText('1')
+})
+
+test('order rounds use the mode stored on the order when the session has no snapshot', async ({ page }) => {
+  await setup(page, { orderMetadataMode: true })
+  await page.locator('.dining-card-title').click()
+  const detail = page.getByRole('dialog', { name: '查看桌次' })
+  await expect(detail.locator('.dining-round')).toContainText('点餐方式 · Hotpot')
 })
 
 test('cancellation and replacement use independent grants', async ({ page }) => {
