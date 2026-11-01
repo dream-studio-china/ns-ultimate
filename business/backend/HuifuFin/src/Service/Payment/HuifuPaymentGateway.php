@@ -18,6 +18,7 @@ use NsUltimate\Business\HuifuFin\Client\HuifuSigner;
 use NsUltimate\Business\HuifuFin\Entity\HuifuMerchant;
 use NsUltimate\Business\HuifuFin\Entity\HuifuPaymentAttempt;
 use NsUltimate\Business\HuifuFin\Entity\HuifuRefund;
+use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuOperationProof;
 use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuProfileResolver;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,6 +34,7 @@ final class HuifuPaymentGateway implements PaymentGatewayInterface
         private readonly HuifuClientInterface $client,
         private readonly HuifuResponseParser $responses,
         private readonly HuifuSigner $signer,
+        private readonly HuifuOperationProof $proof,
     ) {
     }
 
@@ -57,8 +59,11 @@ final class HuifuPaymentGateway implements PaymentGatewayInterface
         if ($attempt->getInvoice()?->getUuid() !== $invoice->getUuid()) {
             throw new \RuntimeException('The Huifu payment attempt does not belong to this invoice.');
         }
-        if (in_array($attempt->getStatus(), [HuifuPaymentAttempt::STATUS_SUCCEEDED, HuifuPaymentAttempt::STATUS_CLOSED], true)) {
-            throw new \RuntimeException('The Huifu payment attempt cannot be submitted again.');
+        if (!$this->proof->verifyPayment($attempt->getUuid(), $options['huifuAttemptProof'] ?? null)) {
+            throw new \RuntimeException('Huifu payments must be started through the HuifuFin Store payment endpoint.');
+        }
+        if ($attempt->getStatus() !== HuifuPaymentAttempt::STATUS_CREATED) {
+            throw new \RuntimeException('The Huifu payment attempt has already been submitted or resolved.');
         }
         $merchant = $this->entityManager->getRepository(HuifuMerchant::class)
             ->findOneBy(['uuid' => $attempt->getMerchantUuid()]);
@@ -89,8 +94,18 @@ final class HuifuPaymentGateway implements PaymentGatewayInterface
             throw $exception;
         }
 
-        $this->responses->verify($response, $this->signer, $resolved['credentials']['huifu_public_key']);
-        $data = $this->responses->data($response);
+        try {
+            $this->responses->verify($response, $this->signer, $resolved['credentials']['huifu_public_key']);
+            $data = $this->responses->data($response);
+            if ($data === []) {
+                throw new \RuntimeException('The Huifu response has no readable data.');
+            }
+        } catch (\Throwable $exception) {
+            $attempt->markUnknown();
+            $attempt->setProviderResponse(null, 'The Huifu response could not be verified; the result requires reconciliation.');
+            $this->entityManager->flush();
+            throw $exception;
+        }
         $attempt->setProviderResponse($this->responses->code($response), $this->responses->message($response));
         $attempt->setResponseSnapshot($this->snapshot($data));
         if (isset($data['hf_seq_id']) && is_scalar($data['hf_seq_id'])) {
@@ -107,7 +122,8 @@ final class HuifuPaymentGateway implements PaymentGatewayInterface
             throw new \RuntimeException($this->responses->message($response) ?? 'Huifu rejected the payment request.');
         }
         if (isset($data['trans_amt']) && $this->amountToCents((string) $data['trans_amt']) !== $amount) {
-            $attempt->markFailed('Huifu accepted a different payment amount.');
+            $attempt->markUnknown();
+            $attempt->setProviderResponse(null, 'Huifu accepted a different payment amount; the result requires reconciliation.');
             $this->entityManager->flush();
             throw new \RuntimeException('Huifu accepted a different payment amount.');
         }
@@ -149,6 +165,12 @@ final class HuifuPaymentGateway implements PaymentGatewayInterface
         }
         if ($refund->getStatus() !== HuifuRefund::STATUS_SUCCEEDED) {
             throw new \RuntimeException('Huifu has not confirmed the refund.');
+        }
+        if ($refund->isCoreApplied()) {
+            throw new \RuntimeException('The Huifu refund has already been applied to the invoice.');
+        }
+        if (!$this->proof->verifyRefund($refund->getUuid(), $options['huifuRefundProof'] ?? null)) {
+            throw new \RuntimeException('Huifu refunds must be applied through the HuifuFin refund workflow.');
         }
         if ($refund->getProviderAmount() !== $amount) {
             throw new \RuntimeException('The Huifu refund amount does not match the requested amount.');

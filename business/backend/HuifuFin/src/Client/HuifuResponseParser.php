@@ -48,7 +48,7 @@ final class HuifuResponseParser
     {
         $signature = $response['sign'] ?? null;
         if (!is_string($signature) || $signature === '') {
-            return;
+            throw new \RuntimeException('The Huifu response is not signed.');
         }
         $data = $this->data($response);
         if ($data === [] || !$signer->verifyData($data, $signature, $publicKey)) {

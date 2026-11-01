@@ -8,11 +8,15 @@ use App\Authorization\Entity\Assignment;
 use App\Authorization\Entity\Role;
 use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
+use App\Payment\DTO\CreateInvoiceRequest;
+use App\Payment\Entity\Invoice;
+use App\Payment\Service\InvoiceServiceInterface;
 use App\Store\Entity\Membership;
 use App\Store\Entity\Store;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\HuifuFin\Command\SeedHuifuAuthorizationCommand;
+use NsUltimate\Business\HuifuFin\Entity\HuifuPaymentAttempt;
 use NsUltimate\Business\HuifuFin\Entity\HuifuProviderProfile;
 use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuSecretCipher;
 use NsUltimate\Integration\Backend\Kernel;
@@ -139,6 +143,65 @@ final class HuifuConfigurationApiTest extends KernelTestCase
             'merchantUuid' => $merchantA['data']['uuid'],
         ]);
         self::assertSame(400, $rejected['status']);
+    }
+
+    public function testProviderIdentityIsImmutable(): void
+    {
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $admin = (new User())->setEmail('huifu-identity@example.test')->setUsername('huifu-identity')->setRoles(['ROLE_ADMIN']);
+        $em->persist($admin);
+        $em->flush();
+        $token = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
+        [$privateKey, $publicKey] = $this->keyPair();
+
+        $profile = $this->request('POST', '/api/v1/manage/huifu-provider-profiles', $token, [
+            'name' => 'Identity provider',
+            'environment' => 'production',
+            'sysId' => '6666000000000001',
+            'productId' => 'YMFZS',
+            'merchantPrivateKey' => $privateKey,
+            'huifuPublicKey' => $publicKey,
+        ]);
+        self::assertSame(201, $profile['status'], json_encode($profile, JSON_THROW_ON_ERROR));
+        $profileUuid = $profile['data']['uuid'];
+
+        $beforeAttempt = $this->request('PUT', '/api/v1/manage/huifu-provider-profiles/'.$profile['data']['id'], $token, [
+            'sysId' => '6666000000000002',
+        ]);
+        self::assertSame(400, $beforeAttempt['status'], json_encode($beforeAttempt, JSON_THROW_ON_ERROR));
+        self::assertStringContainsString('cannot change after the profile is created', $beforeAttempt['message'] ?? '');
+
+        $user = (new User())->setEmail('huifu-identity-payer@example.test')->setUsername('huifu-identity-payer');
+        $em->persist($user);
+        $invoice = self::getContainer()->get(InvoiceServiceInterface::class)->createInvoice(new CreateInvoiceRequest(
+            sourceType: 'test',
+            sourceId: 'huifu-identity-order',
+            scene: Invoice::SCENE_ORDER,
+            amount: 100,
+            currency: 'CNY',
+            payer: $user,
+        ));
+        $em->persist(new HuifuPaymentAttempt(
+            invoice: $invoice,
+            providerProfileUuid: $profileUuid,
+            merchantUuid: 'merchant-uuid',
+            huifuId: '6666000000000101',
+            reqDate: '20261101',
+            reqSeqId: 'HFTESTIDENTITY0001',
+            amount: 100,
+        ));
+        $em->flush();
+
+        $rejected = $this->request('PUT', '/api/v1/manage/huifu-provider-profiles/'.$profile['data']['id'], $token, [
+            'sysId' => '6666000000000002',
+        ]);
+        self::assertSame(400, $rejected['status'], json_encode($rejected, JSON_THROW_ON_ERROR));
+        self::assertStringContainsString('cannot change after the profile is created', $rejected['message'] ?? '');
+
+        $renamed = $this->request('PUT', '/api/v1/manage/huifu-provider-profiles/'.$profile['data']['id'], $token, [
+            'name' => 'Identity provider renamed',
+        ]);
+        self::assertSame(200, $renamed['status'], json_encode($renamed, JSON_THROW_ON_ERROR));
     }
 
     /** @return array{0: string, 1: string} */

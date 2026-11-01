@@ -57,6 +57,10 @@ final class HuifuPosNotificationService
         if ($publicKey === '' || !$this->signer->verify($signedData, $signature, $publicKey)) {
             throw new PaymentVerificationException('Huifu POS notification signature verification failed.');
         }
+        $huifuId = $data['huifu_id'] ?? null;
+        if (!is_string($huifuId) || $huifuId !== $resolved['merchant']->getHuifuId()) {
+            throw new PaymentVerificationException('Huifu POS notification merchant does not match the notified merchant.');
+        }
         $terminalId = $data['devs_id'] ?? null;
         if (!is_string($terminalId) || $terminalId === '') {
             throw new PaymentVerificationException('Huifu POS notification is missing the terminal ID.');

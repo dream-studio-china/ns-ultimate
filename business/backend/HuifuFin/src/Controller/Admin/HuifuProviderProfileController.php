@@ -70,6 +70,7 @@ final class HuifuProviderProfileController extends RestController
         if (!$entity instanceof HuifuProviderProfile) {
             throw new \LogicException('Unexpected Huifu provider profile entity.');
         }
+        $this->assertIdentityUnchanged($entity, $content);
         $credentials = null;
         foreach (['merchantPrivateKey' => 'merchant_private_key', 'huifuPublicKey' => 'huifu_public_key', 'asyncPublicKey' => 'async_public_key'] as $field => $key) {
             if (isset($content[$field]) && is_string($content[$field]) && trim($content[$field]) !== '') {
@@ -83,6 +84,20 @@ final class HuifuProviderProfileController extends RestController
         }
 
         return $content;
+    }
+
+    /** @param array<string, mixed> $content */
+    private function assertIdentityUnchanged(HuifuProviderProfile $profile, array $content): void
+    {
+        $changed = false;
+        foreach (['environment' => $profile->getEnvironment(), 'sysId' => $profile->getSysId(), 'productId' => $profile->getProductId()] as $field => $current) {
+            if (array_key_exists($field, $content) && (string) $content[$field] !== $current) {
+                $changed = true;
+            }
+        }
+        if ($changed) {
+            throw new \InvalidArgumentException('The Huifu environment, system ID, and product ID cannot change after the profile is created. Create a new profile instead.');
+        }
     }
 
     /** @param array<string, mixed> $content */

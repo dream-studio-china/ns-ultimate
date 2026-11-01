@@ -39,7 +39,9 @@ Credentials are never returned by the API. Provider identity (`sysId`,
 `productId`) and the merchant `huifuId` are separate because the API access
 identity is not necessarily the merchant receiving funds. Rotating credentials
 creates a new encrypted credential version; payment attempts and refunds keep
-using the version recorded at initiation.
+using the version recorded at initiation. Environment, system ID, and product ID
+are immutable after profile creation; create a new profile instead of repointing
+historical attempts. Credentials and descriptive fields remain editable.
 
 ## Online payment
 
@@ -53,7 +55,12 @@ POST /api/v1/store/{scopeId}/huifu-payments
 The Store payment service creates a committed `HuifuPaymentAttempt` before
 calling the Core invoice workflow. The `huifu` gateway requires that attempt
 identifier and refuses unsupported generic calls. This preserves a request
-record when the provider result is unknown.
+record when the provider result is unknown. Only one attempt may await
+confirmation per invoice; a timeout leaves the attempt `unknown` and blocks a
+replacement until reconciliation or an operator resolves it. Stale `created`
+attempts enter reconciliation after five minutes. The Store endpoint supplies a
+short-lived internal proof, so the generic Core pay route cannot submit or
+resume a Huifu attempt.
 
 The initial implementation supports Huifu JSAPI and Native order creation. Quick
 pay is stored and submitted, but quick-pay refunds are intentionally rejected
@@ -76,9 +83,14 @@ can select the original provider profile and credential version. The service
 verifies the signature, merchant, request sequence, amount, currency, and Store
 association, then applies the result through Core's invoice service.
 
-Duplicates are acknowledged without emitting a second payment event. A
-notification for a cancelled invoice is rejected and requires operator review.
-The legacy public signing endpoint is not reproduced.
+Duplicates are acknowledged without emitting a second payment event. The attempt
+is locked and reloaded before applying a result, so a concurrent notification or
+reconciliation query cannot downgrade a confirmed payment. A conflicting
+notification is recorded and acknowledged for operator review.
+Synchronous provider responses must be signed, and unsigned responses are
+treated as an unknown result rather than a failure. A notification for a
+cancelled invoice is rejected and requires operator review. The legacy public
+signing endpoint is not reproduced.
 
 The implemented notification format uses the legacy `resp_code`, `resp_data`,
 and `sign` form fields with RSA verification. Confirm the exact protocol for the
@@ -93,13 +105,16 @@ POST /api/v1/store/{scopeId}/huifu-refunds
 ```
 
 Integer amounts are cents; decimal strings are also accepted. A refund record is
-committed before submission. Huifu acceptance is not treated as a completed
-refund. Only a confirmed success is applied to Core; otherwise the endpoint
-returns HTTP 202 and the reconciliation command retries the query.
+committed before submission, and concurrent requests reserve the remaining
+amount under an invoice lock. Huifu acceptance is not treated as a completed
+refund. Only a confirmed success is applied to Core, exactly once; otherwise the
+endpoint returns HTTP 202 and the reconciliation command retries the query.
+Confirmed refunds that were not yet applied to Core are also retried.
 
 The generic Core refund endpoint cannot create an untracked Huifu refund. The
-gateway requires the HuifuFin refund identifier and only returns a confirmed
-record to Core. Refunds use the original payment's merchant, request date,
+gateway requires the HuifuFin refund identifier and the internal workflow proof,
+so a confirmed record cannot be consumed directly through the generic route.
+Only a confirmed record is returned to Core. Refunds use the original payment's merchant, request date,
 request sequence, and credential version.
 
 The refund query endpoint is implemented from the product's scan-pay family. It

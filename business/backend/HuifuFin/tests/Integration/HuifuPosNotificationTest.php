@@ -128,6 +128,31 @@ final class HuifuPosNotificationTest extends KernelTestCase
         self::assertSame('RECV_ORD_ID_'.$invoice->getOutTradeNo(), $service->handle($request, $merchant->getUuid()));
         self::assertSame(1, $em->getRepository(HuifuPosReceipt::class)->count([]));
 
+        $mismatchedMerchantData = json_decode($respData, true, flags: JSON_THROW_ON_ERROR);
+        $mismatchedMerchantData['huifu_id'] = '6666000000009999';
+        $mismatchedMerchantData['out_trans_id'] = 'POS-TRANSACTION-MISMATCHED-MERCHANT';
+        $mismatchedMerchantBody = json_encode($mismatchedMerchantData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $mismatchedMerchantRequest = Request::create(
+            '/api/payment/notify/huifu-pos/'.$merchant->getUuid(),
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/x-www-form-urlencoded'],
+            http_build_query([
+                'resp_code' => '00000000',
+                'resp_data' => $mismatchedMerchantBody,
+                'sign' => $this->signRaw($mismatchedMerchantBody, $privateKey),
+            ]),
+        );
+        try {
+            $service->handle($mismatchedMerchantRequest, $merchant->getUuid());
+            self::fail('A POS notification for another merchant must be rejected.');
+        } catch (PaymentVerificationException $exception) {
+            self::assertStringContainsString('merchant does not match', $exception->getMessage());
+        }
+        self::assertSame(1, $em->getRepository(HuifuPosReceipt::class)->count([]));
+
         $unknownData = json_decode($respData, true, flags: JSON_THROW_ON_ERROR);
         $unknownData['devs_id'] = 'UNKNOWN-TERMINAL';
         $unknownData['out_trans_id'] = 'POS-TRANSACTION-2';
