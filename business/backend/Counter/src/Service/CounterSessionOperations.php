@@ -179,7 +179,8 @@ final class CounterSessionOperations
     /** Trade Order state is the only lifecycle authority for counter order changes. */
     private function cancellationBlockedReason(Order $order): ?string
     {
-        if ($order->getInvoiceId() !== null || $order->getPaymentStatus() !== null) return 'payment_started';
+        // Pending and confirmed Trade orders remain cancellable even when a payment record
+        // already exists. StaffOrderService delegates invoice cleanup to the Trade cancel flow.
         if (!$this->workflow->can($order, 'cancel')
             || $this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1
             || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $order->getUuid()]) !== 0) return 'order_ineligible';

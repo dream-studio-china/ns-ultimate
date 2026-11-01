@@ -676,6 +676,23 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(0, $this->view()['openOrderCount']);
     }
 
+    public function testPendingTradeOrderStaysCancellableWithPaymentMetadata(): void
+    {
+        $uuid = $this->startCustomerSession(false);
+        $this->em->getConnection()->executeStatement(
+            'UPDATE trade_order SET invoice_id = ?, payment_status = ? WHERE uuid = ?',
+            [UUID::v4(), 'pending', $uuid],
+        );
+        $this->em->clear();
+
+        $row = $this->orderByUuid($uuid);
+        self::assertSame(Order::STATUS_PENDING, $row['status']);
+        self::assertTrue($row['canCancel']);
+        $body = ['commandUuid' => UUID::v4(), 'version' => $this->view()['version'], 'orderUuid' => $uuid, 'reason' => 'Guest left'];
+        self::assertSame(200, $this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/cancel', $body)->getStatusCode());
+        self::assertSame(Order::STATUS_CANCELLED, $this->em->getConnection()->fetchOne('SELECT status FROM trade_order WHERE uuid = ?', [$uuid]));
+    }
+
     public function testCancellationGrantIsIndependentFromOrderingAndModification(): void
     {
         $uuid = $this->startCustomerSession(false); $this->project($uuid);
@@ -786,19 +803,20 @@ final class CounterOperationsTest extends KernelTestCase
         $this->project($uuid);
         $path = '/counters/'.$this->counter->getUuid().'/orders/quote';
         foreach ([
-            ['trade_order', 'invoice_id', UUID::v4(), false, 'payment_started'],
-            ['trade_order', 'payment_status', 'paid', false, 'payment_started'],
-            ['trade_order', 'status', 'paid', false, 'order_ineligible'],
-            ['store_order', 'operational_status', 'accepted', true, null],
-            ['store_order', 'reservation_id', UUID::v4(), true, null],
-            ['trade_order_store_lifecycle', 'acceptance_status', 'accepted', true, null],
-        ] as [$table, $column, $value, $replaceable, $expectedReason]) {
+            ['trade_order', 'invoice_id', UUID::v4(), false, true, 'payment_started'],
+            ['trade_order', 'payment_status', 'paid', false, true, 'payment_started'],
+            ['trade_order', 'status', 'paid', false, false, 'order_ineligible'],
+            ['store_order', 'operational_status', 'accepted', true, true, null],
+            ['store_order', 'reservation_id', UUID::v4(), true, true, null],
+            ['trade_order_store_lifecycle', 'acceptance_status', 'accepted', true, true, null],
+        ] as [$table, $column, $value, $replaceable, $cancellable, $expectedReason]) {
             $identity = $table === 'trade_order' ? 'uuid' : 'trade_order_uuid';
             $old = $this->em->getConnection()->fetchOne("SELECT $column FROM $table WHERE $identity = ?", [$uuid]);
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$value, $uuid]); $this->em->clear();
-            self::assertSame($replaceable, $this->orderByUuid($uuid)['canReplace']);
-            self::assertSame($replaceable, $this->orderByUuid($uuid)['canCancel']);
-            self::assertSame($expectedReason, $this->orderByUuid($uuid)['changeBlockedReason']);
+            $row = $this->orderByUuid($uuid);
+            self::assertSame($replaceable, $row['canReplace']);
+            self::assertSame($cancellable, $row['canCancel']);
+            self::assertSame($expectedReason, $row['changeBlockedReason']);
             self::assertSame($replaceable ? 200 : 409, $this->request('POST', $path, [...$this->quoteInput(), 'replaceOrderUuid' => $uuid])->getStatusCode());
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$old, $uuid]); $this->em->clear();
         }
