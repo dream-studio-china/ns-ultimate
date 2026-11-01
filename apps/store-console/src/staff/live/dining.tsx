@@ -852,6 +852,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
     </section>}
     {stage.kind === 'review' && <section className="checkout-final-review">
       <header><span>{t('checkoutFinalReview')}</span><h3>{table.counter.name}</h3><small>{diningMode?.name ?? t('diningModeNotRecorded')}</small></header>
+      <div className="checkout-review-amount dining-settlement-total"><span>{t('checkoutEstimatedAmount')}</span><strong>{money(estimatedTotal)}</strong><small>{t('checkoutEstimatedHint')}</small></div>
       {!diningMode && <Notice subtle>{t('checkoutNoModeHint')}</Notice>}
       <div className="checkout-review-heading"><h4>{t('checkoutOriginalItems')}</h4><small>{originalDisplayLines.length} {t('recordsUnit')}</small></div>
       <ul className="checkout-final-lines">{originalDisplayLines.map((line) => {
@@ -860,7 +861,6 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
       })}</ul>
       {reconciliation.additions.length > 0 && <><div className="checkout-review-heading"><h4>{t('checkoutAddedItems')}</h4><small>{reconciliation.additions.length} {t('recordsUnit')}</small></div><ul className="checkout-final-lines is-addition">{reconciliation.additions.map((line) => <li key={line.specificationUuid}><span><strong>{lineName(line.specificationUuid)}</strong></span><em>+{line.quantity}</em></li>)}</ul></>}
       {!reconciliation.changed && <Notice subtle>{t('checkoutNoChangesPlan')}</Notice>}
-      <div className="dining-settlement-total"><span>{t('checkoutEstimatedAmount')}</span><strong>{money(estimatedTotal)}</strong><small>{t('checkoutEstimatedHint')}</small></div>
     </section>}
     {stage.kind === 'result' && result && <section className="checkout-result">
       <Notice title="checkoutResultHintTitle">{t('checkoutResultHint')}</Notice>

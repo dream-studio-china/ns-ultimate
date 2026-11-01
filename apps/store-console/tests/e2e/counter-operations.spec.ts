@@ -586,6 +586,12 @@ test('order submission stores the selected dining mode and checkout uses its sav
   await expect(checkoutReview).toContainText('原订单商品（已按商品汇总）')
   await expect(checkoutReview).toContainText('Soup')
   await expect(checkoutReview).toContainText('Regular')
+  const finalAmount = checkoutReview.locator('.checkout-final-review > .checkout-review-amount')
+  await expect(finalAmount).toContainText('$15.90')
+  expect(await checkoutReview.locator('.checkout-final-review').evaluate((section) => {
+    const children = [...section.children]
+    return children.indexOf(section.querySelector(':scope > .checkout-review-amount')!) < children.findIndex((child) => child.classList.contains('checkout-review-heading'))
+  })).toBe(true)
   expect(requests.filter((request) => request.path === '/api/v1/app/orders')).toHaveLength(1)
   await checkoutReview.getByRole('button', { name: '确认并处理订单', exact: true }).click()
   const checkoutResult = page.getByRole('dialog', { name: '结账结果', exact: true })

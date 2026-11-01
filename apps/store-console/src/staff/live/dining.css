@@ -201,6 +201,8 @@
 .dining-settlement-orders header strong { color: var(--ws-ink); }
 .dining-settlement-orders > section > b { display: block; color: var(--brand); text-align: right; }
 .checkout-rule-step, .checkout-final-review, .checkout-result { display: grid; gap: 14px; }
+.checkout-review-amount { padding: 16px 18px; border-color: color-mix(in srgb, var(--brand) 28%, var(--ws-line)); background: linear-gradient(145deg, color-mix(in srgb, var(--theme-soft) 76%, white), var(--theme-paper)); }
+.checkout-review-amount strong { font-size: 34px; line-height: 1.1; }
 .checkout-rule-step > header, .checkout-final-review > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid color-mix(in srgb, var(--brand) 24%, var(--ws-line)); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--ws-soft) 82%, white), var(--theme-paper)); }
 .checkout-rule-step > header > div, .checkout-final-review > header { min-width: 0; }
 .checkout-rule-step > header span, .checkout-final-review > header span { display: block; color: var(--brand); font-size: 10px; font-weight: 700; letter-spacing: .05em; }
