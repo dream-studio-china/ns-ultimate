@@ -60,12 +60,12 @@ describe('live counter session boundary', () => {
 
     const hydrated = await api.hydrateCounterSessionDiningModes(table)
 
-    expect(data).toHaveBeenCalledWith(`/api/v1/manage/orders/${id}`, tradeOrderRecordSchema)
+    expect(data).toHaveBeenCalledWith(`/api/v1/app/orders/${id}`, tradeOrderRecordSchema)
     expect(hydrated.ordersVisible && hydrated.orders[0]).toMatchObject({ diningModeUuid: 'hotpot', diningModeName: 'Hotpot' })
     expect(hydrated.session?.diningModeUuid).toBeNull()
   })
 
-  it('always reads dining modes from the Trade order metadata', async () => {
+  it('overrides session modes with the Trade order metadata', async () => {
     const client = new ApiClient()
     const data = vi.spyOn(client, 'data').mockResolvedValueOnce({ uuid: id, metadata: { diningModeUuid: 'hotpot', diningModeName: 'Hotpot' } })
     const api = new StoreApi(client, id)
@@ -80,8 +80,23 @@ describe('live counter session boundary', () => {
 
     const hydrated = await api.hydrateCounterSessionDiningModes(table)
 
-    expect(data).toHaveBeenCalledWith(`/api/v1/manage/orders/${id}`, tradeOrderRecordSchema)
+    expect(data).toHaveBeenCalledWith(`/api/v1/app/orders/${id}`, tradeOrderRecordSchema)
     expect(hydrated.ordersVisible && hydrated.orders[0]).toMatchObject({ diningModeUuid: 'hotpot', diningModeName: 'Hotpot' })
+  })
+
+  it('falls back to the admin order endpoint when the user-scoped detail is unavailable', async () => {
+    const client = new ApiClient()
+    const data = vi.spyOn(client, 'data')
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ uuid: id, metadata: { diningModeUuid: 'hotpot', diningModeName: 'Hotpot' } })
+    const api = new StoreApi(client, id)
+
+    await expect(api.tradeOrderDiningMode(id)).resolves.toEqual({ uuid: 'hotpot', name: 'Hotpot' })
+
+    expect(data.mock.calls.map(([path]) => path)).toEqual([
+      `/api/v1/app/orders/${id}`,
+      `/api/v1/manage/orders/${id}`,
+    ])
   })
 
   it('parses nullable and JSON-encoded Trade order metadata', () => {

@@ -109,6 +109,9 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', metadata: null,
       product: { uuid: productId, __toString: '#1 Soup' },
     })
+    if (method === 'GET' && path.startsWith('/api/v1/app/orders/')) {
+      return respond({ uuid: path.slice('/api/v1/app/orders/'.length), metadata: options.orderMetadataMode ? { diningModeUuid: diningModeId, diningModeName: 'Hotpot' } : null })
+    }
     if (options.orderMetadataMode && method === 'GET' && path.startsWith('/api/v1/manage/orders/')) {
       return respond({ uuid: path.slice('/api/v1/manage/orders/'.length), metadata: { diningModeUuid: diningModeId, diningModeName: 'Hotpot' } })
     }
@@ -296,7 +299,8 @@ for (const width of [320, 390, 768, 1280]) {
     expect(additions).toHaveLength(2)
     expect(additions.every((request) => (request.body?.metadata as Record<string, unknown> | undefined)?.counterUuid === counterId)).toBe(true)
     expect(requests.some((request) => request.path.endsWith('/orders/quote') || request.path.endsWith('/orders/create') || request.path.endsWith('/orders/replace') || request.path.endsWith('/cancel'))).toBe(false)
-    expect(requests.some((request) => request.path.startsWith('/api/v1/manage/orders/'))).toBe(true)
+    expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/app/orders/'))).toBe(true)
+    expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/manage/orders/'))).toBe(false)
     expect(requests.some((request) => request.path.includes('/payment'))).toBe(false)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
@@ -470,7 +474,7 @@ test('table details show only effective unsettled orders', async ({ page }) => {
   await expect(detail.locator('.dining-section-heading span')).toHaveText('1')
 })
 
-test('store staff checkout does not request owner-scoped trade order detail', async ({ page }) => {
+test('store staff checkout reads the trade order through the user-scoped detail', async ({ page }) => {
   const requests = await setup(page)
   await page.locator('.dining-card-title').click()
   const detail = page.getByRole('dialog', { name: '查看桌次' })
@@ -478,7 +482,8 @@ test('store staff checkout does not request owner-scoped trade order detail', as
   await detail.getByRole('button', { name: '结账', exact: true }).click()
   await expect(page.getByRole('dialog', { name: '结账', exact: true })).toBeVisible()
 
-  expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/app/orders/'))).toBe(false)
+  expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/app/orders/'))).toBe(true)
+  expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/manage/orders/'))).toBe(false)
 })
 
 test('order rounds use the mode stored on the order when the session has no snapshot', async ({ page }) => {

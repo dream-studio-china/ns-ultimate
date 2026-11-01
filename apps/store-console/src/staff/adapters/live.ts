@@ -270,20 +270,24 @@ export class StoreApi {
   /** Read the mode already recorded by the ordering app; no counter-session logic is inferred here. */
   tradeOrderDiningMode(orderUuid: string): Promise<OrderDiningModeReference | null> {
     const id = uuid.parse(orderUuid)
-    const key = `manage:${id}`
+    const key = `trade:${id}`
     const cached = this.orderDiningModes.get(key)
     if (cached) return cached
-    const task = this.tradeOrderState(id, true)
-      .then((record): OrderDiningModeReference | null => {
-        if (!record) return null
-        const metadata = record.metadata ?? {}
-        const rawUuid = metadata.diningModeUuid ?? metadata.dining_mode_uuid ?? null
-        const rawName = metadata.diningModeName ?? metadata.dining_mode_name ?? null
-        return {
-          uuid: typeof rawUuid === 'string' && rawUuid.trim() ? rawUuid.trim().slice(0, 120) : null,
-          name: typeof rawName === 'string' && rawName.trim() ? rawName.trim().slice(0, 120) : null,
-        }
-      })
+    const read = (record: z.infer<typeof tradeOrderRecordSchema> | null): OrderDiningModeReference | null => {
+      if (!record) return null
+      const metadata = record.metadata ?? {}
+      const rawUuid = metadata.diningModeUuid ?? metadata.dining_mode_uuid ?? null
+      const rawName = metadata.diningModeName ?? metadata.dining_mode_name ?? null
+      return {
+        uuid: typeof rawUuid === 'string' && rawUuid.trim() ? rawUuid.trim().slice(0, 120) : null,
+        name: typeof rawName === 'string' && rawName.trim() ? rawName.trim().slice(0, 120) : null,
+      }
+    }
+    // Cashier accounts are authenticated users, not administrators. The customer
+    // order endpoint exposes the same Trade order metadata without requiring
+    // ROLE_ADMIN; retain the admin endpoint as a fallback for older sessions.
+    const task = this.tradeOrderState(id, false)
+      .then(async (record) => read(record) ?? read(await this.tradeOrderState(id, true)))
       .catch((error: unknown) => {
         this.orderDiningModes.delete(key)
         if (error instanceof ApiError && (error.status === 403 || error.status === 404)) return null
