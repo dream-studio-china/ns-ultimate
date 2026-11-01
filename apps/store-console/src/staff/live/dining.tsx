@@ -214,16 +214,17 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
     if (!orderable || !table.counter.enabled) return
     if (!navigator.onLine) { setActionError('offline'); return }
     setActionError(null)
-    setOrdering({ table, mode: !table.session || (table.ordersVisible && table.orders.length === 0) ? 'new' : 'add' })
+    setOrdering({ table, mode: effectiveDiningOrders(table).length === 0 ? 'new' : 'add' })
   }
   return <><DiningSummary tables={list.allItems} loading={list.loading} currency={access.store.currency} locale={locale} /><ListFeedback state={list} empty="firstTable" hint="existingTablesHint" icon={LayoutGrid} />
     {actionError && <Notice>{t(actionError)}</Notice>}
     <div className="dining-board">{list.items.map((table) => {
-      const hasOrders = table.ordersVisible && table.orders.length > 0
+      const orders = effectiveDiningOrders(table)
+      const hasOrders = orders.length > 0
       return <article className={`dining-card ${table.session ? 'has-session' : ''} ${hasOrders ? 'has-orders' : ''} ${table.counter.enabled ? '' : 'is-disabled'}`} key={table.counter.uuid} onClick={() => setSelected(table.counter.uuid)}>
         <div className="dining-card-heading"><h2><button type="button" className="dining-card-title">{table.counter.name}</button></h2><div className="dining-card-heading-actions"><StatusPill muted={!table.session}>{t(table.session ? 'dining' : table.counter.enabled ? 'idle' : 'tableDisabled')}</StatusPill>{onEdit && can(access, 'counter', 'update') && <Button size="mini" className="dining-card-edit" aria-label={t('edit')} onClick={(event) => { event.stopPropagation(); void api.legacyCounter(table.counter.uuid, access.store.code).then(onEdit).catch((error: unknown) => setActionError(errorKey(error))) }}><Pencil size={12} /></Button>}</div></div>
         <div className="dining-card-meta"><span><UsersRound size={14} />{table.session?.participantCount ?? '—'} {t('guestUnit')}</span>{table.session && <span><Clock3 size={14} /><time dateTime={table.session.startedAt}>{formatDiningDate(table.session.startedAt, locale)}</time></span>}</div>
-        {hasOrders ? <><div className="dining-card-total"><span>{t('diningOpenAmount')}</span><strong>{amount(table.openAmount, table.currency)}</strong></div><p className="dining-card-caption">{table.orders.length} {t('diningBatches')}{table.paymentHold && ` · ${t('diningPaymentHold')}`}</p></> : table.session ? <p className="dining-card-caption">{table.ordersVisible ? t('noItems') : t('sessionOrdersRestricted')}</p> : <p className="dining-card-idle">{t(table.counter.enabled ? 'readyToOpen' : 'tableDisabled')}</p>}
+        {hasOrders ? <><div className="dining-card-total"><span>{t('diningOpenAmount')}</span><strong>{amount(effectiveDiningAmount(table), table.currency)}</strong></div><p className="dining-card-caption">{orders.length} {t('diningBatches')}{table.ordersVisible && table.paymentHold && ` · ${t('diningPaymentHold')}`}</p></> : table.session ? <p className="dining-card-caption">{table.ordersVisible ? t('noItems') : t('sessionOrdersRestricted')}</p> : <p className="dining-card-idle">{t(table.counter.enabled ? 'readyToOpen' : 'tableDisabled')}</p>}
       </article>
     })}</div><PageControls state={list} />
     {selected && <LiveSheet open title={t('viewDining')} onClose={() => setSelected(null)}><DiningDetail api={api} access={access} legacy={list.legacy} orderable={orderable} id={selected} changed={list.reload} onOrder={(table) => { setReturnTo(table.counter.uuid); setSelected(null); startOrder(table) }} onCheckout={(table) => void startCheckout(table)} /></LiveSheet>}

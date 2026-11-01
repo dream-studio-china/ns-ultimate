@@ -422,6 +422,9 @@ test('staff can select and cancel eligible unsettled orders for one table after 
   await expect(confirmation).toHaveCount(0)
   await expect(detail.locator('.dining-round')).toHaveCount(0)
   await expect(detail.getByRole('button', { name: '取消订单', exact: true })).toHaveCount(0)
+  await expect(page.locator('.dining-card')).not.toHaveClass(/has-orders/)
+  await expect(page.locator('.dining-card')).toContainText('这张桌台还没有订单')
+  await expect(page.locator('.dining-card')).not.toContainText('3 批次')
 
   const writes = cancelRequests()
   expect(writes.map((request) => request.body?.orderUuid)).toEqual([
