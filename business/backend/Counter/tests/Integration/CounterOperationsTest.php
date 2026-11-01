@@ -13,6 +13,7 @@ use App\Identity\Security\TokenManager;
 use App\Store\Entity\Membership;
 use App\Store\Entity\Specification;
 use App\Store\Entity\Store;
+use App\Store\Entity\StoreOrder;
 use App\Store\Service\StoreOrderServiceInterface;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\TradeOutboxMessage;
@@ -452,6 +453,40 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame('cancelled', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $uuid])->getStatus());
     }
 
+    public function testAcceptedOrderCanBeCancelledBeforePayment(): void
+    {
+        $uuid = $this->startCustomerSession(false);
+        $this->project($uuid);
+        $this->em->getConnection()->executeStatement(
+            'UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?',
+            [StoreOrder::STATUS_ACCEPTED, $uuid],
+        );
+        $this->em->getConnection()->executeStatement(
+            'UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?',
+            ['accepted', $uuid],
+        );
+        $this->em->clear();
+
+        $row = $this->orderByUuid($uuid);
+        self::assertTrue($row['canCancel']);
+        self::assertFalse($row['canReplace']);
+
+        $body = [
+            'commandUuid' => UUID::v4(),
+            'version' => $this->view()['version'],
+            'orderUuid' => $uuid,
+            'reason' => 'Accepted but not started',
+        ];
+        $result = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/cancel', $body));
+        self::assertSame('cancelled', $result['status']);
+        self::assertSame('cancelled', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $uuid])->getStatus());
+        $storeOrder = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $uuid]);
+        self::assertInstanceOf(StoreOrder::class, $storeOrder);
+        self::assertSame(StoreOrder::STATUS_CANCELLED, $storeOrder->getOperationalStatus());
+        self::assertSame('cancelled', $this->orderByUuid($uuid)['status']);
+        self::assertTrue($this->view()['canEnd']);
+    }
+
     public function testCancellationGrantIsIndependentFromOrderingAndModification(): void
     {
         $uuid = $this->startCustomerSession(false); $this->project($uuid);
@@ -566,7 +601,10 @@ final class CounterOperationsTest extends KernelTestCase
             $old = $this->em->getConnection()->fetchOne("SELECT $column FROM $table WHERE $identity = ?", [$uuid]);
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$value, $uuid]); $this->em->clear();
             self::assertFalse($this->orderByUuid($uuid)['canReplace']);
-            self::assertFalse($this->orderByUuid($uuid)['canCancel']);
+            self::assertSame(
+                in_array($column, ['operational_status', 'acceptance_status'], true),
+                $this->orderByUuid($uuid)['canCancel'],
+            );
             $expectedReason = match ($column) {
                 'invoice_id', 'payment_status' => 'payment_started',
                 'operational_status', 'acceptance_status' => 'order_processed',
@@ -604,7 +642,8 @@ final class CounterOperationsTest extends KernelTestCase
             $container->get(StaffOrderPricing::class),
             new StaffOrderService($container->get(OrderServiceInterface::class), $storeOrders, $container->get('state_machine.order')),
             $storeOrders,
-            $container->get('state_machine.order'));
+            $container->get('state_machine.order'),
+            $container->get('state_machine.store_order'));
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
         $events = $this->em->getRepository(TradeOutboxMessage::class)->count([]);
         try {
