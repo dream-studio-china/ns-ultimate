@@ -48,8 +48,8 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
   const storeView = hasBoundDiningMode || options.storeModeOnly || options.orderMetadataMode
     ? { ...store, settings: options.stringSettings ? JSON.stringify({ diningModes }) : { diningModes } }
     : store
-  type TestOrder = { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; diningModeUuid: string | null; diningModeName: string | null; items: typeof item[]; canReplace: boolean; canCancel: boolean }
-  const testOrder = (uuid: string, status: string, quantity = 1, cancellable = status === 'pending'): TestOrder => ({ uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : status === 'pending' ? 'pending_validation' : 'fulfilled', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: '', createdAt: stamp, diningModeUuid: null, diningModeName: null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: status === 'pending', canCancel: cancellable })
+  type TestOrder = { uuid: string; status: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; diningModeUuid: string | null; diningModeName: string | null; items: typeof item[]; canReplace: boolean; canCancel: boolean }
+  const testOrder = (uuid: string, status: string, quantity = 1, cancellable = status === 'pending'): TestOrder => ({ uuid, status, paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: '', createdAt: stamp, diningModeUuid: null, diningModeName: null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: status === 'pending', canCancel: cancellable })
   let orders: TestOrder[] = options.empty || options.emptySession ? [] : options.batchPending
     ? [
         testOrder('10000000-0000-4000-8000-000000000026', 'pending'),
@@ -175,7 +175,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       if (metadata.diningModeUuid === diningModeId) session = { ...session, participantCount, diningModeUuid: diningModeId, diningMode, revision }
       else if (participantCount !== session.participantCount) session = { ...session, participantCount, revision }
       const uuid = `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
-      orders.push({ uuid, status: 'pending', operationalStatus: 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes ?? ''), createdAt: stamp, diningModeUuid: metadata.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: metadata.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
+      orders.push({ uuid, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes ?? ''), createdAt: stamp, diningModeUuid: metadata.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: metadata.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
       return respond({ uuid })
     }
     if (method === 'POST' && path.includes('/counter-operations/counters/')) {
@@ -195,7 +195,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
         expect(body!.reason).toBeTruthy()
         const target = orders.find((order) => order.uuid === body!.orderUuid)!
         expect(target.canCancel).toBe(true)
-        orders = orders.map((order) => order.uuid === body!.orderUuid ? { ...order, status: 'cancelled', operationalStatus: 'cancelled', canReplace: false, canCancel: false } : order)
+        orders = orders.map((order) => order.uuid === body!.orderUuid ? { ...order, status: 'cancelled', canReplace: false, canCancel: false } : order)
         result.orderUuid = body!.orderUuid
         result.status = 'cancelled'
       }
@@ -204,11 +204,11 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
         const quantity = (body!.items as { quantity: number }[])[0]!.quantity
         if (path.endsWith('/orders/replace')) {
           expect(body!.reason).toBeTruthy()
-          orders = orders.map((order) => order.uuid === body!.replaceOrderUuid ? { ...order, status: 'cancelled', operationalStatus: 'cancelled', canReplace: false, canCancel: false } : order)
+          orders = orders.map((order) => order.uuid === body!.replaceOrderUuid ? { ...order, status: 'cancelled', canReplace: false, canCancel: false } : order)
           result.replacedOrderUuid = body!.replaceOrderUuid
         }
         const status = options.confirmedCheckoutAdditions ? 'confirmed' : 'pending'
-        const createdOrder: TestOrder = { uuid, status, operationalStatus: status === 'confirmed' ? 'accepted' : 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, diningModeUuid: body!.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: body!.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true }
+        const createdOrder: TestOrder = { uuid, status, paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes), createdAt: stamp, diningModeUuid: body!.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: body!.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true }
         if (options.delayedCheckoutAdditionProjection && path.endsWith('/orders/create')) delayedAddition = createdOrder
         else orders.push(createdOrder)
         result.orderUuid = uuid
@@ -450,7 +450,7 @@ test('table details show only effective unsettled orders', async ({ page }) => {
   const detail = page.getByRole('dialog', { name: '查看桌次' })
   await expect(detail.locator('.dining-round')).toHaveCount(1)
   await expect(detail.locator('.dining-round')).toContainText('待处理')
-  await expect(detail.locator('.dining-round')).toContainText('待核验 (pending_validation)')
+  await expect(detail.locator('.dining-round')).toContainText('待处理 (pending)')
   await expect(detail.locator('.dining-round')).toContainText('点餐方式 · 未记录')
   await expect(detail.locator('.dining-round')).not.toContainText('已取消')
   await expect(detail.locator('.dining-round')).not.toContainText('已付款')

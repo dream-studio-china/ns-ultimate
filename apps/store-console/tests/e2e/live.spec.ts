@@ -9,7 +9,7 @@ const counterId = '00000000-0000-4000-8000-000000000006'
 const store = { uuid: storeId, name: 'Contract store', code: 'S1', currency: 'CNY', timezone: 'Asia/Shanghai' }
 const version = 'a'.repeat(64)
 const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '10:00', endSaleTime: '20:00' }, ...item })
-const operationalOrder = (item: Record<string, unknown>) => ({ version, counter: null, allowedActions: [], verificationRequired: false, rejectionReason: null, ...item })
+const operationalOrder = (item: Record<string, unknown>) => ({ version, status: 'pending', counter: null, allowedActions: [], cancellationReason: null, ...item })
 type MockProduct = { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }
 type MockCategory = { uuid: string; name: string; slug: string; sortOrder: number; enabled: boolean }
 function operationalList(route: Route, records: Record<string, unknown>[], hasNext = false) {
@@ -17,19 +17,21 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   const q = (url.searchParams.get('q') ?? '').toLowerCase()
   const status = url.searchParams.get('status') ?? 'all'
   const items = records.filter((item) => (!q || [item.name, item.uuid, item.slug, item.code, item.tradeOrderUuid].some((value) => String(value ?? '').toLowerCase().includes(q))) &&
-    (status === 'all' || (status === 'soldout' ? item.isSoldout : ['enabled', 'disabled'].includes(status) ? item.enabled === (status === 'enabled') : (item.status ?? item.operationalStatus) === status)))
+    (status === 'all' || (status === 'soldout' ? item.isSoldout : ['enabled', 'disabled'].includes(status) ? item.enabled === (status === 'enabled') : item.status === status)))
     .map((item) => url.pathname.endsWith('/products') ? operationalProduct(item) : url.pathname.endsWith('/orders') ? operationalOrder(item) : item)
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; counterAccess?: boolean; grants?: string[]; counterOrders?: Record<string, unknown>[]; mergeCounterOrders?: boolean; legacyProducts?: Record<string, unknown>[]; diningModes?: Record<string, unknown>; products?: MockProduct[]; categories?: MockCategory[] } = {}) {
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; orderStatus?: string; auditor?: boolean; counterAccess?: boolean; grants?: string[]; counterOrders?: Record<string, unknown>[]; mergeCounterOrders?: boolean; legacyProducts?: Record<string, unknown>[]; diningModes?: Record<string, unknown>; products?: MockProduct[]; categories?: MockCategory[] } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null; storeCode?: string }[] = []
   let products = structuredClone(options.products ?? [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active' }])
   let categories = structuredClone(options.categories ?? [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }])
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let counterOrders = structuredClone(options.counterOrders ?? [])
-  let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', counter: { code: 'A01', name: 'Real A01' }, orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
+  const orderActionsFor = (status: string) => options.orderOperations ? ({ pending: ['accept', 'reject'], confirmed: ['reject'], paid: ['fulfill'], fulfilled: ['verify'] } as Record<string, string[]>)[status] ?? [] : []
+  const initialStatus = options.orderStatus ?? 'pending'
+  let order = { uuid: orderId, tradeOrderUuid: orderId, status: initialStatus, totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', counter: { code: 'A01', name: 'Real A01' }, orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: orderActionsFor(initialStatus), cancellationReason: null }
   const storePayload = options.diningModes ? { ...store, settings: { diningModes: options.diningModes } } : store
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -133,7 +135,8 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
     if (path.endsWith(`/orders/${orderId}`)) return respond(order)
     if (path.includes(`/orders/${orderId}/`) && method === 'POST') {
       const action = path.split('/').at(-1)!
-      order = { ...order, operationalStatus: ({ accept: 'accepted', reject: 'rejected', fulfill: 'fulfilled', verify: 'verified' } as Record<string, string>)[action]!, allowedActions: action === 'accept' ? ['fulfill'] : action === 'fulfill' ? ['verify'] : [] }
+      const status = ({ accept: 'confirmed', reject: 'cancelled', fulfill: 'fulfilled', verify: 'completed' } as Record<string, string>)[action]!
+      order = { ...order, status, allowedActions: orderActionsFor(status) }
       return respond(order)
     }
     return route.fulfill({ status: 404, json: { code: 404 } })
@@ -191,7 +194,7 @@ test('live catalog, separate variants, categories, tables and read-only orders u
   await expect(page.getByLabel('搜索全店记录', { exact: true })).toHaveCount(0)
   await expect(page.getByText('台号 A01', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '查看', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('pending_validation')
+  await expect(page.getByRole('dialog')).toContainText('pending')
   await expect(page.getByRole('dialog')).toContainText('Real A01 · A01')
   await expect(page.getByRole('button', { name: '确认结账', exact: true })).toHaveCount(0)
   expect(requests.some((request) => request.path.includes('/manage/') || request.path.includes('/payment') || request.path.includes('/app/orders'))).toBe(false)
@@ -220,9 +223,9 @@ test('store reporting summarizes orders and remembers the reporting day by store
   const earlier = new Date(Date.now() - 2 * 86_400_000).toISOString()
   await mockApi(page, { grants: ['store:order:read'] })
   await page.route('**/operations/orders?**', (route) => operationalList(route, [
-    { uuid: todayOrderId, tradeOrderUuid: todayOrderId, operationalStatus: 'accepted', status: 'confirmed', paymentStatus: null, totalAmount: 1200, currency: 'CNY', createdAt: today, counter: { code: 'A01', name: 'Real A01' }, orderSnapshot: { items: [{ productName: 'Today beef', quantity: 1, amount: 1200 }] } },
-    { uuid: historicalOrderId, tradeOrderUuid: historicalOrderId, operationalStatus: 'verified', status: 'paid', paymentStatus: 'paid', paymentMethod: 'wechat', paidAt: earlier, totalAmount: 2000, currency: 'CNY', createdAt: earlier, counter: { code: 'A02', name: 'Real A02' }, orderSnapshot: { items: [{ productName: 'Historical beef', quantity: 2, amount: 2000 }] } },
-    { uuid: '00000000-0000-4000-8000-000000000033', tradeOrderUuid: '00000000-0000-4000-8000-000000000033', operationalStatus: 'accepted', status: 'confirmed', paymentStatus: null, totalAmount: 900, currency: 'CNY', createdAt: earlier, counter: null, orderSnapshot: { items: [{ productName: 'Unsettled history', quantity: 1, amount: 900 }] } },
+    { uuid: todayOrderId, tradeOrderUuid: todayOrderId, status: 'confirmed', paymentStatus: null, totalAmount: 1200, currency: 'CNY', createdAt: today, counter: { code: 'A01', name: 'Real A01' }, orderSnapshot: { items: [{ productName: 'Today beef', quantity: 1, amount: 1200 }] } },
+    { uuid: historicalOrderId, tradeOrderUuid: historicalOrderId, status: 'paid', paymentStatus: 'paid', paymentMethod: 'wechat', paidAt: earlier, totalAmount: 2000, currency: 'CNY', createdAt: earlier, counter: { code: 'A02', name: 'Real A02' }, orderSnapshot: { items: [{ productName: 'Historical beef', quantity: 2, amount: 2000 }] } },
+    { uuid: '00000000-0000-4000-8000-000000000033', tradeOrderUuid: '00000000-0000-4000-8000-000000000033', status: 'confirmed', paymentStatus: null, totalAmount: 900, currency: 'CNY', createdAt: earlier, counter: null, orderSnapshot: { items: [{ productName: 'Unsettled history', quantity: 1, amount: 900 }] } },
   ]))
   await page.route('**/api/v1/app/orders/*', (route) => {
     const id = new URL(route.request().url()).pathname.split('/').at(-1)
@@ -282,7 +285,7 @@ test('cashier staff read counter orders with service-session permission', async 
     session: { uuid: sessionUuid, participantCount: 2, notes: null, startedAt: '2026-10-30T10:00:00+08:00', revision: 1 },
     currency: 'CNY', canEnd: false, version,
     ordersVisible: true, openAmount: 1590, orderedAmount: 1590, openOrderCount: 1, paymentHold: false,
-    orders: [{ uuid: orderUuid, status: 'confirmed', operationalStatus: 'accepted', paymentStatus: null, hasInvoice: false, currency: 'CNY', totalAmount: 1590, notes: null, createdAt: '2026-10-30T10:00:00+08:00', items: [{ specificationUuid: null, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: false, canCancel: false }],
+    orders: [{ uuid: orderUuid, status: 'confirmed', paymentStatus: null, hasInvoice: false, currency: 'CNY', totalAmount: 1590, notes: null, createdAt: '2026-10-30T10:00:00+08:00', items: [{ specificationUuid: null, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: false, canCancel: false }],
   }, {
     counter: { uuid: idleCounterId, code: 'A02', name: '中间桌', capacity: 4, enabled: true }, session: null,
     currency: 'CNY', canEnd: false, version, ordersVisible: true, openAmount: 0, orderedAmount: 0, openOrderCount: 0, paymentHold: false, orders: [],
@@ -345,7 +348,7 @@ test('cashier staff read counter orders with service-session permission', async 
   await detail.getByRole('button', { name: '关闭', exact: true }).click()
   await nav.getByRole('button', { name: '门店订单（只读）', exact: true }).click()
   await page.getByRole('button', { name: '查看', exact: true }).click()
-  for (const name of ['接单', '拒单', '完成履约', '核销', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  for (const name of ['接单', '取消订单', '完成履约', '核销', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   expect(requests.some((request) => /products|specifications|payment|refund/.test(request.path))).toBe(false)
 })
 
@@ -668,32 +671,45 @@ test('single and explicit-page batch availability use selected record versions a
   await expect(page.getByLabel('商品名称', { exact: true })).toHaveValue('Conflict input')
 })
 
-test('order operators can accept, fulfill and verify but cannot treat operational state as payment', async ({ page }) => {
+test('order operators confirm Trade pending orders without treating status as payment', async ({ page }) => {
   const requests = await mockApi(page, { orderOperations: true })
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '门店订单', exact: true }).click()
   await page.getByRole('button', { name: '查看', exact: true }).click()
-  for (const [label, action] of [['接单', 'accept'], ['完成履约', 'fulfill'], ['核销', 'verify']]) {
-    await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
-    await expect(page.locator('.resource-editor')).toContainText('不代表付款、退款或结账')
-    await page.getByRole('button', { name: '保存', exact: true }).click()
-    await expect(page.locator('.resource-editor')).toHaveCount(0)
-    expect(requests.find((request) => request.path.endsWith(`/${action}`))?.body).toMatchObject({ commandUuid: expect.any(String), version })
-  }
-  await expect(page.getByRole('dialog')).toContainText('已核销')
+  await page.getByRole('dialog').getByRole('button', { name: '接单', exact: true }).click()
+  await expect(page.locator('.resource-editor')).toContainText('不代表付款、退款或结账')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('.resource-editor')).toHaveCount(0)
+  expect(requests.find((request) => request.path.endsWith('/accept'))?.body).toMatchObject({ commandUuid: expect.any(String), version })
+  await expect(page.getByRole('dialog')).toContainText('已确认')
+  await expect(page.getByRole('dialog').getByRole('button', { name: '完成履约', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '确认结账', exact: true })).toHaveCount(0)
   expect(requests.some((request) => /payment|refund|manage/.test(request.path))).toBe(false)
 })
 
-test('rejection requires a reason and removes actions after reaching a terminal state', async ({ page }) => {
+test('order operators fulfill and complete only after Trade payment and fulfillment states', async ({ page }) => {
+  const requests = await mockApi(page, { orderOperations: true, orderStatus: 'paid' })
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '门店订单', exact: true }).click()
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  for (const [label, action] of [['完成履约', 'fulfill'], ['核销', 'verify']]) {
+    await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(page.locator('.resource-editor')).toHaveCount(0)
+    expect(requests.find((request) => request.path.endsWith(`/${action}`))?.body).toMatchObject({ commandUuid: expect.any(String), version })
+  }
+  await expect(page.getByRole('dialog')).toContainText('已完成')
+})
+
+test('cancellation requires a reason and removes actions after reaching a terminal state', async ({ page }) => {
   const requests = await mockApi(page, { orderOperations: true })
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '门店订单', exact: true }).click()
   await page.getByRole('button', { name: '查看', exact: true }).click()
-  await page.getByRole('button', { name: '拒单', exact: true }).click()
+  await page.getByRole('button', { name: '取消订单', exact: true }).click()
   await page.getByRole('button', { name: '保存', exact: true }).click()
   expect(requests.filter((request) => request.path.endsWith('/reject'))).toHaveLength(0)
-  await page.getByLabel('拒单原因', { exact: true }).fill('Kitchen closed')
+  await page.getByLabel('取消原因', { exact: true }).fill('Kitchen closed')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('.resource-editor')).toHaveCount(0)
   expect(requests.find((request) => request.path.endsWith('/reject'))?.body).toMatchObject({ reason: 'Kitchen closed', commandUuid: expect.any(String), version })

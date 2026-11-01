@@ -11,9 +11,11 @@ use App\Store\Entity\Product as CoreProduct;
 use App\Store\Entity\ProductCategory;
 use App\Store\Entity\Membership;
 use App\Store\Entity\Store;
-use App\Store\Entity\StoreOrder;
-use App\Store\Service\StoreOrderServiceInterface;
 use App\Storage\Service\MediaStorageRegistry;
+use App\Trade\Entity\Order;
+use App\Trade\Entity\OrderStoreLifecycle;
+use App\Trade\Service\OrderServiceInterface;
+use App\Trade\Service\OrderStoreLifecycleService;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Entity\Counter;
@@ -42,11 +44,12 @@ final class OperationsController extends RestController
         private readonly EntityManagerInterface $em,
         private readonly StaffCatalogService $catalog,
         private readonly StaffCommandService $commands,
-        private readonly StoreOrderServiceInterface $orders,
+        private readonly OrderServiceInterface $orders,
+        private readonly OrderStoreLifecycleService $lifecycles,
         private readonly MediaServiceInterface $media,
         private readonly MediaStorageRegistry $storage,
         private readonly LoggerInterface $logger,
-        #[Target('state_machine.store_order')] private readonly WorkflowInterface $workflow,
+        #[Target('state_machine.order')] private readonly WorkflowInterface $workflow,
     ) {}
 
     private function store(string $scopeId, string $permission): Store
@@ -137,10 +140,16 @@ final class OperationsController extends RestController
             $page = filter_var($request->query->get('page', '1'), FILTER_VALIDATE_INT);
             $limit = filter_var($request->query->get('limit', '30'), FILTER_VALIDATE_INT);
             if (!$page || $page < 1 || $page > 100000 || !$limit || $limit < 1 || $limit > 100) throw new HttpException(422, 'invalid_pagination');
-            $classes = ['products' => CoreProduct::class, 'product-categories' => ProductCategory::class, 'counters' => Counter::class, 'orders' => StoreOrder::class, 'history' => StaffOperation::class];
-            $query = $this->em->createQueryBuilder()->select('item')->from($classes[$resource], 'item');
-            if (in_array($resource, ['counters', 'history'], true)) $query->where('item.storeUuid = :store')->setParameter('store', $store->getUuid());
-            else $query->where('item.store = :store')->setParameter('store', $store);
+            $classes = ['products' => CoreProduct::class, 'product-categories' => ProductCategory::class, 'counters' => Counter::class, 'history' => StaffOperation::class];
+            if ($resource === 'orders') {
+                // Trade owns order state. The lifecycle row only establishes store ownership here.
+                $query = $this->em->createQueryBuilder()->select('item')->from(Order::class, 'item')->from(OrderStoreLifecycle::class, 'lifecycle')
+                    ->where('lifecycle.tradeOrderUuid = item.uuid')->andWhere('lifecycle.storeUuid = :store')->setParameter('store', $store->getUuid());
+            } else {
+                $query = $this->em->createQueryBuilder()->select('item')->from($classes[$resource], 'item');
+                if (in_array($resource, ['counters', 'history'], true)) $query->where('item.storeUuid = :store')->setParameter('store', $store->getUuid());
+                else $query->where('item.store = :store')->setParameter('store', $store);
+            }
             if ($resource === 'products') {
                 $query->andWhere('item.isDeleted = false')->leftJoin(Product::class, 'extension', 'WITH', 'extension.id = item.id')->orderBy('extension.sortOrder', 'ASC');
                 if ($status !== 'all') {
@@ -149,8 +158,8 @@ final class OperationsController extends RestController
                 }
             } elseif ($resource === 'orders') {
                 if ($status !== 'all') {
-                    if (!in_array($status, ['pending_validation', 'awaiting_inventory', 'accepted', 'rejected', 'fulfillment_pending', 'fulfilling', 'fulfilled', 'verified', 'cancelled'], true)) throw new HttpException(422, 'invalid_status');
-                    $query->andWhere('item.operationalStatus = :status')->setParameter('status', $status);
+                    if (!in_array($status, ['draft', 'pending', 'confirmed', 'paid', 'fulfilled', 'completed', 'cancelled', 'refunded', 'merged'], true)) throw new HttpException(422, 'invalid_status');
+                    $query->andWhere('item.status = :status')->setParameter('status', $status);
                 }
                 $query->orderBy('item.createdAt', 'DESC');
             } elseif (in_array($resource, ['product-categories', 'counters'], true)) {
@@ -161,7 +170,7 @@ final class OperationsController extends RestController
                 $query->orderBy($resource === 'counters' ? 'item.sort' : 'item.sortOrder', 'ASC');
             } else $query->orderBy('item.createdAt', 'DESC');
             if (trim($q) !== '') {
-                $fields = match ($resource) { 'products' => ['name', 'uuid'], 'product-categories' => ['name', 'slug'], 'counters' => ['name', 'code'], 'orders' => ['tradeOrderUuid', 'uuid'], default => ['actorUuid', 'action'] };
+                $fields = match ($resource) { 'products' => ['name', 'uuid'], 'product-categories' => ['name', 'slug'], 'counters' => ['name', 'code'], 'orders' => ['uuid'], default => ['actorUuid', 'action'] };
                 $query->andWhere($query->expr()->orX(...array_map(static fn(string $field): string => "LOWER(item.$field) LIKE :query ESCAPE '!'", $fields)))
                     ->setParameter('query', '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower(trim($q))).'%');
             }
@@ -182,7 +191,7 @@ final class OperationsController extends RestController
     private function row(object $item, Store $store, ?array $counterBindings = null): array
     {
         if ($item instanceof CoreProduct) return $this->catalog->product($item);
-        if ($item instanceof StoreOrder) return $this->order($item, $store, $counterBindings);
+        if ($item instanceof Order) return $this->order($item, $store, $counterBindings);
         if ($item instanceof StaffOperation) return $item->summary();
         if ($item instanceof ProductCategory) return ['uuid' => $item->getUuid(), 'name' => $item->getName(), 'slug' => $item->getSlug(), 'sortOrder' => $item->getSortOrder(), 'enabled' => $item->isEnabled()];
         if ($item instanceof Counter) return ['uuid' => $item->getUuid(), 'name' => $item->getName(), 'code' => $item->getCode(), 'capacity' => $item->getCapacity(), 'sort' => $item->getSort(), 'enabled' => $item->isEnabled()];
@@ -270,22 +279,40 @@ final class OperationsController extends RestController
                 StaffCommandService::expectVersion($data, $before['version']);
                 if (!in_array($action, $before['allowedActions'], true)) throw new HttpException(409, 'invalid_transition');
                 if ($action === 'reject' && (!is_string($data['reason'] ?? null) || trim($data['reason']) === '' || mb_strlen($data['reason']) > 500)) throw new HttpException(422, 'reason_required');
-                match ($action) {
-                    'accept' => $this->orders->accept($order),
-                    'reject' => $this->orders->reject($order, 'staff_rejected', trim($data['reason'])),
-                    'fulfill' => $this->orders->fulfill($order),
-                    'verify' => $this->orders->verify($order, $this->actor()),
-                    default => throw new HttpException(409, 'invalid_transition'),
-                };
+                switch ($action) {
+                    case 'accept':
+                        $this->lifecycles->markAccepted($order->getUuid(), $store->getUuid());
+                        $this->workflow->apply($order, 'confirm');
+                        break;
+                    case 'reject':
+                        $this->orders->cancel($order);
+                        $order->setMetadata([...($order->getMetadata() ?? []), 'staffCancellationReason' => trim($data['reason'])]);
+                        $this->workflow->apply($order, 'cancel');
+                        break;
+                    case 'fulfill':
+                        $this->orders->fulfill($order, []);
+                        $this->lifecycles->markFulfilled($order->getUuid(), $store->getUuid());
+                        $this->workflow->apply($order, 'fulfill');
+                        break;
+                    case 'verify':
+                        $this->lifecycles->markFulfilled($order->getUuid(), $store->getUuid());
+                        $this->lifecycles->markVerified($order->getUuid(), $store->getUuid());
+                        $this->workflow->apply($order, 'complete');
+                        break;
+                    default:
+                        throw new HttpException(409, 'invalid_transition');
+                }
                 return ['before' => $before, 'result' => $this->order($order, $store)];
             });
         });
     }
 
-    private function findOrder(Store $store, string $uuid): StoreOrder
+    private function findOrder(Store $store, string $uuid): Order
     {
-        $order = $this->em->getRepository(StoreOrder::class)->findOneBy(['store' => $store, 'uuid' => $uuid]);
-        if (!$order instanceof StoreOrder) throw new HttpException(404, 'order_not_found');
+        $order = $this->em->createQueryBuilder()->select('item')->from(Order::class, 'item')->from(OrderStoreLifecycle::class, 'lifecycle')
+            ->where('item.uuid = :uuid')->andWhere('lifecycle.tradeOrderUuid = item.uuid')->andWhere('lifecycle.storeUuid = :store')
+            ->setParameter('uuid', $uuid)->setParameter('store', $store->getUuid())->getQuery()->getOneOrNullResult();
+        if (!$order instanceof Order) throw new HttpException(404, 'order_not_found');
         return $order;
     }
 
@@ -293,28 +320,41 @@ final class OperationsController extends RestController
      * @param array<string, OrderCounter>|null $counterBindings
      * @return array<string, mixed>
      */
-    private function order(StoreOrder $order, Store $store, ?array $counterBindings = null): array
+    private function order(Order $order, Store $store, ?array $counterBindings = null): array
     {
         $binding = $counterBindings === null
-            ? $this->em->getRepository(OrderCounter::class)->findOneBy(['tradeOrderUuid' => $order->getTradeOrderUuid(), 'storeUuid' => $store->getUuid()])
-            : ($counterBindings[$order->getTradeOrderUuid()] ?? null);
+            ? $this->em->getRepository(OrderCounter::class)->findOneBy(['tradeOrderUuid' => $order->getUuid(), 'storeUuid' => $store->getUuid()])
+            : ($counterBindings[$order->getUuid()] ?? null);
         $actions = [];
+        $actionStatuses = [
+            'accept' => [Order::STATUS_PENDING],
+            'reject' => [Order::STATUS_DRAFT, Order::STATUS_PENDING, Order::STATUS_CONFIRMED],
+            'fulfill' => [Order::STATUS_PAID],
+            'verify' => [Order::STATUS_FULFILLED],
+        ];
         foreach (['accept', 'reject', 'fulfill', 'verify'] as $action) {
-            if ($this->isGranted('store:order:'.$action, $store) && $this->workflow->can($order, $action)
-                && ($action !== 'verify' || $order->isVerificationRequired())) $actions[] = $action;
+            if ($this->isGranted('store:order:'.$action, $store) && in_array($order->getStatus(), $actionStatuses[$action], true)) $actions[] = $action;
         }
-        // Operational DTOs never expose customer identity, delivery data or arbitrary metadata.
+        // Store operational DTOs never expose customer identity, delivery data or arbitrary metadata.
         $items = [];
-        foreach (($order->getOrderSnapshot()['items'] ?? []) as $item) {
-            if (!is_array($item)) continue;
-            $name = $item['productName'] ?? $item['productSnapshot']['name'] ?? null;
-            $quantity = $item['quantity'] ?? null;
-            if (is_string($name) && is_int($quantity) && $quantity > 0) $items[] = ['productName' => $name, 'quantity' => $quantity];
+        foreach ($order->getItems() as $item) {
+            $product = $item->getProductSnapshot();
+            $name = is_array($product) && is_string($product['name'] ?? null) ? $product['name'] : $item->getSpecificationTitle();
+            if (is_string($name) && $name !== '' && $item->getQuantity() > 0) $items[] = [
+                'specificationUuid' => $item->getSpecificationUuid(), 'productName' => $name,
+                'specificationName' => $item->getSpecificationTitle() ?? '', 'quantity' => $item->getQuantity(),
+                'unitPrice' => $item->getUnitPrice(), 'amount' => $item->getPrice(),
+            ];
         }
-        $state = ['uuid' => $order->getUuid(), 'tradeOrderUuid' => $order->getTradeOrderUuid(), 'operationalStatus' => $order->getOperationalStatus(),
+        $metadata = $order->getMetadata() ?? [];
+        $cancellationReason = $metadata['staffCancellationReason'] ?? $metadata['staffRejectionReason'] ?? null;
+        $cancellationReason = is_string($cancellationReason) ? $cancellationReason : null;
+        $state = ['uuid' => $order->getUuid(), 'tradeOrderUuid' => $order->getUuid(), 'status' => $order->getStatus(),
             'totalAmount' => $order->getTotalAmount(), 'currency' => $order->getCurrency(), 'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
             'counter' => $binding instanceof OrderCounter ? ['code' => $binding->getCounterCodeSnapshot(), 'name' => $binding->getCounterNameSnapshot()] : null,
-            'orderSnapshot' => ['items' => $items], 'verificationRequired' => $order->isVerificationRequired(), 'rejectionReason' => $order->getRejectionReason()];
+            'paymentStatus' => $order->getPaymentStatus(), 'paymentMethod' => $order->getPaymentMethod(),
+            'paidAt' => $order->getPaidAt()?->format(DATE_ATOM),
+            'orderSnapshot' => ['items' => $items], 'cancellationReason' => $cancellationReason];
         $state['version'] = StaffCommandService::version($state + ['updatedAt' => $order->getUpdatedAt()?->format(DATE_ATOM)]);
         return $state + ['allowedActions' => $actions];
     }
@@ -324,7 +364,7 @@ final class OperationsController extends RestController
     private function counterBindings(Store $store, array $rows): array
     {
         $tradeOrderUuids = [];
-        foreach ($rows as $row) if ($row instanceof StoreOrder) $tradeOrderUuids[] = $row->getTradeOrderUuid();
+        foreach ($rows as $row) if ($row instanceof Order) $tradeOrderUuids[] = $row->getUuid();
         if ($tradeOrderUuids === []) return [];
         $bindings = $this->em->getRepository(OrderCounter::class)->createQueryBuilder('binding')
             ->where('binding.storeUuid = :store')->andWhere('binding.tradeOrderUuid IN (:orders)')

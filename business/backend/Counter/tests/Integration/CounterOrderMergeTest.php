@@ -693,7 +693,6 @@ final class CounterOrderMergeTest extends KernelTestCase
         return new CounterOrderMergeService(
             $this->em, $orders, $resolver, self::getContainer()->get('state_machine.order'),
             self::getContainer()->get(CounterSessionService::class),
-            self::getContainer()->get(OrderInventoryAvailability::class),
         );
     }
 }

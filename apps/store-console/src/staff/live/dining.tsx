@@ -12,7 +12,6 @@ import './dining.css'
 
 const labels: Record<CounterCommand, MessageKey> = { update: 'updateDining', end: 'endDining', create: 'placeDining', replace: 'replaceDining', cancel: 'cancelOrder' }
 const tradeLabels: Record<string, MessageKey> = { draft: 'diningDraft', pending: 'diningPending', confirmed: 'diningConfirmed', paid: 'diningPaid', fulfilled: 'stateFulfilled', completed: 'diningCompleted', cancelled: 'stateCancelled', refunded: 'diningRefunded', merged: 'diningMerged' }
-const operationLabels: Record<string, MessageKey> = { pending_validation: 'statePendingValidation', awaiting_inventory: 'stateAwaitingInventory', accepted: 'stateAccepted', rejected: 'stateRejected', fulfillment_pending: 'stateFulfillmentPending', fulfilling: 'stateFulfilling', fulfilled: 'stateFulfilled', verified: 'stateVerified', cancelled: 'stateCancelled' }
 const effectiveDiningStatuses = new Set(['pending', 'confirmed'])
 
 function effectiveDiningOrders(table: CounterSessionView): SessionOrder[] {
@@ -279,10 +278,9 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, on
     {!table.ordersVisible ? <Notice subtle>{t('sessionOrdersRestricted')}</Notice> : <>
       <div className="dining-section-heading"><h3>{t('diningBatches')}</h3><span>{orders.length}</span></div>{!orders.length && <p className="dining-empty-orders">{t('noItems')}</p>}
       {[...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.uuid.localeCompare(b.uuid)).map((order, index) => <article className={`dining-round ${cancelMode ? 'is-cancel-selectable' : ''} ${cancelSelection.has(order.uuid) ? 'is-cancel-selected' : ''}`} key={order.uuid}>
-        <header><div className="dining-round-heading">{cancelMode && <input className="dining-cancel-checkbox" aria-label={`${t('selectOrder')} #${order.uuid.slice(0, 8).toUpperCase()}`} type="checkbox" checked={cancelSelection.has(order.uuid)} disabled={!order.canCancel} onChange={() => toggleCancelOrder(order.uuid)} />}<strong>{String(index + 1).padStart(2, '0')} · #{order.uuid.slice(0, 8)}</strong></div><StatusPill>{tradeLabels[order.status] ? t(tradeLabels[order.status]) : order.status}</StatusPill></header>
+        <header><div className="dining-round-heading">{cancelMode && <input className="dining-cancel-checkbox" aria-label={`${t('selectOrder')} #${order.uuid.slice(0, 8).toUpperCase()}`} type="checkbox" checked={cancelSelection.has(order.uuid)} disabled={!order.canCancel} onChange={() => toggleCancelOrder(order.uuid)} />}<strong>{String(index + 1).padStart(2, '0')} · #{order.uuid.slice(0, 8)}</strong></div><StatusPill>{tradeLabels[order.status] ? t(tradeLabels[order.status]) : order.status} ({order.status})</StatusPill></header>
         <p><time dateTime={order.createdAt}>{formatDiningDate(order.createdAt, locale)}</time></p>
         <p>{t('diningMode')} · {orderDiningModeName(order)}</p>
-        <p>{t('diningOperationalState')} · {order.operationalStatus ? <>{t(operationLabels[order.operationalStatus] ?? 'orderStatus')} ({order.operationalStatus})</> : t('diningProjecting')}</p>
         <p>{t('diningPaymentState')} · {order.paymentStatus ?? t('diningNoPayment')}{order.hasInvoice && ` · ${t('diningHasInvoice')}`}</p>
         <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
         {order.notes && <p className="dining-notes">{order.notes}</p>}

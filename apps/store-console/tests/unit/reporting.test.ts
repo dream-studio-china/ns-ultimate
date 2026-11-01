@@ -15,7 +15,7 @@ const now = new Date('2026-11-01T04:00:00Z')
 
 function order(overrides: Partial<ReportingOrder> & Pick<ReportingOrder, 'uuid' | 'createdAt' | 'totalAmount'>): ReportingOrder {
   return {
-    operationalStatus: 'accepted',
+    status: 'confirmed',
     currency: 'CNY',
     orderSnapshot: { items: [{ productName: 'Beef', quantity: 1, amount: overrides.totalAmount }] },
     ...overrides,
@@ -57,7 +57,7 @@ describe('reporting order selection', () => {
 
   it('excludes cancelled, rejected, refunded and merged records', () => {
     const rows = [
-      order({ uuid: 'cancelled', createdAt: '2026-11-01T01:00:00Z', totalAmount: 100, operationalStatus: 'cancelled' }),
+      order({ uuid: 'cancelled', createdAt: '2026-11-01T01:00:00Z', totalAmount: 100, status: 'cancelled' }),
       order({ uuid: 'refunded', createdAt: '2026-11-01T02:00:00Z', totalAmount: 200, status: 'refunded' }),
       order({ uuid: 'merged', createdAt: '2026-11-01T03:00:00Z', totalAmount: 300, status: 'merged' }),
       order({ uuid: 'valid', createdAt: '2026-11-01T04:00:00Z', totalAmount: 400 }),

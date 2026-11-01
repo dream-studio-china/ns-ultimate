@@ -6,9 +6,7 @@ namespace NsUltimate\Business\Store\Service;
 
 use App\Identity\Entity\User;
 use App\Store\Entity\Store;
-use App\Store\Entity\StoreOrder;
 use App\Store\DTO\StoreSettings;
-use App\Store\Service\StoreOrderServiceInterface;
 use App\Trade\DTO\StoreContext;
 use App\Trade\Entity\Order;
 use App\Trade\Service\OrderServiceInterface;
@@ -25,7 +23,6 @@ final class StaffOrderService
 {
     public function __construct(
         private readonly OrderServiceInterface $orders,
-        private readonly StoreOrderServiceInterface $storeOrders,
         #[Target('state_machine.order')] private readonly WorkflowInterface $workflow,
     ) {}
 
@@ -49,12 +46,11 @@ final class StaffOrderService
         return $this->orders->createOrder($calculation->items, $customer, $calculation->totalAmount, $store->getCurrency(), $notes, $metadata, $context);
     }
 
-    /** Cancels the Trade order and its projected Store order in the caller's transaction. */
-    public function cancel(Order $order, StoreOrder $storeOrder): void
+    /** Cancels the Trade order in the caller's transaction. */
+    public function cancel(Order $order): void
     {
         if (!$this->workflow->can($order, 'cancel')) throw new HttpException(409, 'staff_order_locked');
         $this->orders->cancel($order);
         $this->workflow->apply($order, 'cancel');
-        $this->storeOrders->cancel($storeOrder);
     }
 }

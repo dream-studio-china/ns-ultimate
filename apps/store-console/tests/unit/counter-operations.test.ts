@@ -8,7 +8,7 @@ const item = { specificationUuid: id, productName: 'Soup', specificationName: 'R
 
 describe('live counter session boundary', () => {
   it('keeps historical non-catalog lines readable without making them valid new cart lines', () => {
-    const order = { uuid: id, status: 'pending', operationalStatus: null, paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', canReplace: false, canCancel: false, items: [{ ...item, specificationUuid: null, quantity: 150 }] }
+    const order = { uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', canReplace: false, canCancel: false, items: [{ ...item, specificationUuid: null, quantity: 150 }] }
     expect(sessionOrderSchema.safeParse(order).success).toBe(true)
     expect(orderQuoteSchema.safeParse({ items: order.items, totalAmount: 1590, currency: 'USD', quoteToken: version }).success).toBe(false)
     expect(orderQuoteSchema.safeParse({ items: [item], totalAmount: Number.MAX_SAFE_INTEGER + 1, currency: 'USD', quoteToken: version }).success).toBe(false)
@@ -53,7 +53,7 @@ describe('live counter session boundary', () => {
       counter: { uuid: id, code: 'A01', name: 'Window', capacity: 4, enabled: true },
       session: { uuid: id, participantCount: 2, notes: null, startedAt: '2026-10-31T10:00:00Z', revision: 1, diningModeUuid: null, diningMode: null },
       ordersVisible: true,
-      orders: [{ uuid: id, status: 'pending', operationalStatus: null, paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', items: [item], canReplace: false, canCancel: false }],
+      orders: [{ uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', items: [item], canReplace: false, canCancel: false }],
       openAmount: 1590, orderedAmount: 1590, openOrderCount: 1, paymentHold: false,
       currency: 'USD', canEnd: false, version,
     })

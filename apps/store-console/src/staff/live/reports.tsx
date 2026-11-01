@@ -17,7 +17,6 @@ function counterLabel(order: SessionOrder, currency: string): ReportingOrder {
   return {
     uuid: order.uuid,
     tradeOrderUuid: order.uuid,
-    operationalStatus: order.operationalStatus ?? order.status,
     status: order.status,
     paymentStatus: order.paymentStatus,
     paymentMethod: null,
@@ -44,7 +43,6 @@ function mergeSessionState(orders: ReportingOrder[], tables: Awaited<ReturnType<
     const items = Array.isArray(snapshot.items) ? snapshot.items : live.items.map((item) => ({ productName: item.productName, quantity: item.quantity, amount: item.amount }))
     return {
       ...order,
-      operationalStatus: live.operationalStatus ?? order.operationalStatus,
       status: live.status,
       paymentStatus: live.paymentStatus,
       orderSnapshot: { ...snapshot, items },

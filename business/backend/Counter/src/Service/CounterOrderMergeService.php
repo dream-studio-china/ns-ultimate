@@ -17,7 +17,6 @@ use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\CounterSession;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
-use NsUltimate\Business\Inventory\Service\OrderInventoryAvailability;
 use Symfony\Component\Workflow\WorkflowInterface;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
@@ -30,7 +29,6 @@ final class CounterOrderMergeService
         #[Target('state_machine.order')]
         private readonly WorkflowInterface $orderWorkflow,
         private readonly CounterSessionService $sessions,
-        private readonly OrderInventoryAvailability $inventory,
     ) {}
 
     public function merge(Counter $counter, User $user): Order
@@ -67,13 +65,12 @@ final class CounterOrderMergeService
                 if (isset($orders[$order->getUuid()])) {
                     continue;
                 }
-                if ($order->getStatus() !== Order::STATUS_CONFIRMED) {
+                // The merge guard intentionally only permits an order after its OrderMerge
+                // link exists. Source selection therefore uses the Trade lifecycle directly.
+                if (!in_array($order->getStatus(), [Order::STATUS_PENDING, Order::STATUS_CONFIRMED], true)) {
                     continue;
                 }
-                if (!$this->inventory->hasValidInventory($order)) {
-                    throw new \DomainException('A valid inventory reservation is required for every source order.');
-                }
-                if ($order->getInvoiceId() !== null) {
+                if ($order->getInvoiceId() !== null || $order->getPaymentStatus() !== null) {
                     throw new \DomainException('An order with an existing payment invoice cannot be merged.');
                 }
                 if ($this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1) {
@@ -104,8 +101,7 @@ final class CounterOrderMergeService
                 throw new \DomainException('The counter is not in the active store context.');
             }
             $calculation = $this->orders->calculatePrices($items, $store->currency, $store->storeCode);
-            // The sources have already passed store acceptance and inventory checks.
-            // Do not send their merged settlement aggregate through those checks again.
+            // Trade owns source eligibility. Store projections never gate a merge.
             $mergeStore = new StoreContext(
                 $store->storeUuid, $store->storeCode, $store->storeName, $store->channel,
                 $store->currency, false, false, $store->requireVerification,

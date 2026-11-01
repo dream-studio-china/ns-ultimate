@@ -4,8 +4,7 @@ export type ReportPaymentMethod = 'wechat' | 'alipay' | 'cash' | 'other' | 'unre
 export interface ReportingOrder {
   uuid: string
   tradeOrderUuid?: string
-  operationalStatus: string
-  status?: string | null
+  status: string
   paymentStatus?: string | null
   paymentMethod?: string | null
   paidAt?: string | null
@@ -41,7 +40,6 @@ export interface ReportSummary {
 
 const excludedStatuses = new Set(['cancelled', 'rejected', 'refunded', 'merged'])
 const paidStatuses = new Set(['paid', 'fulfilled', 'completed'])
-const settledOperationalStatuses = new Set(['fulfilled', 'verified'])
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -57,17 +55,16 @@ function paymentSnapshot(order: ReportingOrder) {
   return { snapshot, payment }
 }
 
-/** Trade status is authoritative when available; Store operational completion is the safe fallback. */
+/** Trade order status and payment fields are authoritative for reporting. */
 export function orderPaymentState(order: ReportingOrder): { settled: boolean; method: ReportPaymentMethod } {
   const { snapshot, payment } = paymentSnapshot(order)
-  const status = order.status?.toLowerCase() ?? null
+  const status = order.status.toLowerCase()
   const paymentStatus = (order.paymentStatus ?? stringValue(snapshot.paymentStatus))?.toLowerCase() ?? null
   const snapshotStatus = stringValue(snapshot.status)?.toLowerCase() ?? null
   const settled = Boolean(order.paidAt ?? snapshot.paidAt)
     || (paymentStatus !== null && ['paid', 'partially_refunded'].includes(paymentStatus))
-    || (status !== null && paidStatuses.has(status))
+    || paidStatuses.has(status)
     || (snapshotStatus !== null && paidStatuses.has(snapshotStatus))
-    || settledOperationalStatuses.has(order.operationalStatus.toLowerCase())
   const rawMethod = (order.paymentMethod ?? stringValue(snapshot.paymentMethod) ?? stringValue(payment.method))?.toLowerCase() ?? ''
   const method: ReportPaymentMethod = rawMethod.includes('wechat') || rawMethod.includes('weixin')
     ? 'wechat'
@@ -163,8 +160,7 @@ export function isOrderInReportingWindow(order: ReportingOrder, window: Reportin
   if (Number.isNaN(created.getTime())) return false
   const orderDate = reportDateKey(created, timeZone)
   if (orderDate < window.start || orderDate > window.end) return false
-  const orderStatuses = [order.status, order.operationalStatus].filter((value): value is string => typeof value === 'string').map((value) => value.toLowerCase())
-  if (orderStatuses.some((status) => excludedStatuses.has(status)) || order.paymentStatus?.toLowerCase() === 'refunded') return false
+  if (excludedStatuses.has(order.status.toLowerCase()) || order.paymentStatus?.toLowerCase() === 'refunded') return false
   return orderDate === today || orderPaymentState(order).settled
 }
 

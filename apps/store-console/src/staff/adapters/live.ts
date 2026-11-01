@@ -61,16 +61,16 @@ export const tradeOrderRecordSchema = z.object({
   currency: currency.optional(),
 }).passthrough()
 export const orderSchema = z.object({
-  uuid, tradeOrderUuid: uuid, operationalStatus: z.string(), totalAmount: cents, currency,
+  uuid, tradeOrderUuid: uuid, status: z.string(), totalAmount: cents, currency,
   createdAt: z.string(), counter: z.object({ code: z.string(), name: z.string() }).nullable(),
-  orderSnapshot: z.unknown().optional(), version, allowedActions: z.array(z.enum(orderActions)), verificationRequired: z.boolean(), rejectionReason: z.string().nullable(),
-  status: z.string().nullable().optional(), paymentStatus: z.string().nullable().optional(),
+  orderSnapshot: z.unknown().optional(), version, allowedActions: z.array(z.enum(orderActions)), cancellationReason: z.string().nullable(),
+  paymentStatus: z.string().nullable().optional(),
   paymentMethod: z.string().nullable().optional(), paidAt: z.string().nullable().optional(),
 })
 const sessionOrderItemSchema = z.object({ specificationUuid: uuid.nullable(), productName: z.string(), specificationName: z.string(), quantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), unitPrice: cents, amount: cents })
 export const orderableItemSchema = sessionOrderItemSchema.extend({ specificationUuid: uuid, quantity: z.number().int().min(1).max(99) })
 export const sessionOrderSchema = z.object({
-  uuid, status: z.string(), operationalStatus: z.string().nullable(), paymentStatus: z.string().nullable(), hasInvoice: z.boolean(),
+  uuid, status: z.string(), paymentStatus: z.string().nullable(), hasInvoice: z.boolean(),
   currency, totalAmount: cents, notes: z.string().nullable(), createdAt: z.string(), items: z.array(sessionOrderItemSchema),
   diningModeUuid: diningModeReferenceId.nullable().optional().transform((value) => value ?? null),
   diningModeName: z.string().max(120).nullable().optional().transform((value) => value ?? null),
@@ -198,7 +198,6 @@ export function legacyCounterSession(counter: LiveCounter, orders: LegacyCounter
   const rows: SessionOrder[] = orders.map((order) => ({
     uuid: order.uuid,
     status: order.status,
-    operationalStatus: null,
     paymentStatus: settledLegacyStatuses.has(order.status) && !['cancelled', 'refunded', 'merged'].includes(order.status) ? order.status : null,
     hasInvoice: false,
     currency: order.currency || fallbackCurrency,
