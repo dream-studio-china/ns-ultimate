@@ -1,0 +1,85 @@
+html[data-admin-palette='emerald'] {
+  --admin-palette-color: #047857;
+  --admin-palette-bright: #6ee7b7;
+  --admin-palette-deep: #064e3b;
+}
+
+html[data-admin-palette='violet'] {
+  --admin-palette-color: #7c3aed;
+  --admin-palette-bright: #c4b5fd;
+  --admin-palette-deep: #4c1d95;
+}
+
+html[data-admin-palette='orange'] {
+  --admin-palette-color: #c2410c;
+  --admin-palette-bright: #fdba74;
+  --admin-palette-deep: #7c2d12;
+}
+
+html[data-admin-palette='rose'] {
+  --admin-palette-color: #be123c;
+  --admin-palette-bright: #fda4af;
+  --admin-palette-deep: #881337;
+}
+
+html[data-admin-palette='sky'] {
+  --admin-palette-color: #0369a1;
+  --admin-palette-bright: #7dd3fc;
+  --admin-palette-deep: #0c4a6e;
+}
+
+html[data-admin-palette='teal'] {
+  --admin-palette-color: #0f766e;
+  --admin-palette-bright: #5eead4;
+  --admin-palette-deep: #134e4a;
+}
+
+html[data-admin-palette='indigo'] {
+  --admin-palette-color: #4338ca;
+  --admin-palette-bright: #a5b4fc;
+  --admin-palette-deep: #312e81;
+}
+
+html[data-admin-palette='amber'] {
+  --admin-palette-color: #a16207;
+  --admin-palette-bright: #fde68a;
+  --admin-palette-deep: #713f12;
+}
+
+html[data-admin-palette='slate'] {
+  --admin-palette-color: #475569;
+  --admin-palette-bright: #cbd5e1;
+  --admin-palette-deep: #1e293b;
+}
+
+html[data-admin-palette='pink'] {
+  --admin-palette-color: #be185d;
+  --admin-palette-bright: #f9a8d4;
+  --admin-palette-deep: #831843;
+}
+
+html[data-admin-palette] {
+  --accent: var(--admin-palette-color);
+  --detail-header: linear-gradient(125deg, var(--admin-palette-deep), var(--admin-palette-color));
+  --detail-header-muted: #fff;
+  --el-color-primary: var(--admin-palette-color);
+  --el-color-primary-light-3: color-mix(in srgb, var(--el-color-primary) 70%, white);
+  --el-color-primary-light-5: color-mix(in srgb, var(--el-color-primary) 50%, white);
+  --el-color-primary-light-7: color-mix(in srgb, var(--el-color-primary) 30%, white);
+  --el-color-primary-light-8: color-mix(in srgb, var(--el-color-primary) 20%, white);
+  --el-color-primary-light-9: color-mix(in srgb, var(--el-color-primary) 10%, white);
+  --el-color-primary-dark-2: var(--admin-palette-deep);
+}
+
+html[data-admin-palette][data-theme='dark'] {
+  --accent: var(--admin-palette-bright);
+  --detail-header: var(--admin-palette-deep);
+}
+
+html[data-admin-palette] #app .sidebar-container .el-menu-item.is-active,
+html[data-admin-palette] #app .sidebar-container .el-sub-menu .el-menu-item.is-active,
+html[data-admin-palette] .el-menu--popup .el-menu-item.is-active {
+  color: #fff !important;
+  background: linear-gradient(90deg, var(--admin-palette-color), var(--admin-palette-deep)) !important;
+  box-shadow: inset 3px 0 0 var(--admin-palette-bright);
+}

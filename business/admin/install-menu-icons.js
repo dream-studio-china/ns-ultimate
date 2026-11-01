@@ -1,5 +1,6 @@
 import wechatIcon from './icons/wechat.svg?raw'
 import counterIcon from './icons/counter.svg?raw'
+import appearanceIcon from './icons/appearance.svg?raw'
 
 const svgNamespace = 'http://www.w3.org/2000/svg'
 
@@ -10,7 +11,8 @@ export default function installMenuIcons() {
 
   const icons = [
     ['wechat', wechatIcon],
-    ['counter', counterIcon]
+    ['counter', counterIcon],
+    ['appearance', appearanceIcon]
   ]
   const sprite = document.createElementNS(svgNamespace, 'svg')
   sprite.id = 'business-menu-icon-sprite'

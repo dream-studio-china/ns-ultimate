@@ -55,6 +55,13 @@ export default (configEnv: { mode: string; command: string }) => {
     },
     server: {
       ...coreConfig.server,
+      // Keep frontend /system-option routes out of the backend /system proxy.
+      proxy: coreConfig.server?.proxy && Object.fromEntries(
+        Object.entries(coreConfig.server.proxy).map(([prefix, options]) => [
+          prefix === '/system' ? '^/system(?:/|[?]|$)' : prefix,
+          options
+        ])
+      ),
       open: false,
       fs: {
         ...coreConfig.server?.fs,
