@@ -662,13 +662,15 @@ async function processCheckout(api: StoreApi, access: StoreAccess, table: Counte
     current = projectedAddition.table
   }
 
-  const openOrders = effectiveDiningOrders(current)
-  if (openOrders.length > 1) {
-    const previewMerge = async () => {
-      current = await refresh()
-      return api.previewCounterMerge(table.counter.uuid, current.version)
-    }
-    const mergeQuote = reconciliation.additions.length > 0 ? await retryCheckoutConflict(previewMerge) : await previewMerge()
+  const previewMerge = async () => {
+    current = await refresh()
+    // The checkout sheet can outlive a concurrent cancel or merge. Re-evaluate
+    // the refreshed table instead of merging from the snapshot taken on open.
+    if (effectiveDiningOrders(current).length < 2) return null
+    return api.previewCounterMerge(table.counter.uuid, current.version)
+  }
+  const mergeQuote = reconciliation.additions.length > 0 ? await retryCheckoutConflict(previewMerge) : await previewMerge()
+  if (mergeQuote) {
     const merged = await api.confirmCounterMerge(table.counter.uuid, { version: current.version, commandUuid: crypto.randomUUID(), quoteToken: mergeQuote.quoteToken })
     mergedOrderUuid = merged.orderUuid ?? null
     latestOrderUuid = mergedOrderUuid

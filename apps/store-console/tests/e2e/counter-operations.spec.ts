@@ -35,7 +35,7 @@ const diningMode = {
   ],
 }
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; collapseCheckoutOrders?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   const hasBoundDiningMode = options.diningMode || options.boundModeSnapshotMissing
@@ -94,6 +94,12 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     const list = (items: unknown[]) => respond({ items, page: Number(url.searchParams.get('page') ?? 1), total: items.length, hasNext: false })
     if (path === '/api/auth/login') return route.fulfill({ json: { access_token: 'counter-test-only', refresh_token: 'refresh-test-only', expires_in: 600 } })
     expect(request.headers().authorization).toBe('Bearer counter-test-only')
+    if (options.collapseCheckoutOrders && path === '/api/v1/test/collapse-checkout-orders') {
+      orders = [orders.find((order) => ['pending', 'confirmed'].includes(order.status))!]
+      revision += 1
+      if (session) session = { ...session, revision }
+      return respond({})
+    }
     if (path === '/api/v1/app/stores') return route.fulfill({ json: { code: 0, data: [storeView], paginator: { page: 1, has_next: false } } })
     if (path === `/api/v1/app/stores/${storeId}`) return respond(storeView)
     if (path === '/api/v1/app/products') return route.fulfill({ json: { code: 0, data: [{
@@ -736,6 +742,22 @@ test('checkout review merges confirmed orders when the session has no dining mod
   await expect(checkoutResult).toContainText('$31.80')
   expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/preview'))).toHaveLength(1)
   expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/confirm'))).toHaveLength(1)
+})
+
+test('checkout skips merge when concurrent changes leave one eligible order', async ({ page }) => {
+  const requests = await setup(page, { mergeOnCheckout: true, collapseCheckoutOrders: true })
+  await page.locator('.dining-card-title').click()
+  await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const review = page.getByRole('dialog', { name: '结账', exact: true })
+  await page.evaluate(() => fetch('/api/v1/test/collapse-checkout-orders', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer counter-test-only' },
+  }))
+  await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+
+  await expect(page.getByRole('dialog', { name: '结账结果', exact: true })).toContainText('$15.90')
+  expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/preview'))).toHaveLength(0)
+  expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/confirm'))).toHaveLength(0)
 })
 
 test('checkout without a saved mode ignores current store modes and merges directly', async ({ page }) => {
