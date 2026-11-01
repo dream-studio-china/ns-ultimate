@@ -35,7 +35,7 @@ const diningMode = {
   ],
 }
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; collapseCheckoutOrders?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; checkoutBlockedOrder?: boolean; collapseCheckoutOrders?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   const hasBoundDiningMode = options.diningMode || options.boundModeSnapshotMissing
@@ -48,7 +48,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
   const storeView = hasBoundDiningMode || options.storeModeOnly
     ? { ...store, settings: options.stringSettings ? JSON.stringify({ diningModes }) : { diningModes } }
     : store
-  type TestOrder = { uuid: string; status: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; diningModeUuid: string | null; diningModeName: string | null; items: typeof item[]; canReplace: boolean; canCancel: boolean }
+  type TestOrder = { uuid: string; status: string; paymentStatus: string | null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; diningModeUuid: string | null; diningModeName: string | null; items: typeof item[]; canReplace: boolean; canCancel: boolean }
   const testOrder = (uuid: string, status: string, quantity = 1, cancellable = status === 'pending'): TestOrder => ({ uuid, status, paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: '', createdAt: stamp, diningModeUuid: null, diningModeName: null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: status === 'pending', canCancel: cancellable })
   let orders: TestOrder[] = options.empty || options.emptySession ? [] : options.batchPending
     ? [
@@ -69,6 +69,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
           testOrder('10000000-0000-4000-8000-000000000025', 'merged'),
         ]
       : [testOrder('10000000-0000-4000-8000-000000000009', options.terminal ? 'completed' : options.customerOrder ? 'pending' : 'confirmed', options.checkoutQuantity)]
+  if (options.checkoutBlockedOrder) orders = orders.map((entry, index) => index === 0 ? { ...entry, paymentStatus: 'pending' } : entry)
   const receipts = new Map<string, Record<string, unknown>>()
   let delayedProjectionReads = 0
   let delayedAdditionProjectionReads = 0
@@ -742,6 +743,18 @@ test('checkout review merges confirmed orders when the session has no dining mod
   await expect(checkoutResult).toContainText('$31.80')
   expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/preview'))).toHaveLength(1)
   expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/confirm'))).toHaveLength(1)
+})
+
+test('checkout shows merge blockers before calling the merge API', async ({ page }) => {
+  const requests = await setup(page, { mergeOnCheckout: true, checkoutBlockedOrder: true })
+  await page.locator('.dining-card-title').click()
+  await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const review = page.getByRole('dialog', { name: '结账', exact: true })
+  await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+
+  await expect(page.getByText('订单 #10000000 已有支付记录（pending），不能合并。', { exact: true }).last()).toBeVisible()
+  expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/preview'))).toHaveLength(0)
+  expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/confirm'))).toHaveLength(0)
 })
 
 test('checkout skips merge when concurrent changes leave one eligible order', async ({ page }) => {

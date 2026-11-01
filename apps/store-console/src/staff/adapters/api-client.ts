@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 const tokensSchema = z.object({ access_token: z.string().min(1), refresh_token: z.string().min(1), expires_in: z.number().positive() })
 const storeUuidSchema = z.string().uuid()
-const envelopeSchema = z.object({ code: z.number(), data: z.unknown().optional(), paginator: z.unknown().optional() })
+const errorBodySchema = z.object({ message: z.string().min(1).max(100).optional() }).passthrough()
+const envelopeSchema = errorBodySchema.extend({ code: z.number(), data: z.unknown().optional(), paginator: z.unknown().optional() })
 const paginatorSchema = z.object({ page: z.number().int().positive(), has_next: z.boolean() })
 export const STAFF_TOKEN_STORAGE_KEY = 'ns-store-console.auth.tokens'
 export const STAFF_STORE_STORAGE_KEY = 'ns-store-console.auth.store'
@@ -21,7 +22,11 @@ function browserStorage(): PersistedStorage | null {
 }
 
 export class ApiError extends Error {
-  constructor(public readonly kind: 'unauthorized' | 'forbidden' | 'network' | 'invalid' | 'request', public readonly status = 0) {
+  constructor(
+    public readonly kind: 'unauthorized' | 'forbidden' | 'network' | 'invalid' | 'request',
+    public readonly status = 0,
+    public readonly serverMessage?: string,
+  ) {
     super(kind)
   }
 }
@@ -90,11 +95,17 @@ export class ApiClient {
       })
     } catch { throw new ApiError('network') }
   }
-  private check(response: Response) {
-    if (!response.ok) throw new ApiError(response.status === 401 ? 'unauthorized' : response.status === 403 ? 'forbidden' : 'request', response.status)
+  private async check(response: Response) {
+    if (response.ok) return
+    let serverMessage: string | undefined
+    try {
+      const parsed = errorBodySchema.safeParse(await response.clone().json())
+      if (parsed.success) serverMessage = parsed.data.message
+    } catch { /* Some upstream failures do not include a JSON body. */ }
+    throw new ApiError(response.status === 401 ? 'unauthorized' : response.status === 403 ? 'forbidden' : 'request', response.status, serverMessage)
   }
   private async json(response: Response): Promise<unknown> {
-    this.check(response)
+    await this.check(response)
     try { return await response.json() } catch { throw new ApiError('invalid') }
   }
   private expire() {
@@ -150,12 +161,12 @@ export class ApiClient {
       if (epoch !== this.epoch) throw new ApiError('unauthorized')
       if (response.status === 401) this.expire()
     }
-    this.check(response)
+    await this.check(response)
     if (response.status === 204) return undefined
     const parsed = envelopeSchema.safeParse(await this.json(response))
     if (epoch !== this.epoch) throw new ApiError('unauthorized')
     if (!parsed.success) throw new ApiError('invalid')
-    if (parsed.data.code !== 0) throw new ApiError('request', response.status)
+    if (parsed.data.code !== 0) throw new ApiError('request', response.status, parsed.data.message)
     return parsed.data
   }
   async data<T>(path: string, schema: z.ZodType<T>, method = 'GET', body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
@@ -176,6 +187,6 @@ export class ApiClient {
     // Invalidate local work immediately; an in-flight refresh cannot restore this session.
     this.expire()
     this.forgetRememberedStore()
-    if (tokens) this.check(await this.send('/api/auth/logout', 'POST', tokens, tokens.access_token))
+    if (tokens) await this.check(await this.send('/api/auth/logout', 'POST', tokens, tokens.access_token))
   }
 }

@@ -75,6 +75,8 @@ export const sessionOrderSchema = z.object({
   diningModeUuid: diningModeReferenceId.nullable().optional().transform((value) => value ?? null),
   diningModeName: z.string().max(120).nullable().optional().transform((value) => value ?? null),
   canReplace: z.boolean(), canCancel: z.boolean(),
+  changeBlockedReason: z.string().max(80).nullable().optional().transform((value) => value ?? null),
+  replaceBlockedReason: z.string().max(80).nullable().optional().transform((value) => value ?? null),
 })
 const diningModeSnapshotSchema = z.unknown().nullable().optional().superRefine((value, context) => {
   if (value != null && normalizeDiningMode(value) === null) context.addIssue({ code: 'custom', message: 'Invalid dining mode snapshot' })
@@ -215,6 +217,8 @@ export function legacyCounterSession(counter: LiveCounter, orders: LegacyCounter
     })),
     canReplace: false,
     canCancel: false,
+    changeBlockedReason: null,
+    replaceBlockedReason: null,
   }))
   const orderedAmount = orders.reduce((total, order) => total + order.totalAmount, 0)
   const pendingOrders = orders.filter((order) => !settledLegacyStatuses.has(order.status))

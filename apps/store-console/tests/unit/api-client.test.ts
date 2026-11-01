@@ -72,6 +72,19 @@ describe('staff API transport', () => {
     await expect(client.request('/api/items')).rejects.toMatchObject({ kind: 'invalid' })
     await expect(client.list('/api/items', z.string(), 1)).rejects.toMatchObject({ kind: 'invalid' })
   })
+  it('preserves the backend error code for actionable command conflicts', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json(tokens()))
+      .mockResolvedValueOnce(json({ code: 409, message: 'staff_order_locked' }, 409))
+    const client = new ApiClient(fetcher)
+    await client.login('staff', 'test-only')
+
+    await expect(client.request('/api/merge', 'POST', {})).rejects.toMatchObject({
+      kind: 'request',
+      status: 409,
+      serverMessage: 'staff_order_locked',
+    })
+  })
   it('does not restore tokens from a refresh that finishes after logout', async () => {
     const refresh = deferred<Response>()
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async (path) => {

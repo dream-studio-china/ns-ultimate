@@ -40,6 +40,14 @@ export function LiveSheet({ children, toolbar, ...props }: { children: ReactNode
 export function errorKey(error: unknown): MessageKey {
   if (error instanceof StoreConnectionError && error.step === 'checkMembership' && error.status === 404) return 'noMembership'
   if (!(error instanceof ApiError)) return 'invalidResponse'
+  if (error.serverMessage === 'stale_record') return 'staleRecord'
+  if (error.serverMessage === 'staff_order_locked') return 'mergeOrderLocked'
+  if (error.serverMessage === 'staff_order_item_changed') return 'mergeItemChanged'
+  if (error.serverMessage === 'staff_order_item_unavailable') return 'mergeItemUnavailable'
+  if (error.serverMessage === 'staff_order_store_unavailable') return 'mergeStoreUnavailable'
+  if (error.serverMessage === 'staff_order_quote_changed') return 'mergeQuoteChanged'
+  if (error.serverMessage === 'invalid_staff_order_quote') return 'mergeQuoteInvalid'
+  if (error.serverMessage === 'counter_session_changed') return 'staleRecord'
   if (error.status === 409) return 'conflictingRecord'
   if (error.status === 422) return 'validInput'
   return { unauthorized: 'sessionExpired', forbidden: 'noPermission', network: 'networkFailed', invalid: 'invalidResponse', request: 'requestFailed' }[error.kind] as MessageKey

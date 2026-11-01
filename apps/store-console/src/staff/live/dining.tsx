@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Button } from 'antd-mobile'
+import { Button, Dialog } from 'antd-mobile'
 import { ArrowLeft, ArrowRight, ChevronDown, Clock3, CreditCard, LayoutGrid, Minus, Pencil, Plus, Printer, ReceiptText, RotateCcw, UsersRound } from 'lucide-react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, legacyCounterSession, StoreApi, type StoreAccess, type CounterSessionView, type SessionOrder, type OrderQuote, type OrderCart, type CounterCommand, type LegacyCatalogItem, type LiveCounter } from '../adapters/live'
 import { availableDiningModes, diningModeLabel, isChoiceRuleCandidate, isChoiceSelectionBlocked, normalizeDiningModes, resolveBoundDiningMode, ruleQuantity, validateDiningRules, type ChoiceDiningRule, type DiningLine, type DiningMode, type DiningRule, type DiningRuleIssue, type FixedDiningRule, type PerGuestDiningRule } from '../dining-mode'
 import { reconcileCheckoutQuantities } from '../checkout-reconciliation'
 import { checkoutPaymentMethods, type CheckoutPaymentMethod } from '../checkout-payment'
+import { checkoutMergeBlockers, type CheckoutMergeBlocker } from '../checkout-merge'
 import { ApiError } from '../adapters/api-client'
 import { EditorPreview, EditorSheet, errorKey, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, usePageRefresh } from './ui'
 import './dining.css'
@@ -621,7 +622,48 @@ function checkoutDisplayLines(table: CounterSessionView): CheckoutDisplayLine[] 
   return [...merged.values()]
 }
 
-async function processCheckout(api: StoreApi, access: StoreAccess, table: CounterSessionView, lines: ModernCartLine[], mode: DiningMode | null, participantCount: number | null): Promise<CounterSessionView> {
+class CheckoutMergePreflightError extends Error {
+  constructor(public readonly reasons: string[]) {
+    super('checkout_merge_preflight')
+  }
+}
+
+function mergeBlockedReason(blocker: CheckoutMergeBlocker, t: (key: MessageKey) => string): string {
+  const order = 'orderUuid' in blocker ? blocker.orderUuid.slice(0, 8).toUpperCase() : undefined
+  const orderLabel = order ? `#${order}` : ''
+  switch (blocker.code) {
+    case 'table_disabled': return t('mergeBlockedTableDisabled')
+    case 'session_missing': return t('mergeBlockedSessionMissing')
+    case 'payment_hold': return t('mergeBlockedPaymentHold')
+    case 'order_limit': return t('mergeBlockedOrderLimit')
+    case 'too_few_orders': return t('mergeBlockedTooFewOrders').replace('{count}', String(blocker.count))
+    case 'no_items': return t('mergeBlockedNoItems')
+    case 'order_status': return t('mergeBlockedOrderStatus').replace('{order}', orderLabel).replace('{status}', blocker.status)
+    case 'payment_status': return t('mergeBlockedPaymentStatus').replace('{order}', orderLabel).replace('{status}', blocker.paymentStatus)
+    case 'invoice': return t('mergeBlockedInvoice').replace('{order}', orderLabel)
+    case 'invalid_item': return t('mergeBlockedInvalidItem').replace('{order}', orderLabel).replace('{item}', `${blocker.productName}${blocker.specificationName ? ` · ${blocker.specificationName}` : ''}`)
+    case 'product_limit': return t('mergeBlockedProductLimit').replace('{count}', String(blocker.count))
+    case 'quantity_limit': return t('mergeBlockedQuantityLimit').replace('{item}', `${blocker.productName}${blocker.specificationName ? ` · ${blocker.specificationName}` : ''}`).replace('{count}', String(blocker.quantity))
+    case 'order_ineligible': {
+      const reason = blocker.reason === 'payment_started' ? t('mergeReasonPaymentStarted')
+        : blocker.reason === 'unsupported_order_items' ? t('mergeReasonUnsupportedItems')
+          : t('mergeReasonOrderIneligible')
+      return t('mergeBlockedOrderIneligible').replace('{order}', orderLabel).replace('{reason}', reason)
+    }
+  }
+}
+
+function assertCheckoutMergeable(table: CounterSessionView, t: (key: MessageKey) => string, includeAggregate = true) {
+  const blockers = checkoutMergeBlockers(table, includeAggregate)
+  if (blockers.length > 0) throw new CheckoutMergePreflightError(blockers.map((blocker) => mergeBlockedReason(blocker, t)))
+}
+
+function preflightExistingMergeOrders(table: CounterSessionView, t: (key: MessageKey) => string) {
+  const blockers = checkoutMergeBlockers(table, false).filter((blocker) => blocker.code !== 'too_few_orders')
+  if (blockers.length > 0) throw new CheckoutMergePreflightError(blockers.map((blocker) => mergeBlockedReason(blocker, t)))
+}
+
+async function processCheckout(api: StoreApi, access: StoreAccess, table: CounterSessionView, lines: ModernCartLine[], mode: DiningMode | null, participantCount: number | null, t: (key: MessageKey) => string): Promise<CounterSessionView> {
   const refresh = () => loadCounterSession(api, access, table.counter.uuid)
   let current = table
   const participantManagedByMode = Boolean(mode && (
@@ -647,6 +689,9 @@ async function processCheckout(api: StoreApi, access: StoreAccess, table: Counte
   let latestOrderUuid: string | null = null
 
   if (reconciliation.additions.length > 0) {
+    // Reject known-ineligible existing orders before creating another round that
+    // would otherwise be left behind when the subsequent merge fails.
+    preflightExistingMergeOrders(current, t)
     // Additions follow the customer ordering path: create a separate Trade Order
     // directly. The event projection binds it to this counter before the merge.
     const created = await api.legacyCreateOrderFromCart(
@@ -667,6 +712,7 @@ async function processCheckout(api: StoreApi, access: StoreAccess, table: Counte
     // The checkout sheet can outlive a concurrent cancel or merge. Re-evaluate
     // the refreshed table instead of merging from the snapshot taken on open.
     if (effectiveDiningOrders(current).length < 2) return null
+    assertCheckoutMergeable(current, t)
     return api.previewCounterMerge(table.counter.uuid, current.version)
   }
   const mergeQuote = reconciliation.additions.length > 0 ? await retryCheckoutConflict(previewMerge) : await previewMerge()
@@ -719,6 +765,7 @@ async function processCheckout(api: StoreApi, access: StoreAccess, table: Counte
 }
 
 type CheckoutStage = { kind: 'rule'; index: number } | { kind: 'review' } | { kind: 'result' }
+type CheckoutError = { key: MessageKey } | { title: MessageKey; details: string[] }
 
 function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: StoreAccess; table: CounterSessionView; onClose: () => void }) {
   const { t, locale } = useI18n()
@@ -730,7 +777,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   const [catalog, setCatalog] = useState<{ items: LegacyCatalogItem[]; loading: boolean; error: MessageKey | null }>({ items: [], loading: Boolean(diningMode), error: null })
   const [result, setResult] = useState<CounterSessionView | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<MessageKey | null>(null)
+  const [error, setError] = useState<CheckoutError | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null)
   const originalLines = useMemo(() => checkoutCartLines(table), [table])
   const originalDisplayLines = useMemo(() => checkoutDisplayLines(table), [table])
@@ -821,13 +868,23 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   }
   const submit = async () => {
     if (busy) return
-    if (!navigator.onLine) { setError('offline'); return }
+    if (!navigator.onLine) { setError({ key: 'offline' }); return }
     setBusy(true)
     setError(null)
     try {
-      setResult(await processCheckout(api, access, table, lines, diningMode, participantCount))
+      setResult(await processCheckout(api, access, table, lines, diningMode, participantCount, t))
     } catch (cause) {
-      setError(errorKey(cause))
+      if (cause instanceof CheckoutMergePreflightError) {
+        setError({ title: 'mergePreflightTitle', details: cause.reasons })
+        await Dialog.alert({
+          title: t('mergePreflightTitle'),
+          content: <ul className="checkout-merge-blockers">{cause.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>,
+        })
+      } else {
+        const key = errorKey(cause)
+        setError({ key })
+        await Dialog.alert({ title: t('mergePreflightTitle'), content: t(key) })
+      }
     } finally {
       setBusy(false)
     }
@@ -843,7 +900,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
       : <div className="dining-confirm-bar">{checkoutRules.length > 0 && <Button disabled={busy} onClick={() => setRuleIndex(checkoutRules.length - 1)}><ArrowLeft size={16} />{t('back')}</Button>}<Button block color="primary" loading={busy} disabled={busy} onClick={() => void submit()}>{t('checkoutConfirmAndProcess')}</Button></div>
 
   return <LiveSheet open title={t(stage.kind === 'result' ? 'checkoutResultTitle' : 'checkoutDining')} className="dining-settlement dining-checkout-flow" onClose={() => { if (!busy) onClose() }} footer={footer}>
-    {error && <Notice>{t(error)}</Notice>}
+    {error && <Notice title={'title' in error ? error.title : undefined}>{'key' in error ? t(error.key) : <ul className="checkout-merge-blockers">{error.details.map((detail) => <li key={detail}>{detail}</li>)}</ul>}</Notice>}
     {stage.kind === 'rule' && <section className="checkout-rule-step" aria-label={activeRuleTitle}>
       <header><div><span>{t('checkoutRuleStep').replace('{current}', String(stage.index + 1)).replace('{total}', String(checkoutRules.length))}</span><h3>{activeRuleTitle}</h3></div>{diningMode && <small>{diningMode.name}</small>}</header>
       {activeRule?.type === 'confirm_participants' && <div className="checkout-participant-review"><p>{participantCount === null ? t('checkoutParticipantsMissing') : t('checkoutParticipantsValue').replace('{count}', String(participantCount))}</p><div className="dining-guest-quick" role="group" aria-label={t('diningGuestQuick')}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((value) => <button type="button" key={value} className={participantCount === value ? 'is-active' : ''} aria-pressed={participantCount === value} onClick={() => setParticipantCount(value)}>{value}</button>)}</div><label className="dining-guest-input"><span>{t('diningOtherGuests')}</span><input aria-label={t('diningGuestCount')} inputMode="numeric" pattern="[0-9]*" type="number" min={1} max={100} step={1} value={participantCount ?? ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = Number(event.target.value); setParticipantCount(Number.isInteger(value) && value >= 1 ? Math.min(100, value) : null) }} /></label></div>}
