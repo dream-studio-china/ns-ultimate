@@ -47,6 +47,38 @@ export default {
       ]
     },
     {
+      path: '/huifu-configuration',
+      name: 'HuifuConfiguration',
+      component: Layout,
+      meta: {
+        title: t('Huifu configuration'),
+        icon: 'el-icon-money',
+        roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
+      },
+      children: [
+        ...r('HuifuProviderProfile', t('Huifu provider profiles')),
+        ...r('HuifuMerchant', t('Huifu merchants')),
+        ...r('HuifuMerchantStoreGrant', t('Huifu merchant grants')),
+        ...r('StoreHuifuSetting', t('Store Huifu settings')),
+        ...r('HuifuPosDevice', t('Huifu POS devices'))
+      ]
+    },
+    {
+      path: '/huifu-transactions',
+      name: 'HuifuTransactions',
+      component: Layout,
+      meta: {
+        title: t('Huifu transactions'),
+        icon: 'el-icon-tickets',
+        roles: ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']
+      },
+      children: [
+        ...r('HuifuPaymentAttempt', t('Huifu payment attempts')),
+        ...r('HuifuRefund', t('Huifu refunds')),
+        ...r('HuifuPosReceipt', t('Huifu POS receipts'))
+      ]
+    },
+    {
       path: '/counter-management',
       name: 'CounterManagement',
       component: Layout,
