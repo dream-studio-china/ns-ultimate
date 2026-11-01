@@ -647,12 +647,18 @@ async function processCheckout(api: StoreApi, access: StoreAccess, table: Counte
   let latestOrderUuid: string | null = null
 
   if (reconciliation.additions.length > 0) {
-    const additionCart: OrderCart = { version: current.version, items: reconciliation.additions, notes, ...(diningModeUuid ? { diningModeUuid } : {}) }
-    const additionQuote = await api.orderQuote(table.counter.uuid, additionCart)
-    const existingUuids = new Set(effectiveDiningOrders(current).map((order) => order.uuid))
-    const created = await api.counterCommand(table.counter.uuid, 'create', { ...additionCart, quoteToken: additionQuote.quoteToken, commandUuid: crypto.randomUUID() })
-    latestOrderUuid = created.orderUuid ?? null
-    const projectedAddition = await waitForCheckoutOrder(api, access, table.counter.uuid, (order) => created.orderUuid ? order.uuid === created.orderUuid : !existingUuids.has(order.uuid))
+    // Additions follow the customer ordering path: create a separate Trade Order
+    // directly. The event projection binds it to this counter before the merge.
+    const created = await api.legacyCreateOrderFromCart(
+      access.store.code,
+      table.counter.uuid,
+      current.currency,
+      reconciliation.additions,
+      notes,
+      mode ?? undefined,
+    )
+    latestOrderUuid = created.uuid
+    const projectedAddition = await waitForCheckoutOrder(api, access, table.counter.uuid, (order) => order.uuid === created.uuid)
     current = projectedAddition.table
   }
 
@@ -1000,11 +1006,16 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
   }
   const submitDirectAdd = async () => {
     setAttempted(true)
-    // Keep the server's price, availability and version check, but do not interrupt
-    // an add-round flow with a separate quote review. The create command still requires
-    // the resulting short-lived quote token.
-    const currentQuote = await api.orderQuote(table.counter.uuid, cart)
-    await api.counterCommand(table.counter.uuid, 'create', { ...cart, quoteToken: currentQuote.quoteToken, commandUuid })
+    // Additions are independent Trade Orders. Create them through the same endpoint
+    // as the customer ordering app; there is no counter quote step for an add-round.
+    await api.legacyCreateOrderFromCart(
+      access.store.code,
+      table.counter.uuid,
+      table.currency,
+      cart.items,
+      cart.notes,
+      diningMode.selected ?? undefined,
+    )
   }
   const choiceRules = diningMode.selected?.rules.filter((rule): rule is ChoiceDiningRule => rule.type === 'choice_group') ?? []
   const invalidRules = new Set(issues.map((issue) => issue.ruleUuid))

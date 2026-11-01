@@ -117,7 +117,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     }
     if (method === 'POST' && path.endsWith('/merge/preview')) {
       expect(body!.version).toBe(version())
-      const sources = orders.filter((order) => order.status === 'confirmed')
+      const sources = orders.filter((order) => ['pending', 'confirmed'].includes(order.status))
       expect(sources.length).toBeGreaterThanOrEqual(2)
       const quantity = sources.flatMap((order) => order.items).reduce((sum, line) => sum + line.quantity, 0)
       const totalAmount = sources.reduce((sum, order) => sum + order.totalAmount, 0)
@@ -130,12 +130,12 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     if (method === 'POST' && path.endsWith('/merge/confirm')) {
       expect(body!.version).toBe(version())
       expect(body!.quoteToken).toBe('f'.repeat(64))
-      const sources = orders.filter((order) => order.status === 'confirmed')
+      const sources = orders.filter((order) => ['pending', 'confirmed'].includes(order.status))
       expect(sources.length).toBeGreaterThanOrEqual(2)
       const quantity = sources.flatMap((order) => order.items).reduce((sum, line) => sum + line.quantity, 0)
       const totalAmount = sources.reduce((sum, order) => sum + order.totalAmount, 0)
       const target: TestOrder = { ...testOrder('10000000-0000-4000-8000-000000000019', 'confirmed', quantity), totalAmount, canReplace: !options.delayedCheckoutProjection }
-      orders = [...orders.map((order) => order.status === 'confirmed' ? { ...order, status: 'merged', canReplace: false, canCancel: false } : order), target]
+      orders = [...orders.map((order) => ['pending', 'confirmed'].includes(order.status) ? { ...order, status: 'merged', canReplace: false, canCancel: false } : order), target]
       revision += 1
       if (session) session = { ...session, revision }
       return respond({ counterUuid: counterId, sessionUuid: sessionId, orderUuid: target.uuid })
@@ -178,7 +178,9 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       if (metadata.diningModeUuid === diningModeId) session = { ...session, participantCount, diningModeUuid: diningModeId, diningMode, revision }
       else if (participantCount !== session.participantCount) session = { ...session, participantCount, revision }
       const uuid = `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
-      orders.push({ uuid, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes ?? ''), createdAt: stamp, diningModeUuid: metadata.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: metadata.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
+      const createdOrder: TestOrder = { uuid, status: options.confirmedCheckoutAdditions ? 'confirmed' : 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes ?? ''), createdAt: stamp, diningModeUuid: metadata.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: metadata.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true }
+      if (options.delayedCheckoutAdditionProjection) delayedAddition = createdOrder
+      else orders.push(createdOrder)
       return respond({ uuid })
     }
     if (method === 'POST' && path.includes('/counter-operations/counters/')) {
@@ -770,7 +772,7 @@ test('checkout resolves the bound mode when the session response omits its snaps
 })
 
 test('checkout additions create a separate order and then merge it with the table orders', async ({ page }) => {
-  const requests = await setup(page, { diningMode: true, confirmedCheckoutAdditions: true, delayedCheckoutAdditionProjection: true })
+  const requests = await setup(page, { diningMode: true, delayedCheckoutAdditionProjection: true })
   await page.locator('.dining-card-title').click()
   await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
   const review = page.getByRole('dialog', { name: '结账', exact: true })
@@ -781,14 +783,20 @@ test('checkout additions create a separate order and then merge it with the tabl
   await review.getByRole('button', { name: '最终确认', exact: true }).click()
   await expect(review.locator('.checkout-final-lines.is-original > li').filter({ hasText: 'Soup' }).first().locator('em')).toHaveText('+1')
   await expect(review.locator('.checkout-final-lines.is-addition')).toHaveCount(0)
+  expect(requests.some((request) => request.path.endsWith('/orders/quote'))).toBe(false)
   expect(requests.some((request) => request.path.endsWith('/orders/create'))).toBe(false)
   await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
   const checkoutResult = page.getByRole('dialog', { name: '结账结果', exact: true })
   await expect(checkoutResult).toContainText('订单整理完成')
   await expect(checkoutResult).toContainText('#10000000')
   await expect(checkoutResult).toContainText('$31.80')
-  const create = requests.find((request) => request.path.endsWith('/orders/create'))!
-  expect(create.body).toMatchObject({ items: [{ specificationUuid: specId, quantity: 1 }] })
+  const create = requests.find((request) => request.path === '/api/v1/app/orders')!
+  expect(create.body).toMatchObject({
+    items: [{ specificationId: 1, quantity: 1 }],
+    metadata: { counterUuid: counterId, diningModeUuid: diningModeId, diningModeName: 'Hotpot' },
+  })
+  expect(requests.some((request) => request.path.endsWith('/orders/quote'))).toBe(false)
+  expect(requests.some((request) => request.path.endsWith('/orders/create'))).toBe(false)
   expect(requests.filter((request) => request.path.endsWith('/merge/preview'))).toHaveLength(1)
   expect(requests.filter((request) => request.path.endsWith('/merge/confirm'))).toHaveLength(1)
   expect(requests.some((request) => request.path.endsWith('/orders/replace'))).toBe(false)
