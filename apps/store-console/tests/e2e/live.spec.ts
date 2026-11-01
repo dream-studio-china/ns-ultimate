@@ -1031,7 +1031,7 @@ test('login failures show actionable status-specific messages', async ({ page })
     [401, '账号或密码错误，请重新输入。'],
     [403, '当前账号暂时不能登录，请确认手机号已验证或联系管理员。'],
     [429, '登录尝试过于频繁，请等待约 1 分钟后重试。'],
-    [503, '登录服务暂时不可用，请稍后重试。'],
+    [503, '登录服务暂时不可用，请稍后重试。 (HTTP 503)'],
   ] as const
 
   for (const [nextStatus, message] of cases) {
