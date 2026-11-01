@@ -7,7 +7,7 @@
 - `business/admin/router.js` exports `{ add, replace, remove }`.
 - `business/admin/config/collections/` follows the core collection layout. Each entity file (for example, `dummy/Dummy.js`) default-exports an entity-name-to-CRUD-config object; `business/admin/config/index.js` eagerly collects these files and exports `{ add, replace, remove }`.
 - The optional `Dummy` example adds its admin menu and CRUD definition; its API is available at `/api/v1/manage/dummies` and is not required for the composition contract.
-- `business/admin/i18n/` contains one translation resource per supported locale. `integration/admin/i18n.js` overlays business keys on the core translator while preserving core locale selection and fallback behavior.
+- `business/admin/i18n/` contains one translation resource per supported locale. `integration/admin/i18n.js` overlays business keys on the core translator while preserving core locale selection and fallback behavior. `business/admin/i18n/authorization.js` additionally maps seeded authorization codes to localized display names.
 - `integration/admin/config.ts` supplies the core's `{ routes, entities }` shape to the exact `@/config` import. The Vite config also redirects only `@/i18n` to the translation overlay.
 
 ## Rules
@@ -21,5 +21,6 @@ The composed Vite config reads environment defaults and overrides from `integrat
 - Product's business form explicitly configures its Store relation with `valueKey: 'uuid'`. Both option values and edit hydration must use the Store UUID, matching the Product management API; Doctrine's numeric association ID is not the write identifier for this field.
 - Custom business pages must be imported explicitly from business routes; core view auto-discovery does not scan the business directory.
 - The composed Vite configuration resolves `qrcode` from the admin core's existing dependency installation for business paper previews. QR generation is local; this adds no core source changes or new dependency.
+- Authorization permission and role names are display-localized by stable `code` from `business/admin/i18n/authorization.js` (`permission.<code>` and `role.<code>`). Only list, detail, permission-tag, permission-dialog and role-selector labels are translated. Form inputs, submitted payloads, stored names and authorization checks keep the backend values. Unknown codes and the English locale fall back to the API-provided name, so custom permissions and seed label changes remain visible without translation edits. Search and sorting continue to use the backend values, not the translated labels.
 
 Run the dependency-free composition tests with `node --test integration/admin/*.test.mjs`. Build the composed application with `make build`; interactive business flows require separate runtime validation.
