@@ -319,6 +319,7 @@ test('staff can clear an opened table before it has any orders', async ({ page }
   const requests = await setup(page, { emptySession: true })
   await page.locator('.dining-card-title').click()
   const detail = page.getByRole('dialog', { name: '查看桌次' })
+  await expect(detail.locator('.dining-detail-hero')).toContainText('空闲')
   await expect(detail.locator('.dining-detail-hero')).toContainText('4 位')
   await expect(detail.getByRole('button', { name: '结束桌次', exact: true })).toHaveCount(0)
   await detail.getByRole('button', { name: '清空点餐', exact: true }).click()
@@ -356,6 +357,7 @@ test('an edit-only employee can modify a customer order with a reviewed quote an
 
 test('session readers without counter-order grants see the session but no order rows or amounts', async ({ page }) => {
   const requests = await setup(page, { sessionOnly: true })
+  await expect(page.locator('.dining-card')).toContainText('用餐中')
   await page.locator('.dining-card-title').click()
   await expect(page.getByRole('dialog').getByText('当前账号可查看场次，但没有关联订单及金额的读取权限。', { exact: true })).toBeVisible()
   await expect(page.locator('.dining-round')).toHaveCount(0)
@@ -423,8 +425,11 @@ test('staff can select and cancel eligible unsettled orders for one table after 
   await expect(detail.locator('.dining-round')).toHaveCount(0)
   await expect(detail.getByRole('button', { name: '取消订单', exact: true })).toHaveCount(0)
   await expect(page.locator('.dining-card')).not.toHaveClass(/has-orders/)
-  await expect(page.locator('.dining-card')).toContainText('这张桌台还没有订单')
+  await expect(page.locator('.dining-card')).toContainText('空闲')
+  await expect(page.locator('.dining-card')).toContainText('暂无订单')
   await expect(page.locator('.dining-card')).not.toContainText('3 批次')
+  await expect(page.locator('.dining-summary-item').filter({ hasText: '就餐中' })).toContainText('0张')
+  await expect(page.locator('.dining-summary-item').filter({ hasText: '空闲' })).toContainText('1张')
 
   const writes = cancelRequests()
   expect(writes.map((request) => request.body?.orderUuid)).toEqual([

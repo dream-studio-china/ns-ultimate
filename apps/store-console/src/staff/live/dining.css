@@ -20,7 +20,6 @@
 .dining-card { display: flex; flex-direction: column; min-width: 0; padding: 14px; border: 1px solid var(--ws-line); border-radius: 17px; background: var(--ws-surface); box-shadow: 0 3px 16px #243b2406; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
 .dining-card:hover { border-color: color-mix(in srgb, var(--brand) 28%, var(--ws-line)); box-shadow: 0 6px 20px color-mix(in srgb, var(--brand) 7%, transparent); transform: translateY(-1px); }
 .dining-card:focus-within { outline: 2px solid color-mix(in srgb, var(--brand) 28%, transparent); outline-offset: 2px; }
-.dining-card.has-session { border-color: color-mix(in srgb, var(--brand) 18%, var(--ws-line)); }
 .dining-card.has-orders { border-color: color-mix(in srgb, var(--brand) 46%, var(--ws-line)); background: linear-gradient(155deg, color-mix(in srgb, var(--ws-soft) 88%, white) 0%, color-mix(in srgb, var(--theme-tint) 68%, white) 100%); box-shadow: 0 8px 24px color-mix(in srgb, var(--brand) 9%, transparent); }
 .dining-card.is-disabled { opacity: .72; }
 .dining-card-heading, .dining-detail-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
