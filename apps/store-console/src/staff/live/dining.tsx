@@ -282,7 +282,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, on
         <header><div className="dining-round-heading">{cancelMode && <input className="dining-cancel-checkbox" aria-label={`${t('selectOrder')} #${order.uuid.slice(0, 8).toUpperCase()}`} type="checkbox" checked={cancelSelection.has(order.uuid)} disabled={!order.canCancel} onChange={() => toggleCancelOrder(order.uuid)} />}<strong>{String(index + 1).padStart(2, '0')} · #{order.uuid.slice(0, 8)}</strong></div><StatusPill>{tradeLabels[order.status] ? t(tradeLabels[order.status]) : order.status}</StatusPill></header>
         <p><time dateTime={order.createdAt}>{formatDiningDate(order.createdAt, locale)}</time></p>
         <p>{t('diningMode')} · {orderDiningModeName(order)}</p>
-        <p>{t('diningOperationalState')} · {order.operationalStatus ? t(operationLabels[order.operationalStatus] ?? 'orderStatus') : t('diningProjecting')}</p>
+        <p>{t('diningOperationalState')} · {order.operationalStatus ? <>{t(operationLabels[order.operationalStatus] ?? 'orderStatus')} ({order.operationalStatus})</> : t('diningProjecting')}</p>
         <p>{t('diningPaymentState')} · {order.paymentStatus ?? t('diningNoPayment')}{order.hasInvoice && ` · ${t('diningHasInvoice')}`}</p>
         <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
         {order.notes && <p className="dining-notes">{order.notes}</p>}

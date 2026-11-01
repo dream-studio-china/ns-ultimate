@@ -450,6 +450,7 @@ test('table details show only effective unsettled orders', async ({ page }) => {
   const detail = page.getByRole('dialog', { name: '查看桌次' })
   await expect(detail.locator('.dining-round')).toHaveCount(1)
   await expect(detail.locator('.dining-round')).toContainText('待处理')
+  await expect(detail.locator('.dining-round')).toContainText('待核验 (pending_validation)')
   await expect(detail.locator('.dining-round')).toContainText('点餐方式 · 未记录')
   await expect(detail.locator('.dining-round')).not.toContainText('已取消')
   await expect(detail.locator('.dining-round')).not.toContainText('已付款')
