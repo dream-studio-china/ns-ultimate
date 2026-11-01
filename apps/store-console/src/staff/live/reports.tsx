@@ -51,6 +51,10 @@ function mergeSessionState(orders: ReportingOrder[], tables: Awaited<ReturnType<
 }
 
 async function enrichTradeOrders(api: StoreApi, orders: ReportingOrder[], manageOrders: boolean): Promise<ReportingOrder[]> {
+  // /app/orders/{uuid} only exposes the signed-in user's own orders. Store-scoped
+  // staff already receive operational data from the counter APIs, so only an
+  // administrator should use the all-order management detail endpoint here.
+  if (!manageOrders) return orders
   const rows = orders.map((order) => ({ ...order }))
   let next = 0
   const workers = Array.from({ length: Math.min(6, rows.length) }, async () => {

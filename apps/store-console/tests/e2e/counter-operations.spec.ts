@@ -469,6 +469,17 @@ test('table details show only effective unsettled orders', async ({ page }) => {
   await expect(detail.locator('.dining-section-heading span')).toHaveText('1')
 })
 
+test('store staff checkout does not request owner-scoped trade order detail', async ({ page }) => {
+  const requests = await setup(page)
+  await page.locator('.dining-card-title').click()
+  const detail = page.getByRole('dialog', { name: '查看桌次' })
+  await expect(detail.locator('.dining-round')).toHaveCount(1)
+  await detail.getByRole('button', { name: '结账', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '结账', exact: true })).toBeVisible()
+
+  expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/app/orders/'))).toBe(false)
+})
+
 test('order rounds use the mode stored on the order when the session has no snapshot', async ({ page }) => {
   await setup(page, { orderMetadataMode: true })
   await page.locator('.dining-card-title').click()

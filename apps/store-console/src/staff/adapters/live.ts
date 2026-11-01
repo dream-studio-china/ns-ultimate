@@ -311,7 +311,10 @@ export class StoreApi {
 
   /** Attach modes from existing Trade order metadata to counter rows that do not expose one. */
   async hydrateCounterSessionDiningModes(table: CounterSessionView, manageOrders: boolean): Promise<CounterSessionView> {
-    if (!table.ordersVisible || table.orders.length === 0) return table
+    // /app/orders/{uuid} is owner-scoped. A store-scoped cashier can read another
+    // guest's order through counter operations, but must not fall back to that
+    // endpoint or a valid trade-order UUID will produce a misleading 404.
+    if (!manageOrders || !table.ordersVisible || table.orders.length === 0) return table
     let changed = false
     const orders = await Promise.all(table.orders.map(async (order) => {
       if (order.diningModeUuid || order.diningModeName) return order
