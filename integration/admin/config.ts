@@ -10,6 +10,8 @@ installMenuIcons()
 let routes = mergeRoutes(coreConfig.routes, businessRoutes)
 routes = moveRouteAfter(routes, 'CounterManagement', 'ProductManage')
 routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
+routes = moveRouteAfter(routes, 'HuifuConfiguration', 'WechatConfiguration')
+routes = moveRouteAfter(routes, 'HuifuTransactions', 'HuifuConfiguration')
 routes = moveRouteAfter(routes, 'PrinterManage', 'ContentManage')
 
 export default {

@@ -22,7 +22,7 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 27
+const EXPECTED_CASE_COUNT = 28
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
@@ -1679,6 +1679,39 @@ function contextCheckAfterReader(ctx) {
 }
 
 const CASES = [
+  {
+    name: 'mounting a replacement releases the prior agent and leaves one host element',
+    async run(ctx) {
+      const provider = ctx.createProvider()
+      let firstHostDisposals = 0
+      let secondHostDisposals = 0
+      const firstHost = createSyntheticHost()
+      const disposeFirstHost = firstHost.dispose
+      firstHost.dispose = () => { firstHostDisposals++; disposeFirstHost() }
+      const first = await ctx.mount({ host: firstHost, provider, open: false })
+
+      state.provider = provider
+      state.shadow = null
+      const secondHost = createSyntheticHost({ key: 'replacementRecords', name: 'ReplacementRecords' })
+      const disposeSecondHost = secondHost.dispose
+      secondHost.dispose = () => { secondHostDisposals++; disposeSecondHost() }
+      const disposeSecond = state.modules.mountAdminAgent(secondHost)
+      ok(typeof disposeSecond === 'function', 'The replacement mount must return a dispose function.')
+      const secondShadow = state.shadow
+      ok(secondShadow, 'The replacement shadow root was not captured.')
+      await ctx.wait(secondHost.catalogReady, 'replacement synthetic API catalog load')
+
+      equal(first.shadow.host.isConnected, false, 'A replacement mount must detach the previous host element.')
+      equal(firstHostDisposals, 1, 'A replacement mount must dispose the previous host exactly once.')
+      equal(document.querySelectorAll('ns-admin-agent').length, 1, 'A replacement mount must leave exactly one agent host.')
+      equal(secondShadow.host.isConnected, true, 'The replacement host must remain connected.')
+      disposeSecond()
+      equal(secondHostDisposals, 1, 'Disposing the replacement must release its host exactly once.')
+      first.dispose()
+      equal(firstHostDisposals, 1, 'Repeated disposal of a replaced agent must be harmless.')
+      return { previousHostDisposed: true, oneHostRemaining: true }
+    }
+  },
   {
     name: 'streamed final answer follows tool results from earlier turns',
     async run(ctx) {
