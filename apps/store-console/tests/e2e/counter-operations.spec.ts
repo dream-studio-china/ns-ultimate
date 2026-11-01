@@ -39,7 +39,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     diningMode: options.diningMode ? diningMode : null,
   }
   const diningModes = { version: 1, modes: [diningMode] }
-  const storeView = hasBoundDiningMode || options.storeModeOnly
+  const storeView = hasBoundDiningMode || options.storeModeOnly || options.orderMetadataMode
     ? { ...store, settings: options.stringSettings ? JSON.stringify({ diningModes }) : { diningModes } }
     : store
   type TestOrder = { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; diningModeUuid: string | null; diningModeName: string | null; items: typeof item[]; canReplace: boolean; canCancel: boolean }
@@ -72,9 +72,8 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     const base = { counter: { uuid: counterId, code: 'A01', name: 'Window table', capacity: 4, enabled: true }, session,
       currency: 'USD', canEnd: session !== null && orders.every((order) => ['cancelled', 'completed'].includes(order.status)), version: version() }
     if (options.sessionOnly || options.createWithoutRead) return { ...base, ordersVisible: false }
-    const visibleOrders = options.orderMetadataMode ? orders.map((order) => ({ ...order, diningModeUuid: diningModeId, diningModeName: 'Hotpot' })) : orders
     return { ...base, ordersVisible: true,
-      orders: visibleOrders, openAmount: orders.filter((order) => ['draft', 'pending', 'confirmed'].includes(order.status)).reduce((sum, order) => sum + order.totalAmount, 0), orderedAmount: orders.filter((order) => order.status !== 'cancelled').reduce((sum, order) => sum + order.totalAmount, 0), openOrderCount: orders.filter((order) => ['draft', 'pending', 'confirmed'].includes(order.status)).length,
+      orders, openAmount: orders.filter((order) => ['draft', 'pending', 'confirmed'].includes(order.status)).reduce((sum, order) => sum + order.totalAmount, 0), orderedAmount: orders.filter((order) => order.status !== 'cancelled').reduce((sum, order) => sum + order.totalAmount, 0), openOrderCount: orders.filter((order) => ['draft', 'pending', 'confirmed'].includes(order.status)).length,
       paymentHold: false }
   }
   let failed = false
@@ -99,6 +98,9 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', metadata: null,
       product: { uuid: productId, __toString: '#1 Soup' },
     })
+    if (options.orderMetadataMode && method === 'GET' && path.startsWith('/api/v1/manage/orders/')) {
+      return respond({ uuid: path.slice('/api/v1/manage/orders/'.length), metadata: { diningModeUuid: diningModeId, diningModeName: 'Hotpot' } })
+    }
     if (method === 'POST' && path.endsWith('/merge/preview')) {
       expect(body!.version).toBe(version())
       const sources = orders.filter((order) => order.status === 'confirmed')
@@ -125,7 +127,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       return respond({ counterUuid: counterId, sessionUuid: sessionId, orderUuid: target.uuid })
     }
     if (path.endsWith('/membership')) return respond({ status: 'active', role: 'manager' })
-    if (path.endsWith('/users/me')) return respond({ uuid: storeId, username: 'counter-staff', roles: ['ROLE_USER'] })
+    if (path.endsWith('/users/me')) return respond({ uuid: storeId, username: 'counter-staff', roles: [options.orderMetadataMode ? 'ROLE_ADMIN' : 'ROLE_USER'] })
     if (path.endsWith('/authorization/me')) {
       const sessionActions = options.sessionOnly || options.readOnly ? ['read'] : ['read', 'update', 'end']
       const orderActions = options.sessionOnly ? [] : options.createWithoutRead ? ['create'] : options.readOnly ? ['read'] : options.editOnly ? ['read', 'replace'] : options.cancelOnly ? ['read', 'cancel'] : options.noReplace ? ['read', 'create'] : ['read', 'create', 'replace', 'cancel', 'merge']
@@ -449,6 +451,10 @@ test('order rounds use the mode stored on the order when the session has no snap
   await page.locator('.dining-card-title').click()
   const detail = page.getByRole('dialog', { name: '查看桌次' })
   await expect(detail.locator('.dining-round')).toContainText('点餐方式 · Hotpot')
+  await detail.getByRole('button', { name: '结账', exact: true }).click()
+  const checkout = page.getByRole('dialog', { name: '结账', exact: true })
+  await expect(checkout).toContainText('请确认用餐人数')
+  await expect(checkout).toContainText('请确认以下菜品')
 })
 
 test('cancellation and replacement use independent grants', async ({ page }) => {

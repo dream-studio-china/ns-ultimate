@@ -39,10 +39,10 @@ async function retryCheckoutConflict<T>(attempt: () => Promise<T>): Promise<T> {
   }
 }
 
-async function waitForCheckoutOrder(api: StoreApi, counterUuid: string, matches: (order: SessionOrder) => boolean): Promise<{ table: CounterSessionView; order: SessionOrder }> {
+async function waitForCheckoutOrder(api: StoreApi, access: StoreAccess, counterUuid: string, matches: (order: SessionOrder) => boolean): Promise<{ table: CounterSessionView; order: SessionOrder }> {
   const deadline = Date.now() + staffProjectionTimeout
   while (true) {
-    const table = await api.counterSession(counterUuid)
+    const table = await loadCounterSession(api, access, counterUuid)
     const order = effectiveDiningOrders(table).find(matches)
     if (order) return { table, order }
     if (Date.now() >= deadline) throw new ApiError('request', 409)
@@ -50,8 +50,8 @@ async function waitForCheckoutOrder(api: StoreApi, counterUuid: string, matches:
   }
 }
 
-async function waitForCheckoutReplacement(api: StoreApi, counterUuid: string, orderUuid: string) {
-  return waitForCheckoutOrder(api, counterUuid, (order) => order.uuid === orderUuid && order.canReplace)
+async function waitForCheckoutReplacement(api: StoreApi, access: StoreAccess, counterUuid: string, orderUuid: string) {
+  return waitForCheckoutOrder(api, access, counterUuid, (order) => order.uuid === orderUuid && order.canReplace)
 }
 
 /** Session commands and order commands use different resources, so each action is checked separately. */
@@ -64,6 +64,23 @@ const counterPageSize = 30
 
 const hasModernCounterRead = (access: StoreAccess) => can(access, 'counter_session', 'read')
 const hasLegacyCounterRead = (access: StoreAccess) => !hasModernCounterRead(access) && can(access, 'counter', 'read')
+const canManageTradeOrders = (access: StoreAccess) => access.profile.roles.includes('ROLE_ADMIN')
+
+async function loadCounterSession(api: StoreApi, access: StoreAccess, counterUuid: string) {
+  return api.hydrateCounterSessionDiningModes(await api.counterSession(counterUuid), canManageTradeOrders(access))
+}
+
+async function readLegacyCounterSession(api: StoreApi, access: StoreAccess, counterUuid: string) {
+  return legacyCounterSession(
+    await api.legacyCounter(counterUuid, access.store.code),
+    await api.legacyCounterOrders(counterUuid, access.store.code),
+    access.store.currency,
+  )
+}
+
+async function loadLegacyCounterSession(api: StoreApi, access: StoreAccess, counterUuid: string) {
+  return api.hydrateCounterSessionDiningModes(await readLegacyCounterSession(api, access, counterUuid), canManageTradeOrders(access))
+}
 
 async function loadAllCounterSessions(api: StoreApi): Promise<CounterSessionView[]> {
   const tables: CounterSessionView[] = []
@@ -79,11 +96,14 @@ async function loadAllCounterSessions(api: StoreApi): Promise<CounterSessionView
 
 async function loadLegacyCounterSessions(api: StoreApi, access: StoreAccess): Promise<CounterSessionView[]> {
   const counters = (await api.legacyCounters()).filter((counter) => counter.enabled)
-  return Promise.all(counters.map(async (counter) => legacyCounterSession(
-    counter,
-    await api.legacyCounterOrders(counter.uuid, access.store.code),
-    access.store.currency,
-  )))
+  return Promise.all(counters.map((counter) => readLegacyCounterSession(api, access, counter.uuid)))
+}
+
+function resolveTableDiningMode(table: CounterSessionView, storeModes: unknown): DiningMode | null {
+  const bound = resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, storeModes)
+  if (bound) return bound
+  const orderModeUuids = [...new Set(effectiveDiningOrders(table).flatMap((order) => order.diningModeUuid ? [order.diningModeUuid] : []))]
+  return orderModeUuids.length === 1 ? resolveBoundDiningMode(null, orderModeUuids[0], storeModes) : null
 }
 
 function useDiningSessions(api: StoreApi, access: StoreAccess, refreshKey: number) {
@@ -185,7 +205,7 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
     try {
       // Rules and their matching order content are reviewed before any checkout edit starts.
       // Legacy reads do not expose the versioned session, so resolve it first.
-      const current = list.legacy ? await api.counterSession(table.counter.uuid) : table
+      const current = list.legacy ? await loadCounterSession(api, access, table.counter.uuid) : table
       setSettling({ table: current, autoMerged: false })
     } catch (error) {
       setActionError(errorKey(error))
@@ -194,7 +214,7 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
   const finishCheckoutEdit = async () => {
     if (!checkoutEditing) return
     try {
-      const refreshed = await api.counterSession(checkoutEditing.counter.uuid)
+      const refreshed = await loadCounterSession(api, access, checkoutEditing.counter.uuid)
       setCheckoutEditing(null)
       setSettling({ table: refreshed, autoMerged: false })
       list.reload()
@@ -233,8 +253,8 @@ function formatDiningDate(value: string, locale: string) {
 function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, onCheckout }: { api: StoreApi; access: StoreAccess; legacy: boolean; orderable: boolean; id: string; changed: () => void; onOrder: (table: CounterSessionView) => void; onCheckout: (table: CounterSessionView) => void }) {
   const { t, locale } = useI18n()
   const load = useCallback(async () => ({ items: [legacy
-    ? legacyCounterSession(await api.legacyCounter(id, access.store.code), await api.legacyCounterOrders(id, access.store.code), access.store.currency)
-    : await api.counterSession(id)], hasNext: false }), [access.store.code, access.store.currency, api, id, legacy])
+    ? await loadLegacyCounterSession(api, access, id)
+    : await loadCounterSession(api, access, id)], hasNext: false }), [access, api, id, legacy])
   const detail = usePage(load)
   const [operation, setOperation] = useState<{ table: CounterSessionView; command: CounterCommand; order?: SessionOrder } | null>(null)
   const [cancelMode, setCancelMode] = useState(false)
@@ -246,7 +266,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, on
     const hasOrders = orders.length > 0
     const hasAnyOrders = table.ordersVisible && table.orders.length > 0
     const canCancelOrders = permitted(access, 'cancel')
-    const tableDiningMode = resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, access.store.settings?.diningModes)
+    const tableDiningMode = resolveTableDiningMode(table, access.store.settings?.diningModes)
     const orderDiningModeName = (order: SessionOrder) => {
       const uuid = order.diningModeUuid ?? tableDiningMode?.uuid ?? null
       if (uuid && tableDiningMode?.uuid === uuid) return tableDiningMode.name
@@ -298,8 +318,8 @@ function CancelSelectedOrders({ api, access, legacy, table, selectedOrders, onDo
   const amount = selectedOrders.reduce((total, order) => total + order.totalAmount, 0)
   const formattedAmount = new Intl.NumberFormat(locale, { style: 'currency', currency: selectedOrders[0]?.currency ?? table.currency }).format(amount / 100)
   const loadTable = async () => legacy
-    ? legacyCounterSession(await api.legacyCounter(table.counter.uuid, access.store.code), await api.legacyCounterOrders(table.counter.uuid, access.store.code), access.store.currency)
-    : api.counterSession(table.counter.uuid)
+    ? loadLegacyCounterSession(api, access, table.counter.uuid)
+    : loadCounterSession(api, access, table.counter.uuid)
   const cancelSelected = async () => {
     if (busy || !selectedOrders.length) return
     if (!navigator.onLine) {
@@ -357,7 +377,7 @@ function CancelSelectedOrders({ api, access, legacy, table, selectedOrders, onDo
 function DiningSettlement({ table, storeDiningModes, autoMerged, onClose, onAdjust }: { table: CounterSessionView; storeDiningModes: unknown; autoMerged: boolean; onClose: () => void; onAdjust: (table: CounterSessionView) => void }) {
   const { t, locale } = useI18n()
   const currency = table.currency
-  const diningMode = resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, storeDiningModes)
+  const diningMode = resolveTableDiningMode(table, storeDiningModes)
   const currentOrders = effectiveDiningOrders(table)
   return <LiveSheet open title={t('checkoutDining')} className="dining-settlement" onClose={onClose}>
     {autoMerged && <Notice title="diningMergedWithoutModeTitle">{t('diningMergedWithoutModeHint')}</Notice>}
@@ -685,8 +705,8 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
   // Checkout must use the mode snapshotted when the first order was placed. A historical
   // session without that snapshot goes directly through the order-merge path.
   const boundDiningMode = useMemo(
-    () => resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, access.store.settings?.diningModes),
-    [access.store.settings?.diningModes, table.session?.diningMode, table.session?.diningModeUuid],
+    () => resolveTableDiningMode(table, access.store.settings?.diningModes),
+    [access.store.settings?.diningModes, table],
   )
   const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, boundDiningMode, !isCheckout || Boolean(boundDiningMode))
   const ruleCatalog = useRuleCatalog(api, access.store.code, isAdd ? null : diningMode.selected)
@@ -789,7 +809,7 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
   }
   const submitCheckout = async () => {
     setAttempted(true)
-    const refresh = () => api.counterSession(table.counter.uuid)
+    const refresh = () => loadCounterSession(api, access, table.counter.uuid)
     let current = table
     const participantManagedByMode = Boolean(diningMode.selected && (
       diningMode.selected.rules.some((rule) => rule.type === 'per_guest_item')
@@ -820,7 +840,7 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
       // Order projection is asynchronous. Wait until the new round is visible before
       // deciding whether a merge is needed, otherwise a later reduction could target
       // the pre-addition order while the new round is still pending projection.
-      const projectedAddition = await waitForCheckoutOrder(api, table.counter.uuid, (order) => created.orderUuid ? order.uuid === created.orderUuid : !existingUuids.has(order.uuid))
+      const projectedAddition = await waitForCheckoutOrder(api, access, table.counter.uuid, (order) => created.orderUuid ? order.uuid === created.orderUuid : !existingUuids.has(order.uuid))
       current = projectedAddition.table
     }
 
@@ -843,7 +863,7 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
     if (reconciliation.reductions.length > 0) {
       let target: SessionOrder | undefined
       if (mergedOrderUuid) {
-        const replaceable = await waitForCheckoutReplacement(api, table.counter.uuid, mergedOrderUuid)
+        const replaceable = await waitForCheckoutReplacement(api, access, table.counter.uuid, mergedOrderUuid)
         current = replaceable.table
         target = replaceable.order
       } else {
@@ -904,8 +924,8 @@ function LegacyDiningEditor({ api, access, table, mode, onClose, done }: { api: 
   const [submitting, setSubmitting] = useState(false)
   const [reviewing, setReviewing] = useState(false)
   const boundDiningMode = useMemo(
-    () => resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, access.store.settings?.diningModes),
-    [access.store.settings?.diningModes, table.session?.diningMode, table.session?.diningModeUuid],
+    () => resolveTableDiningMode(table, access.store.settings?.diningModes),
+    [access.store.settings?.diningModes, table],
   )
   const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, boundDiningMode)
   const ruleCatalog = useRuleCatalog(api, access.store.code, isAdd ? null : diningMode.selected)

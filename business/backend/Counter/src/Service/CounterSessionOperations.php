@@ -99,12 +99,10 @@ final class CounterSessionOperations
                     $items[] = ['specificationUuid' => $item->getSpecificationUuid(), 'productName' => is_string($productName) ? $productName : '',
                         'specificationName' => $item->getSpecificationTitle() ?? '', 'quantity' => $item->getQuantity(), 'unitPrice' => $item->getUnitPrice(), 'amount' => $item->getPrice()];
                 }
-                $diningMode = $this->orderDiningMode($order, $session);
                 $rows[] = ['uuid' => $order->getUuid(), 'status' => $order->getStatus(), 'operationalStatus' => $storeOrder?->getOperationalStatus(),
                     'paymentStatus' => $order->getPaymentStatus(), 'hasInvoice' => $order->getInvoiceId() !== null,
                     'currency' => $order->getCurrency(), 'totalAmount' => $order->getTotalAmount(), 'notes' => $order->getNotes(),
                     'createdAt' => $order->getCreatedAt()->format(DATE_ATOM), 'items' => $items,
-                    'diningModeUuid' => $diningMode['uuid'], 'diningModeName' => $diningMode['name'],
                     'canReplace' => $this->canReplace($order, $lifecycle, $storeOrder), 'canCancel' => $this->canCancel($order, $lifecycle, $storeOrder),
                     'changeBlockedReason' => $this->changeBlockedReason($order, $lifecycle, $storeOrder),
                     'replaceBlockedReason' => $this->canReplace($order, $lifecycle, $storeOrder) ? null : ($this->changeBlockedReason($order, $lifecycle, $storeOrder) ?? 'unsupported_order_items')];
@@ -143,26 +141,6 @@ final class CounterSessionOperations
             'currency' => $store->getCurrency(), 'paymentHold' => $paymentHold, 'canEnd' => $session !== null && $openOrders === 0];
         $state['version'] = StaffCommandService::version($state);
         return $state;
-    }
-
-    /** The session snapshot is authoritative; legacy orders may only have their customer-app metadata.
-     * @return array{uuid: ?string, name: ?string} */
-    private function orderDiningMode(Order $order, CounterSession $session): array
-    {
-        $metadata = $order->getMetadata() ?? [];
-        $rawMetadataUuid = $metadata['diningModeUuid'] ?? $metadata['dining_mode_uuid'] ?? null;
-        $metadataUuid = is_string($rawMetadataUuid) && UUID::is_valid(trim($rawMetadataUuid)) ? trim($rawMetadataUuid) : null;
-        $sessionUuid = $session->getDiningModeUuid();
-        $uuid = is_string($sessionUuid) && $sessionUuid !== '' ? $sessionUuid : $metadataUuid;
-
-        $snapshot = $session->getDiningModeSnapshot();
-        $rawSnapshotName = is_array($snapshot) ? ($snapshot['name'] ?? null) : null;
-        $name = is_string($rawSnapshotName) && trim($rawSnapshotName) !== '' ? mb_substr(trim($rawSnapshotName), 0, 120) : null;
-        if ($name === null && ($metadataUuid === null || $metadataUuid === $uuid)) {
-            $rawMetadataName = $metadata['diningModeName'] ?? $metadata['dining_mode_name'] ?? null;
-            $name = is_string($rawMetadataName) && trim($rawMetadataName) !== '' ? mb_substr(trim($rawMetadataName), 0, 120) : null;
-        }
-        return ['uuid' => $uuid, 'name' => $name];
     }
 
     /** The canonical version is computed before redaction so every actor sees the same state token.

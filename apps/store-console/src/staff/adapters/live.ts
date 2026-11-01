@@ -3,6 +3,7 @@ import { ApiClient, ApiError } from './api-client'
 import { inDiningCatalog, normalizeDiningMode, type DiningCatalog, type DiningMode } from '../dining-mode'
 
 const uuid = z.string().uuid()
+const diningModeReferenceId = z.string().trim().min(1).max(120)
 const cents = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const currency = z.string().regex(/^[A-Z]{3}$/)
 const version = z.string().regex(/^[a-f0-9]{64}$/)
@@ -33,6 +34,22 @@ export const productSchema = z.object({
 export const specificationSchema = z.object({ uuid, name: z.string(), price: cents, status: z.enum(['active', 'inactive']), sort: z.number().int() })
 export const categorySchema = z.object({ uuid, name: z.string(), slug: z.string(), sortOrder: z.number().int(), enabled: z.boolean() })
 export const counterSchema = z.object({ uuid, code: z.string(), name: z.string(), capacity: z.number().int().nullable(), sort: z.number().int(), enabled: z.boolean() })
+const orderMetadataSchema = z.preprocess((value) => {
+  if (Array.isArray(value) && value.length === 0) return null
+  if (typeof value !== 'string') return value
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return Array.isArray(parsed) && parsed.length === 0 ? null : parsed
+  } catch {
+    return null
+  }
+}, z.object({
+  diningModeUuid: diningModeReferenceId.nullable().optional(),
+  diningModeName: z.string().max(120).nullable().optional(),
+  dining_mode_uuid: diningModeReferenceId.nullable().optional(),
+  dining_mode_name: z.string().max(120).nullable().optional(),
+}).passthrough().nullable().optional())
+export const tradeOrderRecordSchema = z.object({ uuid, metadata: orderMetadataSchema }).passthrough()
 export const orderSchema = z.object({
   uuid, tradeOrderUuid: uuid, operationalStatus: z.string(), totalAmount: cents, currency,
   createdAt: z.string(), counter: z.object({ code: z.string(), name: z.string() }).nullable(),
@@ -43,7 +60,7 @@ export const orderableItemSchema = sessionOrderItemSchema.extend({ specification
 export const sessionOrderSchema = z.object({
   uuid, status: z.string(), operationalStatus: z.string().nullable(), paymentStatus: z.string().nullable(), hasInvoice: z.boolean(),
   currency, totalAmount: cents, notes: z.string().nullable(), createdAt: z.string(), items: z.array(sessionOrderItemSchema),
-  diningModeUuid: uuid.nullable().optional().transform((value) => value ?? null),
+  diningModeUuid: diningModeReferenceId.nullable().optional().transform((value) => value ?? null),
   diningModeName: z.string().max(120).nullable().optional().transform((value) => value ?? null),
   canReplace: z.boolean(), canCancel: z.boolean(),
 })
@@ -85,7 +102,7 @@ export const legacyCounterOrderSchema = z.object({
   currency,
   createdAt: z.string(),
   mergedIntoOrderUuid: uuid.nullable().optional(),
-  diningModeUuid: uuid.nullable().optional(),
+  diningModeUuid: diningModeReferenceId.nullable().optional(),
   diningMode: z.unknown().nullable().optional(),
   items: z.array(z.object({
     productName: z.string().nullable(),
@@ -149,6 +166,7 @@ const counterCommandResultSchema = z.object({ counterUuid: uuid, sessionUuid: uu
 export const orderableCatalogSchema = z.object({ uuid, productName: z.string(), name: z.string(), price: cents, available: z.boolean() })
 export type CounterSessionView = z.infer<typeof counterSessionSchema>
 export type SessionOrder = z.infer<typeof sessionOrderSchema>
+export interface OrderDiningModeReference { uuid: string | null; name: string | null }
 export type OrderQuote = z.infer<typeof orderQuoteSchema>
 export type CounterMergeQuote = z.infer<typeof counterMergeQuoteSchema>
 export interface OrderCart { version: string; items: { specificationUuid: string; quantity: number }[]; notes: string; diningModeUuid?: string; replaceOrderUuid?: string }
@@ -232,8 +250,52 @@ export function can(access: StoreAccess, resource: string, action: string): bool
 }
 export class StoreApi {
   readonly base: string
+  private readonly orderDiningModes = new Map<string, Promise<OrderDiningModeReference | null>>()
   constructor(readonly client: ApiClient, storeUuid: string) {
     this.base = `/api/v1/store/${uuid.parse(storeUuid)}`
+  }
+
+  /** Read the mode already recorded by the ordering app; no counter-session logic is inferred here. */
+  tradeOrderDiningMode(orderUuid: string, manageOrders: boolean): Promise<OrderDiningModeReference | null> {
+    const id = uuid.parse(orderUuid)
+    const key = `${manageOrders ? 'manage' : 'app'}:${id}`
+    const cached = this.orderDiningModes.get(key)
+    if (cached) return cached
+    const task = this.client.data(manageOrders ? `/api/v1/manage/orders/${id}` : `/api/v1/app/orders/${id}`, tradeOrderRecordSchema)
+      .then((record): OrderDiningModeReference | null => {
+        const metadata = record.metadata ?? {}
+        const rawUuid = metadata.diningModeUuid ?? metadata.dining_mode_uuid ?? null
+        const rawName = metadata.diningModeName ?? metadata.dining_mode_name ?? null
+        return {
+          uuid: typeof rawUuid === 'string' && rawUuid.trim() ? rawUuid.trim().slice(0, 120) : null,
+          name: typeof rawName === 'string' && rawName.trim() ? rawName.trim().slice(0, 120) : null,
+        }
+      })
+      .catch((error: unknown) => {
+        this.orderDiningModes.delete(key)
+        if (error instanceof ApiError && (error.status === 403 || error.status === 404)) return null
+        throw error
+      })
+    this.orderDiningModes.set(key, task)
+    return task
+  }
+
+  /** Attach modes from existing Trade order metadata to counter rows that do not expose one. */
+  async hydrateCounterSessionDiningModes(table: CounterSessionView, manageOrders: boolean): Promise<CounterSessionView> {
+    if (!table.ordersVisible || table.orders.length === 0) return table
+    let changed = false
+    const orders = await Promise.all(table.orders.map(async (order) => {
+      if (order.diningModeUuid || order.diningModeName) return order
+      try {
+        const mode = await this.tradeOrderDiningMode(order.uuid, manageOrders)
+        if (!mode?.uuid && !mode?.name) return order
+        changed = true
+        return { ...order, diningModeUuid: mode.uuid, diningModeName: mode.name }
+      } catch {
+        return order
+      }
+    }))
+    return changed ? { ...table, orders } : table
   }
   static async access(client: ApiClient, storeUuid: string): Promise<StoreAccess> {
     uuid.parse(storeUuid)
