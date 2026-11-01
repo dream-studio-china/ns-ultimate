@@ -16,7 +16,8 @@ const settingsSchema = z.preprocess((value) => {
 export const storeSchema = z.object({
   uuid, name: z.string(), code: z.string(), currency, timezone: z.string(),
   settings: settingsSchema,
-})
+  paymentSetting: z.unknown().nullable().optional(),
+}).passthrough()
 export const membershipSchema = z.object({ status: z.string(), role: z.string() })
 export const profileSchema = z.object({ uuid, username: z.string().nullable(), roles: z.array(z.string()) })
 export const authorizationSchema = z.object({

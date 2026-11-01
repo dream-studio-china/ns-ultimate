@@ -200,5 +200,58 @@
 .dining-settlement-orders header { display: flex; justify-content: space-between; gap: 10px; color: var(--ws-muted); font-size: 11px; }
 .dining-settlement-orders header strong { color: var(--ws-ink); }
 .dining-settlement-orders > section > b { display: block; color: var(--brand); text-align: right; }
+.checkout-rule-step, .checkout-final-review, .checkout-result { display: grid; gap: 14px; }
+.checkout-rule-step > header, .checkout-final-review > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid color-mix(in srgb, var(--brand) 24%, var(--ws-line)); border-radius: 16px; background: linear-gradient(145deg, color-mix(in srgb, var(--ws-soft) 82%, white), var(--theme-paper)); }
+.checkout-rule-step > header > div, .checkout-final-review > header { min-width: 0; }
+.checkout-rule-step > header span, .checkout-final-review > header span { display: block; color: var(--brand); font-size: 10px; font-weight: 700; letter-spacing: .05em; }
+.checkout-rule-step > header h3, .checkout-final-review > header h3 { margin-top: 5px; color: var(--ws-ink); font-size: 20px; line-height: 1.35; overflow-wrap: anywhere; }
+.checkout-rule-step > header > small, .checkout-final-review > header > small { flex: 0 0 auto; max-width: 45%; color: var(--ws-muted); font-size: 10px; text-align: right; overflow-wrap: anywhere; }
+.checkout-participant-review { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--ws-line); border-radius: 15px; background: var(--theme-paper); }
+.checkout-participant-review > p { color: var(--ws-muted); font-size: 12px; line-height: 1.7; }
+.checkout-rule-products { display: grid; gap: 9px; }
+.checkout-rule-products > .helper { color: var(--ws-muted); font-size: 11px; line-height: 1.65; }
+.checkout-rule-products article { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px 13px; border: 1px solid var(--ws-line); border-radius: 13px; background: var(--theme-paper); }
+.checkout-rule-products article > div:first-child { display: grid; flex: 1; gap: 4px; min-width: 0; }
+.checkout-rule-products article strong { color: var(--ws-ink); font-size: 12px; overflow-wrap: anywhere; }
+.checkout-rule-products article small { color: var(--ws-muted); font-size: 10px; overflow-wrap: anywhere; }
+.checkout-review-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 0 2px; }
+.checkout-review-heading h4 { color: var(--ws-ink); font-size: 14px; }
+.checkout-review-heading small { color: var(--ws-muted); font-size: 9px; }
+.checkout-final-lines { display: grid; gap: 7px; list-style: none; padding: 0; }
+.checkout-final-lines li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px; border-radius: 11px; background: var(--ws-soft); }
+.checkout-final-lines li > span { display: grid; min-width: 0; gap: 3px; }
+.checkout-final-lines strong { color: var(--ws-ink); font-size: 11px; overflow-wrap: anywhere; }
+.checkout-final-lines small { color: var(--ws-muted); font-size: 9px; }
+.checkout-final-lines b { color: var(--ws-ink); font-size: 11px; }
+.checkout-final-lines em { min-width: 34px; padding: 3px 7px; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 700; text-align: center; }
+.checkout-final-lines em.is-reduction { color: #954a36; background: #fcf1ed; }
+.checkout-final-lines.is-addition li { background: #f1f8ed; }
+.checkout-final-lines.is-addition em { color: #416c35; background: #e5f2df; }
+.checkout-result .dining-settlement-total { background: var(--theme-paper); }
+.checkout-receipt-print { display: grid; gap: 12px; padding: 17px; border: 1px dashed color-mix(in srgb, var(--brand) 28%, var(--ws-line)); border-radius: 16px; background: var(--theme-paper); }
+.checkout-receipt-print > header { display: grid; gap: 4px; text-align: center; }
+.checkout-receipt-print > header strong { color: var(--ws-ink); font-size: 17px; }
+.checkout-receipt-print > header span { color: var(--ws-muted); font-size: 10px; }
+.checkout-receipt-print > ul { display: grid; gap: 7px; list-style: none; padding: 0; }
+.checkout-receipt-print > ul li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--ws-line); }
+.checkout-receipt-print > ul span { display: grid; min-width: 0; color: var(--ws-ink); font-size: 11px; }
+.checkout-receipt-print > ul small { color: var(--ws-muted); font-size: 9px; }
+.checkout-receipt-print > ul b { color: var(--ws-ink); font-size: 11px; }
+.checkout-receipt-print .dining-settlement-total { padding: 12px 0 0; border: 0; background: transparent; }
+.checkout-receipt-print .dining-settlement-total strong { font-size: 25px; }
+.checkout-payment-methods { display: grid; gap: 10px; }
+.checkout-payment-methods > header { display: flex; align-items: center; gap: 7px; color: var(--ws-ink); }
+.checkout-payment-methods h4 { font-size: 14px; }
+.checkout-payment-methods > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.checkout-payment-methods button { min-height: 46px; padding: 9px 11px; border: 1px solid var(--ws-line); border-radius: 12px; color: var(--ws-ink); background: var(--theme-paper); font-size: 12px; font-weight: 650; cursor: pointer; overflow-wrap: anywhere; }
+.checkout-payment-methods button.is-active { border-color: var(--brand); color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, white); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 8%, transparent); }
+.live-app .checkout-print-button.adm-button { min-height: 47px; border-color: color-mix(in srgb, var(--brand) 25%, var(--ws-line)); color: var(--brand); background: var(--theme-paper); }
 @media (min-width: 700px) { .dining-summary { gap: 10px; margin-bottom: 20px; } .dining-summary-counts, .dining-finance-breakdown { gap: 10px; } .dining-summary-item { padding: 14px; } .dining-summary-item strong { font-size: 21px; } .dining-summary-counts .dining-summary-item strong { font-size: 27px; } .dining-finance-toggle { min-height: 72px; padding-inline: 18px; } .dining-finance-toggle > strong { font-size: 28px; } .dining-finance-breakdown { padding: 0 12px 12px; } .dining-board { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } .dining-card { padding: 18px; } .dining-choice-scroll button { flex-basis: 44%; } }
 @media (min-width: 1000px) { .dining-board { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media print {
+  body { background: #fff; }
+  body * { visibility: hidden; }
+  .checkout-receipt-print, .checkout-receipt-print * { visibility: visible; }
+  .checkout-receipt-print { position: fixed; inset: 0 auto auto 0; width: 80mm; padding: 4mm; border: 0; color: #000; background: #fff; }
+  .checkout-receipt-print .dining-settlement-total strong, .checkout-receipt-print > header strong, .checkout-receipt-print > ul span, .checkout-receipt-print > ul b { color: #000; }
+}

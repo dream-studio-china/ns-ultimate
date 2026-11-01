@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ChevronDown, Clock3, LayoutGrid, Minus, Pencil, Plus, ReceiptText, RotateCcw, UsersRound } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, Clock3, CreditCard, LayoutGrid, Minus, Pencil, Plus, Printer, ReceiptText, RotateCcw, UsersRound } from 'lucide-react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, legacyCounterSession, StoreApi, type StoreAccess, type CounterSessionView, type SessionOrder, type OrderQuote, type OrderCart, type CounterCommand, type LegacyCatalogItem, type LiveCounter } from '../adapters/live'
-import { availableDiningModes, diningModeLabel, isChoiceRuleCandidate, isChoiceSelectionBlocked, normalizeDiningModes, resolveBoundDiningMode, ruleQuantity, validateDiningRules, type CheckoutRule, type ChoiceDiningRule, type DiningLine, type DiningMode, type DiningRule, type DiningRuleIssue, type FixedDiningRule, type PerGuestDiningRule } from '../dining-mode'
+import { availableDiningModes, diningModeLabel, isChoiceRuleCandidate, isChoiceSelectionBlocked, normalizeDiningModes, resolveBoundDiningMode, ruleQuantity, validateDiningRules, type ChoiceDiningRule, type DiningLine, type DiningMode, type DiningRule, type DiningRuleIssue, type FixedDiningRule, type PerGuestDiningRule } from '../dining-mode'
 import { reconcileCheckoutQuantities } from '../checkout-reconciliation'
+import { checkoutPaymentMethods, type CheckoutPaymentMethod } from '../checkout-payment'
 import { ApiError } from '../adapters/api-client'
 import { EditorPreview, EditorSheet, errorKey, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, usePageRefresh } from './ui'
 import './dining.css'
@@ -193,8 +194,7 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
   const [selected, setSelected] = useState<string | null>(null)
   const [ordering, setOrdering] = useState<{ table: CounterSessionView; mode: 'new' | 'add' } | null>(null)
   const [returnTo, setReturnTo] = useState<string | null>(null)
-  const [settling, setSettling] = useState<{ table: CounterSessionView; autoMerged: boolean } | null>(null)
-  const [checkoutEditing, setCheckoutEditing] = useState<CounterSessionView | null>(null)
+  const [settling, setSettling] = useState<CounterSessionView | null>(null)
   const [actionError, setActionError] = useState<MessageKey | null>(null)
   const amount = (value: number, currency: string) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value / 100)
   const orderable = list.legacy ? can(access, 'counter', 'read') : permitted(access, 'create')
@@ -203,21 +203,10 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
     setActionError(null)
     if (!navigator.onLine) { setActionError('offline'); return }
     try {
-      // Rules and their matching order content are reviewed before any checkout edit starts.
-      // Legacy reads do not expose the versioned session, so resolve it first.
+      // Checkout starts with the saved rule sequence. Every rule and item edit remains
+      // local until the final confirmation; legacy reads resolve the versioned session first.
       const current = list.legacy ? await loadCounterSession(api, access, table.counter.uuid) : table
-      setSettling({ table: current, autoMerged: false })
-    } catch (error) {
-      setActionError(errorKey(error))
-    }
-  }
-  const finishCheckoutEdit = async () => {
-    if (!checkoutEditing) return
-    try {
-      const refreshed = await loadCounterSession(api, access, checkoutEditing.counter.uuid)
-      setCheckoutEditing(null)
-      setSettling({ table: refreshed, autoMerged: false })
-      list.reload()
+      setSettling(current)
     } catch (error) {
       setActionError(errorKey(error))
     }
@@ -240,8 +229,7 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
     })}</div><PageControls state={list} />
     {selected && <LiveSheet open title={t('viewDining')} onClose={() => setSelected(null)}><DiningDetail api={api} access={access} legacy={list.legacy} orderable={orderable} id={selected} changed={list.reload} onOrder={(table) => { setReturnTo(table.counter.uuid); setSelected(null); startOrder(table) }} onCheckout={(table) => void startCheckout(table)} /></LiveSheet>}
     {ordering && <LegacyDiningEditor api={api} access={access} table={ordering.table} mode={ordering.mode} onClose={() => { setOrdering(null); setReturnTo(null) }} done={() => { setOrdering(null); list.reload(); setSelected(returnTo); setReturnTo(null) }} />}
-    {checkoutEditing && <DiningEditor api={api} access={access} table={checkoutEditing} mode="checkout" onClose={() => setCheckoutEditing(null)} done={() => void finishCheckoutEdit()} />}
-    {settling && <DiningSettlement table={settling.table} storeDiningModes={access.store.settings?.diningModes} autoMerged={settling.autoMerged} onClose={() => setSettling(null)} onAdjust={(table) => { setSettling(null); setCheckoutEditing(table) }} />}
+    {settling && <CheckoutFlow api={api} access={access} table={settling} onClose={() => { setSettling(null); list.reload() }} />}
   </>
 }
 
@@ -372,66 +360,6 @@ function CancelSelectedOrders({ api, access, legacy, table, selectedOrders, onDo
       {result && <Notice>{result}</Notice>}
     </LiveSheet>
   </>
-}
-
-function DiningSettlement({ table, storeDiningModes, autoMerged, onClose, onAdjust }: { table: CounterSessionView; storeDiningModes: unknown; autoMerged: boolean; onClose: () => void; onAdjust: (table: CounterSessionView) => void }) {
-  const { t, locale } = useI18n()
-  const currency = table.currency
-  const diningMode = resolveTableDiningMode(table, storeDiningModes)
-  const currentOrders = effectiveDiningOrders(table)
-  return <LiveSheet open title={t('checkoutDining')} className="dining-settlement" onClose={onClose}>
-    {autoMerged && <Notice title="diningMergedWithoutModeTitle">{t('diningMergedWithoutModeHint')}</Notice>}
-    {diningMode && diningMode.checkoutRules.length > 0 && <DiningCheckoutRules table={table} mode={diningMode} />}
-    {!diningMode && <Notice subtle>{t('checkoutNoModeHint')}</Notice>}
-    {table.ordersVisible && currentOrders.length > 0 && <section className="dining-settlement-current-order"><header><h3>{t('checkoutRuleOrderTitle')}</h3><small>{currentOrders.length} {t('diningBatches')}</small></header><div className="dining-settlement-orders">{currentOrders.map((order) => <section key={order.uuid}><header><strong>#{order.uuid.slice(0, 8).toUpperCase()}</strong><time dateTime={order.createdAt}>{formatDiningDate(order.createdAt, locale)}</time></header><DiningLines items={order.items} currency={order.currency} /><b>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</b></section>)}</div></section>}
-    <div className="dining-settlement-total"><span>{t('diningOpenAmount')}</span><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency }).format(effectiveDiningAmount(table) / 100)}</strong><small>{table.counter.name}{diningMode ? ` · ${diningMode.name}` : ''}</small></div>
-    <Notice title="checkoutUnavailableTitle">{t('checkoutUnavailableHint')}</Notice>
-    <div className="dining-settlement-actions"><Button onClick={onClose}>{t('back')}</Button><Button block color="primary" onClick={() => onAdjust(table)}>{t('checkoutAdjustOrder')}</Button></div>
-  </LiveSheet>
-}
-
-interface CheckoutRuleLine { specificationUuid: string | null; quantity: number; productName?: string; specificationName?: string }
-
-function DiningCheckoutRules({ table, mode, lines, participantCount: participantOverride }: { table: CounterSessionView; mode: DiningMode; lines?: CheckoutRuleLine[]; participantCount?: number | null }) {
-  const { t } = useI18n()
-  const [confirmed, setConfirmed] = useState<Set<string>>(() => new Set())
-  const orderItems: CheckoutRuleLine[] = lines ?? (table.ordersVisible ? effectiveDiningOrders(table).flatMap((order) => order.items) : [])
-  const quantities = new Map<string, number>()
-  for (const item of orderItems) if (item.specificationUuid) quantities.set(item.specificationUuid, (quantities.get(item.specificationUuid) ?? 0) + item.quantity)
-  const participantCount = participantOverride === undefined ? table.session?.participantCount ?? null : participantOverride
-  const requiredItems = mode.rules.filter((rule): rule is FixedDiningRule | PerGuestDiningRule => (
-    (rule.type === 'fixed_item' || rule.type === 'per_guest_item') && rule.required
-  )).map((rule) => {
-    const expected = ruleQuantity(rule, participantCount ?? 1)
-    const actual = quantities.get(rule.specificationUuid) ?? 0
-    return { rule, expected, actual, satisfied: actual >= expected && (rule.type !== 'per_guest_item' || participantCount !== null) }
-  })
-  const toggle = (rule: CheckoutRule) => setConfirmed((current) => {
-    const next = new Set(current)
-    if (next.has(rule.uuid)) next.delete(rule.uuid)
-    else next.add(rule.uuid)
-    return next
-  })
-  const itemLabel = (specificationUuid: string, fallback: string) => {
-    const item = orderItems.find((entry) => entry.specificationUuid === specificationUuid && entry.productName)
-    return item ? `${item.productName}${item.specificationName ? ` · ${item.specificationName}` : ''}` : fallback || t('checkoutRequiredItem')
-  }
-  const ruleTitle = (rule: CheckoutRule) => rule.title.trim() || rule.name.trim() || t(rule.type === 'confirm_participants' ? 'checkoutGuestRule' : rule.type === 'confirm_required_items' ? 'checkoutRequiredItemsRule' : 'checkoutCategoryRule')
-  return <section className="dining-checkout-rules" aria-label={t('checkoutRules')}>
-    <header><div><span>{t('checkoutRulesForMode')}</span><strong>{mode.name}</strong></div><small>{mode.checkoutRules.length}</small></header>
-    {mode.checkoutRules.map((rule, index) => {
-      const blocked = rule.type === 'confirm_participants'
-        ? participantCount === null
-        : rule.type === 'confirm_required_items' && requiredItems.some((item) => !item.satisfied)
-      return <article key={rule.uuid} className={`${confirmed.has(rule.uuid) ? 'is-confirmed' : ''} ${blocked ? 'is-blocked' : ''}`}>
-        <div className="dining-checkout-rule-title"><span>{String(index + 1).padStart(2, '0')}</span><strong>{ruleTitle(rule)}</strong><small>{t(rule.required ? 'checkoutRuleRequired' : 'checkoutRuleOptional')}</small></div>
-        {rule.type === 'confirm_participants' && <p>{participantCount === null ? t('checkoutParticipantsMissing') : t('checkoutParticipantsValue').replace('{count}', String(participantCount))}</p>}
-        {rule.type === 'confirm_required_items' && <div className="dining-checkout-item-list">{requiredItems.length === 0 ? <p>{t('checkoutRequiredItemsNone')}</p> : requiredItems.map(({ rule: itemRule, expected, actual, satisfied }) => <div key={itemRule.uuid}><span>{itemLabel(itemRule.specificationUuid, itemRule.name)}</span><b className={satisfied ? 'is-ok' : 'is-missing'}>{t('checkoutItemQuantity').replace('{actual}', String(actual)).replace('{expected}', String(expected))}</b></div>)}</div>}
-        {rule.type === 'suggest_category' && <p>{t('checkoutCategorySuggestion')}</p>}
-        <label className="dining-checkout-confirm"><input type="checkbox" checked={confirmed.has(rule.uuid)} disabled={blocked} onChange={() => toggle(rule)} /><span>{blocked ? t('checkoutRuleBlocked') : confirmed.has(rule.uuid) ? t('checkoutRuleConfirmed') : t('checkoutRuleConfirm')}</span></label>
-      </article>
-    })}
-  </section>
 }
 
 function DiningLines({ items, currency }: { items: SessionOrder['items']; currency: string }) {
@@ -602,7 +530,7 @@ function DiningModePicker({ state, timeZone, participantCount, onParticipantCoun
   </section>
 }
 
-type DiningEditorMode = 'new' | 'add' | 'replace' | 'checkout'
+type DiningEditorMode = 'new' | 'add' | 'replace'
 interface ModernCartLine {
   specificationUuid: string
   quantity: number
@@ -661,54 +589,282 @@ function checkoutCartLines(table: CounterSessionView): ModernCartLine[] {
   }])))
 }
 
-function CheckoutOrderReview({ lines, currency }: { lines: ModernCartLine[]; currency: string }) {
-  const { t, locale } = useI18n()
-  return <section className="dining-checkout-order" aria-label={t('checkoutRuleOrderTitle')}>
-    <header><h3>{t('checkoutRuleOrderTitle')}</h3><small>{lines.length} {t('recordsUnit')}</small></header>
-    <ul>{lines.map((line) => <li key={line.specificationUuid}>
-      <span><strong>{line.productName}</strong>{line.specificationName && <small>{line.specificationName}</small>}</span>
-      <b>×{line.quantity}</b>
-      {line.price !== undefined && <em>{new Intl.NumberFormat(locale, { style: 'currency', currency }).format(line.price * line.quantity / 100)}</em>}
-    </li>)}</ul>
-  </section>
+async function processCheckout(api: StoreApi, access: StoreAccess, table: CounterSessionView, lines: ModernCartLine[], mode: DiningMode | null, participantCount: number | null): Promise<CounterSessionView> {
+  const refresh = () => loadCounterSession(api, access, table.counter.uuid)
+  let current = table
+  const participantManagedByMode = Boolean(mode && (
+    mode.rules.some((rule) => rule.type === 'per_guest_item')
+    || mode.checkoutRules.some((rule) => rule.type === 'confirm_participants')
+  ))
+  if (participantManagedByMode && participantCount !== null && current.session && participantCount !== current.session.participantCount) {
+    if (!permitted(access, 'update')) throw new ApiError('forbidden', 403)
+    await api.counterCommand(table.counter.uuid, 'update', {
+      version: current.version,
+      participantCount,
+      notes: current.session.notes ?? '',
+      commandUuid: crypto.randomUUID(),
+    })
+    current = await refresh()
+  }
+
+  const notes = current.session?.notes ?? ''
+  const intended = lines.map(({ specificationUuid, quantity }) => ({ specificationUuid, quantity }))
+  const reconciliation = reconcileCheckoutQuantities(checkoutCartLines(current), intended)
+  const diningModeUuid = mode?.uuid
+  let mergedOrderUuid: string | null = null
+  let latestOrderUuid: string | null = null
+
+  if (reconciliation.additions.length > 0) {
+    const additionCart: OrderCart = { version: current.version, items: reconciliation.additions, notes, ...(diningModeUuid ? { diningModeUuid } : {}) }
+    const additionQuote = await api.orderQuote(table.counter.uuid, additionCart)
+    const existingUuids = new Set(effectiveDiningOrders(current).map((order) => order.uuid))
+    const created = await api.counterCommand(table.counter.uuid, 'create', { ...additionCart, quoteToken: additionQuote.quoteToken, commandUuid: crypto.randomUUID() })
+    latestOrderUuid = created.orderUuid ?? null
+    const projectedAddition = await waitForCheckoutOrder(api, access, table.counter.uuid, (order) => created.orderUuid ? order.uuid === created.orderUuid : !existingUuids.has(order.uuid))
+    current = projectedAddition.table
+  }
+
+  const openOrders = effectiveDiningOrders(current)
+  if (openOrders.length > 1) {
+    const previewMerge = async () => {
+      current = await refresh()
+      return api.previewCounterMerge(table.counter.uuid, current.version)
+    }
+    const mergeQuote = reconciliation.additions.length > 0 ? await retryCheckoutConflict(previewMerge) : await previewMerge()
+    const merged = await api.confirmCounterMerge(table.counter.uuid, { version: current.version, commandUuid: crypto.randomUUID(), quoteToken: mergeQuote.quoteToken })
+    mergedOrderUuid = merged.orderUuid ?? null
+    latestOrderUuid = mergedOrderUuid
+    if (mergedOrderUuid) {
+      current = (await waitForCheckoutOrder(api, access, table.counter.uuid, (order) => order.uuid === mergedOrderUuid)).table
+    } else {
+      current = await refresh()
+    }
+  }
+
+  if (reconciliation.reductions.length > 0) {
+    let target: SessionOrder | undefined
+    if (mergedOrderUuid) {
+      const replaceable = await waitForCheckoutReplacement(api, access, table.counter.uuid, mergedOrderUuid)
+      current = replaceable.table
+      target = replaceable.order
+    } else {
+      target = effectiveDiningOrders(current).find((entry) => entry.canReplace)
+    }
+    if (!target) throw new Error('No replaceable checkout order')
+    const replacementCart: OrderCart = {
+      version: current.version,
+      items: intended,
+      notes,
+      ...(diningModeUuid ? { diningModeUuid } : {}),
+      replaceOrderUuid: target.uuid,
+    }
+    const replacementQuote = await api.orderQuote(table.counter.uuid, replacementCart)
+    const replacement = await api.counterCommand(table.counter.uuid, 'replace', {
+      ...replacementCart,
+      quoteToken: replacementQuote.quoteToken,
+      commandUuid: crypto.randomUUID(),
+      reason: 'Adjust items during checkout',
+    })
+    latestOrderUuid = replacement.orderUuid ?? null
+    if (latestOrderUuid) {
+      current = (await waitForCheckoutOrder(api, access, table.counter.uuid, (order) => order.uuid === latestOrderUuid)).table
+    } else {
+      current = await refresh()
+    }
+  } else if (!latestOrderUuid) {
+    current = await refresh()
+  }
+
+  return current
 }
 
-function CheckoutChangePlan({ table, lines }: { table: CounterSessionView; lines: ModernCartLine[] }) {
-  const { t } = useI18n()
-  const currentLines = checkoutCartLines(table)
-  const reconciliation = reconcileCheckoutQuantities(currentLines, lines.map(({ specificationUuid, quantity }) => ({ specificationUuid, quantity })))
-  const names = new Map<string, string>()
-  for (const item of effectiveDiningOrders(table).flatMap((order) => order.items)) {
-    if (item.specificationUuid) names.set(item.specificationUuid, `${item.productName}${item.specificationName ? ` · ${item.specificationName}` : ''}`)
+type CheckoutStage = { kind: 'rule'; index: number } | { kind: 'review' } | { kind: 'result' }
+
+function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: StoreAccess; table: CounterSessionView; onClose: () => void }) {
+  const { t, locale } = useI18n()
+  const diningMode = useMemo(() => resolveTableDiningMode(table, access.store.settings?.diningModes), [access.store.settings?.diningModes, table])
+  const checkoutRules = diningMode?.checkoutRules ?? []
+  const [ruleIndex, setRuleIndex] = useState(0)
+  const [participantCount, setParticipantCount] = useState<number | null>(table.session?.participantCount ?? null)
+  const [lines, setLines] = useState<ModernCartLine[]>(() => checkoutCartLines(table))
+  const [catalog, setCatalog] = useState<{ items: LegacyCatalogItem[]; loading: boolean; error: MessageKey | null }>({ items: [], loading: Boolean(diningMode), error: null })
+  const [result, setResult] = useState<CounterSessionView | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<MessageKey | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<string | null>(null)
+  const originalLines = useMemo(() => checkoutCartLines(table), [table])
+  const paymentMethods = useMemo(() => checkoutPaymentMethods(access.store), [access.store])
+  const stage: CheckoutStage = result ? { kind: 'result' } : ruleIndex < checkoutRules.length ? { kind: 'rule', index: ruleIndex } : { kind: 'review' }
+
+  useEffect(() => {
+    let active = true
+    if (!diningMode) { setCatalog({ items: [], loading: false, error: null }); return }
+    setCatalog({ items: [], loading: true, error: null })
+    const load = async () => {
+      const menu = await api.legacyCatalogAll('', access.store.code, diningMode.catalog)
+      const byUuid = new Map(menu.items.map((item) => [item.uuid, item]))
+      const required = diningMode.rules.flatMap((rule) => rule.type === 'fixed_item' || rule.type === 'per_guest_item' ? [rule.specificationUuid] : [])
+      for (const specificationUuid of [...new Set(required)]) {
+        if (byUuid.has(specificationUuid)) continue
+        const item = await api.legacySpecification(specificationUuid, access.store.code)
+        byUuid.set(item.uuid, item)
+      }
+      return [...byUuid.values()]
+    }
+    void load()
+      .then((items) => { if (active) setCatalog({ items, loading: false, error: null }) })
+      .catch((cause: unknown) => { if (active) setCatalog({ items: [], loading: false, error: errorKey(cause) }) })
+    return () => { active = false }
+  }, [access.store.code, api, diningMode])
+
+  const catalogBySpecification = useMemo(() => new Map(catalog.items.map((item) => [item.uuid, item])), [catalog.items])
+  const lineQuantity = (specificationUuid: string) => lines.find((line) => line.specificationUuid === specificationUuid)?.quantity ?? 0
+  const adjust = (specificationUuid: string, delta: number, fallback?: ModernCartLine) => {
+    setLines((current) => {
+      const existing = current.find((line) => line.specificationUuid === specificationUuid)
+      const nextQuantity = Math.max(0, Math.min(99, (existing?.quantity ?? 0) + delta))
+      if (nextQuantity === 0) return current.filter((line) => line.specificationUuid !== specificationUuid)
+      if (existing) return current.map((line) => line.specificationUuid === specificationUuid ? { ...line, quantity: nextQuantity } : line)
+      if (!fallback || delta <= 0) return current
+      return [...current, { ...fallback, quantity: nextQuantity }]
+    })
   }
-  for (const line of lines) names.set(line.specificationUuid, `${line.productName}${line.specificationName ? ` · ${line.specificationName}` : ''}`)
-  const describe = (items: { specificationUuid: string; quantity: number }[]) => items.map((item) => `${names.get(item.specificationUuid) ?? item.specificationUuid} ×${item.quantity}`).join('、')
-  return <section className={`dining-checkout-plan ${reconciliation.changed ? 'has-changes' : ''}`} aria-label={t('checkoutChangePlan')}>
-    <header><h3>{t('checkoutChangePlan')}</h3><span>{t('checkoutPlanHint')}</span></header>
-    {!reconciliation.changed && <p>{t('checkoutNoChangesPlan')}</p>}
-    {reconciliation.additions.length > 0 && <p className="is-addition">{t('checkoutAdditionsPlan').replace('{items}', describe(reconciliation.additions))}</p>}
-    {reconciliation.reductions.length > 0 && <p className="is-reduction">{t('checkoutReductionsPlan').replace('{items}', describe(reconciliation.reductions))}</p>}
-  </section>
+  const lineFromCatalog = (item: LegacyCatalogItem): ModernCartLine => ({
+    specificationUuid: item.uuid,
+    quantity: 1,
+    productUuid: item.productUuid,
+    categoryUuid: item.categoryUuid,
+    productName: item.productName,
+    specificationName: item.name,
+    price: item.price,
+    ruleUuids: [],
+    locked: false,
+  })
+  const requiredModeRules = diningMode?.rules.filter((rule): rule is FixedDiningRule | PerGuestDiningRule => (
+    (rule.type === 'fixed_item' || rule.type === 'per_guest_item') && rule.required
+  )) ?? []
+  const requiredItems = requiredModeRules.map((rule) => {
+    const item = catalogBySpecification.get(rule.specificationUuid)
+    const existing = originalLines.find((line) => line.specificationUuid === rule.specificationUuid)
+    const productName = item?.productName ?? existing?.productName ?? rule.name
+    const specificationName = item?.name ?? existing?.specificationName ?? t('checkoutRequiredItem')
+    const price = item?.price ?? existing?.price ?? 0
+    const expected = rule.type === 'per_guest_item' && participantCount === null
+      ? null
+      : ruleQuantity(rule, participantCount ?? 1)
+    return { rule, item, productName, specificationName, price, expected }
+  })
+  const activeRule = stage.kind === 'rule' ? checkoutRules[stage.index] : null
+  const activeRuleTitle = activeRule
+    ? activeRule.title.trim() || activeRule.name.trim() || t(activeRule.type === 'confirm_participants' ? 'checkoutGuestRule' : activeRule.type === 'confirm_required_items' ? 'checkoutRequiredItemsRule' : 'checkoutCategoryRule')
+    : ''
+  const categoryItems = activeRule?.type === 'suggest_category'
+    ? catalog.items.filter((item) => item.categoryUuid === activeRule.categoryUuid)
+    : []
+  const requiredBlocked = activeRule?.type === 'confirm_required_items' && activeRule.required
+    ? requiredItems.some(({ rule, expected }) => expected === null || lineQuantity(rule.specificationUuid) < expected)
+    : false
+  const participantBlocked = activeRule?.type === 'confirm_participants' && activeRule.required && participantCount === null
+  const catalogStepLoading = catalog.loading && (activeRule?.type === 'confirm_required_items' || activeRule?.type === 'suggest_category')
+  const nextDisabled = busy || participantBlocked || requiredBlocked || catalogStepLoading
+  const reconciliation = reconcileCheckoutQuantities(originalLines, lines)
+  const lineName = (specificationUuid: string) => {
+    const line = lines.find((item) => item.specificationUuid === specificationUuid) ?? originalLines.find((item) => item.specificationUuid === specificationUuid)
+    return line ? `${line.productName}${line.specificationName ? ` · ${line.specificationName}` : ''}` : specificationUuid
+  }
+  const reductionBySpecification = new Map(reconciliation.reductions.map((item) => [item.specificationUuid, item.quantity]))
+  const estimatedTotal = lines.reduce((total, line) => total + (line.price ?? 0) * line.quantity, 0)
+  const money = (value: number, currency = table.currency) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value / 100)
+  const proceed = () => {
+    setError(null)
+    setRuleIndex((current) => Math.min(checkoutRules.length, current + 1))
+  }
+  const submit = async () => {
+    if (busy) return
+    if (!navigator.onLine) { setError('offline'); return }
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await processCheckout(api, access, table, lines, diningMode, participantCount))
+    } catch (cause) {
+      setError(errorKey(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const finalCurrency = result?.currency ?? table.currency
+  const finalLines = result ? checkoutCartLines(result) : []
+  const finalAmount = result ? effectiveDiningAmount(result) : 0
+  const finalOrders = result ? effectiveDiningOrders(result) : []
+  const footer = stage.kind === 'result'
+    ? <div className="dining-confirm-bar"><Button block onClick={onClose}>{t('close')}</Button></div>
+    : stage.kind === 'rule'
+      ? <div className="dining-confirm-bar"><Button disabled={busy || ruleIndex === 0} onClick={() => setRuleIndex((current) => Math.max(0, current - 1))}><ArrowLeft size={16} />{t('back')}</Button><Button block color="primary" disabled={nextDisabled} onClick={proceed}>{t(stage.index === checkoutRules.length - 1 ? 'checkoutFinalReview' : 'checkoutNextRule')}<ArrowRight size={16} /></Button></div>
+      : <div className="dining-confirm-bar">{checkoutRules.length > 0 && <Button disabled={busy} onClick={() => setRuleIndex(checkoutRules.length - 1)}><ArrowLeft size={16} />{t('back')}</Button>}<Button block color="primary" loading={busy} disabled={busy} onClick={() => void submit()}>{t('checkoutConfirmAndProcess')}</Button></div>
+
+  return <LiveSheet open title={t(stage.kind === 'result' ? 'checkoutResultTitle' : 'checkoutDining')} className="dining-settlement dining-checkout-flow" onClose={() => { if (!busy) onClose() }} footer={footer}>
+    {error && <Notice>{t(error)}</Notice>}
+    {stage.kind === 'rule' && <section className="checkout-rule-step" aria-label={activeRuleTitle}>
+      <header><div><span>{t('checkoutRuleStep').replace('{current}', String(stage.index + 1)).replace('{total}', String(checkoutRules.length))}</span><h3>{activeRuleTitle}</h3></div>{diningMode && <small>{diningMode.name}</small>}</header>
+      {activeRule?.type === 'confirm_participants' && <div className="checkout-participant-review"><p>{participantCount === null ? t('checkoutParticipantsMissing') : t('checkoutParticipantsValue').replace('{count}', String(participantCount))}</p><div className="dining-guest-quick" role="group" aria-label={t('diningGuestQuick')}>{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((value) => <button type="button" key={value} className={participantCount === value ? 'is-active' : ''} aria-pressed={participantCount === value} onClick={() => setParticipantCount(value)}>{value}</button>)}</div><label className="dining-guest-input"><span>{t('diningOtherGuests')}</span><input aria-label={t('diningGuestCount')} inputMode="numeric" pattern="[0-9]*" type="number" min={1} max={100} step={1} value={participantCount ?? ''} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { const value = Number(event.target.value); setParticipantCount(Number.isInteger(value) && value >= 1 ? Math.min(100, value) : null) }} /></label></div>}
+      {activeRule?.type === 'confirm_required_items' && <div className="checkout-rule-products" aria-label={t('checkoutRequiredItemsRule')}>
+        {catalog.loading && <p className="helper" role="status">{t('diningRulesLoading')}</p>}
+        {!catalog.loading && requiredItems.length === 0 && <Notice subtle>{t('checkoutRequiredItemsNone')}</Notice>}
+        {requiredItems.map(({ rule, item, productName, specificationName, price, expected }) => {
+          const fallback: ModernCartLine | undefined = item ? lineFromCatalog(item) : price > 0 ? { specificationUuid: rule.specificationUuid, quantity: 1, productName, specificationName, price, ruleUuids: [], locked: false } : undefined
+          const quantity = lineQuantity(rule.specificationUuid)
+          return <article key={rule.uuid}><div><strong>{productName}</strong><small>{specificationName} · {t('checkoutRequiredExpected').replace('{count}', expected === null ? '—' : String(expected))}</small></div><DiningProductQuantity item={{ productName, specificationName }} quantity={quantity} disabled={false} canDecrease={quantity > 0} onIncrease={() => adjust(rule.specificationUuid, 1, fallback)} onDecrease={() => adjust(rule.specificationUuid, -1)} /></article>
+        })}
+      </div>}
+      {activeRule?.type === 'suggest_category' && <div className="checkout-rule-products" aria-label={activeRuleTitle}>
+        <p className="helper">{t('checkoutCategorySuggestion')}</p>
+        {!catalog.loading && categoryItems.length === 0 && <Notice subtle>{t('checkoutNoCategoryItems')}</Notice>}
+        {categoryItems.map((item) => <article key={item.uuid}><div><strong>{item.productName}</strong><small>{item.name} · {money(item.price)}</small></div><DiningProductQuantity item={{ productName: item.productName, specificationName: item.name }} quantity={lineQuantity(item.uuid)} disabled={!item.available} canDecrease={lineQuantity(item.uuid) > 0} onIncrease={() => adjust(item.uuid, 1, lineFromCatalog(item))} onDecrease={() => adjust(item.uuid, -1)} /></article>)}
+      </div>}
+      {catalog.error && <Notice>{t(catalog.error)}</Notice>}
+    </section>}
+    {stage.kind === 'review' && <section className="checkout-final-review">
+      <header><span>{t('checkoutFinalReview')}</span><h3>{table.counter.name}</h3><small>{diningMode?.name ?? t('diningModeNotRecorded')}</small></header>
+      {!diningMode && <Notice subtle>{t('checkoutNoModeHint')}</Notice>}
+      <div className="checkout-review-heading"><h4>{t('checkoutOriginalItems')}</h4><small>{originalLines.length} {t('recordsUnit')}</small></div>
+      <ul className="checkout-final-lines">{originalLines.map((line) => {
+        const reduction = reductionBySpecification.get(line.specificationUuid) ?? 0
+        return <li key={line.specificationUuid}><span><strong>{line.productName}</strong><small>{line.specificationName}</small></span><b>×{line.quantity}</b>{reduction > 0 && <em className="is-reduction">−{reduction}</em>}</li>
+      })}</ul>
+      {reconciliation.additions.length > 0 && <><div className="checkout-review-heading"><h4>{t('checkoutAddedItems')}</h4><small>{reconciliation.additions.length} {t('recordsUnit')}</small></div><ul className="checkout-final-lines is-addition">{reconciliation.additions.map((line) => <li key={line.specificationUuid}><span><strong>{lineName(line.specificationUuid)}</strong></span><em>+{line.quantity}</em></li>)}</ul></>}
+      {!reconciliation.changed && <Notice subtle>{t('checkoutNoChangesPlan')}</Notice>}
+      <div className="dining-settlement-total"><span>{t('checkoutEstimatedAmount')}</span><strong>{money(estimatedTotal)}</strong><small>{t('checkoutEstimatedHint')}</small></div>
+    </section>}
+    {stage.kind === 'result' && result && <section className="checkout-result">
+      <Notice title="checkoutResultHintTitle">{t('checkoutResultHint')}</Notice>
+      <div className="checkout-receipt-print">
+        <header><strong>{access.store.name}</strong><span>{table.counter.name} · {formatDiningDate(new Date().toISOString(), locale)}</span></header>
+        <ul>{finalLines.map((line) => <li key={line.specificationUuid}><span>{line.productName}<small>{line.specificationName}</small></span><b>×{line.quantity}</b></li>)}</ul>
+        <div className="dining-settlement-total"><span>{t('checkoutFinalAmount')}</span><strong>{money(finalAmount, finalCurrency)}</strong><small>{finalOrders.map((order) => `#${order.uuid.slice(0, 8).toUpperCase()}`).join(' · ')}</small></div>
+      </div>
+      <section className="checkout-payment-methods"><header><CreditCard size={17} /><h4>{t('checkoutPaymentMethods')}</h4></header>
+        {paymentMethods.length > 0 ? <div>{paymentMethods.map((method: CheckoutPaymentMethod) => <button type="button" key={method.code} className={paymentMethod === method.code ? 'is-active' : ''} aria-pressed={paymentMethod === method.code} onClick={() => setPaymentMethod(method.code)}>{method.name}</button>)}</div> : <Notice subtle>{t('checkoutNoPaymentMethods')}</Notice>}
+      </section>
+      <Button block className="checkout-print-button" onClick={() => window.print()}><Printer size={17} />{t('checkoutPrintReceipt')}</Button>
+    </section>}
+  </LiveSheet>
 }
 
 function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'add', onClose, done }: { api: StoreApi; access: StoreAccess; table: CounterSessionView; order?: SessionOrder; mode?: DiningEditorMode; onClose: () => void; done: () => void }) {
   const { t, locale } = useI18n()
   const formId = useId()
   const isAdd = mode === 'add'
-  const isCheckout = mode === 'checkout'
   const initialLines = useMemo(() => order?.items.flatMap(({ specificationUuid, quantity, productName, specificationName, unitPrice }) => specificationUuid === null ? [] : [{
     specificationUuid, quantity, productName, specificationName, price: unitPrice, ruleUuids: [], locked: false,
-  }]) ?? (isCheckout ? checkoutCartLines(table) : []), [isCheckout, order, table])
+  }]) ?? [], [order])
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [participantCount, setParticipantCount] = useState(table.session?.participantCount ?? 1)
   const [removedRules, setRemovedRules] = useState<Set<string>>(() => new Set())
-  // Checkout must use the mode snapshotted when the first order was placed. A historical
-  // session without that snapshot goes directly through the order-merge path.
   const boundDiningMode = useMemo(
     () => resolveTableDiningMode(table, access.store.settings?.diningModes),
     [access.store.settings?.diningModes, table],
   )
-  const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, boundDiningMode, !isCheckout || Boolean(boundDiningMode))
+  const diningMode = useDiningModeState(access.store.settings?.diningModes, access.store.timezone, boundDiningMode)
   const ruleCatalog = useRuleCatalog(api, access.store.code, isAdd ? null : diningMode.selected)
   const [items, setItems] = useState<ModernCartLine[]>(initialLines)
   const [notes, setNotes] = useState(order?.notes ?? '')
@@ -751,8 +907,8 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
   const cart: OrderCart = { version: table.version, items: orderLines.map(({ specificationUuid, quantity }) => ({ specificationUuid, quantity })), notes, ...(diningMode.selected ? { diningModeUuid: diningMode.selected.uuid } : {}), ...(order ? { replaceOrderUuid: order.uuid } : {}) }
   const payload = { ...cart, quoteToken: quote?.quoteToken, ...(order ? { reason: reason.trim() } : {}) }
   const commandUuid = useCommand(payload)
-  const title = mode === 'replace' ? 'replaceDining' : mode === 'new' ? 'placeNewDining' : isCheckout ? 'checkoutDining' : 'addDining'
-  const hint = mode === 'replace' ? 'diningReplaceHint' : mode === 'new' ? 'diningNewHint' : isCheckout ? 'checkoutAdjustHint' : 'diningAddHint'
+  const title = mode === 'replace' ? 'replaceDining' : mode === 'new' ? 'placeNewDining' : 'addDining'
+  const hint = mode === 'replace' ? 'diningReplaceHint' : mode === 'new' ? 'diningNewHint' : 'diningAddHint'
   const itemQuantity = (specificationUuid: string) => orderLines.find((line) => line.specificationUuid === specificationUuid)?.quantity ?? 0
   const choiceBlocked = (item: { specificationUuid: string; productUuid?: string; categoryUuid?: string | null }) => isChoiceSelectionBlocked(diningMode.selected, orderLines, { ...item, quantity: 1 })
   const addItem = (item: { specificationUuid: string; productName: string; specificationName: string; productUuid?: string; categoryUuid?: string | null; available: boolean; price?: number }) => {
@@ -807,91 +963,13 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
     const currentQuote = await api.orderQuote(table.counter.uuid, cart)
     await api.counterCommand(table.counter.uuid, 'create', { ...cart, quoteToken: currentQuote.quoteToken, commandUuid })
   }
-  const submitCheckout = async () => {
-    setAttempted(true)
-    const refresh = () => loadCounterSession(api, access, table.counter.uuid)
-    let current = table
-    const participantManagedByMode = Boolean(diningMode.selected && (
-      diningMode.selected.rules.some((rule) => rule.type === 'per_guest_item')
-      || diningMode.selected.checkoutRules.some((rule) => rule.type === 'confirm_participants')
-    ))
-    if (participantManagedByMode && current.session && participantCount !== current.session.participantCount) {
-      if (!permitted(access, 'update')) throw new ApiError('forbidden', 403)
-      await api.counterCommand(table.counter.uuid, 'update', {
-        version: current.version,
-        participantCount,
-        notes: current.session.notes ?? '',
-        commandUuid: crypto.randomUUID(),
-      })
-      current = await refresh()
-    }
-    const intended = orderLines.map(({ specificationUuid, quantity }) => ({ specificationUuid, quantity }))
-    const reconciliation = reconcileCheckoutQuantities(checkoutCartLines(current), intended)
-    const diningModeUuid = diningMode.selected?.uuid
-    let mergedOrderUuid: string | null = null
-
-    // Additions are a separate round. This preserves the original order history and
-    // gives the merge operation a complete, server-priced settlement aggregate.
-    if (reconciliation.additions.length > 0) {
-      const additionCart: OrderCart = { version: current.version, items: reconciliation.additions, notes, ...(diningModeUuid ? { diningModeUuid } : {}) }
-      const additionQuote = await api.orderQuote(table.counter.uuid, additionCart)
-      const existingUuids = new Set(effectiveDiningOrders(current).map((order) => order.uuid))
-      const created = await api.counterCommand(table.counter.uuid, 'create', { ...additionCart, quoteToken: additionQuote.quoteToken, commandUuid: crypto.randomUUID() })
-      // Order projection is asynchronous. Wait until the new round is visible before
-      // deciding whether a merge is needed, otherwise a later reduction could target
-      // the pre-addition order while the new round is still pending projection.
-      const projectedAddition = await waitForCheckoutOrder(api, access, table.counter.uuid, (order) => created.orderUuid ? order.uuid === created.orderUuid : !existingUuids.has(order.uuid))
-      current = projectedAddition.table
-    }
-
-    const openOrders = effectiveDiningOrders(current)
-    if (openOrders.length > 1) {
-      const previewMerge = async () => {
-        current = await refresh()
-        return api.previewCounterMerge(table.counter.uuid, current.version)
-      }
-      const mergeQuote = reconciliation.additions.length > 0
-        ? await retryCheckoutConflict(previewMerge)
-        : await previewMerge()
-      const merged = await api.confirmCounterMerge(table.counter.uuid, { version: current.version, commandUuid: crypto.randomUUID(), quoteToken: mergeQuote.quoteToken })
-      mergedOrderUuid = merged.orderUuid ?? null
-      current = await refresh()
-    }
-
-    // A reduction cannot be represented by an additive round. After consolidation it
-    // becomes one replace command against the merged order (or the only source order).
-    if (reconciliation.reductions.length > 0) {
-      let target: SessionOrder | undefined
-      if (mergedOrderUuid) {
-        const replaceable = await waitForCheckoutReplacement(api, access, table.counter.uuid, mergedOrderUuid)
-        current = replaceable.table
-        target = replaceable.order
-      } else {
-        target = effectiveDiningOrders(current).find((entry) => entry.canReplace)
-      }
-      if (!target) throw new Error('No replaceable checkout order')
-      const replacementCart: OrderCart = {
-        version: current.version, items: intended, notes,
-        ...(diningModeUuid ? { diningModeUuid } : {}), replaceOrderUuid: target.uuid,
-      }
-      const replacementQuote = await api.orderQuote(table.counter.uuid, replacementCart)
-      await api.counterCommand(table.counter.uuid, 'replace', {
-        ...replacementCart, quoteToken: replacementQuote.quoteToken, commandUuid: crypto.randomUUID(),
-        reason: locale === 'zh-CN' ? '结账时调整菜品数量' : 'Adjust items during checkout',
-      })
-    }
-  }
   const choiceRules = diningMode.selected?.rules.filter((rule): rule is ChoiceDiningRule => rule.type === 'choice_group') ?? []
   const invalidRules = new Set(issues.map((issue) => issue.ruleUuid))
   const quoteDisabled = !orderLines.length || Boolean(issues.length) || ruleCatalog.loading || Boolean(ruleCatalog.error) || diningMode.configured && !diningMode.selected
-  const primaryLabel: MessageKey = quote ? (isCheckout ? 'checkoutConfirmCart' : 'diningConfirm') : isAdd ? 'diningConfirm' : isCheckout ? 'checkoutReviewCart' : 'diningQuote'
+  const primaryLabel: MessageKey = quote ? 'diningConfirm' : isAdd ? 'diningConfirm' : 'diningQuote'
   return <LiveSheet open title={t(title)} className="dining-editor" toolbar={!quote && categories.length >= 2 && <MenuCategoryFilter categories={categories} selected={categoryFilter} onChange={setCategoryFilter} />} footer={<div className="dining-confirm-bar">{quote ? <Button disabled={attempted || submitting} onClick={() => setQuote(null)}>{t('diningEditCart')}</Button> : !order ? <Button disabled={submitting} onClick={() => void clearCurrentCart()}>{t('clearCart')}</Button> : null}<Button block type="submit" form={formId} color="primary" loading={submitting} disabled={quote ? submitting : quoteDisabled}>{t(primaryLabel)}</Button></div>} onClose={onClose}>
     <Notice subtle>{t(hint)}</Notice>
-    {isCheckout && diningMode.selected && diningMode.selected.checkoutRules.length > 0 && <DiningCheckoutRules table={table} mode={diningMode.selected} lines={orderLines} participantCount={participantCount} />}
-    {isCheckout && !diningMode.selected && <Notice subtle>{t('checkoutNoModeHint')}</Notice>}
-    {isCheckout && <CheckoutOrderReview lines={orderLines} currency={table.currency} />}
-    {isCheckout && <CheckoutChangePlan table={table} lines={orderLines} />}
-    <DiningModePicker state={diningMode} timeZone={access.store.timezone} participantCount={participantCount} onParticipantCount={setParticipantCount} showGuests={!isAdd} forceGuests={isCheckout && Boolean(diningMode.selected?.checkoutRules.some((rule) => rule.type === 'confirm_participants'))} onSelect={switchMode} />
+    <DiningModePicker state={diningMode} timeZone={access.store.timezone} participantCount={participantCount} onParticipantCount={setParticipantCount} showGuests={!isAdd} onSelect={switchMode} />
     {!isAdd && diningMode.selected && <ModeRuleGuide mode={diningMode.selected} lines={orderLines} issues={issues} />}
     {!isAdd && choiceRules.map((rule) => <ChoiceRulePicker key={rule.uuid} rule={rule} items={menu.items as LegacyCatalogItem[]} lines={orderLines} currency={table.currency} invalid={invalidRules.has(rule.uuid)} disabled={ruleCatalog.loading} onSelect={(item) => addItem({ specificationUuid: item.uuid, productName: item.productName, specificationName: item.name, productUuid: item.productUuid, categoryUuid: item.categoryUuid, price: item.price, available: item.available })} onClear={clearItem} />)}
     {ruleCatalog.error && <Notice>{t(ruleCatalog.error)}</Notice>}
@@ -906,7 +984,7 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
         <label className="field">{t('orderNote')}<textarea maxLength={1000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
         {order && <label className="field">{t('diningReason')}<textarea required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>}
       </MutationForm>
-    : <MutationForm id={formId} actions={false} submit={() => isCheckout ? submitCheckout() : (setAttempted(true), api.counterCommand(table.counter.uuid, order ? 'replace' : 'create', { ...payload, commandUuid }))} onDone={done} onBusyChange={setSubmitting}>
+    : <MutationForm id={formId} actions={false} submit={() => (setAttempted(true), api.counterCommand(table.counter.uuid, order ? 'replace' : 'create', { ...payload, commandUuid }))} onDone={done} onBusyChange={setSubmitting}>
       <h3>{t('diningQuoteReview')}</h3><DiningLines items={quote.items} currency={quote.currency} /><div className="dining-quote-total"><span>{t('amount')}</span><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: quote.currency }).format(quote.totalAmount / 100)}</strong></div>{notes && <p className="dining-notes">{t('orderNote')} · {notes}</p>}<Notice subtle>{t('diningQuoteHint')}</Notice>{attempted && <Notice>{t('diningRetryHint')}</Notice>}
     </MutationForm>}
   </LiveSheet>

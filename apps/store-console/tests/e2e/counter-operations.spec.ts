@@ -5,12 +5,18 @@ const counterId = '10000000-0000-4000-8000-000000000002'
 const sessionId = '10000000-0000-4000-8000-000000000003'
 const specId = '10000000-0000-4000-8000-000000000004'
 const productId = '10000000-0000-4000-8000-000000000005'
+const categoryId = '10000000-0000-4000-8000-000000000006'
+const teaSpecId = '10000000-0000-4000-8000-000000000031'
+const teaProductId = '10000000-0000-4000-8000-000000000032'
 const diningModeId = '10000000-0000-4000-8000-000000000010'
 const participantRuleId = '10000000-0000-4000-8000-000000000011'
 const categoryRuleId = '10000000-0000-4000-8000-000000000012'
 const requiredItemRuleId = '10000000-0000-4000-8000-000000000013'
 const requiredCheckoutRuleId = '10000000-0000-4000-8000-000000000014'
-const store = { uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'USD', timezone: 'UTC' }
+const store = {
+  uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'USD', timezone: 'UTC',
+  paymentSetting: { channels: { cash: true, wechat: { enabled: true, name: '微信支付' } } },
+}
 const item = { specificationUuid: specId, productName: 'Soup', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }
 const stamp = '2026-10-31T10:00:00+00:00'
 const diningMode = {
@@ -25,7 +31,7 @@ const diningMode = {
   checkoutRules: [
     { uuid: participantRuleId, name: '人数核对', title: '请确认用餐人数', type: 'confirm_participants', required: true, categoryUuid: '' },
     { uuid: requiredCheckoutRuleId, name: '菜品核对', title: '请确认以下菜品', type: 'confirm_required_items', required: true, categoryUuid: '' },
-    { uuid: categoryRuleId, name: '饮料推荐', title: '是否需要饮料', type: 'suggest_category', required: false, categoryUuid: specId },
+    { uuid: categoryRuleId, name: '饮料推荐', title: '是否需要饮料', type: 'suggest_category', required: false, categoryUuid: categoryId },
   ],
 }
 
@@ -91,8 +97,13 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     if (path === '/api/v1/app/stores') return route.fulfill({ json: { code: 0, data: [storeView], paginator: { page: 1, has_next: false } } })
     if (path === `/api/v1/app/stores/${storeId}`) return respond(storeView)
     if (path === '/api/v1/app/products') return route.fulfill({ json: { code: 0, data: [{
-      id: 1, uuid: productId, name: 'Soup', status: 'active', metadata: null, category: null,
+      id: 1, uuid: productId, name: 'Soup', status: 'active', metadata: null,
+      category: { uuid: categoryId, name: 'Drinks', enabled: true },
       specifications: [{ id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', sort: 0, metadata: null }],
+    }, {
+      id: 2, uuid: teaProductId, name: 'Green Tea', status: 'active', metadata: null,
+      category: { uuid: categoryId, name: 'Drinks', enabled: true },
+      specifications: [{ id: 2, uuid: teaSpecId, name: 'Medium', price: 1590, status: 'active', sort: 0, metadata: null }],
     }], paginator: { page: 1, has_next: false } } })
     if (path === `/api/v1/app/specifications/${specId}`) return respond({
       id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', metadata: null,
@@ -160,7 +171,9 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       const metadata = (body!.metadata ?? {}) as Record<string, unknown>
       const quantity = (body!.items as { quantity: number }[])[0]!.quantity
       if (!session) session = { uuid: sessionId, participantCount: null, notes: null, startedAt: stamp, revision, diningModeUuid: null, diningMode: null }
-      if (metadata.diningModeUuid === diningModeId) session = { ...session, diningModeUuid: diningModeId, diningMode, revision }
+      const participantCount = typeof metadata.guests === 'number' ? metadata.guests : session.participantCount
+      if (metadata.diningModeUuid === diningModeId) session = { ...session, participantCount, diningModeUuid: diningModeId, diningMode, revision }
+      else if (participantCount !== session.participantCount) session = { ...session, participantCount, revision }
       const uuid = `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
       orders.push({ uuid, status: 'pending', operationalStatus: 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * quantity, notes: String(body!.notes ?? ''), createdAt: stamp, diningModeUuid: metadata.diningModeUuid === diningModeId ? diningModeId : null, diningModeName: metadata.diningModeUuid === diningModeId ? 'Hotpot' : null, items: [{ ...item, quantity, amount: 1590 * quantity }], canReplace: true, canCancel: true })
       return respond({ uuid })
@@ -454,6 +467,7 @@ test('order rounds use the mode stored on the order when the session has no snap
   await detail.getByRole('button', { name: '结账', exact: true }).click()
   const checkout = page.getByRole('dialog', { name: '结账', exact: true })
   await expect(checkout).toContainText('请确认用餐人数')
+  await checkout.getByRole('button', { name: '下一项', exact: true }).click()
   await expect(checkout).toContainText('请确认以下菜品')
 })
 
@@ -559,22 +573,27 @@ test('order submission stores the selected dining mode and checkout uses its sav
   await detail.getByRole('button', { name: '结账', exact: true }).click()
   const checkoutReview = page.getByRole('dialog', { name: '结账', exact: true })
   await expect(checkoutReview).toContainText('请确认用餐人数')
+  await expect(checkoutReview).toContainText('第 1 / 3 步')
+  await expect(checkoutReview).not.toContainText('请确认以下菜品')
+  await checkoutReview.getByRole('button', { name: '下一项', exact: true }).click()
   await expect(checkoutReview).toContainText('请确认以下菜品')
+  await expect(checkoutReview.locator('.dining-product-quantity')).toContainText('×1')
+  await checkoutReview.getByRole('button', { name: '下一项', exact: true }).click()
   await expect(checkoutReview).toContainText('是否需要饮料')
-  await expect(checkoutReview).toContainText('本次结账订单')
-  await checkoutReview.getByRole('button', { name: '按规则核对并调整订单', exact: true }).click()
-  const editorCheckout = page.getByRole('dialog', { name: '结账', exact: true })
-  await expect(editorCheckout).toContainText('先按本桌点餐方式核对并调整最终菜品')
-  await expect(editorCheckout).toContainText('请确认用餐人数')
-  await expect(editorCheckout.locator('.dining-product-quantity')).toContainText('×1')
-  await editorCheckout.getByRole('button', { name: '核对结账菜品', exact: true }).click()
-  await editorCheckout.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
-  const checkout = page.getByRole('dialog', { name: '结账', exact: true })
-  await expect(checkout).toContainText('按本桌点餐模式核对')
-  await expect(checkout).toContainText('请确认用餐人数')
-  await expect(checkout).toContainText('请确认以下菜品')
-  await expect(checkout).toContainText('Soup · Regular')
-  await expect(checkout).toContainText('是否需要饮料')
+  await expect(checkoutReview.locator('.checkout-rule-products article')).toHaveCount(2)
+  await expect(checkoutReview.locator('.checkout-rule-products article').filter({ hasText: 'Soup' })).toBeVisible()
+  await checkoutReview.getByRole('button', { name: '最终确认', exact: true }).click()
+  await expect(checkoutReview).toContainText('原订单商品（已按商品汇总）')
+  await expect(checkoutReview).toContainText('Soup')
+  await expect(checkoutReview).toContainText('Regular')
+  expect(requests.filter((request) => request.path === '/api/v1/app/orders')).toHaveLength(1)
+  await checkoutReview.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+  const checkoutResult = page.getByRole('dialog', { name: '结账结果', exact: true })
+  await expect(checkoutResult).toContainText('订单整理完成')
+  await expect(checkoutResult).toContainText('$15.90')
+  await expect(checkoutResult.getByRole('button', { name: '微信支付', exact: true })).toBeVisible()
+  await expect(checkoutResult.getByRole('button', { name: 'Cash', exact: true })).toBeVisible()
+  await expect(checkoutResult.getByRole('button', { name: '打印小票', exact: true })).toBeVisible()
   const write = requests.find((request) => request.path === '/api/v1/app/orders')!
   expect(write.body).toMatchObject({ metadata: { counterUuid: counterId, diningModeUuid: diningModeId } })
 })
@@ -585,17 +604,38 @@ test('checkout participant rule can save a missing guest count before order revi
   await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
   const review = page.getByRole('dialog', { name: '结账', exact: true })
   await expect(review).toContainText('本桌尚未记录用餐人数')
-  await review.getByRole('button', { name: '按规则核对并调整订单', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: '结账', exact: true })
-  const guests = editor.locator('.dining-guest-picker')
+  const guests = review.locator('.dining-guest-quick')
   await expect(guests).toBeVisible()
   await guests.getByRole('button', { name: '2', exact: true }).click()
-  await expect(editor).toContainText('当前记录用餐人数为 2 位')
-  await editor.getByRole('button', { name: '核对结账菜品', exact: true }).click()
-  await editor.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
-  await expect(page.locator('.dining-settlement')).toContainText('当前记录用餐人数为 2 位')
+  await expect(review).toContainText('当前记录用餐人数为 2 位')
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await review.getByRole('button', { name: '最终确认', exact: true }).click()
+  await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '结账结果', exact: true })).toContainText('订单整理完成')
   const update = requests.find((request) => request.path.endsWith('/session/update'))
   expect(update?.body).toMatchObject({ participantCount: 2, notes: 'Birthday' })
+})
+
+test('checkout category review caches additions until final confirmation', async ({ page }) => {
+  const requests = await setup(page, { diningMode: true })
+  await page.locator('.dining-card-title').click()
+  await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const review = page.getByRole('dialog', { name: '结账', exact: true })
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+
+  const drinks = review.locator('.checkout-rule-products')
+  await expect(drinks).toContainText('Soup')
+  await expect(drinks).toContainText('Green Tea')
+  await drinks.getByRole('button', { name: '加菜 Green Tea Medium', exact: true }).click()
+  await expect(drinks.locator('.dining-product-quantity')).toHaveCount(2)
+  expect(requests.some((request) => request.path.endsWith('/orders/create') || request.path === '/api/v1/app/orders')).toBe(false)
+
+  await review.getByRole('button', { name: '最终确认', exact: true }).click()
+  await expect(review.locator('.checkout-final-lines.is-addition')).toContainText('Green Tea · Medium')
+  await expect(review.locator('.checkout-final-lines.is-addition')).toContainText('+1')
+  expect(requests.some((request) => request.path.endsWith('/orders/create') || request.path === '/api/v1/app/orders')).toBe(false)
 })
 
 test('staff can clear an unordered cart from the ordering sheet', async ({ page }) => {
@@ -615,13 +655,13 @@ test('checkout review merges confirmed orders when the session has no dining mod
   await page.locator('.dining-card-title').click()
   await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
   const review = page.getByRole('dialog', { name: '结账', exact: true })
-  await review.getByRole('button', { name: '按规则核对并调整订单', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: '结账', exact: true })
-  await editor.getByRole('button', { name: '核对结账菜品', exact: true }).click()
-  await editor.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
-  const checkout = page.getByRole('dialog', { name: '结账', exact: true })
-  await expect(checkout).toContainText('#10000000')
-  await expect(checkout).toContainText('$31.80')
+  await expect(review).toContainText('本桌订单没有保存点餐模式')
+  await expect(review.locator('.checkout-final-lines').first()).toContainText('×2')
+  await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+  const checkoutResult = page.getByRole('dialog', { name: '结账结果', exact: true })
+  await expect(checkoutResult).toContainText('订单整理完成')
+  await expect(checkoutResult).toContainText('#10000000')
+  await expect(checkoutResult).toContainText('$31.80')
   expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/preview'))).toHaveLength(1)
   expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith('/merge/confirm'))).toHaveLength(1)
 })
@@ -633,13 +673,9 @@ test('checkout without a saved mode ignores current store modes and merges direc
   const review = page.getByRole('dialog', { name: '结账', exact: true })
   await expect(review).toContainText('本桌订单没有保存点餐模式')
   await expect(review).not.toContainText('请确认用餐人数')
-  await review.getByRole('button', { name: '按规则核对并调整订单', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: '结账', exact: true })
-  await expect(editor.locator('.dining-mode-current')).toHaveCount(0)
-  await expect(editor.locator('.dining-checkout-rules')).toHaveCount(0)
-  await editor.getByRole('button', { name: '核对结账菜品', exact: true }).click()
-  await editor.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
-  await expect(page.locator('.dining-settlement')).toContainText('本桌订单没有保存点餐模式')
+  await expect(review.locator('.checkout-rule-step')).toHaveCount(0)
+  await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '结账结果', exact: true })).toContainText('订单整理完成')
   expect(requests.filter((request) => request.path.endsWith('/merge/preview'))).toHaveLength(1)
   expect(requests.filter((request) => request.path.endsWith('/merge/confirm'))).toHaveLength(1)
   expect(requests.some((request) => request.path.endsWith('/orders/create') || request.path.endsWith('/orders/replace'))).toBe(false)
@@ -653,25 +689,28 @@ test('checkout resolves the bound mode when the session response omits its snaps
 
   await expect(review).not.toContainText('本桌订单没有保存点餐模式')
   await expect(review).toContainText('请确认用餐人数')
-  await expect(review).toContainText('本次结账订单')
+  await expect(review).toContainText('第 1 / 3 步')
+  await expect(review).toContainText('Hotpot')
 })
 
 test('checkout additions create a separate order and then merge it with the table orders', async ({ page }) => {
-  const requests = await setup(page, { confirmedCheckoutAdditions: true, delayedCheckoutAdditionProjection: true })
+  const requests = await setup(page, { diningMode: true, confirmedCheckoutAdditions: true, delayedCheckoutAdditionProjection: true })
   await page.locator('.dining-card-title').click()
   await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
   const review = page.getByRole('dialog', { name: '结账', exact: true })
-  await review.getByRole('button', { name: '按规则核对并调整订单', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: '结账', exact: true })
-  await editor.getByRole('button', { name: '增加数量 Soup Regular', exact: true }).click()
-  await expect(editor.locator('.dining-product-quantity')).toContainText('×2')
-  await expect(editor.locator('.dining-checkout-plan')).toContainText('需加单')
-  await editor.getByRole('button', { name: '核对结账菜品', exact: true }).click()
-  await editor.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
-
-  const checkout = page.getByRole('dialog', { name: '结账', exact: true })
-  await expect(checkout).toContainText('#10000000')
-  await expect(checkout).toContainText('$31.80')
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await review.getByRole('button', { name: '增加数量 Soup Regular', exact: true }).click()
+  await expect(review.locator('.dining-product-quantity')).toContainText('×2')
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await review.getByRole('button', { name: '最终确认', exact: true }).click()
+  await expect(review).toContainText('增加的商品')
+  await expect(review.locator('.checkout-final-lines.is-addition')).toContainText('+1')
+  expect(requests.some((request) => request.path.endsWith('/orders/create'))).toBe(false)
+  await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+  const checkoutResult = page.getByRole('dialog', { name: '结账结果', exact: true })
+  await expect(checkoutResult).toContainText('订单整理完成')
+  await expect(checkoutResult).toContainText('#10000000')
+  await expect(checkoutResult).toContainText('$31.80')
   const create = requests.find((request) => request.path.endsWith('/orders/create'))!
   expect(create.body).toMatchObject({ items: [{ specificationUuid: specId, quantity: 1 }] })
   expect(requests.filter((request) => request.path.endsWith('/merge/preview'))).toHaveLength(1)
@@ -680,21 +719,22 @@ test('checkout additions create a separate order and then merge it with the tabl
 })
 
 test('checkout reductions wait for projection, merge, and then replace the consolidated order', async ({ page }) => {
-  const requests = await setup(page, { mergeOnCheckout: true, delayedCheckoutProjection: true })
+  const requests = await setup(page, { diningMode: true, mergeOnCheckout: true, delayedCheckoutProjection: true })
   await page.locator('.dining-card-title').click()
   await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
   const review = page.getByRole('dialog', { name: '结账', exact: true })
-  await review.getByRole('button', { name: '按规则核对并调整订单', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: '结账', exact: true })
-  await expect(editor.locator('.dining-product-quantity')).toContainText('×2')
-  await editor.getByRole('button', { name: '减少数量 Soup Regular', exact: true }).click()
-  await expect(editor.locator('.dining-checkout-plan')).toContainText('需扣减')
-  await editor.getByRole('button', { name: '核对结账菜品', exact: true }).click()
-  await editor.getByRole('button', { name: '确认菜品并整理订单', exact: true }).click()
-
-  const checkout = page.getByRole('dialog', { name: '结账', exact: true })
-  await expect(checkout).toContainText('#10000000')
-  await expect(checkout).toContainText('$15.90')
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await expect(review.locator('.dining-product-quantity')).toContainText('×2')
+  await review.getByRole('button', { name: '减少数量 Soup Regular', exact: true }).click()
+  await expect(review.locator('.dining-product-quantity')).toContainText('×1')
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await review.getByRole('button', { name: '最终确认', exact: true }).click()
+  await expect(review).toContainText('−1')
+  await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+  const checkoutResult = page.getByRole('dialog', { name: '结账结果', exact: true })
+  await expect(checkoutResult).toContainText('订单整理完成')
+  await expect(checkoutResult).toContainText('#10000000')
+  await expect(checkoutResult).toContainText('$15.90')
   const writes = requests.filter((request) => request.method === 'POST').map((request) => request.path)
   expect(writes.indexOf(`/api/v1/store/${storeId}/counter-operations/counters/${counterId}/merge/confirm`)).toBeLessThan(writes.indexOf(`/api/v1/store/${storeId}/counter-operations/counters/${counterId}/orders/replace`))
   const replace = requests.find((request) => request.path.endsWith('/orders/replace'))!
