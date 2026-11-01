@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Button, Dialog } from 'antd-mobile'
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { Button, Dialog, PullToRefresh } from 'antd-mobile'
 import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, Hash, LockKeyhole, RefreshCw, Search, X, type LucideIcon } from 'lucide-react'
 import { ApiError } from '../adapters/api-client'
 import { useI18n, type MessageKey } from '../../shared/i18n'
@@ -8,9 +8,33 @@ import { StoreConnectionError } from '../adapters/live'
 import './editor.css'
 
 const BusyContext = createContext<((busy: boolean) => void) | null>(null)
-export function LiveSheet({ children, ...props }: { children: ReactNode; open: boolean; title: string; onClose: () => void; footer?: ReactNode; className?: string }) {
+type RefreshTask = () => Promise<void>
+const RefreshContext = createContext<((task: RefreshTask) => () => void) | null>(null)
+
+export function WorkspaceRefreshProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n()
+  const tasks = useRef(new Set<RefreshTask>())
+  const register = useCallback((task: RefreshTask) => {
+    tasks.current.add(task)
+    return () => { tasks.current.delete(task) }
+  }, [])
+  const refresh = useCallback(async () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    await Promise.allSettled([...tasks.current].map((task) => task()))
+  }, [])
+  return <div className="workspace-refresh"><RefreshContext.Provider value={register}>
+    <PullToRefresh onRefresh={refresh} pullingText={t('pullToRefresh')} canReleaseText={t('releaseToRefresh')} refreshingText={t('refreshingData')} completeText={t('refreshComplete')}>{children}</PullToRefresh>
+  </RefreshContext.Provider></div>
+}
+
+export function usePageRefresh(task: RefreshTask) {
+  const register = useContext(RefreshContext)
+  useEffect(() => register?.(task), [register, task])
+}
+
+export function LiveSheet({ children, toolbar, ...props }: { children: ReactNode; toolbar?: ReactNode; open: boolean; title: string; onClose: () => void; footer?: ReactNode; className?: string }) {
   const [busy, setBusy] = useState(false)
-  return <BusyContext.Provider value={setBusy}><Sheet {...props} locked={busy}><div className="live-sheet-content">{children}</div></Sheet></BusyContext.Provider>
+  return <BusyContext.Provider value={setBusy}><Sheet {...props} locked={busy}>{toolbar && <div className="live-sheet-toolbar">{toolbar}</div>}<div className="live-sheet-content">{children}</div></Sheet></BusyContext.Provider>
 }
 
 export function errorKey(error: unknown): MessageKey {
@@ -23,20 +47,23 @@ export function errorKey(error: unknown): MessageKey {
 
 export function usePage<T>(load: (page: number) => Promise<{ items: T[]; hasNext: boolean; total?: number }>, enabled = true) {
   const [page, setPage] = useState(1)
-  const [revision, setRevision] = useState(0)
   const [state, setState] = useState({ items: [] as T[], hasNext: false, total: undefined as number | undefined, loading: true, error: null as MessageKey | null })
-  useEffect(() => {
-    let active = true
+  const request = useRef(0)
+  const refresh = useCallback(async () => {
+    const requestId = ++request.current
     if (!enabled) { setState({ items: [], hasNext: false, total: undefined, loading: false, error: 'noPermission' }); return }
-    setState({ items: [], hasNext: false, total: undefined, loading: true, error: null })
-    void load(page).then((data) => {
-      if (active) setState({ total: undefined, ...data, loading: false, error: null })
-    }).catch((error: unknown) => {
-      if (active) setState({ items: [], hasNext: false, total: undefined, loading: false, error: errorKey(error) })
-    })
-    return () => { active = false }
-  }, [load, page, revision, enabled])
-  return { ...state, page, setPage, reload: () => setRevision((value) => value + 1) }
+    setState((current) => ({ ...current, loading: true, error: null }))
+    try {
+      const data = await load(page)
+      if (requestId === request.current) setState({ total: undefined, ...data, loading: false, error: null })
+    } catch (error) {
+      if (requestId === request.current) setState({ items: [], hasNext: false, total: undefined, loading: false, error: errorKey(error) })
+    }
+  }, [enabled, load, page])
+  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => () => { request.current += 1 }, [])
+  usePageRefresh(refresh)
+  return { ...state, page, setPage, reload: () => { void refresh() } }
 }
 interface PageState { page: number; loading: boolean; hasNext: boolean; error: MessageKey | null; setPage: (page: number) => void; reload: () => void }
 export function PageControls({ state, detail = false }: { state: PageState; detail?: boolean }) {
@@ -128,13 +155,13 @@ export function MutationForm({ children, submit, onDone, id, actions = true, onB
   }}><fieldset disabled={busy} className="form-stack">{children}{actions && <Button type="submit" block color="primary" loading={busy}>{t('save')}</Button>}</fieldset>{error && <p ref={errorRef} className="error-text" role="alert">{t(error)}</p>}</form>
 }
 
-export function EditorSheet({ title, description, preview, children, submit, onDone, onClose }: {
-  title: string; description: MessageKey; preview: ReactNode; children: ReactNode; submit: () => Promise<unknown>; onDone: () => void; onClose: () => void
+export function EditorSheet({ title, description, preview, children, submit, onDone, onClose, submitLabel = 'save' }: {
+  title: string; description: MessageKey; preview: ReactNode; children: ReactNode; submit: () => Promise<unknown>; onDone: () => void; onClose: () => void; submitLabel?: MessageKey
 }) {
   const { t } = useI18n()
   const id = useId()
   const [busy, setBusy] = useState(false)
-  return <LiveSheet open title={title} className="resource-editor" onClose={onClose} footer={<div className="editor-footer"><p><LockKeyhole size={13} />{t(description)}</p><div><Button disabled={busy} onClick={onClose}>{t('cancel')}</Button><Button type="submit" form={id} color="primary" loading={busy}><Check size={17} />{t('save')}</Button></div></div>}>
+  return <LiveSheet open title={title} className="resource-editor" onClose={onClose} footer={<div className="editor-footer"><p><LockKeyhole size={13} />{t(description)}</p><div><Button disabled={busy} onClick={onClose}>{t('cancel')}</Button><Button type="submit" form={id} color="primary" loading={busy}><Check size={17} />{t(submitLabel)}</Button></div></div>}>
     {preview}<MutationForm id={id} actions={false} submit={submit} onDone={onDone} onBusyChange={setBusy}>{children}</MutationForm>
   </LiveSheet>
 }

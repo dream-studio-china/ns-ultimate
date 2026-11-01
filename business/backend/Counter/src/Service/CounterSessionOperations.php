@@ -6,14 +6,10 @@ namespace NsUltimate\Business\Counter\Service;
 
 use App\Core\Utils\UUID;
 use App\Identity\Entity\User;
-use App\Inventory\Entity\Reservation;
 use App\Store\DTO\StoreSettings;
 use App\Store\Entity\Store;
 use App\Store\Entity\StoreOrder;
-use App\Store\Service\StoreOrderServiceInterface;
 use App\Trade\Entity\Order;
-use App\Trade\Entity\OrderStoreLifecycle;
-use App\Trade\Entity\TradeOutboxMessage;
 use App\Trade\Service\Pricing\PriceCalculationResult;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
@@ -40,11 +36,10 @@ final class CounterSessionOperations
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly CounterSessionService $sessions,
+        private readonly DiningModeSnapshotResolver $diningModes,
         private readonly StaffOrderPricing $pricing,
         private readonly StaffOrderService $orders,
-        private readonly StoreOrderServiceInterface $storeOrders,
         #[Target('state_machine.order')] private readonly WorkflowInterface $workflow,
-        #[Target('state_machine.store_order')] private readonly WorkflowInterface $storeOrderWorkflow,
     ) {}
 
     public function counter(Store $store, string $uuid, bool $lock = false): Counter
@@ -88,9 +83,10 @@ final class CounterSessionOperations
             foreach ($bindings as $binding) {
                 if ($binding->getStoreUuid() !== $counter->getStoreUuid()) throw new HttpException(409, 'invalid_counter_binding');
                 $order = $this->findCurrent(Order::class, ['uuid' => $binding->getTradeOrderUuid()], $lock);
-                $lifecycle = $this->findCurrent(OrderStoreLifecycle::class, ['tradeOrderUuid' => $binding->getTradeOrderUuid(), 'storeUuid' => $counter->getStoreUuid()], $lock);
-                if (!$order instanceof Order || !$lifecycle instanceof OrderStoreLifecycle) throw new HttpException(409, 'invalid_counter_binding');
+                if (!$order instanceof Order) throw new HttpException(409, 'invalid_counter_binding');
                 if ($order->getCurrency() !== $store->getCurrency() || $order->getTotalAmount() < 0) throw new HttpException(409, 'counter_currency_conflict');
+                // StoreOrder is only a store-affiliation projection for counter operations. It is
+                // intentionally absent from eligibility checks; Trade Order owns lifecycle state.
                 $storeOrder = $this->findCurrent(StoreOrder::class, ['tradeOrderUuid' => $order->getUuid()], $lock);
                 if ($storeOrder !== null && $storeOrder->getStore()->getUuid() !== $counter->getStoreUuid()) throw new HttpException(409, 'invalid_counter_binding');
                 $items = [];
@@ -99,14 +95,13 @@ final class CounterSessionOperations
                     $items[] = ['specificationUuid' => $item->getSpecificationUuid(), 'productName' => is_string($productName) ? $productName : '',
                         'specificationName' => $item->getSpecificationTitle() ?? '', 'quantity' => $item->getQuantity(), 'unitPrice' => $item->getUnitPrice(), 'amount' => $item->getPrice()];
                 }
-                $rows[] = ['uuid' => $order->getUuid(), 'status' => $order->getStatus(), 'operationalStatus' => $storeOrder?->getOperationalStatus(),
+                $rows[] = ['uuid' => $order->getUuid(), 'status' => $order->getStatus(),
                     'paymentStatus' => $order->getPaymentStatus(), 'hasInvoice' => $order->getInvoiceId() !== null,
                     'currency' => $order->getCurrency(), 'totalAmount' => $order->getTotalAmount(), 'notes' => $order->getNotes(),
                     'createdAt' => $order->getCreatedAt()->format(DATE_ATOM), 'items' => $items,
-                    'canReplace' => $this->canReplace($order, $lifecycle, $storeOrder), 'canCancel' => $this->canCancel($order, $lifecycle, $storeOrder),
-                    'changeBlockedReason' => $this->changeBlockedReason($order, $lifecycle, $storeOrder),
-                    'cancelBlockedReason' => $this->cancelBlockedReason($order, $lifecycle, $storeOrder),
-                    'replaceBlockedReason' => $this->canReplace($order, $lifecycle, $storeOrder) ? null : ($this->changeBlockedReason($order, $lifecycle, $storeOrder) ?? 'unsupported_order_items')];
+                    'canReplace' => $this->canReplace($order), 'canCancel' => $this->canCancel($order),
+                    'changeBlockedReason' => $this->changeBlockedReason($order),
+                    'replaceBlockedReason' => $this->canReplace($order) ? null : ($this->changeBlockedReason($order) ?? 'unsupported_order_items')];
                 if (!in_array($order->getStatus(), ['cancelled', 'refunded', 'merged'], true)) $orderedAmount += $order->getTotalAmount();
                 if (!in_array($order->getStatus(), self::CLOSED, true)) ++$openOrders;
                 if (in_array($order->getStatus(), ['draft', 'pending', 'confirmed'], true)) {
@@ -136,7 +131,8 @@ final class CounterSessionOperations
         }
         if ($orderedAmount > 9007199254740991 || $openAmount > 9007199254740991) throw new HttpException(409, 'counter_amount_limit');
         $state = ['counter' => ['uuid' => $counter->getUuid(), 'code' => $counter->getCode(), 'name' => $counter->getName(), 'enabled' => $counter->isEnabled(), 'capacity' => $counter->getCapacity()],
-            'session' => $session === null ? null : ['uuid' => $session->getUuid(), 'participantCount' => $session->getParticipantCount(), 'notes' => $session->getNotes(), 'startedAt' => $session->getStartedAt()->format(DATE_ATOM), 'revision' => $session->getRevision()],
+            'session' => $session === null ? null : ['uuid' => $session->getUuid(), 'participantCount' => $session->getParticipantCount(), 'notes' => $session->getNotes(), 'startedAt' => $session->getStartedAt()->format(DATE_ATOM), 'revision' => $session->getRevision(),
+                'diningModeUuid' => $session->getDiningModeUuid(), 'diningMode' => $session->getDiningModeSnapshot()],
             'orders' => $rows, 'openAmount' => $openAmount, 'orderedAmount' => $orderedAmount, 'openOrderCount' => $openOrders,
             'currency' => $store->getCurrency(), 'paymentHold' => $paymentHold, 'canEnd' => $session !== null && $openOrders === 0];
         $state['version'] = StaffCommandService::version($state);
@@ -153,9 +149,11 @@ final class CounterSessionOperations
         return $view;
     }
 
-    private function canReplace(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): bool
+    private function canReplace(Order $order): bool
     {
-        if ($this->changeBlockedReason($order, $lifecycle, $storeOrder) !== null) return false;
+        // Checkout consolidates source orders into one target before applying quantity
+        // reductions with replacement, so a merge target is a valid replacement source.
+        if (!$this->canChange($order, true)) return false;
         // Never silently omit legacy/non-catalog lines while prefilling the replacement cart.
         if ($order->getItems()->isEmpty() || $order->getItems()->count() > 30) return false;
         $seen = [];
@@ -167,55 +165,37 @@ final class CounterSessionOperations
         return true;
     }
 
-    private function canCancel(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): bool
+    private function canCancel(Order $order): bool
     {
-        return $this->cancelBlockedReason($order, $lifecycle, $storeOrder) === null;
+        return $this->cancellationBlockedReason($order) === null;
     }
 
-    /** Replacement remains limited to a Store order that has not progressed past validation. */
-    private function changeBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
+    /** Shared eligibility for replacing an unpaid session order. */
+    private function canChange(Order $order, bool $allowMergeTarget = false): bool
     {
-        $common = $this->commonBlockedReason($order, $lifecycle, $storeOrder);
-        if ($common !== null) return $common;
-        if (!$storeOrder instanceof StoreOrder) return 'projection_pending';
-        if ($storeOrder->getOperationalStatus() !== StoreOrder::STATUS_PENDING_VALIDATION
-            || $lifecycle->getAcceptanceStatus() !== OrderStoreLifecycle::ACCEPTANCE_PENDING
-            || $lifecycle->getFulfillmentStatus() !== OrderStoreLifecycle::FULFILLMENT_PENDING
-            || $lifecycle->getVerificationStatus() === OrderStoreLifecycle::VERIFICATION_VERIFIED) return 'order_processed';
+        return $this->changeBlockedReason($order, $allowMergeTarget) === null;
+    }
+
+    /** Trade Order state is the only lifecycle authority for counter order changes. */
+    private function cancellationBlockedReason(Order $order): ?string
+    {
+        // Pending and confirmed Trade orders remain cancellable even when a payment record
+        // already exists. StaffOrderService delegates invoice cleanup to the Trade cancel flow.
+        if (!$this->workflow->can($order, 'cancel')
+            || $this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1
+            || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $order->getUuid()]) !== 0) return 'order_ineligible';
         return null;
     }
 
-    /** Cancellation defers the Store state transition to the Store order workflow. */
-    private function cancelBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
-    {
-        $common = $this->commonBlockedReason($order, $lifecycle, $storeOrder);
-        if ($common !== null) return $common;
-        if (!$storeOrder instanceof StoreOrder) return 'projection_pending';
-        if (!$this->storeOrderWorkflow->can($storeOrder, 'cancel')) return 'order_processed';
-        if (!in_array($lifecycle->getAcceptanceStatus(), [OrderStoreLifecycle::ACCEPTANCE_PENDING, OrderStoreLifecycle::ACCEPTANCE_ACCEPTED], true)
-            || $lifecycle->getFulfillmentStatus() !== OrderStoreLifecycle::FULFILLMENT_PENDING
-            || $lifecycle->getVerificationStatus() === OrderStoreLifecycle::VERIFICATION_VERIFIED) return 'order_processed';
-        return null;
-    }
-
-    /** Cross-aggregate checks shared by cancellation and replacement. */
-    private function commonBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
+    private function changeBlockedReason(Order $order, bool $allowMergeTarget = false): ?string
     {
         if ($order->getInvoiceId() !== null || $order->getPaymentStatus() !== null) return 'payment_started';
-        if ($storeOrder === null) return 'projection_pending';
-        if ($storeOrder->getReservationId() !== null
-            || $this->em->getRepository(Reservation::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 0) return 'inventory_reserved';
-        // Eligibility is based on trusted ownership and processing state, not who placed the order.
+        // Eligibility is based on trusted counter ownership and Trade lifecycle, not who placed the order.
         if (!$this->workflow->can($order, 'cancel')
             || $this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1
             || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $order->getUuid()]) !== 0
-            || $this->em->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) !== 0) return 'order_ineligible';
-        $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $order->getUuid(), 'topic' => 'trade.order.created.v1']);
-        $snapshot = $event?->getPayload()['store'] ?? null;
-        $valid = is_array($snapshot) && ($snapshot['uuid'] ?? null) === $lifecycle->getStoreUuid()
-            && ($order->getMetadata()['_store']['uuid'] ?? null) === $lifecycle->getStoreUuid()
-            && ($snapshot['requireInventory'] ?? null) === false;
-        return $valid ? null : 'order_ineligible';
+            || (!$allowMergeTarget && $this->em->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) !== 0)) return 'order_ineligible';
+        return null;
     }
 
     /** @param array<string, mixed> $view */
@@ -234,11 +214,17 @@ final class CounterSessionOperations
      * @return array{before: array<string, mixed>, result: array<string, mixed>} */
     public function session(Store $store, string $counterUuid, string $action, array $data): array
     {
-        if (!in_array($action, ['update', 'end'], true)) throw new HttpException(422, 'invalid_counter_session_action');
-        $this->fields($data, ['commandUuid', 'version', ...($action === 'end' ? [] : ['participantCount', 'notes'])]);
+        if (!in_array($action, ['open', 'update', 'end'], true)) throw new HttpException(422, 'invalid_counter_session_action');
+        $this->fields($data, ['commandUuid', 'version', ...($action === 'update' ? ['participantCount', 'notes'] : [])]);
         $counter = $this->counter($store, $counterUuid, true);
         $before = $this->view($counter, true);
         StaffCommandService::expectVersion($data, $before['version']);
+        if ($action === 'open') {
+            if (!$counter->isEnabled()) throw new HttpException(409, 'counter_disabled');
+            $session = $this->sessions->open($counter);
+            return ['before' => ['version' => $before['version'], 'session' => $before['session']],
+                'result' => ['counterUuid' => $counterUuid, 'sessionUuid' => $session->getUuid()]];
+        }
         $session = $this->sessions->activeSession($counter);
         if ($session === null) throw new HttpException(409, 'counter_session_changed');
         if ($action === 'end') {
@@ -259,13 +245,15 @@ final class CounterSessionOperations
     }
 
     /** @param array<string, mixed> $data
-     * @return array{quote: array<string, mixed>, calculation: PriceCalculationResult, original: Order|null, before: array<string, mixed>} */
+     * @return array{quote: array<string, mixed>, calculation: PriceCalculationResult, original: Order|null, before: array<string, mixed>, diningMode: array<string, mixed>|null} */
     private function prepareQuote(Store $store, Counter $counter, array $data): array
     {
-        $this->fields($data, ['version', 'items', 'notes', 'metadata', 'replaceOrderUuid']);
+        $this->fields($data, ['version', 'items', 'notes', 'diningModeUuid', 'metadata', 'replaceOrderUuid']);
         $metadata = $this->staffMetadata($data);
         $view = $this->view($counter, true);
         $this->assertOrdering($counter, $view, $data);
+        $session = $this->sessions->activeSession($counter);
+        $diningMode = $this->diningModes->forOrder($store, $session, $data);
         $original = array_key_exists('replaceOrderUuid', $data) ? $this->replacement($view, $data['replaceOrderUuid']) : null;
         if (!is_string($data['notes'] ?? null) || mb_strlen($data['notes']) > 1000) throw new HttpException(422, 'invalid_staff_order_notes');
         $result = $this->pricing->calculate($store, $data['items'] ?? null, $original?->getUser());
@@ -274,14 +262,14 @@ final class CounterSessionOperations
         $policy = StoreSettings::from($store->getSettings())->toArray();
         $quote = ['items' => $items, 'totalAmount' => $result->totalAmount, 'currency' => $result->currency,
             'quoteToken' => StaffCommandService::version(['counterUuid' => $counter->getUuid(), 'session' => $view['session'], 'version' => $view['version'],
-                'policy' => $policy, 'notes' => trim($data['notes']), 'metadata' => $metadata,
+                'policy' => $policy, 'notes' => trim($data['notes']), 'diningMode' => $diningMode, 'metadata' => $metadata,
                 'replacement' => $original === null ? null : ['uuid' => $original->getUuid(), 'customerUuid' => $original->getUser()?->getUuid(), 'metadata' => $original->getMetadata()],
                 'items' => $result->items, 'totalAmount' => $result->totalAmount, 'currency' => $result->currency])];
         $before = ['sessionUuid' => $view['session']['uuid'], 'version' => $view['version']];
         if ($original !== null) {
             foreach ($view['orders'] as $row) if ($row['uuid'] === $original->getUuid()) $before['order'] = $row;
         }
-        return ['quote' => $quote, 'calculation' => $result, 'original' => $original, 'before' => $before];
+        return ['quote' => $quote, 'calculation' => $result, 'original' => $original, 'before' => $before, 'diningMode' => $diningMode];
     }
 
     /** @param array<string, mixed> $view
@@ -296,16 +284,17 @@ final class CounterSessionOperations
      * @return array{before: array<string, mixed>, result: array<string, mixed>} */
     public function submit(Store $store, string $counterUuid, array $data, bool $replace = false): array
     {
-        $this->fields($data, ['commandUuid', 'version', 'items', 'notes', 'metadata', 'quoteToken', ...($replace ? ['replaceOrderUuid', 'reason'] : [])]);
+        $this->fields($data, ['commandUuid', 'version', 'items', 'notes', 'diningModeUuid', 'metadata', 'quoteToken', ...($replace ? ['replaceOrderUuid', 'reason'] : [])]);
         if ($replace && (!is_string($data['reason'] ?? null) || trim($data['reason']) === '' || mb_strlen($data['reason']) > 500)) throw new HttpException(422, 'staff_order_reason_required');
         if ($replace && (!is_string($data['replaceOrderUuid'] ?? null) || !UUID::is_valid($data['replaceOrderUuid']))) throw new HttpException(422, 'invalid_staff_order_replacement');
         $counter = $this->counter($store, $counterUuid, true);
-        $quoteInput = array_intersect_key($data, array_flip(['version', 'items', 'notes', 'metadata', 'replaceOrderUuid']));
+        $quoteInput = array_intersect_key($data, array_flip(['version', 'items', 'notes', 'diningModeUuid', 'metadata', 'replaceOrderUuid']));
         $prepared = $this->prepareQuote($store, $counter, $quoteInput);
         $quote = $prepared['quote'];
         if (!is_string($data['quoteToken'] ?? null) || !hash_equals($quote['quoteToken'], $data['quoteToken'])) throw new HttpException(409, 'staff_order_quote_changed');
         $session = $this->sessions->activeSession($counter);
         if (!$session instanceof CounterSession) throw new HttpException(409, 'counter_session_changed');
+        if (is_array($prepared['diningMode'])) $session->bindDiningMode($prepared['diningMode']['uuid'], $prepared['diningMode']);
         $before = $prepared['before'];
         $original = $prepared['original'];
         $calculation = $prepared['calculation'];
@@ -316,9 +305,8 @@ final class CounterSessionOperations
         $order = $this->orders->create($store, $calculation, $original?->getUser(), $notes === '' ? null : $notes, $metadata);
         $result = ['counterUuid' => $counterUuid, 'sessionUuid' => $session->getUuid(), 'orderUuid' => $order->getUuid()];
         if ($original !== null) {
-            $storeOrder = $this->findCurrent(StoreOrder::class, ['tradeOrderUuid' => $original->getUuid()], true);
-            if (!$storeOrder instanceof StoreOrder || !$this->workflow->can($original, 'cancel')) throw new HttpException(409, 'staff_order_locked');
-            $this->orders->cancel($original, $storeOrder);
+            if (!$this->workflow->can($original, 'cancel')) throw new HttpException(409, 'staff_order_locked');
+            $this->orders->cancel($original);
             $before['reason'] = trim($data['reason']);
             $result['replacedOrderUuid'] = $original->getUuid();
         }
@@ -342,9 +330,8 @@ final class CounterSessionOperations
         foreach ($before['orders'] as $candidate) if ($candidate['uuid'] === $data['orderUuid']) { $row = $candidate; break; }
         if ($row === null || !$row['canCancel']) throw new HttpException(409, 'staff_order_locked');
         $order = $this->findCurrent(Order::class, ['uuid' => $row['uuid']], true);
-        $storeOrder = $this->findCurrent(StoreOrder::class, ['tradeOrderUuid' => $row['uuid']], true);
-        if (!$order instanceof Order || !$storeOrder instanceof StoreOrder) throw new HttpException(409, 'staff_order_locked');
-        $this->orders->cancel($order, $storeOrder);
+        if (!$order instanceof Order) throw new HttpException(409, 'staff_order_locked');
+        $this->orders->cancel($order);
         $session->changed();
         return ['before' => ['version' => $before['version'], 'session' => $before['session'], 'order' => $row, 'reason' => trim($data['reason'])],
             'result' => ['counterUuid' => $counterUuid, 'sessionUuid' => $session->getUuid(), 'orderUuid' => $row['uuid'], 'status' => 'cancelled']];
@@ -366,16 +353,13 @@ final class CounterSessionOperations
         $prepared = $this->prepareMerge($store, $counterUuid, $actor, $data);
         if (!is_string($data['quoteToken'] ?? null) || !hash_equals($prepared['quote']['quoteToken'], $data['quoteToken'])) throw new HttpException(409, 'staff_order_quote_changed');
         $session = $prepared['session'];
-        $target = $this->orders->create($store, $prepared['calculation'], $prepared['owner'], null,
+        $target = $this->orders->createSettlement($store, $prepared['calculation'], $prepared['owner'], null,
             ['counterUuid' => $counterUuid, 'counterSessionUuid' => $session->getUuid(), 'counterSettlement' => true]);
         foreach ($prepared['sources'] as $source) $this->em->persist(new OrderMerge($source->getUuid(), $target->getUuid()));
         $this->em->flush();
         foreach ($prepared['sources'] as $source) {
             $this->workflow->apply($source, 'merge');
             $source->setMetadata([...($source->getMetadata() ?? []), 'mergedIntoOrderUuid' => $target->getUuid()]);
-            $projection = $this->findCurrent(StoreOrder::class, ['tradeOrderUuid' => $source->getUuid()], true);
-            if (!$projection instanceof StoreOrder) throw new HttpException(409, 'staff_order_locked');
-            $this->storeOrders->cancel($projection);
         }
         $this->em->flush();
         if ($this->workflow->can($target, 'confirm')) $this->workflow->apply($target, 'confirm');
@@ -403,20 +387,10 @@ final class CounterSessionOperations
         foreach ($view['orders'] as $row) {
             if (in_array($row['status'], self::CLOSED, true)) continue;
             $order = $this->findCurrent(Order::class, ['uuid' => $row['uuid']], true);
-            $lifecycle = $this->findCurrent(OrderStoreLifecycle::class, ['tradeOrderUuid' => $row['uuid'], 'storeUuid' => $store->getUuid()], true);
-            $projection = $this->findCurrent(StoreOrder::class, ['tradeOrderUuid' => $row['uuid']], true);
-            $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $row['uuid'], 'topic' => 'trade.order.created.v1']);
-            $snapshot = $event?->getPayload()['store'] ?? null;
-            if (!$order instanceof Order || !$lifecycle instanceof OrderStoreLifecycle || !$projection instanceof StoreOrder
-                || $order->getStatus() !== Order::STATUS_CONFIRMED || $order->getInvoiceId() !== null || $order->getPaymentStatus() !== null
-                || !in_array($lifecycle->getAcceptanceStatus(), [OrderStoreLifecycle::ACCEPTANCE_PENDING, OrderStoreLifecycle::ACCEPTANCE_ACCEPTED], true)
-                || $lifecycle->getFulfillmentStatus() !== OrderStoreLifecycle::FULFILLMENT_PENDING || !in_array($lifecycle->getVerificationStatus(), [OrderStoreLifecycle::VERIFICATION_PENDING, OrderStoreLifecycle::VERIFICATION_NOT_REQUIRED], true)
-                || !in_array($projection->getOperationalStatus(), [StoreOrder::STATUS_PENDING_VALIDATION, StoreOrder::STATUS_ACCEPTED], true)
-                || $projection->getReservationId() !== null || $this->em->getRepository(Reservation::class)->count(['tradeOrderUuid' => $row['uuid']]) !== 0
+            if (!$order instanceof Order || $order->getInvoiceId() !== null || $order->getPaymentStatus() !== null
+                || !in_array($order->getStatus(), [Order::STATUS_PENDING, Order::STATUS_CONFIRMED], true)
                 || $this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $row['uuid']]) !== 1
-                || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $row['uuid']]) !== 0
-                || !is_array($snapshot) || ($snapshot['uuid'] ?? null) !== $store->getUuid() || ($snapshot['requireInventory'] ?? null) !== false
-                || ($order->getMetadata()['_store']['uuid'] ?? null) !== $store->getUuid()) throw new HttpException(409, 'staff_order_locked');
+                || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $row['uuid']]) !== 0) throw new HttpException(409, 'staff_order_locked');
             foreach ($order->getItems() as $item) {
                 $spec = $item->getSpecificationUuid();
                 if ($spec === null || !UUID::is_valid($spec) || $item->getQuantity() < 1) throw new HttpException(409, 'staff_order_locked');

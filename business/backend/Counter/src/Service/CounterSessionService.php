@@ -68,6 +68,17 @@ final class CounterSessionService
         return $session;
     }
 
+    /** Opens an empty service session after the caller has locked the counter. */
+    public function open(Counter $counter): CounterSession
+    {
+        if ($this->activeSession($counter) instanceof CounterSession) {
+            throw new \LogicException('The counter already has an active session.');
+        }
+        $session = new CounterSession($counter);
+        $this->em->persist($session);
+        return $session;
+    }
+
     public function end(Counter $counter): CounterSession
     {
         $session = $this->activeSession($counter);

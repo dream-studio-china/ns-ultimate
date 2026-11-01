@@ -243,7 +243,7 @@ test('enlarges legacy and custom sidebar icons consistently', () => {
   assert.match(readFileSync(new URL('../../business/admin/icons/counter.svg', import.meta.url), 'utf8'), /<svg[^>]+viewBox="0 0 24 24"/)
 })
 
-test('adds a read-only counter number column to the StoreOrder list', () => {
+test('adds read-only counter number and dining mode columns to the StoreOrder list', () => {
   const source = readFileSync(new URL('../../business/admin/config/overrides/store/store-order.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '')
     .replace('export default', 'globalThis.config =')
@@ -251,12 +251,17 @@ test('adds a read-only counter number column to the StoreOrder list', () => {
     entity: { name: 'StoreOrder', plural: 'store-orders' },
     list: { list_display: ['id', 'storeCodeSnapshot', 'storeNameSnapshot', 'totalAmount'] }
   }
-  const context = { StoreOrder: { StoreOrder: base }, t: key => key, StoreOrderCounterNumbers: {} }
+  const context = {
+    StoreOrder: { StoreOrder: base },
+    t: key => key,
+    StoreOrderCounterNumbers: {},
+    createOrderDiningModeField: property => ({ property, component: 'dining-mode', field_options: { sortable: false } })
+  }
   runInNewContext(source, context)
   const config = context.config
   assert.equal(config.entity, base.entity)
   assert.deepEqual(Array.from(config.list.list_display, field => typeof field === 'string' ? field : field.property), [
-    'id', 'storeCodeSnapshot', 'storeNameSnapshot', 'tradeOrderUuid', 'totalAmount'
+    'id', 'storeCodeSnapshot', 'storeNameSnapshot', 'tradeOrderUuid', 'tradeOrderUuid', 'totalAmount'
   ])
   const counterColumn = config.list.list_display[3]
   assert.equal(counterColumn.label, 'Counter number')
@@ -264,10 +269,12 @@ test('adds a read-only counter number column to the StoreOrder list', () => {
   assert.equal(counterColumn.field_options.sortable, false)
   assert.equal(counterColumn.field_options.fixed, undefined)
   assert.equal(counterColumn.component, context.StoreOrderCounterNumbers)
+  assert.equal(config.list.list_display[4].component, 'dining-mode')
   assert.equal(config.detail.detail_display[0].property, 'tradeOrderUuid')
   assert.equal(config.detail.detail_display[0].label, 'Counter number')
   assert.equal(config.detail.detail_display[0].component, context.StoreOrderCounterNumbers)
-  assert.equal(config.detail.detail_display[1], '__all__')
+  assert.equal(config.detail.detail_display[1].component, 'dining-mode')
+  assert.equal(config.detail.detail_display[2], '__all__')
 })
 
 test('collects unique entities from collection files and nested entity files', () => {

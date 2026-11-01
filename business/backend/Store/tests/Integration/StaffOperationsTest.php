@@ -14,10 +14,15 @@ use App\Store\Entity\Membership;
 use App\Store\Entity\ProductCategory;
 use App\Store\Entity\Specification;
 use App\Store\Entity\Store;
-use App\Store\Entity\StoreOrder;
 use App\Trade\Service\Catalog\CatalogResolverInterface;
+use App\Trade\Entity\Order;
+use App\Trade\Entity\OrderItem;
+use App\Trade\Entity\OrderStoreLifecycle;
+use App\Trade\Entity\TradeOutboxMessage;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Store\Entity\Product;
 use NsUltimate\Business\Store\Entity\StaffOperation;
 use NsUltimate\Business\Store\Service\ProductAvailability;
@@ -145,26 +150,47 @@ final class StaffOperationsTest extends KernelTestCase
 
     public function testOrderLifecycleCommandsRequireReasonPermissionVersionAndPreserveIdempotency(): void
     {
-        $order = new StoreOrder($this->store, UUID::v4(), $this->store->getCode(), 'Store', UUID::v4(), 'CNY', 1230, ['items' => [['productName' => 'Soup', 'quantity' => 1]], 'delivery' => ['secret' => 'private']], true);
-        $this->em->persist($order);
-        $this->em->flush();
+        $order = $this->tradeOrder(Order::STATUS_PENDING);
         $path = '/orders/'.$order->getUuid();
         $detail = $this->data($this->request('GET', $path));
         self::assertSame(['accept', 'reject'], $detail['allowedActions']);
-        self::assertArrayNotHasKey('delivery', $detail['orderSnapshot']);
+        self::assertSame('pending', $detail['status']);
         self::assertArrayNotHasKey('customerUserUuid', $detail);
         self::assertSame(422, $this->request('POST', $path.'/reject', ['commandUuid' => UUID::v4(), 'version' => $detail['version']])->getStatusCode());
         $command = ['commandUuid' => UUID::v4(), 'version' => $detail['version']];
         $accepted = $this->data($this->request('POST', $path.'/accept', $command));
-        self::assertSame('accepted', $accepted['operationalStatus']);
+        self::assertSame('confirmed', $accepted['status']);
+        self::assertSame(['reject'], $accepted['allowedActions']);
         self::assertSame($accepted, $this->data($this->request('POST', $path.'/accept', $command)));
-        self::assertSame(409, $this->request('POST', $path.'/reject', [...$command, 'commandUuid' => UUID::v4(), 'reason' => 'Too late'])->getStatusCode());
-        $fulfilled = $this->data($this->request('POST', $path.'/fulfill', ['commandUuid' => UUID::v4(), 'version' => $accepted['version']]));
+        $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', [Order::STATUS_PAID, $order->getUuid()]);
+        $this->em->clear();
+        $paid = $this->data($this->request('GET', $path));
+        self::assertSame(['fulfill'], $paid['allowedActions']);
+        $fulfilled = $this->data($this->request('POST', $path.'/fulfill', ['commandUuid' => UUID::v4(), 'version' => $paid['version']]));
+        self::assertSame('fulfilled', $fulfilled['status']);
         self::assertSame(['verify'], $fulfilled['allowedActions']);
         $verified = $this->data($this->request('POST', $path.'/verify', ['commandUuid' => UUID::v4(), 'version' => $fulfilled['version']]));
-        self::assertSame('verified', $verified['operationalStatus']);
+        self::assertSame('completed', $verified['status']);
         self::assertSame([], $verified['allowedActions']);
         self::assertSame(3, $this->em->getRepository(StaffOperation::class)->count([]));
+    }
+
+    public function testOrderProjectionsExposeCounterSnapshotsAndKeepUnboundOrdersReadable(): void
+    {
+        $bound = $this->tradeOrder(Order::STATUS_PENDING, 1230);
+        $unbound = $this->tradeOrder(Order::STATUS_PENDING, 680);
+        $counter = (new Counter())->setStoreUuid($this->store->getUuid())->setCode('A01')->setName('Window seat');
+        $binding = (new OrderCounter())->setTradeOrderUuid($bound->getUuid())->setStoreUuid($this->store->getUuid())->setCounter($counter);
+        $this->em->persist($counter);
+        $this->em->flush();
+        $this->em->wrapInTransaction(function () use ($binding): void { $this->em->persist($binding); });
+
+        $orders = [];
+        foreach ($this->data($this->request('GET', '/orders'))['items'] as $order) $orders[$order['uuid']] = $order;
+        self::assertSame(['code' => 'A01', 'name' => 'Window seat'], $orders[$bound->getUuid()]['counter']);
+        self::assertNull($orders[$unbound->getUuid()]['counter']);
+        self::assertSame(['code' => 'A01', 'name' => 'Window seat'], $this->data($this->request('GET', '/orders/'.$bound->getUuid()))['counter']);
+        self::assertNull($this->data($this->request('GET', '/orders/'.$unbound->getUuid()))['counter']);
     }
 
     public function testAvailabilityIsEnforcedByTheComposedPricingPort(): void
@@ -273,6 +299,21 @@ final class StaffOperationsTest extends KernelTestCase
         self::assertArrayNotHasKey('before', $history['items'][0]);
         self::assertArrayNotHasKey('result', $history['items'][0]);
         self::assertSame(403, $this->request('GET', '/history', null, $this->other->getUuid())->getStatusCode());
+    }
+
+    private function tradeOrder(string $status, int $amount = 1230): Order
+    {
+        $order = (new Order())->setStatus($status)->setTotalAmount($amount)->setCurrency('CNY')->setMetadata(['_store' => ['uuid' => $this->store->getUuid()]]);
+        $order->addItem((new OrderItem())->setSpecificationUuid(UUID::v4())->setSpecificationTitle('Soup')->setQuantity(1)->setUnitPrice($amount)->setPrice($amount)
+            ->setProductSnapshot(['name' => 'Soup']));
+        $this->em->persist($order);
+        $this->em->persist(new OrderStoreLifecycle($order->getUuid(), $this->store->getUuid()));
+        $this->em->persist(new TradeOutboxMessage('trade.order.created.v1', 'trade_order', $order->getUuid(), [
+            'orderUuid' => $order->getUuid(),
+            'store' => ['uuid' => $this->store->getUuid(), 'requireInventory' => false],
+        ]));
+        $this->em->flush();
+        return $order;
     }
 
     public function testCommandResultIsActorScopedRestrictedAndRequiresCurrentAuthorization(): void

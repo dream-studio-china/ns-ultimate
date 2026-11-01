@@ -43,6 +43,13 @@ class CounterSession
     #[ORM\Column(type: 'integer', options: ['default' => 0])]
     private int $revision = 0;
 
+    #[ORM\Column(name: 'dining_mode_uuid', type: 'string', length: 36, nullable: true)]
+    private ?string $diningModeUuid = null;
+
+    /** @var array<string, mixed>|null */
+    #[ORM\Column(name: 'dining_mode_snapshot', type: 'json', nullable: true)]
+    private ?array $diningModeSnapshot = null;
+
     public function __construct(Counter $counter)
     {
         $this->uuid = UUID::v4();
@@ -59,6 +66,24 @@ class CounterSession
     public function getParticipantCount(): ?int { return $this->participantCount; }
     public function getNotes(): ?string { return $this->notes; }
     public function getRevision(): int { return $this->revision; }
+    public function getDiningModeUuid(): ?string { return $this->diningModeUuid; }
+
+    /** @return array<string, mixed>|null */
+    public function getDiningModeSnapshot(): ?array { return $this->diningModeSnapshot; }
+
+    /** @param array<string, mixed> $snapshot */
+    public function bindDiningMode(string $uuid, array $snapshot): void
+    {
+        if ($this->endedAt !== null) throw new \LogicException('An ended counter session cannot bind a dining mode.');
+        if ($this->diningModeUuid !== null) {
+            if (!hash_equals($this->diningModeUuid, $uuid)) throw new \LogicException('The counter session already uses another dining mode.');
+            return;
+        }
+        if (($snapshot['uuid'] ?? null) !== $uuid) throw new \InvalidArgumentException('The dining mode snapshot does not match its UUID.');
+        $this->diningModeUuid = $uuid;
+        $this->diningModeSnapshot = $snapshot;
+        $this->changed();
+    }
     public function updateSession(int $participantCount, string $notes): void
     {
         if ($this->endedAt !== null) throw new \LogicException('An ended counter session cannot be edited.');
