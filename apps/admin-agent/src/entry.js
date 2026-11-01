@@ -166,8 +166,16 @@ export function planChatCancel({ preprocessingGeneration, taskGeneration, writin
   return { clearBusy, suppressLateResult: clearBusy }
 }
 
+let activeDispose = null
+
 export function mountAdminAgent(host = {}) {
-  if (document.querySelector('ns-admin-agent')) return
+  // A second mount must first release the previous instance. Leaving an orphan
+  // host element behind would suppress the launcher for the rest of the page.
+  if (activeDispose) {
+    try { activeDispose() } catch { /* Best effort before replacing the instance. */ }
+  } else {
+    document.querySelectorAll('ns-admin-agent').forEach(node => node.remove())
+  }
   const hostElement = document.createElement('ns-admin-agent')
   const shadow = hostElement.attachShadow({ mode: 'closed' })
   const style = element('style')
@@ -1797,7 +1805,8 @@ export function mountAdminAgent(host = {}) {
   // Load the configured same-origin API reference on mount, so the assistant
   // is ready for documentation questions without an extra setup action.
   loadDocs.click()
-  return () => {
+  const dispose = () => {
+    if (disposed) return
     disposed = true
     disposePanelLayout()
     unsubscribeCapabilities()
@@ -1809,5 +1818,8 @@ export function mountAdminAgent(host = {}) {
     try { host.dispose?.() } catch { /* Host disposal is best effort. */ }
     operations = []
     hostElement.remove()
+    if (activeDispose === dispose) activeDispose = null
   }
+  activeDispose = dispose
+  return dispose
 }

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 import { buildAdminPageCatalog, resolveAdminNavigation } from '../src/navigation.js'
 
@@ -17,7 +18,21 @@ const routes = [
 ]
 
 test('catalogs only visible registered list pages and excludes arbitrary destinations', () => {
-  assert.deepEqual(buildAdminPageCatalog(routes), [{ key: 'ProductList', title: 'Products', path: '/products/list' }])
+  const routesWithInvalidLongPath = [...routes, { path: `/${'a'.repeat(30)}!`, name: 'InvalidList' }]
+  assert.deepEqual(buildAdminPageCatalog(routesWithInvalidLongPath), [{ key: 'ProductList', title: 'Products', path: '/products/list' }])
+})
+
+test('rejects adversarial long paths promptly without blocking the test runner', () => {
+  const navigationUrl = new URL('../src/navigation.js', import.meta.url).href
+  const script = `import { buildAdminPageCatalog } from ${JSON.stringify(navigationUrl)}; console.log(JSON.stringify(buildAdminPageCatalog([{ path: '/' + 'a'.repeat(128) + '!', name: 'InvalidList' }])));`
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    timeout: 2000
+  })
+
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), '[]')
 })
 
 test('resolves list and record-detail navigation only for allowlisted pages and safe identifiers', () => {

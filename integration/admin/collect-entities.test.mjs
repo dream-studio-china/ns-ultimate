@@ -212,7 +212,7 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   assert.equal(routes.find(route => route.name === 'WechatConfiguration').meta.icon, 'wechat')
 })
 
-test('places Counter after Product and WeChat configuration after Content', () => {
+test('places Counter after Product and WeChat and Huifu menus before user management', () => {
   const coreRoutes = [
     { name: 'ProductManage' },
     { name: 'OrderManage' },
@@ -221,15 +221,19 @@ test('places Counter after Product and WeChat configuration after Content', () =
   ]
   const businessRoutes = { add: [
     { name: 'WechatConfiguration' },
-    { name: 'CounterManagement' }
+    { name: 'CounterManagement' },
+    { name: 'HuifuConfiguration' },
+    { name: 'HuifuTransactions' }
   ] }
   let routes = mergeRoutes(coreRoutes, businessRoutes)
   routes = moveRouteAfter(routes, 'CounterManagement', 'ProductManage')
   routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
+  routes = moveRouteAfter(routes, 'HuifuConfiguration', 'WechatConfiguration')
+  routes = moveRouteAfter(routes, 'HuifuTransactions', 'HuifuConfiguration')
 
   assert.deepEqual(Array.from(routes, route => route.name), [
     'ProductManage', 'CounterManagement', 'OrderManage', 'ContentManage',
-    'WechatConfiguration', 'UserManage'
+    'WechatConfiguration', 'HuifuConfiguration', 'HuifuTransactions', 'UserManage'
   ])
   assert.deepEqual(Array.from(coreRoutes, route => route.name), [
     'ProductManage', 'OrderManage', 'ContentManage', 'UserManage'

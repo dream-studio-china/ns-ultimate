@@ -1,10 +1,20 @@
-const SAFE_LOCAL_PATH = /^\/(?:[A-Za-z0-9._~-]+\/?)*$/
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function isSafeLocalPath(path) {
+  if (!path.startsWith('/')) return false
+  for (let index = 1; index < path.length; index++) {
+    const code = path.charCodeAt(index)
+    if (code === 47) continue
+    if (!((code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+      || (code >= 48 && code <= 57) || code === 46 || code === 95 || code === 126 || code === 45)) return false
+  }
+  return true
+}
 
 function normalizePath(path, parentPath) {
   if (typeof path !== 'string' || !path || path.includes('?') || path.includes('#') || path.includes('\\')) return null
   const fullPath = path.startsWith('/') ? path : `${parentPath.replace(/\/$/, '')}/${path}`
-  if (!SAFE_LOCAL_PATH.test(fullPath) || fullPath.includes('..') || fullPath.includes('//')) return null
+  if (!isSafeLocalPath(fullPath) || fullPath.includes('..') || fullPath.includes('//')) return null
   return fullPath.length > 1 ? fullPath.replace(/\/$/, '') : fullPath
 }
 

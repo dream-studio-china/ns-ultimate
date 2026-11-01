@@ -8,3 +8,14 @@ export function chatScopeFromToken(token) {
     return typeof payload.sub === 'string' && /^[1-9]\d{0,19}$/.test(payload.sub) ? `account:${payload.sub}` : null
   } catch { return null }
 }
+
+/**
+ * Stable browser-session identity for lifecycle decisions. A rotated access
+ * token keeps the same account identity, so the assistant must not be torn
+ * down and rebuilt; an opaque token falls back to the credential itself.
+ * Never authentication or authorization.
+ */
+export function adminSessionIdentity(token) {
+  if (typeof token !== 'string' || !token) return ''
+  return chatScopeFromToken(token) || `token:${token}`
+}
