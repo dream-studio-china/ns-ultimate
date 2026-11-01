@@ -409,6 +409,7 @@ test('staff can select and cancel eligible unsettled orders for one table after 
   const cancelRequests = () => requests.filter((request) => request.path.endsWith('/orders/cancel'))
 
   await detail.getByRole('button', { name: '取消订单', exact: true }).click()
+  await expect(detail.locator('.dining-cancel-selection')).toHaveCSS('position', 'fixed')
   await expect(detail.getByRole('checkbox')).toHaveCount(3)
   await detail.getByRole('button', { name: '全选可取消', exact: true }).click()
   await expect(detail.getByRole('checkbox')).toHaveCount(3)

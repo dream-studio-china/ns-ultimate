@@ -65,6 +65,9 @@
 .dining-cancel-selection > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ws-muted); font-size: 11px; }
 .dining-cancel-selection > header button { min-height: 32px; padding: 5px 10px; border: 1px solid color-mix(in srgb, #c44932 28%, var(--ws-line)); border-radius: 9px; color: #a63a27; background: var(--theme-paper); font-size: 10px; font-weight: 650; cursor: pointer; }
 .dining-cancel-selection > header button:disabled { cursor: not-allowed; opacity: .5; }
+.dining-detail:has(.dining-cancel-selection) { padding-bottom: 145px; }
+.dining-cancel-selection { position: fixed; z-index: 20; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(calc(100vw - 28px), 480px); box-shadow: 0 12px 36px color-mix(in srgb, #3c211b 22%, transparent); backdrop-filter: blur(18px); }
+.live-sheet-content .dining-cancel-selection .dining-batch-cancel .adm-button { color: #fff; border-color: #b84632; background: #b84632; }
 .dining-round { border: 1px solid var(--ws-line); border-radius: 18px; padding: 16px; min-width: 0; }
 .dining-round header { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
 .dining-round p { margin: 10px 0; overflow-wrap: anywhere; }
@@ -251,7 +254,7 @@
 .checkout-payment-methods button { min-height: 46px; padding: 9px 11px; border: 1px solid var(--ws-line); border-radius: 12px; color: var(--ws-ink); background: var(--theme-paper); font-size: 12px; font-weight: 650; cursor: pointer; overflow-wrap: anywhere; }
 .checkout-payment-methods button.is-active { border-color: var(--brand); color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, white); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 8%, transparent); }
 .live-app .checkout-print-button.adm-button { min-height: 47px; border-color: color-mix(in srgb, var(--brand) 25%, var(--ws-line)); color: var(--brand); background: var(--theme-paper); }
-@media (min-width: 700px) { .dining-summary { gap: 10px; margin-bottom: 20px; } .dining-summary-counts, .dining-finance-breakdown { gap: 10px; } .dining-summary-item { padding: 14px; } .dining-summary-item strong { font-size: 21px; } .dining-summary-counts .dining-summary-item strong { font-size: 27px; } .dining-finance-toggle { min-height: 72px; padding-inline: 18px; } .dining-finance-toggle > strong { font-size: 28px; } .dining-finance-breakdown { padding: 0 12px 12px; } .dining-board { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } .dining-card { padding: 18px; } .dining-choice-scroll button { flex-basis: 44%; } }
+@media (min-width: 700px) { .dining-summary { gap: 10px; margin-bottom: 20px; } .dining-summary-counts, .dining-finance-breakdown { gap: 10px; } .dining-summary-item { padding: 14px; } .dining-summary-item strong { font-size: 21px; } .dining-summary-counts .dining-summary-item strong { font-size: 27px; } .dining-finance-toggle { min-height: 72px; padding-inline: 18px; } .dining-finance-toggle > strong { font-size: 28px; } .dining-finance-breakdown { padding: 0 12px 12px; } .dining-board { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } .dining-card { padding: 18px; } .dining-choice-scroll button { flex-basis: 44%; } .dining-cancel-selection { bottom: 24px; width: min(calc(100vw - 48px), 500px); } }
 @media (min-width: 1000px) { .dining-board { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media print {
   body { background: #fff; }
