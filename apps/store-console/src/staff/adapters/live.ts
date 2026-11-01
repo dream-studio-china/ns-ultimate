@@ -481,6 +481,13 @@ export class StoreApi {
       },
     }, { 'X-Store-Code': storeCode })
   }
+  async legacyCreateOrderFromCart(storeCode: string, counterUuid: string, currency: string, items: { specificationUuid: string; quantity: number }[], notes: string, diningMode?: Pick<DiningMode, 'uuid' | 'name'>, participantCount = 0) {
+    const catalogItems = await Promise.all(items.map(async ({ specificationUuid, quantity }) => ({
+      specificationId: (await this.legacySpecification(specificationUuid, storeCode)).specificationId,
+      quantity,
+    })))
+    return this.legacyCreateOrder(storeCode, counterUuid, currency, catalogItems, notes, diningMode, participantCount)
+  }
   previewCounterMerge(id: string, version: string) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/merge/preview`, counterMergeQuoteSchema, 'POST', { version }) }
   confirmCounterMerge(id: string, body: { version: string; commandUuid: string; quoteToken: string }) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/merge/confirm`, counterCommandResultSchema, 'POST', body) }
   orderQuote(id: string, cart: OrderCart) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}/orders/quote`, orderQuoteSchema, 'POST', cart) }
