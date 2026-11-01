@@ -69,7 +69,7 @@ const counterPageSize = 30
 const hasModernCounterRead = (access: StoreAccess) => can(access, 'counter_session', 'read')
 const hasLegacyCounterRead = (access: StoreAccess) => !hasModernCounterRead(access) && can(access, 'counter', 'read')
 async function loadCounterSession(api: StoreApi, _access: StoreAccess, counterUuid: string) {
-  return api.hydrateCounterSessionDiningModes(await api.counterSession(counterUuid))
+  return api.counterSession(counterUuid)
 }
 
 async function readLegacyCounterSession(api: StoreApi, access: StoreAccess, counterUuid: string) {
@@ -81,7 +81,7 @@ async function readLegacyCounterSession(api: StoreApi, access: StoreAccess, coun
 }
 
 async function loadLegacyCounterSession(api: StoreApi, access: StoreAccess, counterUuid: string) {
-  return api.hydrateCounterSessionDiningModes(await readLegacyCounterSession(api, access, counterUuid))
+  return readLegacyCounterSession(api, access, counterUuid)
 }
 
 async function loadAllCounterSessions(api: StoreApi): Promise<CounterSessionView[]> {
