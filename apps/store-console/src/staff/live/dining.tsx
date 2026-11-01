@@ -246,6 +246,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, on
     const hasOrders = orders.length > 0
     const hasAnyOrders = table.ordersVisible && table.orders.length > 0
     const canCancelOrders = permitted(access, 'cancel')
+    const tableDiningMode = resolveBoundDiningMode(table.session?.diningMode, table.session?.diningModeUuid, access.store.settings?.diningModes)
     const cancellableOrders = table.ordersVisible ? effectiveDiningOrders(table).filter((order) => order.canCancel) : []
     const selectedCancelOrders = cancellableOrders.filter((order) => cancelSelection.has(order.uuid))
     const allCancellableSelected = cancellableOrders.length > 0 && selectedCancelOrders.length === cancellableOrders.length
@@ -266,6 +267,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onOrder, on
       {[...orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.uuid.localeCompare(b.uuid)).map((order, index) => <article className={`dining-round ${cancelMode ? 'is-cancel-selectable' : ''} ${cancelSelection.has(order.uuid) ? 'is-cancel-selected' : ''}`} key={order.uuid}>
         <header><div className="dining-round-heading">{cancelMode && <input className="dining-cancel-checkbox" aria-label={`${t('selectOrder')} #${order.uuid.slice(0, 8).toUpperCase()}`} type="checkbox" checked={cancelSelection.has(order.uuid)} disabled={!order.canCancel} onChange={() => toggleCancelOrder(order.uuid)} />}<strong>{String(index + 1).padStart(2, '0')} · #{order.uuid.slice(0, 8)}</strong></div><StatusPill>{tradeLabels[order.status] ? t(tradeLabels[order.status]) : order.status}</StatusPill></header>
         <p><time dateTime={order.createdAt}>{formatDiningDate(order.createdAt, locale)}</time></p>
+        <p>{t('diningMode')} · {tableDiningMode?.name ?? t('diningModeNotRecorded')}</p>
         <p>{t('diningOperationalState')} · {order.operationalStatus ? t(operationLabels[order.operationalStatus] ?? 'orderStatus') : t('diningProjecting')}</p>
         <p>{t('diningPaymentState')} · {order.paymentStatus ?? t('diningNoPayment')}{order.hasInvoice && ` · ${t('diningHasInvoice')}`}</p>
         <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
