@@ -178,7 +178,6 @@ const counterCommandResultSchema = z.object({ counterUuid: uuid, sessionUuid: uu
 export const orderableCatalogSchema = z.object({ uuid, productName: z.string(), name: z.string(), price: cents, available: z.boolean() })
 export type CounterSessionView = z.infer<typeof counterSessionSchema>
 export type SessionOrder = z.infer<typeof sessionOrderSchema>
-export interface OrderDiningModeReference { uuid: string | null; name: string | null }
 export type OrderQuote = z.infer<typeof orderQuoteSchema>
 export type CounterMergeQuote = z.infer<typeof counterMergeQuoteSchema>
 export interface OrderCart { version: string; items: { specificationUuid: string; quantity: number }[]; notes: string; diningModeUuid?: string; replaceOrderUuid?: string }
@@ -261,40 +260,9 @@ export function can(access: StoreAccess, resource: string, action: string): bool
 }
 export class StoreApi {
   readonly base: string
-  private readonly orderDiningModes = new Map<string, Promise<OrderDiningModeReference | null>>()
   private readonly tradeOrderStates = new Map<string, Promise<z.infer<typeof tradeOrderRecordSchema> | null>>()
   constructor(readonly client: ApiClient, storeUuid: string) {
     this.base = `/api/v1/store/${uuid.parse(storeUuid)}`
-  }
-
-  /** Read the mode already recorded by the ordering app; no counter-session logic is inferred here. */
-  tradeOrderDiningMode(orderUuid: string): Promise<OrderDiningModeReference | null> {
-    const id = uuid.parse(orderUuid)
-    const key = `trade:${id}`
-    const cached = this.orderDiningModes.get(key)
-    if (cached) return cached
-    const read = (record: z.infer<typeof tradeOrderRecordSchema> | null): OrderDiningModeReference | null => {
-      if (!record) return null
-      const metadata = record.metadata ?? {}
-      const rawUuid = metadata.diningModeUuid ?? metadata.dining_mode_uuid ?? null
-      const rawName = metadata.diningModeName ?? metadata.dining_mode_name ?? null
-      return {
-        uuid: typeof rawUuid === 'string' && rawUuid.trim() ? rawUuid.trim().slice(0, 120) : null,
-        name: typeof rawName === 'string' && rawName.trim() ? rawName.trim().slice(0, 120) : null,
-      }
-    }
-    // Cashier accounts are authenticated users, not administrators. The customer
-    // order endpoint exposes the same Trade order metadata without requiring
-    // ROLE_ADMIN; retain the admin endpoint as a fallback for older sessions.
-    const task = this.tradeOrderState(id, false)
-      .then(async (record) => read(record) ?? read(await this.tradeOrderState(id, true)))
-      .catch((error: unknown) => {
-        this.orderDiningModes.delete(key)
-        if (error instanceof ApiError && (error.status === 403 || error.status === 404)) return null
-        throw error
-      })
-    this.orderDiningModes.set(key, task)
-    return task
   }
 
   /** Read payment fields from the existing Trade order detail without changing server behavior. */
@@ -313,26 +281,6 @@ export class StoreApi {
     return task
   }
 
-  /** Attach modes from existing Trade order metadata to counter rows that do not expose one. */
-  async hydrateCounterSessionDiningModes(table: CounterSessionView): Promise<CounterSessionView> {
-    if (!table.ordersVisible || table.orders.length === 0) return table
-    let changed = false
-    const orders = await Promise.all(table.orders.map(async (order) => {
-      try {
-        const mode = await this.tradeOrderDiningMode(order.uuid)
-        if (!mode?.uuid && !mode?.name) return order
-        changed = true
-        return {
-          ...order,
-          diningModeUuid: mode.uuid ?? order.diningModeUuid ?? null,
-          diningModeName: mode.name ?? order.diningModeName ?? null,
-        }
-      } catch {
-        return order
-      }
-    }))
-    return changed ? { ...table, orders } : table
-  }
   static async access(client: ApiClient, storeUuid: string): Promise<StoreAccess> {
     uuid.parse(storeUuid)
     const read = async <T>(step: ConnectionStep, path: string, schema: z.ZodType<T>) => {

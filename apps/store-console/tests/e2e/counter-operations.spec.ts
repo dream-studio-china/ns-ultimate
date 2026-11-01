@@ -35,7 +35,7 @@ const diningMode = {
   ],
 }
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; orderMetadataMode?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; createWithoutRead?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; emptySession?: boolean; participantMissing?: boolean; customerOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; diningMode?: boolean; boundModeSnapshotMissing?: boolean; storeModeOnly?: boolean; stringSettings?: boolean; mergeOnCheckout?: boolean; terminal?: boolean; mixedOrders?: boolean; batchPending?: boolean; batchConfirmedCancellable?: boolean; checkoutQuantity?: number; delayedCheckoutProjection?: boolean; delayedCheckoutAdditionProjection?: boolean; confirmedCheckoutAdditions?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   const hasBoundDiningMode = options.diningMode || options.boundModeSnapshotMissing
@@ -45,7 +45,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     diningMode: options.diningMode ? diningMode : null,
   }
   const diningModes = { version: 1, modes: [diningMode] }
-  const storeView = hasBoundDiningMode || options.storeModeOnly || options.orderMetadataMode
+  const storeView = hasBoundDiningMode || options.storeModeOnly
     ? { ...store, settings: options.stringSettings ? JSON.stringify({ diningModes }) : { diningModes } }
     : store
   type TestOrder = { uuid: string; status: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; diningModeUuid: string | null; diningModeName: string | null; items: typeof item[]; canReplace: boolean; canCancel: boolean }
@@ -109,12 +109,6 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', metadata: null,
       product: { uuid: productId, __toString: '#1 Soup' },
     })
-    if (method === 'GET' && path.startsWith('/api/v1/app/orders/')) {
-      return respond({ uuid: path.slice('/api/v1/app/orders/'.length), metadata: options.orderMetadataMode ? { diningModeUuid: diningModeId, diningModeName: 'Hotpot' } : null })
-    }
-    if (options.orderMetadataMode && method === 'GET' && path.startsWith('/api/v1/manage/orders/')) {
-      return respond({ uuid: path.slice('/api/v1/manage/orders/'.length), metadata: { diningModeUuid: diningModeId, diningModeName: 'Hotpot' } })
-    }
     if (method === 'POST' && path.endsWith('/merge/preview')) {
       expect(body!.version).toBe(version())
       const sources = orders.filter((order) => ['pending', 'confirmed'].includes(order.status))
@@ -301,7 +295,7 @@ for (const width of [320, 390, 768, 1280]) {
     expect(additions).toHaveLength(2)
     expect(additions.every((request) => (request.body?.metadata as Record<string, unknown> | undefined)?.counterUuid === counterId)).toBe(true)
     expect(requests.some((request) => request.path.endsWith('/orders/quote') || request.path.endsWith('/orders/create') || request.path.endsWith('/orders/replace') || request.path.endsWith('/cancel'))).toBe(false)
-    expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/app/orders/'))).toBe(true)
+    expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/app/orders/'))).toBe(false)
     expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/manage/orders/'))).toBe(false)
     expect(requests.some((request) => request.path.includes('/payment'))).toBe(false)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -476,7 +470,7 @@ test('table details show only effective unsettled orders', async ({ page }) => {
   await expect(detail.locator('.dining-section-heading span')).toHaveText('1')
 })
 
-test('store staff checkout reads the trade order through the user-scoped detail', async ({ page }) => {
+test('store staff checkout uses counter-session data without order detail lookups', async ({ page }) => {
   const requests = await setup(page)
   await page.locator('.dining-card-title').click()
   const detail = page.getByRole('dialog', { name: '查看桌次' })
@@ -484,12 +478,12 @@ test('store staff checkout reads the trade order through the user-scoped detail'
   await detail.getByRole('button', { name: '结账', exact: true }).click()
   await expect(page.getByRole('dialog', { name: '结账', exact: true })).toBeVisible()
 
-  expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/app/orders/'))).toBe(true)
+  expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/app/orders/'))).toBe(false)
   expect(requests.some((request) => request.method === 'GET' && request.path.startsWith('/api/v1/manage/orders/'))).toBe(false)
 })
 
-test('order rounds use the mode stored on the order when the session has no snapshot', async ({ page }) => {
-  await setup(page, { orderMetadataMode: true })
+test('order rounds use the mode returned by the store counter session', async ({ page }) => {
+  await setup(page, { diningMode: true })
   await page.locator('.dining-card-title').click()
   const detail = page.getByRole('dialog', { name: '查看桌次' })
   await expect(detail.locator('.dining-round')).toContainText('点餐方式 · Hotpot')

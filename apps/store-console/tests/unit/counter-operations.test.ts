@@ -45,58 +45,25 @@ describe('live counter session boundary', () => {
     expect(parsed.session?.diningMode).toMatchObject({ uuid: id, name: 'Hotpot' })
   })
 
-  it('hydrates missing order modes from the existing Trade order metadata', async () => {
+  it('reads dining mode directly from the store counter session without order detail lookups', async () => {
     const client = new ApiClient()
-    const data = vi.spyOn(client, 'data').mockResolvedValueOnce({ uuid: id, metadata: { diningModeUuid: 'hotpot', diningModeName: 'Hotpot' } })
-    const api = new StoreApi(client, id)
     const table = counterSessionSchema.parse({
       counter: { uuid: id, code: 'A01', name: 'Window', capacity: 4, enabled: true },
-      session: { uuid: id, participantCount: 2, notes: null, startedAt: '2026-10-31T10:00:00Z', revision: 1, diningModeUuid: null, diningMode: null },
+      session: { uuid: id, participantCount: 2, notes: null, startedAt: '2026-10-31T10:00:00Z', revision: 1, diningModeUuid: id, diningMode: null },
       ordersVisible: true,
-      orders: [{ uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', items: [item], canReplace: false, canCancel: false }],
+      orders: [{ uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', diningModeUuid: id, diningModeName: 'Hotpot', items: [item], canReplace: false, canCancel: false }],
       openAmount: 1590, orderedAmount: 1590, openOrderCount: 1, paymentHold: false,
       currency: 'USD', canEnd: false, version,
     })
-
-    const hydrated = await api.hydrateCounterSessionDiningModes(table)
-
-    expect(data).toHaveBeenCalledWith(`/api/v1/app/orders/${id}`, tradeOrderRecordSchema)
-    expect(hydrated.ordersVisible && hydrated.orders[0]).toMatchObject({ diningModeUuid: 'hotpot', diningModeName: 'Hotpot' })
-    expect(hydrated.session?.diningModeUuid).toBeNull()
-  })
-
-  it('overrides session modes with the Trade order metadata', async () => {
-    const client = new ApiClient()
-    const data = vi.spyOn(client, 'data').mockResolvedValueOnce({ uuid: id, metadata: { diningModeUuid: 'hotpot', diningModeName: 'Hotpot' } })
-    const api = new StoreApi(client, id)
-    const table = counterSessionSchema.parse({
-      counter: { uuid: id, code: 'A01', name: 'Window', capacity: 4, enabled: true },
-      session: { uuid: id, participantCount: 2, notes: null, startedAt: '2026-10-31T10:00:00Z', revision: 1, diningModeUuid: null, diningMode: null },
-      ordersVisible: true,
-      orders: [{ uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: null, createdAt: '2026-10-31T10:00:00Z', diningModeUuid: 'store-mode', diningModeName: 'Store mode', items: [item], canReplace: false, canCancel: false }],
-      openAmount: 1590, orderedAmount: 1590, openOrderCount: 1, paymentHold: false,
-      currency: 'USD', canEnd: false, version,
-    })
-
-    const hydrated = await api.hydrateCounterSessionDiningModes(table)
-
-    expect(data).toHaveBeenCalledWith(`/api/v1/app/orders/${id}`, tradeOrderRecordSchema)
-    expect(hydrated.ordersVisible && hydrated.orders[0]).toMatchObject({ diningModeUuid: 'hotpot', diningModeName: 'Hotpot' })
-  })
-
-  it('falls back to the admin order endpoint when the user-scoped detail is unavailable', async () => {
-    const client = new ApiClient()
-    const data = vi.spyOn(client, 'data')
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ uuid: id, metadata: { diningModeUuid: 'hotpot', diningModeName: 'Hotpot' } })
+    const data = vi.spyOn(client, 'data').mockResolvedValueOnce(table)
     const api = new StoreApi(client, id)
 
-    await expect(api.tradeOrderDiningMode(id)).resolves.toEqual({ uuid: 'hotpot', name: 'Hotpot' })
+    const read = await api.counterSession(id)
 
-    expect(data.mock.calls.map(([path]) => path)).toEqual([
-      `/api/v1/app/orders/${id}`,
-      `/api/v1/manage/orders/${id}`,
-    ])
+    expect(data).toHaveBeenCalledOnce()
+    expect(data).toHaveBeenCalledWith(`/api/v1/store/${id}/counter-operations/counters/${id}`, counterSessionSchema)
+    expect(read.session?.diningModeUuid).toBe(id)
+    expect(read.ordersVisible && read.orders[0]).toMatchObject({ diningModeUuid: id, diningModeName: 'Hotpot' })
   })
 
   it('parses nullable and JSON-encoded Trade order metadata', () => {
