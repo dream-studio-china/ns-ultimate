@@ -7,6 +7,7 @@ namespace NsUltimate\Business\HuifuFin\Service\Payment;
 use App\Payment\DTO\PaymentNotifyResult;
 use App\Payment\Entity\Invoice;
 use App\Payment\Service\InvoiceServiceInterface;
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\HuifuFin\Client\HuifuClientInterface;
 use NsUltimate\Business\HuifuFin\Client\HuifuEndpoints;
@@ -51,36 +52,73 @@ final class HuifuReconciliationService
         $response = $this->client->post(HuifuEndpoints::SCANPAY_QUERY, $payload, $resolved['provider']->getEnvironment());
         $this->responses->verify($response, $this->signer, $resolved['credentials']['huifu_public_key']);
         $responseData = $this->responses->data($response);
-        $attempt->markQueried();
-        $attempt->setResponseSnapshot($this->snapshot($responseData));
-        $status = $this->responses->transStatus($responseData);
-        if ($status === 'S' && $this->responses->successful($response)) {
-            $amount = $this->amountToCents((string) ($responseData['trans_amt'] ?? ''));
-            $invoice = $attempt->getInvoice();
-            if ($invoice instanceof Invoice && $amount > 0) {
-                $result = new PaymentNotifyResult(
-                    payment: HuifuPaymentGateway::PAYMENT,
-                    outTradeNo: $invoice->getOutTradeNo(),
-                    status: Invoice::STATUS_PAID,
-                    amount: $amount,
-                    currency: strtoupper((string) ($responseData['currency'] ?? $invoice->getCurrency())),
-                    transactionId: isset($responseData['out_trans_id']) ? (string) $responseData['out_trans_id'] : null,
-                    paidAt: $this->date($responseData['end_time'] ?? null),
-                    rawData: $this->snapshot($responseData),
-                );
-                $this->invoices->handleNotifyResult($result);
-                $attempt->markSucceeded($result->transactionId);
+
+        $connection = $this->entityManager->getConnection();
+        $lockedInvoice = null;
+        $connection->beginTransaction();
+        try {
+            /** @var HuifuPaymentAttempt|null $attempt */
+            $attempt = $this->entityManager->find(
+                HuifuPaymentAttempt::class,
+                $attempt->getId(),
+                LockMode::PESSIMISTIC_WRITE,
+            );
+            if (!$attempt instanceof HuifuPaymentAttempt) {
+                throw new \RuntimeException('The Huifu payment attempt was not found.');
             }
-        } elseif ($status === 'F') {
-            $attempt->markFailed($this->responses->message($response));
-        } elseif ($status === 'P') {
-            $attempt->markPending();
-            $attempt->setNextQueryAt(new \DateTimeImmutable('+5 minutes'));
-        } else {
-            $attempt->markUnknown();
-            $attempt->setNextQueryAt(new \DateTimeImmutable('+5 minutes'));
+            if (in_array($attempt->getStatus(), [HuifuPaymentAttempt::STATUS_SUCCEEDED, HuifuPaymentAttempt::STATUS_CLOSED], true)) {
+                $connection->commit();
+
+                return $attempt;
+            }
+            $attempt->markQueried();
+            $attempt->setResponseSnapshot($this->snapshot($responseData));
+            $status = $this->responses->transStatus($responseData);
+            if ($status === 'S' && $this->responses->successful($response)) {
+                $amount = $this->amountToCents((string) ($responseData['trans_amt'] ?? ''));
+                $invoice = $attempt->getInvoice();
+                $lockedInvoice = $invoice;
+                if ($invoice instanceof Invoice && $amount > 0) {
+                    $result = new PaymentNotifyResult(
+                        payment: HuifuPaymentGateway::PAYMENT,
+                        outTradeNo: $invoice->getOutTradeNo(),
+                        status: Invoice::STATUS_PAID,
+                        amount: $amount,
+                        currency: strtoupper((string) ($responseData['currency'] ?? $invoice->getCurrency())),
+                        transactionId: isset($responseData['out_trans_id']) ? (string) $responseData['out_trans_id'] : null,
+                        paidAt: $this->date($responseData['end_time'] ?? null),
+                        rawData: $this->snapshot($responseData),
+                    );
+                    $this->invoices->handleNotifyResult($result);
+                    $attempt->markSucceeded($result->transactionId);
+                }
+            } elseif ($status === 'F') {
+                $attempt->markFailed($this->responses->message($response));
+            } elseif ($status === 'P') {
+                $attempt->markPending();
+                $attempt->setNextQueryAt(new \DateTimeImmutable('+5 minutes'));
+            } else {
+                $attempt->markUnknown();
+                $attempt->setNextQueryAt(new \DateTimeImmutable('+5 minutes'));
+            }
+            $this->entityManager->flush();
+            $connection->commit();
+        } catch (\Throwable $exception) {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+            try {
+                if ($attempt instanceof HuifuPaymentAttempt) {
+                    $this->entityManager->refresh($attempt);
+                }
+                if ($lockedInvoice instanceof Invoice) {
+                    $this->entityManager->refresh($lockedInvoice);
+                }
+            } catch (\Throwable) {
+                // The caller still receives the original failure.
+            }
+            throw $exception;
         }
-        $this->entityManager->flush();
 
         return $attempt;
     }
@@ -96,13 +134,15 @@ final class HuifuReconciliationService
         return $this->entityManager->createQueryBuilder()
             ->select('a')
             ->from(HuifuPaymentAttempt::class, 'a')
-            ->where('a.status IN (:statuses)')
+            ->where('a.status IN (:statuses) OR (a.status = :created AND a.createdAt <= :staleBefore)')
             ->andWhere('a.nextQueryAt IS NULL OR a.nextQueryAt <= :now')
             ->setParameter('statuses', [
                 HuifuPaymentAttempt::STATUS_SUBMITTED,
                 HuifuPaymentAttempt::STATUS_PENDING,
                 HuifuPaymentAttempt::STATUS_UNKNOWN,
             ])
+            ->setParameter('created', HuifuPaymentAttempt::STATUS_CREATED)
+            ->setParameter('staleBefore', new \DateTimeImmutable('-5 minutes'))
             ->setParameter('now', new \DateTimeImmutable())
             ->orderBy('a.id', 'ASC')
             ->setMaxResults($limit)
@@ -123,6 +163,7 @@ final class HuifuReconciliationService
                 HuifuRefund::STATUS_SUBMITTED,
                 HuifuRefund::STATUS_PROCESSING,
                 HuifuRefund::STATUS_UNKNOWN,
+                HuifuRefund::STATUS_SUCCEEDED,
             ])
             ->setParameter('now', new \DateTimeImmutable())
             ->orderBy('r.id', 'ASC')

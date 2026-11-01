@@ -8,6 +8,7 @@ use App\Payment\DTO\PaymentNotifyResult;
 use App\Payment\Entity\Invoice;
 use App\Payment\Exception\PaymentVerificationException;
 use App\Payment\Service\InvoiceServiceInterface;
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\HuifuFin\Client\HuifuResponseParser;
 use NsUltimate\Business\HuifuFin\Client\HuifuSigner;
@@ -103,13 +104,34 @@ final class HuifuNotificationService
         }
 
         $transStatus = $this->responses->transStatus($data);
-        $attempt->setProviderResponse((string) ($data['resp_code'] ?? ''), (string) ($data['resp_desc'] ?? ''));
-        $attempt->setProviderTransStatus($transStatus);
-        if (isset($data['hf_seq_id']) && is_scalar($data['hf_seq_id'])) {
-            $attempt->setHfSeqId((string) $data['hf_seq_id']);
-        }
-        $result = null;
+        $connection = $this->entityManager->getConnection();
+        $connection->beginTransaction();
         try {
+            /** @var HuifuPaymentAttempt|null $attempt */
+            $attempt = $this->entityManager->find(
+                HuifuPaymentAttempt::class,
+                $attempt->getId(),
+                LockMode::PESSIMISTIC_WRITE,
+            );
+            if (!$attempt instanceof HuifuPaymentAttempt) {
+                throw new PaymentVerificationException('The Huifu payment attempt was not found.');
+            }
+            if ($attempt->getStatus() === HuifuPaymentAttempt::STATUS_SUCCEEDED) {
+                if ($transStatus === 'S') {
+                    $event->markProcessed();
+                } else {
+                    $event->markIgnored('A later Huifu notification conflicts with the confirmed payment and was ignored.');
+                }
+                $this->entityManager->flush();
+                $connection->commit();
+
+                return 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? '');
+            }
+            $attempt->setProviderResponse((string) ($data['resp_code'] ?? ''), (string) ($data['resp_desc'] ?? ''));
+            $attempt->setProviderTransStatus($transStatus);
+            if (isset($data['hf_seq_id']) && is_scalar($data['hf_seq_id'])) {
+                $attempt->setHfSeqId((string) $data['hf_seq_id']);
+            }
             if ($transStatus === 'S') {
                 $result = new PaymentNotifyResult(
                     payment: HuifuPaymentGateway::PAYMENT,
@@ -141,13 +163,55 @@ final class HuifuNotificationService
             }
             $event->markProcessed();
             $this->entityManager->flush();
+            $connection->commit();
         } catch (\Throwable $exception) {
-            $event->markError($exception->getMessage());
-            $this->entityManager->flush();
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+            $attemptId = $attempt instanceof HuifuPaymentAttempt ? $attempt->getId() : null;
+            if ($this->entityManager->isOpen()) {
+                $this->entityManager->clear();
+            }
+            $this->recordEventError($eventKey, $attemptId, $request->getContent(), $this->snapshot($data), $exception->getMessage());
             throw $exception;
         }
 
         return 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? '');
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function recordEventError(
+        string $eventKey,
+        ?int $attemptId,
+        string $body,
+        array $payload,
+        string $error,
+    ): void {
+        $connection = $this->entityManager->getConnection();
+        try {
+            $connection->beginTransaction();
+            $event = $this->entityManager->getRepository(HuifuWebhookEvent::class)->findOneBy(['eventKey' => $eventKey]);
+            if (!$event instanceof HuifuWebhookEvent) {
+                $attempt = $attemptId !== null
+                    ? $this->entityManager->find(HuifuPaymentAttempt::class, $attemptId)
+                    : null;
+                $event = new HuifuWebhookEvent(
+                    eventKey: $eventKey,
+                    type: 'payment',
+                    attempt: $attempt instanceof HuifuPaymentAttempt ? $attempt : null,
+                    bodyHash: hash('sha256', $body),
+                    payload: $payload,
+                );
+                $this->entityManager->persist($event);
+            }
+            $event->markError($error);
+            $this->entityManager->flush();
+            $connection->commit();
+        } catch (\Throwable) {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+        }
     }
 
     /** @return array<string, mixed> */

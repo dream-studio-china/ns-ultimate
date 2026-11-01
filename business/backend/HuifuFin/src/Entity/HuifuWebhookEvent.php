@@ -91,6 +91,13 @@ class HuifuWebhookEvent
         $this->error = $error;
         return $this;
     }
+    public function markIgnored(string $error): self
+    {
+        $this->processed = true;
+        $this->processedAt = new \DateTimeImmutable();
+        $this->error = $error;
+        return $this;
+    }
     public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
     public function getProcessedAt(): ?\DateTimeImmutable { return $this->processedAt; }
 }

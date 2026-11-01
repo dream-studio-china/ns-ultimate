@@ -3,6 +3,10 @@ services:
         arguments:
             $key: '%env(HUIFU_CONFIG_KEY)%'
 
+    NsUltimate\Business\HuifuFin\Service\Configuration\HuifuOperationProof:
+        arguments:
+            $key: '%env(HUIFU_CONFIG_KEY)%'
+
     NsUltimate\Business\HuifuFin\Client\HuifuClient:
         autowire: true
         arguments:

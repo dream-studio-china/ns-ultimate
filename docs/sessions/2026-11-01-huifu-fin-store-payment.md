@@ -40,6 +40,33 @@ cover encrypted configuration and rotation, multi-Store sharing and denial,
 Store payment attempt creation, signed notification idempotency, confirmed and
 pending refund behavior, POS deduplication, and unknown-terminal rejection.
 
+## Review hardening
+
+- Payment initiation serializes on the invoice, records a timeout as `unknown`
+  outside the rolled-back Core transaction, and blocks a replacement attempt
+  until reconciliation resolves it. Failures before a provider request are
+  recorded as `failed` instead of blocking the invoice. Stale `created` attempts
+  enter reconciliation after five minutes.
+- A confirmed refund is applied to Core exactly once under row locks. Refund
+  reservation is transactional, and confirmed refunds that were not applied are
+  retried by reconciliation.
+- Corrected notifications and reconciliation results lock and reload the attempt
+  before applying state, so a confirmed payment cannot be downgraded by a
+  concurrent query or notification.
+- Store payment and refund workflows pass an internal HMAC proof to the gateway.
+  The generic Core payment and refund routes cannot submit an attempt or consume
+  a confirmed refund without it.
+- POS notifications must match the notified merchant. Synchronous responses
+  must be signed; unsigned responses are treated as unknown.
+- Provider environment and identity fields are immutable after profile creation,
+  and a confirmed payment cannot be downgraded by a later notification.
+
+Additional validation for these changes:
+
+- Composed backend PHPUnit: 318 tests, 6,653 assertions, 1 skipped.
+- Business PHPStan: no errors.
+- Documentation link check: 62 documents, 0 broken local targets.
+
 ## Risks and follow-up
 
 - No live Huifu sandbox or production request was made. The signing
