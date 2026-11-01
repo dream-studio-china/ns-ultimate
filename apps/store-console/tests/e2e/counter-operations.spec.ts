@@ -617,6 +617,28 @@ test('checkout participant rule can save a missing guest count before order revi
   expect(update?.body).toMatchObject({ participantCount: 2, notes: 'Birthday' })
 })
 
+test('checkout rules can be skipped without making adjustments', async ({ page }) => {
+  const requests = await setup(page, { diningMode: true, participantMissing: true })
+  await page.locator('.dining-card-title').click()
+  await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const review = page.getByRole('dialog', { name: '结账', exact: true })
+  await expect(review).toContainText('本桌尚未记录用餐人数')
+
+  const next = review.getByRole('button', { name: '下一项', exact: true })
+  await expect(next).toBeEnabled()
+  await next.click()
+  await expect(review).toContainText('请确认以下菜品')
+  await expect(next).toBeEnabled()
+  await next.click()
+  await expect(review).toContainText('是否需要饮料')
+
+  const finalReview = review.getByRole('button', { name: '最终确认', exact: true })
+  await expect(finalReview).toBeEnabled()
+  await finalReview.click()
+  await expect(review).toContainText('商品数量无需调整')
+  expect(requests.some((request) => request.method !== 'GET' && request.path.includes('/counter-operations/'))).toBe(false)
+})
+
 test('checkout category review caches additions until final confirmation', async ({ page }) => {
   const requests = await setup(page, { diningMode: true })
   await page.locator('.dining-card-title').click()

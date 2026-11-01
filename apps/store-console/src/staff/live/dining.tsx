@@ -791,12 +791,9 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   const categoryItems = activeRule?.type === 'suggest_category'
     ? catalog.items.filter((item) => item.categoryUuid === activeRule.categoryUuid)
     : []
-  const requiredBlocked = activeRule?.type === 'confirm_required_items' && activeRule.required
-    ? requiredItems.some(({ rule, expected }) => expected === null || lineQuantity(rule.specificationUuid) < expected)
-    : false
-  const participantBlocked = activeRule?.type === 'confirm_participants' && activeRule.required && participantCount === null
-  const catalogStepLoading = catalog.loading && (activeRule?.type === 'confirm_required_items' || activeRule?.type === 'suggest_category')
-  const nextDisabled = busy || participantBlocked || requiredBlocked || catalogStepLoading
+  // Rules are review aids. Staff can move on without changing the order because
+  // the current order may already be correct or no adjustment may be necessary.
+  const nextDisabled = busy
   const reconciliation = reconcileCheckoutQuantities(originalLines, lines)
   const lineName = (specificationUuid: string) => {
     const line = lines.find((item) => item.specificationUuid === specificationUuid) ?? originalLines.find((item) => item.specificationUuid === specificationUuid)
