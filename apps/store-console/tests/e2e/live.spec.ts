@@ -1021,6 +1021,28 @@ test('expired refresh returns to login and removes loaded store data', async ({ 
   await expect(page.getByRole('heading', { name: 'API product', exact: true })).toHaveCount(0)
 })
 
+test('login failures show actionable status-specific messages', async ({ page }) => {
+  let status = 401
+  await page.route('**/api/auth/login', (route) => route.fulfill({ status, json: { code: status, message: 'mocked login failure' } }))
+  await page.goto('/')
+
+  const cases = [
+    [400, '登录失败：登录账号或密码不能为空。'],
+    [401, '账号或密码错误，请重新输入。'],
+    [403, '当前账号暂时不能登录，请确认手机号已验证或联系管理员。'],
+    [429, '登录尝试过于频繁，请等待约 1 分钟后重试。'],
+    [503, '登录服务暂时不可用，请稍后重试。'],
+  ] as const
+
+  for (const [nextStatus, message] of cases) {
+    status = nextStatus
+    await page.getByLabel('账号', { exact: true }).fill('contract-staff')
+    await page.getByLabel('密码', { exact: true }).fill('test-only-password')
+    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await expect(page.getByRole('alert')).toHaveText(message)
+  }
+})
+
 test('demo entry stays independent and never sends staff API requests', async ({ page }) => {
   const requests = await mockApi(page)
   await page.goto('/?mode=demo')

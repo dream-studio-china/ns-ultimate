@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
 import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronRight, ChartNoAxesCombined, CircleHelp, CookingPot, Globe2, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
-import { ApiClient } from '../adapters/api-client'
+import { ApiClient, ApiError } from '../adapters/api-client'
 import { can, orderActions, StoreApi, StoreConnectionError, storeSchema, type StoreAccess, type ConnectionStep } from '../adapters/live'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { useOnline } from '../../shared/use-online'
@@ -22,6 +22,16 @@ const navigation = [
   { key: 'reports', icon: ChartNoAxesCombined, title: 'reports' },
   { key: 'mine', icon: UserRound, title: 'mine' },
 ] as const
+
+function loginErrorKey(error: unknown): MessageKey {
+  if (!(error instanceof ApiError)) return 'loginFailed'
+  if (error.status === 400) return 'loginInputRequired'
+  if (error.status === 401) return 'loginCredentialsInvalid'
+  if (error.status === 403) return 'loginForbidden'
+  if (error.status === 429) return 'loginRateLimited'
+  if (error.status >= 500) return 'loginServiceUnavailable'
+  return errorKey(error)
+}
 
 export function LiveApp() {
   const { t, locale, setLocale } = useI18n()
@@ -115,7 +125,7 @@ function Login({ client, done }: { client: ApiClient; done: () => void }) {
       if (lock.current || !navigator.onLine) return
       lock.current = true; setBusy(true); setError(null)
       const secret = password; setPassword('')
-      void client.login(identifier.trim(), secret).then(done).catch((error: unknown) => setError(errorKey(error) === 'sessionExpired' ? 'loginFailed' : errorKey(error))).finally(() => { lock.current = false; setBusy(false) })
+      void client.login(identifier.trim(), secret).then(done).catch((error: unknown) => setError(loginErrorKey(error))).finally(() => { lock.current = false; setBusy(false) })
     }}>
       <div className="login-form-heading"><span className="workspace-eyebrow">{t('welcomeBack')}</span><h1>{t('login')}</h1><p>{t('loginSubtitle')}</p></div>
       <label className="field">{t('identifier')}<div className="workspace-input-icon"><UserRound size={18} /><input required autoComplete="username" value={identifier} placeholder={t('identifier')} disabled={busy} onChange={(event) => setIdentifier(event.target.value)} /></div></label>
