@@ -138,7 +138,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
       return respond({ counterUuid: counterId, sessionUuid: sessionId, orderUuid: target.uuid })
     }
     if (path.endsWith('/membership')) return respond({ status: 'active', role: 'manager' })
-    if (path.endsWith('/users/me')) return respond({ uuid: storeId, username: 'counter-staff', roles: [options.orderMetadataMode ? 'ROLE_ADMIN' : 'ROLE_USER'] })
+    if (path.endsWith('/users/me')) return respond({ uuid: storeId, username: 'counter-staff', roles: ['ROLE_USER'] })
     if (path.endsWith('/authorization/me')) {
       const sessionActions = options.sessionOnly || options.readOnly ? ['read'] : ['read', 'update', 'end']
       const orderActions = options.sessionOnly ? [] : options.createWithoutRead ? ['create'] : options.readOnly ? ['read'] : options.editOnly ? ['read', 'replace'] : options.cancelOnly ? ['read', 'cancel'] : options.noReplace ? ['read', 'create'] : ['read', 'create', 'replace', 'cancel', 'merge']
@@ -296,7 +296,8 @@ for (const width of [320, 390, 768, 1280]) {
     expect(additions).toHaveLength(2)
     expect(additions.every((request) => (request.body?.metadata as Record<string, unknown> | undefined)?.counterUuid === counterId)).toBe(true)
     expect(requests.some((request) => request.path.endsWith('/orders/quote') || request.path.endsWith('/orders/create') || request.path.endsWith('/orders/replace') || request.path.endsWith('/cancel'))).toBe(false)
-    expect(requests.some((request) => request.path.includes('/manage/') || request.path.includes('/payment'))).toBe(false)
+    expect(requests.some((request) => request.path.startsWith('/api/v1/manage/orders/'))).toBe(true)
+    expect(requests.some((request) => request.path.includes('/payment'))).toBe(false)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
