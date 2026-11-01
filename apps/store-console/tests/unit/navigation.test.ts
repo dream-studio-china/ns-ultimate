@@ -18,13 +18,13 @@ describe('permission-based workspace navigation', () => {
     const counter = access(['store:counter_session:read', 'store:order:read'])
     expect(workspacePages(availability)).toEqual(['products', 'mine'])
     expect(defaultWorkspacePage(availability, 'cashier')).toBe('products')
-    expect(workspacePages(counter)).toEqual(['tables', 'orders', 'mine'])
+    expect(workspacePages(counter)).toEqual(['tables', 'orders', 'reports', 'mine'])
     expect(defaultWorkspacePage(counter, 'kitchen')).toBe('tables')
   })
 
   it('uses counter sessions by default even when an old kitchen entry preference is present', () => {
     const both = access(['store:product:read', 'store:counter_session:read', 'store:order:read'])
-    expect(workspacePages(both)).toEqual(['products', 'tables', 'orders', 'mine'])
+    expect(workspacePages(both)).toEqual(['products', 'tables', 'orders', 'reports', 'mine'])
     expect(defaultWorkspacePage(both, null)).toBe('tables')
     expect(defaultWorkspacePage(both, 'kitchen')).toBe('tables')
     expect(defaultWorkspacePage(both, 'cashier')).toBe('tables')
@@ -48,7 +48,7 @@ describe('permission-based workspace navigation', () => {
   it('retains category-only, counter-configuration-only and order-only users', () => {
     for (const [code, page] of [['product_category', 'products'], ['counter', 'tables'], ['order', 'orders']]) {
       const employee = access([`store:${code}:read`])
-      expect(workspacePages(employee)).toEqual([page, 'mine'])
+      expect(workspacePages(employee)).toEqual(page === 'orders' ? ['orders', 'reports', 'mine'] : [page, 'mine'])
       expect(defaultWorkspacePage(employee, null)).toBe(page)
     }
   })

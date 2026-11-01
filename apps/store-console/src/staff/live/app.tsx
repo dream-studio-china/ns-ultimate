@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ArrowRight, Check, ChevronDown, ChevronRight, CircleHelp, CookingPot, Globe2, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
+import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronRight, ChartNoAxesCombined, CircleHelp, CookingPot, Globe2, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
 import { ApiClient } from '../adapters/api-client'
 import { can, orderActions, StoreApi, StoreConnectionError, storeSchema, type StoreAccess, type ConnectionStep } from '../adapters/live'
 import { useI18n, type MessageKey } from '../../shared/i18n'
@@ -8,6 +8,8 @@ import { useOnline } from '../../shared/use-online'
 import { ThemePicker } from '../../shared/theme-picker'
 import { LiveCatalog } from './catalog'
 import { LiveTables, LiveOrders } from './tables'
+import { LiveReports } from './reports'
+import { readReportingDay, writeReportingDay } from '../reporting'
 import { errorKey, ListFeedback, Notice, PageControls, PageHeading, StatusPill, usePage, LiveSheet, WorkspaceRefreshProvider } from './ui'
 import { BrandArt } from './brand-art'
 import { defaultWorkspacePage, workspacePages, type WorkspacePage } from './navigation'
@@ -17,6 +19,7 @@ const navigation = [
   { key: 'tables', icon: LayoutGrid, title: 'cashierView' },
   { key: 'products', icon: CookingPot, title: 'kitchenView' },
   { key: 'orders', icon: ReceiptText, title: 'readOnlyOrders' },
+  { key: 'reports', icon: ChartNoAxesCombined, title: 'reports' },
   { key: 'mine', icon: UserRound, title: 'mine' },
 ] as const
 
@@ -82,6 +85,7 @@ export function LiveApp() {
           {page === 'products' && <LiveCatalog api={api.current!} access={access} />}
           {page === 'tables' && <LiveTables api={api.current!} access={access} />}
           {page === 'orders' && <LiveOrders api={api.current!} access={access} />}
+          {page === 'reports' && <LiveReports api={api.current!} access={access} />}
            {page === 'mine' && <LiveAccount api={api.current!} access={access} logout={() => void logout()} />}
         </div>
         {page !== 'tables' && <details className="workspace-connection"><summary><ShieldCheck size={14} />{t('connectionDetails')}<ChevronDown size={14} /></summary><p>{t('operationalScopeHint')}</p></details>}
@@ -164,13 +168,22 @@ const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', creat
 function LiveAccount({ api, access, logout }: { api: StoreApi; access: StoreAccess; logout: () => void }) {
   const { t, locale, setLocale } = useI18n()
   const [history, setHistory] = useState(false)
+  const [reportingDay, setReportingDay] = useState(() => readReportingDay(access.store.uuid))
+  const [reportingDaySaved, setReportingDaySaved] = useState(true)
+  const updateReportingDay = (value: number) => {
+    setReportingDay(value)
+    setReportingDaySaved(writeReportingDay(access.store.uuid, value))
+  }
+  const reportingPeriod = reportingDay === 1
+    ? t('reportingDayNatural')
+    : t('reportingDayCycle').replace('{start}', String(reportingDay)).replace('{end}', String(reportingDay - 1))
   return <>
     <PageHeading eyebrow="accountEyebrow" title="liveAccount" subtitle="accountSubtitle" />
     {workspacePages(access).length === 1 && <Notice>{t('noWorkspaceAccess')}</Notice>}
     <section className="workspace-profile"><div className="profile-monogram">{(access.profile.username ?? 'NS').slice(0, 1).toUpperCase()}<span><ShieldCheck size={13} /></span></div><div><h2>{access.profile.username ?? access.profile.uuid}</h2><p>{t(roleLabels[access.membership.role] ?? 'liveAccount')}</p></div><StatusPill>{t('liveMode')}</StatusPill></section>
     <section className="account-store-card"><span><Store size={25} strokeWidth={1.5} /></span><div><strong>{access.store.name}</strong><small>{access.store.code} · {access.store.currency}</small></div><MapPin size={17} /><p>{t('storeContextHint')}</p></section>
     <div className="account-section-title"><h2>{t('devicePreferences')}</h2><span>{t('preferences')}</span></div>
-    <section className="workspace-panel"><div className="account-setting"><span className="setting-symbol"><Globe2 size={19} /></span><div><h3>{t('language')}</h3><small>{locale === 'en' ? t('en') : t('zh')}</small></div><button onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}>{locale === 'en' ? t('zh') : t('en')}<ChevronRight size={16} /></button></div><ThemePicker /></section>
+    <section className="workspace-panel"><div className="account-setting"><span className="setting-symbol"><Globe2 size={19} /></span><div><h3>{t('language')}</h3><small>{locale === 'en' ? t('en') : t('zh')}</small></div><button onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}>{locale === 'en' ? t('zh') : t('en')}<ChevronRight size={16} /></button></div><div className="account-setting account-reporting-setting"><span className="setting-symbol"><CalendarDays size={19} /></span><div><h3>{t('reportingDay')}</h3><small>{reportingPeriod}</small></div><label><span className="sr-only">{t('reportingDay')}</span><select aria-label={t('reportingDay')} value={reportingDay} onChange={(event) => updateReportingDay(Number(event.target.value))}>{Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{t('reportingDayOption').replace('{day}', String(day))}</option>)}</select></label></div>{!reportingDaySaved && <p className="workspace-report-storage-error" role="alert">{t('reportingDayStorageFailed')}</p>}<ThemePicker /></section>
     <div className="account-section-title"><h2>{t('profileAndAccess')}</h2><span>{t('scopedAccess')}</span></div>
     <section className="workspace-panel account-permissions">{Object.entries(resourceLabels).map(([resource, label]) => <div key={resource}><strong>{t(label)}</strong><span>{Object.entries(actionLabels).filter(([action]) => can(access, resource, action)).map(([action, label]) => <small key={action}>{t(label)}</small>)}{!Object.keys(actionLabels).some((action) => can(access, resource, action)) && <small className="no-grant">{t('noGrantedActions')}</small>}</span></div>)}</section>
     {can(access, 'operation', 'read') && <Button block className="account-history-button" onClick={() => setHistory(true)}>{t('operationHistory')}</Button>}

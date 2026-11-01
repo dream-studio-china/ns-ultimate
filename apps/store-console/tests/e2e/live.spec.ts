@@ -213,6 +213,48 @@ test('read-only grants hide mutations, and reload restores staff authentication 
   await expect(page.getByRole('heading', { name: '登录', exact: true })).toHaveCount(0)
 })
 
+test('store reporting summarizes orders and remembers the reporting day by store', async ({ page }) => {
+  const todayOrderId = '00000000-0000-4000-8000-000000000031'
+  const historicalOrderId = '00000000-0000-4000-8000-000000000032'
+  const today = new Date().toISOString()
+  const earlier = new Date(Date.now() - 2 * 86_400_000).toISOString()
+  await mockApi(page, { grants: ['store:order:read'] })
+  await page.route('**/operations/orders?**', (route) => operationalList(route, [
+    { uuid: todayOrderId, tradeOrderUuid: todayOrderId, operationalStatus: 'accepted', status: 'confirmed', paymentStatus: null, totalAmount: 1200, currency: 'CNY', createdAt: today, counter: { code: 'A01', name: 'Real A01' }, orderSnapshot: { items: [{ productName: 'Today beef', quantity: 1, amount: 1200 }] } },
+    { uuid: historicalOrderId, tradeOrderUuid: historicalOrderId, operationalStatus: 'verified', status: 'paid', paymentStatus: 'paid', paymentMethod: 'wechat', paidAt: earlier, totalAmount: 2000, currency: 'CNY', createdAt: earlier, counter: { code: 'A02', name: 'Real A02' }, orderSnapshot: { items: [{ productName: 'Historical beef', quantity: 2, amount: 2000 }] } },
+    { uuid: '00000000-0000-4000-8000-000000000033', tradeOrderUuid: '00000000-0000-4000-8000-000000000033', operationalStatus: 'accepted', status: 'confirmed', paymentStatus: null, totalAmount: 900, currency: 'CNY', createdAt: earlier, counter: null, orderSnapshot: { items: [{ productName: 'Unsettled history', quantity: 1, amount: 900 }] } },
+  ]))
+  await page.route('**/api/v1/app/orders/*', (route) => {
+    const id = new URL(route.request().url()).pathname.split('/').at(-1)
+    const data = id === historicalOrderId
+      ? { uuid: id, metadata: null, status: 'paid', paymentStatus: 'paid', paymentMethod: 'wechat', paidAt: earlier, totalAmount: 2000, currency: 'CNY' }
+      : { uuid: id, metadata: null, status: 'confirmed', paymentStatus: null, totalAmount: id === todayOrderId ? 1200 : 900, currency: 'CNY' }
+    return route.fulfill({ json: { code: 0, data } })
+  })
+  await login(page)
+  const nav = page.getByRole('navigation')
+  await expect(nav.getByRole('button', { name: '统计', exact: true })).toBeVisible()
+  await nav.getByRole('button', { name: '统计', exact: true }).click()
+  const hero = page.locator('.report-hero')
+  await expect(hero).toContainText('¥12.00')
+  await expect(hero).toContainText('已结账')
+  await expect(hero).toContainText('未结账')
+  await expect(page.locator('.sales-ranking')).toContainText('Today beef')
+  await page.setViewportSize({ width: 320, height: 800 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: 'test-results/ui-reporting.png', fullPage: true })
+
+  await nav.getByRole('button', { name: '我的', exact: true }).click()
+  const reportingDay = page.getByLabel('统计日', { exact: true })
+  await expect(reportingDay).toHaveValue('1')
+  await reportingDay.selectOption('10')
+  await expect(page.getByText('每月 10 日至次月 9 日', { exact: true })).toBeVisible()
+  expect(await page.evaluate((storeUuid) => localStorage.getItem(`ns-store-console.reporting-day.v1:${storeUuid}`), storeId)).toBe('10')
+  await page.reload()
+  await page.getByRole('navigation').getByRole('button', { name: '我的', exact: true }).click()
+  await expect(page.getByLabel('统计日', { exact: true })).toHaveValue('10')
+})
+
 test('kitchen-only staff see availability without catalog management or cashier access', async ({ page }) => {
   const requests = await mockApi(page, { grants: ['store:product:read', 'store:product:availability'] })
   await login(page, '/?view=cashier')
@@ -252,7 +294,7 @@ test('cashier staff read counter orders with service-session permission', async 
   })
   await login(page, '/?view=kitchen')
   const nav = page.getByRole('navigation')
-  await expect(nav.getByRole('button')).toHaveText(['收银', '交易订单', '我的'])
+  await expect(nav.getByRole('button')).toHaveText(['收银', '交易订单', '统计', '我的'])
   await expect(nav.getByRole('button', { name: '收银', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.locator('.workspace-heading')).toHaveCount(0)
   await expect(page.locator('.page-scope')).toHaveCount(0)
@@ -556,7 +598,7 @@ test('reconnecting a store discards the selected workspace and uses fresh grants
   const before = requests.length
   await page.getByRole('button', { name: 'Contract store S1', exact: true }).click()
   await page.getByRole('button', { name: '连接门店', exact: true }).click()
-  await expect(page.getByRole('navigation').getByRole('button')).toHaveText(['交易订单', '我的'])
+  await expect(page.getByRole('navigation').getByRole('button')).toHaveText(['交易订单', '统计', '我的'])
   await expect(page.getByRole('heading', { name: '门店订单（只读）', exact: true })).toHaveCount(0)
   await expect(page.getByLabel('搜索全店记录', { exact: true })).toHaveCount(0)
   await expect(page.getByText('台号 A01', { exact: true })).toBeVisible()

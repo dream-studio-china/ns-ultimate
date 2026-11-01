@@ -275,6 +275,17 @@
 .account-setting h3 { font-size: 12px; font-weight: 500; }
 .account-setting small { display: block; color: var(--theme-muted); font-size: 9px; margin-top: 5px; }
 .account-setting > button { display: inline-flex; gap: 3px; align-items: center; min-height: 42px; font-size: 10px; color: var(--brand); }
+.account-reporting-setting { margin-top: 18px; }
+.account-reporting-setting label { flex-shrink: 0; }
+.account-reporting-setting select { min-height: 42px; max-width: 130px; border: 1px solid var(--ws-line); border-radius: 10px; padding: 0 28px 0 10px; color: var(--theme-accent-ink); background: var(--theme-paper); font: inherit; font-size: 10px; }
+.workspace-report-storage-error { color: #a57866; font-size: 10px; line-height: 1.7; margin-top: 12px; }
+.report-live-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.report-live-metrics strong { font-size: clamp(12px, 4vw, 20px); overflow-wrap: anywhere; }
+.workspace-report-card { margin-top: 16px; }
+.workspace-report-hint { color: var(--theme-muted); font-size: 10px; line-height: 1.8; padding: 14px 4px 0; }
+.workspace-report-empty { color: var(--theme-muted); font-size: 11px; line-height: 1.8; padding: 18px 0 8px; text-align: center; }
+.method-dot.unknown { background: #b5ad9f; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .account-permissions > div { display: flex; gap: 10px; justify-content: space-between; align-items: center; min-height: 45px; border-bottom: 1px solid var(--theme-line); }
 .account-permissions > div:last-child { border: 0; }
 .account-permissions strong { font-size: 11px; font-weight: 500; }

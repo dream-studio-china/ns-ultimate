@@ -50,11 +50,22 @@ const orderMetadataSchema = z.preprocess((value) => {
   dining_mode_uuid: diningModeReferenceId.nullable().optional(),
   dining_mode_name: z.string().max(120).nullable().optional(),
 }).passthrough().nullable().optional())
-export const tradeOrderRecordSchema = z.object({ uuid, metadata: orderMetadataSchema }).passthrough()
+export const tradeOrderRecordSchema = z.object({
+  uuid,
+  metadata: orderMetadataSchema,
+  status: z.string().nullable().optional(),
+  paymentStatus: z.string().nullable().optional(),
+  paymentMethod: z.string().nullable().optional(),
+  paidAt: z.string().nullable().optional(),
+  totalAmount: cents.optional(),
+  currency: currency.optional(),
+}).passthrough()
 export const orderSchema = z.object({
   uuid, tradeOrderUuid: uuid, operationalStatus: z.string(), totalAmount: cents, currency,
   createdAt: z.string(), counter: z.object({ code: z.string(), name: z.string() }).nullable(),
   orderSnapshot: z.unknown().optional(), version, allowedActions: z.array(z.enum(orderActions)), verificationRequired: z.boolean(), rejectionReason: z.string().nullable(),
+  status: z.string().nullable().optional(), paymentStatus: z.string().nullable().optional(),
+  paymentMethod: z.string().nullable().optional(), paidAt: z.string().nullable().optional(),
 })
 const sessionOrderItemSchema = z.object({ specificationUuid: uuid.nullable(), productName: z.string(), specificationName: z.string(), quantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), unitPrice: cents, amount: cents })
 export const orderableItemSchema = sessionOrderItemSchema.extend({ specificationUuid: uuid, quantity: z.number().int().min(1).max(99) })
@@ -252,6 +263,7 @@ export function can(access: StoreAccess, resource: string, action: string): bool
 export class StoreApi {
   readonly base: string
   private readonly orderDiningModes = new Map<string, Promise<OrderDiningModeReference | null>>()
+  private readonly tradeOrderStates = new Map<string, Promise<z.infer<typeof tradeOrderRecordSchema> | null>>()
   constructor(readonly client: ApiClient, storeUuid: string) {
     this.base = `/api/v1/store/${uuid.parse(storeUuid)}`
   }
@@ -262,8 +274,9 @@ export class StoreApi {
     const key = `${manageOrders ? 'manage' : 'app'}:${id}`
     const cached = this.orderDiningModes.get(key)
     if (cached) return cached
-    const task = this.client.data(manageOrders ? `/api/v1/manage/orders/${id}` : `/api/v1/app/orders/${id}`, tradeOrderRecordSchema)
+    const task = this.tradeOrderState(id, manageOrders)
       .then((record): OrderDiningModeReference | null => {
+        if (!record) return null
         const metadata = record.metadata ?? {}
         const rawUuid = metadata.diningModeUuid ?? metadata.dining_mode_uuid ?? null
         const rawName = metadata.diningModeName ?? metadata.dining_mode_name ?? null
@@ -278,6 +291,22 @@ export class StoreApi {
         throw error
       })
     this.orderDiningModes.set(key, task)
+    return task
+  }
+
+  /** Read payment fields from the existing Trade order detail without changing server behavior. */
+  tradeOrderState(orderUuid: string, manageOrders = false) {
+    const id = uuid.parse(orderUuid)
+    const key = `${manageOrders ? 'manage' : 'app'}:${id}`
+    const cached = this.tradeOrderStates.get(key)
+    if (cached) return cached
+    const task = this.client.data(manageOrders ? `/api/v1/manage/orders/${id}` : `/api/v1/app/orders/${id}`, tradeOrderRecordSchema)
+      .catch((error: unknown) => {
+        this.tradeOrderStates.delete(key)
+        if (error instanceof ApiError && (error.status === 403 || error.status === 404)) return null
+        throw error
+      })
+    this.tradeOrderStates.set(key, task)
     return task
   }
 
@@ -335,6 +364,7 @@ export class StoreApi {
   allCategories() { return this.operationalAll('product-categories', categorySchema) }
   counters(page: number, q = '', status = 'all') { return this.operationalList('counters', counterSchema, page, q, status) }
   orders(page: number, q = '', status = 'all') { return this.operationalList('orders', orderSchema, page, q, status) }
+  allOrders() { return this.operationalAll('orders', orderSchema) }
   history(page: number) {
     return this.operationalList('history', z.object({ uuid, actorUuid: uuid, commandUuid: uuid, action: z.string(), createdAt: z.string() }), page)
   }
@@ -348,6 +378,15 @@ export class StoreApi {
     return result
   }
   counterSessions(page: number, q = '') { return this.sessionList('counters', counterSessionSchema, page, q) }
+  async allCounterSessions(): Promise<CounterSessionView[]> {
+    const sessions: CounterSessionView[] = []
+    for (let page = 1; ; page += 1) {
+      const result = await this.sessionList('counters', counterSessionSchema, page, '')
+      sessions.push(...result.items)
+      if (!result.hasNext) return sessions
+      if (!result.items.length) throw new ApiError('invalid')
+    }
+  }
   orderableCatalog(page: number, q = '') { return this.sessionList('catalog', orderableCatalogSchema, page, q) }
   counterSession(id: string) { return this.client.data(`${this.base}/counter-operations/counters/${uuid.parse(id)}`, counterSessionSchema) }
   async legacyCounters(): Promise<LiveCounter[]> {

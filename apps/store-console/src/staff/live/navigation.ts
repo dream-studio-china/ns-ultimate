@@ -1,12 +1,13 @@
 import { can, type StoreAccess } from '../adapters/live'
 
-export type WorkspacePage = 'products' | 'tables' | 'orders' | 'mine'
+export type WorkspacePage = 'products' | 'tables' | 'orders' | 'reports' | 'mine'
 
 export function workspacePages(access: StoreAccess): WorkspacePage[] {
   const pages: WorkspacePage[] = []
   if (can(access, 'product', 'read') || can(access, 'product_category', 'read')) pages.push('products')
   if (can(access, 'counter_session', 'read') || can(access, 'counter', 'read')) pages.push('tables')
   if (can(access, 'order', 'read')) pages.push('orders')
+  if (can(access, 'order', 'read') || can(access, 'counter_session', 'read')) pages.push('reports')
   return [...pages, 'mine']
 }
 
