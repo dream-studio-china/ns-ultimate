@@ -32,6 +32,7 @@ test('env initialization generates private local files and preserves them on rep
   const contents = files.map(file => readFileSync(path.join(directory, file), 'utf8'))
   assert.match(contents[1], /APP_SECRET=[a-f0-9]{64}/)
   assert.match(contents[1], /PRINTER_CONFIG_KEY=[a-f0-9]{64}/)
+  assert.match(contents[1], /HUIFU_CONFIG_KEY=[a-f0-9]{64}/)
   assert.match(contents[2], /BEGIN PRIVATE KEY/)
   assert.equal(statSync(path.join(directory, files[1])).mode & 0o777, 0o600)
   const second = run(directory, 'env-init')
@@ -39,6 +40,7 @@ test('env initialization generates private local files and preserves them on rep
   files.forEach((file, index) => assert.equal(readFileSync(path.join(directory, file), 'utf8'), contents[index]))
   assert.ok(!first.stdout.includes(contents[1].split('APP_SECRET=')[1].split('\n')[0]))
   assert.ok(!first.stdout.includes(contents[1].split('PRINTER_CONFIG_KEY=')[1].split('\n')[0]))
+  assert.ok(!first.stdout.includes(contents[1].split('HUIFU_CONFIG_KEY=')[1].split('\n')[0]))
 })
 
 test('incomplete key pairs fail without replacing the existing key', t => {
