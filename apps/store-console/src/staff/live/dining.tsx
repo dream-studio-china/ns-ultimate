@@ -748,6 +748,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   }, [access.store.code, api, diningMode])
 
   const catalogBySpecification = useMemo(() => new Map(catalog.items.map((item) => [item.uuid, item])), [catalog.items])
+  const originalLineBySpecification = useMemo(() => new Map(originalLines.map((line) => [line.specificationUuid, line])), [originalLines])
   const lineQuantity = (specificationUuid: string) => lines.find((line) => line.specificationUuid === specificationUuid)?.quantity ?? 0
   const adjust = (specificationUuid: string, delta: number, fallback?: ModernCartLine) => {
     setLines((current) => {
@@ -799,7 +800,8 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
     const line = lines.find((item) => item.specificationUuid === specificationUuid) ?? originalLines.find((item) => item.specificationUuid === specificationUuid)
     return line ? `${line.productName}${line.specificationName ? ` · ${line.specificationName}` : ''}` : specificationUuid
   }
-  const reductionBySpecification = new Map(reconciliation.reductions.map((item) => [item.specificationUuid, item.quantity]))
+  const originalSpecifications = new Set(originalDisplayLines.flatMap((line) => line.specificationUuid ? [line.specificationUuid] : []))
+  const newAdditionLines = reconciliation.additions.filter((line) => !originalSpecifications.has(line.specificationUuid))
   const estimatedTotal = lines.reduce((total, line) => total + (line.price ?? 0) * line.quantity, 0)
   const money = (value: number, currency = table.currency) => new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value / 100)
   const proceed = () => {
@@ -855,11 +857,22 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
       <div className="checkout-review-amount dining-settlement-total"><span>{t('checkoutEstimatedAmount')}</span><strong>{money(estimatedTotal)}</strong><small>{t('checkoutEstimatedHint')}</small></div>
       {!diningMode && <Notice subtle>{t('checkoutNoModeHint')}</Notice>}
       <div className="checkout-review-heading"><h4>{t('checkoutOriginalItems')}</h4><small>{originalDisplayLines.length} {t('recordsUnit')}</small></div>
-      <ul className="checkout-final-lines">{originalDisplayLines.map((line) => {
-        const reduction = line.specificationUuid ? reductionBySpecification.get(line.specificationUuid) ?? 0 : 0
-        return <li key={line.key}><span><strong>{line.productName}</strong><small>{line.specificationName}</small></span><b>×{line.quantity}</b>{reduction > 0 && <em className="is-reduction">−{reduction}</em>}</li>
+      <ul className="checkout-final-lines is-original">{originalDisplayLines.map((line) => {
+        const specificationUuid = line.specificationUuid
+        const desiredQuantity = specificationUuid ? lineQuantity(specificationUuid) : line.quantity
+        const adjustment = desiredQuantity - line.quantity
+        const itemLabel = `${line.productName} ${line.specificationName}`
+        return <li key={line.key}>
+          <span><strong>{line.productName}</strong><small>{line.specificationName}</small></span>
+          <b>×{line.quantity}</b>
+          {specificationUuid && <div className="checkout-original-actions">
+            <Button size="mini" aria-label={`${t('decrease')} ${itemLabel}`} disabled={desiredQuantity <= 0} onClick={() => adjust(specificationUuid, -1)}><Minus size={13} /></Button>
+            <Button size="mini" aria-label={`${t('increase')} ${itemLabel}`} disabled={desiredQuantity >= 99} onClick={() => adjust(specificationUuid, 1, originalLineBySpecification.get(specificationUuid))}><Plus size={13} /></Button>
+          </div>}
+          {adjustment !== 0 && <em className={adjustment > 0 ? 'is-addition' : 'is-reduction'}>{adjustment > 0 ? `+${adjustment}` : `−${Math.abs(adjustment)}`}</em>}
+        </li>
       })}</ul>
-      {reconciliation.additions.length > 0 && <><div className="checkout-review-heading"><h4>{t('checkoutAddedItems')}</h4><small>{reconciliation.additions.length} {t('recordsUnit')}</small></div><ul className="checkout-final-lines is-addition">{reconciliation.additions.map((line) => <li key={line.specificationUuid}><span><strong>{lineName(line.specificationUuid)}</strong></span><em>+{line.quantity}</em></li>)}</ul></>}
+      {newAdditionLines.length > 0 && <><div className="checkout-review-heading"><h4>{t('checkoutAddedItems')}</h4><small>{newAdditionLines.length} {t('recordsUnit')}</small></div><ul className="checkout-final-lines is-addition">{newAdditionLines.map((line) => <li key={line.specificationUuid}><span><strong>{lineName(line.specificationUuid)}</strong></span><em>+{line.quantity}</em></li>)}</ul></>}
       {!reconciliation.changed && <Notice subtle>{t('checkoutNoChangesPlan')}</Notice>}
     </section>}
     {stage.kind === 'result' && result && <section className="checkout-result">

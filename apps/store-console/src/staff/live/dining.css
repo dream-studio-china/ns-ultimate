@@ -220,13 +220,17 @@
 .checkout-review-heading h4 { color: var(--ws-ink); font-size: 14px; }
 .checkout-review-heading small { color: var(--ws-muted); font-size: 9px; }
 .checkout-final-lines { display: grid; gap: 7px; list-style: none; padding: 0; }
-.checkout-final-lines li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 10px; border-radius: 11px; background: var(--ws-soft); }
+.checkout-final-lines li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border-radius: 11px; background: var(--ws-soft); }
+.checkout-final-lines.is-original li { grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; }
 .checkout-final-lines li > span { display: grid; min-width: 0; gap: 3px; }
 .checkout-final-lines strong { color: var(--ws-ink); font-size: 11px; overflow-wrap: anywhere; }
 .checkout-final-lines small { color: var(--ws-muted); font-size: 9px; }
 .checkout-final-lines b { color: var(--ws-ink); font-size: 11px; }
 .checkout-final-lines em { min-width: 34px; padding: 3px 7px; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 700; text-align: center; }
+.checkout-final-lines em.is-addition { color: #416c35; background: #e5f2df; }
 .checkout-final-lines em.is-reduction { color: #954a36; background: #fcf1ed; }
+.checkout-original-actions { display: flex; align-items: center; gap: 4px; }
+.live-sheet-content .checkout-original-actions .adm-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 8px; }
 .checkout-final-lines.is-addition li { background: #f1f8ed; }
 .checkout-final-lines.is-addition em { color: #416c35; background: #e5f2df; }
 .checkout-result .dining-settlement-total { background: var(--theme-paper); }

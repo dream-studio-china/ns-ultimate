@@ -666,6 +666,27 @@ test('checkout category review caches additions until final confirmation', async
   expect(requests.some((request) => request.path.endsWith('/orders/create') || request.path === '/api/v1/app/orders')).toBe(false)
 })
 
+test('checkout final review can adjust original items and shows the quantity difference', async ({ page }) => {
+  const requests = await setup(page, { diningMode: true })
+  await page.locator('.dining-card-title').click()
+  await page.getByRole('dialog', { name: '查看桌次' }).getByRole('button', { name: '结账', exact: true }).click()
+  const review = page.getByRole('dialog', { name: '结账', exact: true })
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await review.getByRole('button', { name: '下一项', exact: true }).click()
+  await review.getByRole('button', { name: '最终确认', exact: true }).click()
+
+  const soup = review.locator('.checkout-final-lines.is-original > li').filter({ hasText: 'Soup' }).first()
+  await expect(soup).toContainText('×1')
+  await soup.getByRole('button', { name: '减少数量 Soup Regular', exact: true }).click()
+  await expect(soup.locator('em')).toHaveText('−1')
+  await soup.getByRole('button', { name: '增加数量 Soup Regular', exact: true }).click()
+  await expect(soup.locator('em')).toHaveCount(0)
+  await soup.getByRole('button', { name: '增加数量 Soup Regular', exact: true }).click()
+  await expect(soup.locator('em')).toHaveText('+1')
+  await expect(review.locator('.checkout-final-lines.is-addition')).toHaveCount(0)
+  expect(requests.some((request) => request.method !== 'GET' && request.path.includes('/counter-operations/'))).toBe(false)
+})
+
 test('staff can clear an unordered cart from the ordering sheet', async ({ page }) => {
   const requests = await setup(page, { empty: true })
   await page.locator('.dining-card-title').click()
@@ -731,8 +752,8 @@ test('checkout additions create a separate order and then merge it with the tabl
   await expect(review.locator('.dining-product-quantity')).toContainText('×2')
   await review.getByRole('button', { name: '下一项', exact: true }).click()
   await review.getByRole('button', { name: '最终确认', exact: true }).click()
-  await expect(review).toContainText('增加的商品')
-  await expect(review.locator('.checkout-final-lines.is-addition')).toContainText('+1')
+  await expect(review.locator('.checkout-final-lines.is-original > li').filter({ hasText: 'Soup' }).first().locator('em')).toHaveText('+1')
+  await expect(review.locator('.checkout-final-lines.is-addition')).toHaveCount(0)
   expect(requests.some((request) => request.path.endsWith('/orders/create'))).toBe(false)
   await review.getByRole('button', { name: '确认并处理订单', exact: true }).click()
   const checkoutResult = page.getByRole('dialog', { name: '结账结果', exact: true })
