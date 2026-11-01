@@ -2,7 +2,10 @@ import { z } from 'zod'
 
 const tokensSchema = z.object({ access_token: z.string().min(1), refresh_token: z.string().min(1), expires_in: z.number().positive() })
 const storeUuidSchema = z.string().uuid()
-const errorBodySchema = z.object({ message: z.string().min(1).max(100).optional() }).passthrough()
+const errorBodySchema = z.object({
+  message: z.string().min(1).max(300).optional(),
+  class: z.string().min(1).max(200).optional(),
+}).passthrough()
 const envelopeSchema = errorBodySchema.extend({ code: z.number(), data: z.unknown().optional(), paginator: z.unknown().optional() })
 const paginatorSchema = z.object({ page: z.number().int().positive(), has_next: z.boolean() })
 export const STAFF_TOKEN_STORAGE_KEY = 'ns-store-console.auth.tokens'
@@ -26,6 +29,7 @@ export class ApiError extends Error {
     public readonly kind: 'unauthorized' | 'forbidden' | 'network' | 'invalid' | 'request',
     public readonly status = 0,
     public readonly serverMessage?: string,
+    public readonly serverClass?: string,
   ) {
     super(kind)
   }
@@ -98,11 +102,15 @@ export class ApiClient {
   private async check(response: Response) {
     if (response.ok) return
     let serverMessage: string | undefined
+    let serverClass: string | undefined
     try {
       const parsed = errorBodySchema.safeParse(await response.clone().json())
-      if (parsed.success) serverMessage = parsed.data.message
+      if (parsed.success) {
+        serverMessage = parsed.data.message
+        serverClass = parsed.data.class
+      }
     } catch { /* Some upstream failures do not include a JSON body. */ }
-    throw new ApiError(response.status === 401 ? 'unauthorized' : response.status === 403 ? 'forbidden' : 'request', response.status, serverMessage)
+    throw new ApiError(response.status === 401 ? 'unauthorized' : response.status === 403 ? 'forbidden' : 'request', response.status, serverMessage, serverClass)
   }
   private async json(response: Response): Promise<unknown> {
     await this.check(response)

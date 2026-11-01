@@ -116,7 +116,7 @@ function Login({ client, done }: { client: ApiClient; done: () => void }) {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<{ key: MessageKey; status?: number } | null>(null)
+  const [error, setError] = useState<{ key: MessageKey; status?: number; detail?: string } | null>(null)
   const lock = useRef(false)
   return <div className="workspace-login">
     <section className="login-story"><span className="story-kicker"><i />{t('workspaceReady')}</span><p className="story-title">{t('workspaceTagline')}</p><p className="story-subtitle">{t('workspaceIntro')}</p><BrandArt /><div className="story-caption"><span>01 / NS</span><CookingPot size={17} /><span>THOUGHTFUL EVERY DAY</span></div></section>
@@ -125,12 +125,18 @@ function Login({ client, done }: { client: ApiClient; done: () => void }) {
       if (lock.current || !navigator.onLine) return
       lock.current = true; setBusy(true); setError(null)
       const secret = password; setPassword('')
-      void client.login(identifier.trim(), secret).then(done).catch((error: unknown) => setError({ key: loginErrorKey(error), status: error instanceof ApiError ? error.status : undefined })).finally(() => { lock.current = false; setBusy(false) })
+      void client.login(identifier.trim(), secret).then(done).catch((error: unknown) => setError({
+        key: loginErrorKey(error),
+        status: error instanceof ApiError ? error.status : undefined,
+        detail: error instanceof ApiError && error.status >= 500
+          ? [error.serverClass, error.serverMessage].filter(Boolean).join(': ')
+          : undefined,
+      })).finally(() => { lock.current = false; setBusy(false) })
     }}>
       <div className="login-form-heading"><span className="workspace-eyebrow">{t('welcomeBack')}</span><h1>{t('login')}</h1><p>{t('loginSubtitle')}</p></div>
       <label className="field">{t('identifier')}<div className="workspace-input-icon"><UserRound size={18} /><input required autoComplete="username" value={identifier} placeholder={t('identifier')} disabled={busy} onChange={(event) => setIdentifier(event.target.value)} /></div></label>
       <label className="field">{t('password')}<div className="workspace-input-icon"><LockKeyhole size={18} /><input required type="password" autoComplete="current-password" value={password} placeholder={t('password')} disabled={busy} onChange={(event) => setPassword(event.target.value)} /></div></label>
-      {error && <div className="workspace-error" role="alert"><CircleHelp size={18} /><p>{t(error.key)}{error.status && error.status >= 500 ? ` (HTTP ${error.status})` : ''}</p></div>}
+      {error && <div className="workspace-error" role="alert"><CircleHelp size={18} /><p>{t(error.key)}{error.status && error.status >= 500 ? ` (HTTP ${error.status}${error.detail ? ` · ${error.detail}` : ''})` : ''}</p></div>}
       <Button className="workspace-primary" color="primary" block type="submit" loading={busy}>{t('login')}<ArrowRight size={17} /></Button>
       <p className="login-security"><ShieldCheck size={15} />{t('loginHint')}</p>
     </form>
