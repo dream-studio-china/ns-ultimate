@@ -101,6 +101,7 @@ final class CounterOperationsTest extends KernelTestCase
         $created = $this->data($this->request('POST', $base.'create', $body));
         $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $created['orderUuid']]);
         self::assertSame('staff', $order->getMetadata()['source']);
+        self::assertArrayNotHasKey('replacedOrderUuid', $order->getMetadata());
         self::assertSame(['label' => 'priority'], $order->getMetadata()['custom']);
         self::assertSame($this->counter->getUuid(), $order->getMetadata()['counterUuid']);
         self::assertSame($order->getMetadata(), $this->orderByUuid($created['orderUuid'])['metadata']);
@@ -110,16 +111,20 @@ final class CounterOperationsTest extends KernelTestCase
         $result = $this->data($this->request('POST', $base.'replace', [...$replacement, 'quoteToken' => $newQuote['quoteToken'], 'commandUuid' => UUID::v4(), 'reason' => 'Update order']));
         $updated = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']]);
         self::assertSame('updated', $updated->getMetadata()['source']);
+        self::assertSame($created['orderUuid'], $updated->getMetadata()['replacedOrderUuid']);
         self::assertSame(['label' => 'priority'], $updated->getMetadata()['custom']);
         self::assertSame($this->counter->getUuid(), $updated->getMetadata()['counterUuid']);
         self::assertSame($updated->getMetadata(), $this->orderByUuid($result['orderUuid'])['metadata']);
+        $this->project($result['orderUuid']);
+        $next = $this->data($this->request('POST', $base.'replace', $this->replacementInput($result['orderUuid'])));
+        self::assertSame($result['orderUuid'], $this->orderByUuid($next['orderUuid'])['metadata']['replacedOrderUuid']);
     }
 
     public function testStaffOrderMetadataRejectsInvalidAndReservedFields(): void
     {
         $this->startCustomerSession();
         $path = '/counters/'.$this->counter->getUuid().'/orders/quote';
-        foreach ([null, 'text', [1, 2], ['_store' => []], ['counterUuid' => UUID::v4()], ['counterUuids' => []], ['counterSessionUuid' => UUID::v4()], ['counterSettlement' => true], ['mergedIntoOrderUuid' => UUID::v4()]] as $metadata) {
+        foreach ([null, 'text', [1, 2], ['_store' => []], ['counterUuid' => UUID::v4()], ['counterUuids' => []], ['counterSessionUuid' => UUID::v4()], ['counterSettlement' => true], ['mergedIntoOrderUuid' => UUID::v4()], ['replacedOrderUuid' => UUID::v4()]] as $metadata) {
             self::assertSame(422, $this->request('POST', $path, [...$this->quoteInput(), 'metadata' => $metadata])->getStatusCode());
         }
     }
@@ -692,6 +697,10 @@ final class CounterOperationsTest extends KernelTestCase
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
         $store->setSettings(['order' => ['requireAcceptance' => false]]);
         $this->em->flush();
+        $confirmedMetadata = [];
+        self::getContainer()->get('event_dispatcher')->addListener('workflow.order.transition.confirm', static function (\Symfony\Component\Workflow\Event\TransitionEvent $event) use (&$confirmedMetadata): void {
+            $confirmedMetadata[] = $event->getSubject()->getMetadata();
+        });
         $body = $this->replacementInput($uuid);
         $path = '/counters/'.$this->counter->getUuid().'/orders/replace';
         $result = $this->data($this->request('POST', $path, $body));
@@ -700,6 +709,8 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame('cancelled', $this->orderByUuid($uuid)['status']);
         self::assertSame($result, $this->data($this->request('POST', $path, $body)));
         self::assertSame(2, $this->em->getRepository(Order::class)->count([]));
+        self::assertCount(1, $confirmedMetadata);
+        self::assertSame($uuid, $confirmedMetadata[0]['replacedOrderUuid']);
     }
 
     public function testReplacementConfirmsAfterAcceptanceAndDoesNotConfirmOrdinaryOrders(): void

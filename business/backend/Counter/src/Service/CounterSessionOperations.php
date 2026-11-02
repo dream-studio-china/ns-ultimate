@@ -315,6 +315,7 @@ final class CounterSessionOperations
         $metadata = array_replace($original?->getMetadata() ?? [], $this->staffMetadata($data));
         unset($metadata['counterUuids']);
         $metadata['counterUuid'] = $counter->getUuid();
+        if ($original !== null) $metadata['replacedOrderUuid'] = $original->getUuid();
         $order = $this->orders->create($store, $calculation, $original?->getUser(), $notes === '' ? null : $notes, $metadata);
         $result = ['counterUuid' => $counterUuid, 'sessionUuid' => $session->getUuid(), 'orderUuid' => $order->getUuid()];
         if ($original !== null) {
@@ -460,7 +461,7 @@ final class CounterSessionOperations
         if (!is_array($metadata) || ($metadata !== [] && array_is_list($metadata))) throw new HttpException(422, 'invalid_staff_order_metadata');
         foreach ($metadata as $key => $_) {
             if (!is_string($key) || $key === '' || str_starts_with($key, '_') || in_array($key, [
-                'counterUuid', 'counterUuids', 'counterSessionUuid', 'counterSettlement', 'mergedIntoOrderUuid',
+                'counterUuid', 'counterUuids', 'counterSessionUuid', 'counterSettlement', 'mergedIntoOrderUuid', 'replacedOrderUuid',
             ], true)) throw new HttpException(422, 'invalid_staff_order_metadata');
         }
         return $metadata;
