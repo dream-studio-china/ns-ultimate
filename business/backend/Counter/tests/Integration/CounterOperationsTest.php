@@ -105,8 +105,10 @@ final class CounterOperationsTest extends KernelTestCase
         $created = $this->data($this->request('POST', $base.'create', $body));
         $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $created['orderUuid']]);
         self::assertSame('staff', $order->getMetadata()['source']);
+        self::assertArrayNotHasKey('replacedOrderUuid', $order->getMetadata());
         self::assertSame(['label' => 'priority'], $order->getMetadata()['custom']);
         self::assertSame($this->counter->getUuid(), $order->getMetadata()['counterUuid']);
+        self::assertSame($order->getMetadata(), $this->orderByUuid($created['orderUuid'])['metadata']);
         $this->project($created['orderUuid']);
         $row = $this->orderByUuid($created['orderUuid']);
         self::assertSame('dining-mode-hotpot', $row['diningModeUuid']);
@@ -116,10 +118,15 @@ final class CounterOperationsTest extends KernelTestCase
         $result = $this->data($this->request('POST', $base.'replace', [...$replacement, 'quoteToken' => $newQuote['quoteToken'], 'commandUuid' => UUID::v4(), 'reason' => 'Update order']));
         $updated = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']]);
         self::assertSame('updated', $updated->getMetadata()['source']);
+        self::assertSame($created['orderUuid'], $updated->getMetadata()['replacedOrderUuid']);
         self::assertSame(['label' => 'priority'], $updated->getMetadata()['custom']);
         self::assertSame($this->counter->getUuid(), $updated->getMetadata()['counterUuid']);
         self::assertSame('dining-mode-hotpot', $updated->getMetadata()['diningModeUuid']);
         self::assertSame('Hotpot', $updated->getMetadata()['diningModeName']);
+        self::assertSame($updated->getMetadata(), $this->orderByUuid($result['orderUuid'])['metadata']);
+        $this->project($result['orderUuid']);
+        $next = $this->data($this->request('POST', $base.'replace', $this->replacementInput($result['orderUuid'])));
+        self::assertSame($result['orderUuid'], $this->orderByUuid($next['orderUuid'])['metadata']['replacedOrderUuid']);
     }
 
     public function testCounterViewResolvesDiningModeNameFromStoreSettings(): void
@@ -149,7 +156,7 @@ final class CounterOperationsTest extends KernelTestCase
     {
         $this->startCustomerSession();
         $path = '/counters/'.$this->counter->getUuid().'/orders/quote';
-        foreach ([null, 'text', [1, 2], ['_store' => []], ['counterUuid' => UUID::v4()], ['counterUuids' => []], ['counterSessionUuid' => UUID::v4()], ['counterSettlement' => true], ['mergedIntoOrderUuid' => UUID::v4()]] as $metadata) {
+        foreach ([null, 'text', [1, 2], ['_store' => []], ['counterUuid' => UUID::v4()], ['counterUuids' => []], ['counterSessionUuid' => UUID::v4()], ['counterSettlement' => true], ['mergedIntoOrderUuid' => UUID::v4()], ['replacedOrderUuid' => UUID::v4()]] as $metadata) {
             self::assertSame(422, $this->request('POST', $path, [...$this->quoteInput(), 'metadata' => $metadata])->getStatusCode());
         }
     }
@@ -192,6 +199,68 @@ final class CounterOperationsTest extends KernelTestCase
         $sourceUuids = array_column([$first, $second], 'orderUuid');
         sort($sourceUuids);
         self::assertSame($sourceUuids, $this->orderByUuid($result['orderUuid'])['mergedSourceOrderUuids']);
+    }
+
+    public function testAcceptedCustomerOrdersCanBeMerged(): void
+    {
+        $this->startCustomerSession();
+        $first = $this->place(); $this->project($first['orderUuid']);
+        $second = $this->place(); $this->project($second['orderUuid']);
+        $connection = $this->em->getConnection();
+        foreach ([$first, $second] as $source) {
+            $connection->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
+            $connection->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', ['accepted', $source['orderUuid']]);
+            $connection->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', ['accepted', $source['orderUuid']]);
+        }
+        $this->em->clear();
+        $base = '/counters/'.$this->counter->getUuid().'/merge/';
+        $input = ['version' => $this->view()['version']];
+        $quote = $this->data($this->request('POST', $base.'preview', $input));
+        self::assertCount(2, $quote['sourceOrderUuids']);
+        $body = [...$input, 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()];
+        $result = $this->data($this->request('POST', $base.'confirm', $body));
+        foreach ([$first, $second] as $source) {
+            self::assertSame('merged', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $source['orderUuid']])->getStatus());
+            self::assertSame('cancelled', $connection->fetchOne('SELECT operational_status FROM store_order WHERE trade_order_uuid = ?', [$source['orderUuid']]));
+        }
+        self::assertSame($result, $this->data($this->request('POST', $base.'confirm', $body)));
+    }
+
+    public function testMergedTargetOrderCanBeReplacedAfterAcceptance(): void
+    {
+        $this->startCustomerSession();
+        $first = $this->place(); $this->project($first['orderUuid']);
+        $second = $this->place(); $this->project($second['orderUuid']);
+        $connection = $this->em->getConnection();
+        foreach ([$first, $second] as $source) {
+            $connection->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
+            $connection->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', ['accepted', $source['orderUuid']]);
+            $connection->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', ['accepted', $source['orderUuid']]);
+        }
+        $this->em->clear();
+        $base = '/counters/'.$this->counter->getUuid().'/merge/';
+        $quote = $this->data($this->request('POST', $base.'preview', ['version' => $this->view()['version']]));
+        $merged = $this->data($this->request('POST', $base.'confirm', ['version' => $this->view()['version'], 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()]));
+
+        // The consolidation target becomes a normal accepted, confirmed order once
+        // the acceptance worker finishes; it must not stay locked as a merge target.
+        $this->project($merged['orderUuid']);
+        $connection->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $merged['orderUuid']]);
+        $connection->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', ['accepted', $merged['orderUuid']]);
+        $connection->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', ['accepted', $merged['orderUuid']]);
+        $this->em->clear();
+
+        self::assertTrue($this->orderByUuid($merged['orderUuid'])['canReplace']);
+        self::assertTrue($this->orderByUuid($merged['orderUuid'])['canCancel']);
+        $body = $this->replacementInput($merged['orderUuid']);
+        $path = '/counters/'.$this->counter->getUuid().'/orders/replace';
+        $result = $this->data($this->request('POST', $path, $body));
+        self::assertSame($merged['orderUuid'], $result['replacedOrderUuid']);
+        self::assertSame('cancelled', $this->orderByUuid($merged['orderUuid'])['status']);
+        self::assertSame($result, $this->data($this->request('POST', $path, $body)));
+        foreach ([$first, $second] as $source) {
+            self::assertSame($merged['orderUuid'], $this->orderByUuid($source['orderUuid'])['mergedIntoOrderUuid']);
+        }
     }
 
     public function testStaffMergeRejectsInvalidOwnerAndUnprojectedSources(): void
@@ -358,10 +427,15 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(422, $this->request('GET', '/counters?page=0')->getStatusCode());
         self::assertSame(1, $this->data($this->request('GET', '/catalog'))['total']);
         self::assertStringContainsString('no-store', $this->request('GET', '/counters')->headers->get('Cache-Control'));
-        $this->startCustomerSession();
+        $orderUuid = $this->startCustomerSession();
+        $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $orderUuid]);
+        $metadata = [...($order->getMetadata() ?? []), 'custom' => ['label' => 'priority'], '_internal' => ['flag' => true]];
+        $order->setMetadata($metadata); $this->em->flush();
         $detail = $this->view();
         self::assertTrue($detail['ordersVisible']);
         self::assertArrayHasKey('openAmount', $detail);
+        self::assertSame($metadata, $detail['orders'][0]['metadata']);
+        self::assertSame($metadata, $this->data($this->request('GET', '/counters'))['items'][0]['orders'][0]['metadata']);
         // Session reads alone must not disclose order rows or amounts.
         $role = $this->em->getRepository(Role::class)->findOneBy(['code' => 'counter-session-test']);
         $read = $this->em->getRepository(Permission::class)->findOneBy(['code' => 'store:counter_order:read']);
@@ -373,6 +447,9 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertArrayNotHasKey('orders', $redacted);
         self::assertArrayNotHasKey('openAmount', $redacted);
         self::assertSame($detail['version'], $redacted['version']);
+        $redactedList = $this->data($this->request('GET', '/counters'))['items'][0];
+        self::assertFalse($redactedList['ordersVisible']);
+        self::assertArrayNotHasKey('orders', $redactedList);
         $this->em->getConnection()->executeStatement('DELETE FROM authorization_assignment');
         self::getContainer()->get('cache.app')->delete('authorization_effective_'.$this->user->getUuid());
         self::assertSame(403, $this->request('GET', '/counters')->getStatusCode());
@@ -547,7 +624,7 @@ final class CounterOperationsTest extends KernelTestCase
 
         $row = $this->orderByUuid($uuid);
         self::assertTrue($row['canCancel']);
-        self::assertFalse($row['canReplace']);
+        self::assertTrue($row['canReplace']);
 
         $body = [
             'commandUuid' => UUID::v4(),
@@ -644,6 +721,31 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(3080, $this->orderByUuid($result['orderUuid'])['totalAmount']);
     }
 
+    public function testConfirmedAcceptedCustomerOrderCanBeReplaced(): void
+    {
+        $uuid = $this->startCustomerSession(false);
+        $this->project($uuid);
+        $connection = $this->em->getConnection();
+        $connection->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $uuid]);
+        $connection->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', ['accepted', $uuid]);
+        $connection->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', ['accepted', $uuid]);
+        $this->em->clear();
+
+        self::assertTrue($this->orderByUuid($uuid)['canReplace']);
+        self::assertNull($this->orderByUuid($uuid)['replaceBlockedReason']);
+        $body = $this->replacementInput($uuid);
+        $path = '/counters/'.$this->counter->getUuid().'/orders/replace';
+        $result = $this->data($this->request('POST', $path, $body));
+        self::assertSame($uuid, $result['replacedOrderUuid']);
+        self::assertSame('cancelled', $this->orderByUuid($uuid)['status']);
+        self::assertSame('cancelled', $connection->fetchOne('SELECT operational_status FROM store_order WHERE trade_order_uuid = ?', [$uuid]));
+        $new = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']]);
+        self::assertSame($this->user->getUuid(), $new->getUser()->getUuid());
+        self::assertSame(3180, $new->getTotalAmount());
+        self::assertSame($result, $this->data($this->request('POST', $path, $body)));
+        self::assertSame(2, $this->em->getRepository(Order::class)->count([]));
+    }
+
     public function testReplacementGrantIsIndependentAndCheckedOnQuotesAndReplay(): void
     {
         $uuid = $this->startCustomerSession(false); $this->project($uuid);
@@ -667,6 +769,126 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(403, $this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/quote', [...$this->quoteInput(), 'replaceOrderUuid' => $uuid])->getStatusCode());
     }
 
+    public function testReplacementConfirmsImmediatelyWhenAcceptanceIsNotRequired(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
+        $store->setSettings(['order' => ['requireAcceptance' => false]]);
+        $this->em->flush();
+        $confirmedMetadata = [];
+        self::getContainer()->get('event_dispatcher')->addListener('workflow.order.transition.confirm', static function (\Symfony\Component\Workflow\Event\TransitionEvent $event) use (&$confirmedMetadata): void {
+            $confirmedMetadata[] = $event->getSubject()->getMetadata();
+        });
+        $body = $this->replacementInput($uuid);
+        $path = '/counters/'.$this->counter->getUuid().'/orders/replace';
+        $result = $this->data($this->request('POST', $path, $body));
+        self::assertSame('confirmed', $this->orderByUuid($result['orderUuid'])['status']);
+        self::assertSame(3180, $this->orderByUuid($result['orderUuid'])['totalAmount']);
+        self::assertSame('cancelled', $this->orderByUuid($uuid)['status']);
+        self::assertSame($result, $this->data($this->request('POST', $path, $body)));
+        self::assertSame(2, $this->em->getRepository(Order::class)->count([]));
+        self::assertCount(1, $confirmedMetadata);
+        self::assertSame($uuid, $confirmedMetadata[0]['replacedOrderUuid']);
+    }
+
+    public function testReplacementConfirmsAfterAcceptanceAndDoesNotConfirmOrdinaryOrders(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $body = $this->replacementInput($uuid);
+        $result = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $body));
+        self::assertSame('pending', $this->orderByUuid($result['orderUuid'])['status']);
+        $this->project($result['orderUuid']);
+        $projection = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $result['orderUuid']]);
+        self::getContainer()->get(StoreOrderServiceInterface::class)->accept($projection);
+        $message = new \App\Trade\Message\StoreOrderAcceptedMessage([
+            'eventId' => UUID::v4(),
+            'payload' => ['orderUuid' => $result['orderUuid'], 'storeUuid' => $this->store->getUuid(), 'storeOrderUuid' => $projection->getUuid()],
+        ]);
+        // This handler alone cannot bypass the Trade acceptance lifecycle.
+        self::getContainer()->get(\NsUltimate\Business\Counter\Adapter\ReplacementOrderAcceptedHandler::class)($message);
+        self::assertSame('pending', $this->orderByUuid($result['orderUuid'])['status']);
+        $bus = self::getContainer()->get('messenger.default_bus');
+        $bus->dispatch($message, [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('confirmed', $this->orderByUuid($result['orderUuid'])['status']);
+        $bus->dispatch($message, [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('confirmed', $this->orderByUuid($result['orderUuid'])['status']);
+        self::assertSame(3180, $this->orderByUuid($result['orderUuid'])['totalAmount']);
+
+        $ordinary = $this->place(); $this->project($ordinary['orderUuid']);
+        $projection = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $ordinary['orderUuid']]);
+        self::getContainer()->get(StoreOrderServiceInterface::class)->accept($projection);
+        $bus->dispatch(new \App\Trade\Message\StoreOrderAcceptedMessage([
+            'eventId' => UUID::v4(),
+            'payload' => ['orderUuid' => $ordinary['orderUuid'], 'storeUuid' => $this->store->getUuid(), 'storeOrderUuid' => $projection->getUuid()],
+        ]), [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('pending', $this->orderByUuid($ordinary['orderUuid'])['status']);
+    }
+
+    public function testReplacementConfirmationFailureRollsBackCancellationAndCreation(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
+        $store->setSettings(['order' => ['requireAcceptance' => false]]);
+        $this->em->flush();
+        $body = $this->replacementInput($uuid);
+        self::getContainer()->get('event_dispatcher')->addListener('workflow.order.transition.confirm', static function (): void {
+            throw new \LogicException('Simulated confirmation failure.');
+        });
+        $events = $this->em->getRepository(TradeOutboxMessage::class)->count([]);
+        self::assertSame(409, $this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $body)->getStatusCode());
+        self::assertSame('pending', $this->orderByUuid($uuid)['status']);
+        self::assertSame('pending_validation', $this->orderByUuid($uuid)['operationalStatus']);
+        self::assertSame(1, $this->em->getRepository(Order::class)->count([]));
+        self::assertSame($events, $this->em->getRepository(TradeOutboxMessage::class)->count([]));
+        self::assertSame(0, $this->em->getRepository(StaffOperation::class)->count([]));
+    }
+
+    public function testLateAcceptanceCannotConfirmACancelledReplacement(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $replacement = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $this->replacementInput($uuid)));
+        $this->project($replacement['orderUuid']);
+        $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/cancel', [
+            'commandUuid' => UUID::v4(), 'version' => $this->view()['version'],
+            'orderUuid' => $replacement['orderUuid'], 'reason' => 'Customer left before acceptance',
+        ]));
+        self::getContainer()->get('messenger.default_bus')->dispatch(new \App\Trade\Message\StoreOrderAcceptedMessage([
+            'eventId' => UUID::v4(),
+            'payload' => ['orderUuid' => $replacement['orderUuid'], 'storeUuid' => $this->store->getUuid()],
+        ]), [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('cancelled', $this->orderByUuid($replacement['orderUuid'])['status']);
+    }
+
+    public function testDeferredReplacementConfirmationCanRetryAfterFailure(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $replacement = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $this->replacementInput($uuid)));
+        $this->project($replacement['orderUuid']);
+        $projection = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $replacement['orderUuid']]);
+        self::getContainer()->get(StoreOrderServiceInterface::class)->accept($projection);
+        $message = new \App\Trade\Message\StoreOrderAcceptedMessage([
+            'eventId' => UUID::v4(),
+            'payload' => ['orderUuid' => $replacement['orderUuid'], 'storeUuid' => $this->store->getUuid(), 'storeOrderUuid' => $projection->getUuid()],
+        ]);
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        $failure = static function (): void { throw new \LogicException('Simulated deferred confirmation failure.'); };
+        $dispatcher->addListener('workflow.order.transition.confirm', $failure);
+        try {
+            self::getContainer()->get('messenger.default_bus')->dispatch($message, [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+            self::fail('Confirmation failure must remain retryable.');
+        } catch (\Symfony\Component\Messenger\Exception\HandlerFailedException $error) {
+            self::assertStringContainsString('Simulated deferred confirmation failure.', $error->getMessage());
+        } finally {
+            $dispatcher->removeListener('workflow.order.transition.confirm', $failure);
+        }
+        // A worker retry boots a fresh EntityManager after a failed ORM transaction.
+        self::ensureKernelShutdown(); self::bootKernel();
+        $this->em = self::getContainer()->get(EntityManagerInterface::class);
+        self::assertSame('pending', $this->orderByUuid($replacement['orderUuid'])['status']);
+        self::getContainer()->get('messenger.default_bus')->dispatch($message, [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('confirmed', $this->orderByUuid($replacement['orderUuid'])['status']);
+    }
+
     public function testReplacementRejectsProcessingPaymentInventoryAndForeignTargets(): void
     {
         $uuid = $this->startCustomerSession(false);
@@ -674,18 +896,18 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame('projection_pending', $this->orderByUuid($uuid)['changeBlockedReason']);
         $this->project($uuid);
         $path = '/counters/'.$this->counter->getUuid().'/orders/quote';
-        foreach ([['trade_order', 'invoice_id', UUID::v4()], ['trade_order', 'payment_status', 'paid'], ['trade_order', 'status', 'paid'], ['store_order', 'operational_status', 'accepted'], ['store_order', 'reservation_id', UUID::v4()], ['trade_order_store_lifecycle', 'acceptance_status', 'accepted']] as [$table, $column, $value]) {
+        foreach ([['trade_order', 'invoice_id', UUID::v4()], ['trade_order', 'payment_status', 'paid'], ['trade_order', 'status', 'paid'], ['store_order', 'operational_status', 'fulfilled'], ['store_order', 'reservation_id', UUID::v4()], ['trade_order_store_lifecycle', 'acceptance_status', 'rejected'], ['trade_order_store_lifecycle', 'fulfillment_status', 'fulfilled'], ['trade_order_store_lifecycle', 'verification_status', 'verified']] as [$table, $column, $value]) {
             $identity = $table === 'trade_order' ? 'uuid' : 'trade_order_uuid';
             $old = $this->em->getConnection()->fetchOne("SELECT $column FROM $table WHERE $identity = ?", [$uuid]);
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$value, $uuid]); $this->em->clear();
             self::assertFalse($this->orderByUuid($uuid)['canReplace']);
             self::assertSame(
-                in_array($column, ['operational_status', 'acceptance_status'], true),
+                false,
                 $this->orderByUuid($uuid)['canCancel'],
             );
             $expectedReason = match ($column) {
                 'invoice_id', 'payment_status' => 'payment_started',
-                'operational_status', 'acceptance_status' => 'order_processed',
+                'operational_status', 'acceptance_status', 'fulfillment_status', 'verification_status' => 'order_processed',
                 'reservation_id' => 'inventory_reserved',
                 default => 'order_ineligible',
             };
