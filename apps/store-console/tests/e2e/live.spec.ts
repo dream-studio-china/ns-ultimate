@@ -20,9 +20,16 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; productCount?: number; soldOut?: boolean; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
-  let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active', settings: { kitchenPrinterEnable: Boolean(options.kitchenPrint), startSaleTime: '', endSaleTime: '' } }]
+  let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = Array.from({ length: options.productCount ?? 1 }, (_, index) => ({
+    uuid: index === 0 ? productId : `00000000-0000-4000-8000-${String(index + 2).padStart(12, '0')}`,
+    name: index === 0 ? 'API product' : `API product ${index + 1}`,
+    category: { uuid: categoryId },
+    status: 'active',
+    isSoldout: Boolean(options.soldOut),
+    settings: { kitchenPrinterEnable: Boolean(options.kitchenPrint), startSaleTime: '', endSaleTime: '' },
+  }))
   let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = options.specifications?.map((item) => ({ ...item })) ?? []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
@@ -207,6 +214,12 @@ test('kitchen product card toggles availability directly and shows every specifi
   await login(page, '/?view=kitchen')
   await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
   const card = page.locator('.catalog-product-card')
+  const addProduct = page.getByRole('button', { name: '新增商品', exact: true })
+  const restoreAll = page.getByRole('button', { name: '全部恢复', exact: true })
+  await expect(addProduct).toBeVisible()
+  await expect(restoreAll).toBeVisible()
+  expect((await restoreAll.boundingBox())!.x).toBeLessThan((await addProduct.boundingBox())!.x)
+  await expect(restoreAll).toBeDisabled()
   await expect(card.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
   await expect(card.getByRole('button', { name: '设为售罄', exact: true })).toBeVisible()
@@ -216,9 +229,13 @@ test('kitchen product card toggles availability directly and shows every specifi
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(card.getByText('已售罄', { exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
-  expect(requests.find((request) => request.path.endsWith('/operations/products/availability'))?.body).toEqual({
-    commandUuid: expect.any(String), isSoldout: true, items: [{ uuid: productId, version }],
-  })
+  await expect(restoreAll).toBeEnabled()
+  await restoreAll.click()
+  await expect(card.getByText('在售', { exact: true })).toBeVisible()
+  expect(requests.filter((request) => request.path.endsWith('/operations/products/availability')).map((request) => request.body)).toEqual([
+    { commandUuid: expect.any(String), isSoldout: true, items: [{ uuid: productId, version }] },
+    { commandUuid: expect.any(String), isSoldout: false, items: [{ uuid: productId, version }] },
+  ])
   for (const width of [320, 390, 768, 1280]) {
     await page.setViewportSize({ width, height: 800 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -307,21 +324,30 @@ test('catalog operating fields and raster image uploads save through one version
   await expect(page.locator('.catalog-product-info')).toContainText('Lunch special')
 })
 
-test('single and explicit-page batch availability use selected record versions and preserve errors', async ({ page }) => {
-  const requests = await mockApi(page)
+test('restore all clears every sold-out product in API-sized batches', async ({ page }) => {
+  const requests = await mockApi(page, { grants: ['store:product:read', 'store:product:availability'], productCount: 31, soldOut: true })
+  await login(page, '/?view=kitchen')
+  await expect(page.locator('.catalog-product-card')).toHaveCount(31)
+  const restoreAll = page.getByRole('button', { name: '全部恢复', exact: true })
+  await expect(restoreAll).toBeEnabled()
+  await restoreAll.click()
+  await expect(page.getByText('已售罄', { exact: true })).toHaveCount(0)
+  await expect(restoreAll).toBeDisabled()
+  const batches = requests.filter((request) => request.path.endsWith('/operations/products/availability')).map((request) => request.body!)
+  expect(batches.map((batch) => ({ isSoldout: batch.isSoldout, count: (batch.items as unknown[]).length }))).toEqual([
+    { isSoldout: false, count: 30 },
+    { isSoldout: false, count: 1 },
+  ])
+  expect(batches.every((batch) => (batch.items as { version: string }[]).every((item) => item.version === version))).toBe(true)
+})
+
+test('availability conflicts remain visible without hiding the product form', async ({ page }) => {
+  await mockApi(page)
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
-  await page.getByRole('button', { name: '设为售罄', exact: true }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '恢复当前分类售罄商品', exact: true }).click()
-  await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-  expect(requests.filter((request) => request.path.endsWith('/availability')).map((request) => request.body)).toEqual([
-    { commandUuid: expect.any(String), isSoldout: true, items: [{ uuid: productId, version }] },
-    { commandUuid: expect.any(String), isSoldout: false, items: [{ uuid: productId, version }] },
-  ])
   await page.route('**/operations/products/*', (route) => route.fulfill({ status: 409, json: { code: 409, message: 'stale_record' } }))
+  await page.getByRole('button', { name: '设为售罄', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('记录已变化')
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByLabel('商品名称', { exact: true }).fill('Conflict input')
   await page.getByRole('button', { name: '保存', exact: true }).click()
