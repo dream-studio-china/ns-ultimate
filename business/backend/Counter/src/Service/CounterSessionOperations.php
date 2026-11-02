@@ -206,10 +206,12 @@ final class CounterSessionOperations
         if ($storeOrder->getReservationId() !== null
             || $this->em->getRepository(Reservation::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 0) return 'inventory_reserved';
         // Eligibility is based on trusted ownership and processing state, not who placed the order.
+        // A consolidation target remains the active order for the counter and may be
+        // replaced or cancelled again; only merge sources are terminal. Their links
+        // stay attached to the historical target for audit/session projection.
         if (!$this->workflow->can($order, 'cancel')
             || $this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1
-            || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $order->getUuid()]) !== 0
-            || $this->em->getRepository(OrderMerge::class)->count(['targetOrderUuid' => $order->getUuid()]) !== 0) return 'order_ineligible';
+            || $this->em->getRepository(OrderMerge::class)->count(['sourceOrderUuid' => $order->getUuid()]) !== 0) return 'order_ineligible';
         $event = $this->em->getRepository(TradeOutboxMessage::class)->findOneBy(['aggregateId' => $order->getUuid(), 'topic' => 'trade.order.created.v1']);
         $snapshot = $event?->getPayload()['store'] ?? null;
         $valid = is_array($snapshot) && ($snapshot['uuid'] ?? null) === $lifecycle->getStoreUuid()

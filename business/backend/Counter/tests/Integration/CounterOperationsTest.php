@@ -156,6 +156,68 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame($sourceUuids, $this->orderByUuid($result['orderUuid'])['mergedSourceOrderUuids']);
     }
 
+    public function testAcceptedCustomerOrdersCanBeMerged(): void
+    {
+        $this->startCustomerSession();
+        $first = $this->place(); $this->project($first['orderUuid']);
+        $second = $this->place(); $this->project($second['orderUuid']);
+        $connection = $this->em->getConnection();
+        foreach ([$first, $second] as $source) {
+            $connection->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
+            $connection->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', ['accepted', $source['orderUuid']]);
+            $connection->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', ['accepted', $source['orderUuid']]);
+        }
+        $this->em->clear();
+        $base = '/counters/'.$this->counter->getUuid().'/merge/';
+        $input = ['version' => $this->view()['version']];
+        $quote = $this->data($this->request('POST', $base.'preview', $input));
+        self::assertCount(2, $quote['sourceOrderUuids']);
+        $body = [...$input, 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()];
+        $result = $this->data($this->request('POST', $base.'confirm', $body));
+        foreach ([$first, $second] as $source) {
+            self::assertSame('merged', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $source['orderUuid']])->getStatus());
+            self::assertSame('cancelled', $connection->fetchOne('SELECT operational_status FROM store_order WHERE trade_order_uuid = ?', [$source['orderUuid']]));
+        }
+        self::assertSame($result, $this->data($this->request('POST', $base.'confirm', $body)));
+    }
+
+    public function testMergedTargetOrderCanBeReplacedAfterAcceptance(): void
+    {
+        $this->startCustomerSession();
+        $first = $this->place(); $this->project($first['orderUuid']);
+        $second = $this->place(); $this->project($second['orderUuid']);
+        $connection = $this->em->getConnection();
+        foreach ([$first, $second] as $source) {
+            $connection->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
+            $connection->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', ['accepted', $source['orderUuid']]);
+            $connection->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', ['accepted', $source['orderUuid']]);
+        }
+        $this->em->clear();
+        $base = '/counters/'.$this->counter->getUuid().'/merge/';
+        $quote = $this->data($this->request('POST', $base.'preview', ['version' => $this->view()['version']]));
+        $merged = $this->data($this->request('POST', $base.'confirm', ['version' => $this->view()['version'], 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()]));
+
+        // The consolidation target becomes a normal accepted, confirmed order once
+        // the acceptance worker finishes; it must not stay locked as a merge target.
+        $this->project($merged['orderUuid']);
+        $connection->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $merged['orderUuid']]);
+        $connection->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', ['accepted', $merged['orderUuid']]);
+        $connection->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', ['accepted', $merged['orderUuid']]);
+        $this->em->clear();
+
+        self::assertTrue($this->orderByUuid($merged['orderUuid'])['canReplace']);
+        self::assertTrue($this->orderByUuid($merged['orderUuid'])['canCancel']);
+        $body = $this->replacementInput($merged['orderUuid']);
+        $path = '/counters/'.$this->counter->getUuid().'/orders/replace';
+        $result = $this->data($this->request('POST', $path, $body));
+        self::assertSame($merged['orderUuid'], $result['replacedOrderUuid']);
+        self::assertSame('cancelled', $this->orderByUuid($merged['orderUuid'])['status']);
+        self::assertSame($result, $this->data($this->request('POST', $path, $body)));
+        foreach ([$first, $second] as $source) {
+            self::assertSame($merged['orderUuid'], $this->orderByUuid($source['orderUuid'])['mergedIntoOrderUuid']);
+        }
+    }
+
     public function testStaffMergeRejectsInvalidOwnerAndUnprojectedSources(): void
     {
         $this->startCustomerSession(); $first = $this->place(); $second = $this->place();
