@@ -335,7 +335,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
             <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
             {order.notes && <p className="dining-notes">{order.notes}</p>}
             {order.status === 'pending' && permitted(access, 'confirm') && <ConfirmPendingOrder api={api} table={table} order={order} onDone={() => { detail.reload(); changed() }} />}
-            {confirmedOrderCanCollect(order) && <Button color="primary" fill="outline" onClick={() => setCollectOrder({ table, order })}>{t('collectPayment')}</Button>}
+            {confirmedOrderCanCollect(order) && <Button className="dining-collect-payment" color="primary" fill="outline" onClick={() => setCollectOrder({ table, order })}><CreditCard size={16} />{t('collectPayment')}</Button>}
             {permitted(access, 'replace') && <Button onClick={() => setReplaceOrder({ table, order })}>{t('replaceDining')}</Button>}
             {cancelMode && !order.canCancel && <p className="dining-cancel-unavailable">{t('cancelOrderUnavailable')}</p>}
           </article>)}

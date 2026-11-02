@@ -81,6 +81,7 @@
 .dining-round { border: 1px solid var(--ws-line); border-radius: 18px; padding: 16px; min-width: 0; }
 .dining-round header { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
 .dining-round p { margin: 10px 0; overflow-wrap: anywhere; }
+.live-app .dining-collect-payment.adm-button-fill-outline, .live-sheet-content .dining-collect-payment.adm-button-fill-outline { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 48%, var(--ws-line)); background: color-mix(in srgb, var(--brand) 6%, var(--theme-paper)); }
 .dining-lines, .dining-menu { list-style: none; padding: 0; margin: 12px 0; }
 .dining-lines li, .dining-menu li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--ws-line); }
 .dining-lines li > span, .dining-menu li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
