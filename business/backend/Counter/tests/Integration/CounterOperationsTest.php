@@ -479,7 +479,7 @@ final class CounterOperationsTest extends KernelTestCase
 
         $row = $this->orderByUuid($uuid);
         self::assertTrue($row['canCancel']);
-        self::assertFalse($row['canReplace']);
+        self::assertTrue($row['canReplace']);
 
         $body = [
             'commandUuid' => UUID::v4(),
@@ -576,6 +576,31 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(3080, $this->orderByUuid($result['orderUuid'])['totalAmount']);
     }
 
+    public function testConfirmedAcceptedCustomerOrderCanBeReplaced(): void
+    {
+        $uuid = $this->startCustomerSession(false);
+        $this->project($uuid);
+        $connection = $this->em->getConnection();
+        $connection->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $uuid]);
+        $connection->executeStatement('UPDATE store_order SET operational_status = ? WHERE trade_order_uuid = ?', ['accepted', $uuid]);
+        $connection->executeStatement('UPDATE trade_order_store_lifecycle SET acceptance_status = ? WHERE trade_order_uuid = ?', ['accepted', $uuid]);
+        $this->em->clear();
+
+        self::assertTrue($this->orderByUuid($uuid)['canReplace']);
+        self::assertNull($this->orderByUuid($uuid)['replaceBlockedReason']);
+        $body = $this->replacementInput($uuid);
+        $path = '/counters/'.$this->counter->getUuid().'/orders/replace';
+        $result = $this->data($this->request('POST', $path, $body));
+        self::assertSame($uuid, $result['replacedOrderUuid']);
+        self::assertSame('cancelled', $this->orderByUuid($uuid)['status']);
+        self::assertSame('cancelled', $connection->fetchOne('SELECT operational_status FROM store_order WHERE trade_order_uuid = ?', [$uuid]));
+        $new = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']]);
+        self::assertSame($this->user->getUuid(), $new->getUser()->getUuid());
+        self::assertSame(3180, $new->getTotalAmount());
+        self::assertSame($result, $this->data($this->request('POST', $path, $body)));
+        self::assertSame(2, $this->em->getRepository(Order::class)->count([]));
+    }
+
     public function testReplacementGrantIsIndependentAndCheckedOnQuotesAndReplay(): void
     {
         $uuid = $this->startCustomerSession(false); $this->project($uuid);
@@ -606,18 +631,18 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame('projection_pending', $this->orderByUuid($uuid)['changeBlockedReason']);
         $this->project($uuid);
         $path = '/counters/'.$this->counter->getUuid().'/orders/quote';
-        foreach ([['trade_order', 'invoice_id', UUID::v4()], ['trade_order', 'payment_status', 'paid'], ['trade_order', 'status', 'paid'], ['store_order', 'operational_status', 'accepted'], ['store_order', 'reservation_id', UUID::v4()], ['trade_order_store_lifecycle', 'acceptance_status', 'accepted']] as [$table, $column, $value]) {
+        foreach ([['trade_order', 'invoice_id', UUID::v4()], ['trade_order', 'payment_status', 'paid'], ['trade_order', 'status', 'paid'], ['store_order', 'operational_status', 'fulfilled'], ['store_order', 'reservation_id', UUID::v4()], ['trade_order_store_lifecycle', 'acceptance_status', 'rejected'], ['trade_order_store_lifecycle', 'fulfillment_status', 'fulfilled'], ['trade_order_store_lifecycle', 'verification_status', 'verified']] as [$table, $column, $value]) {
             $identity = $table === 'trade_order' ? 'uuid' : 'trade_order_uuid';
             $old = $this->em->getConnection()->fetchOne("SELECT $column FROM $table WHERE $identity = ?", [$uuid]);
             $this->em->getConnection()->executeStatement("UPDATE $table SET $column = ? WHERE $identity = ?", [$value, $uuid]); $this->em->clear();
             self::assertFalse($this->orderByUuid($uuid)['canReplace']);
             self::assertSame(
-                in_array($column, ['operational_status', 'acceptance_status'], true),
+                false,
                 $this->orderByUuid($uuid)['canCancel'],
             );
             $expectedReason = match ($column) {
                 'invoice_id', 'payment_status' => 'payment_started',
-                'operational_status', 'acceptance_status' => 'order_processed',
+                'operational_status', 'acceptance_status', 'fulfillment_status', 'verification_status' => 'order_processed',
                 'reservation_id' => 'inventory_reserved',
                 default => 'order_ineligible',
             };
