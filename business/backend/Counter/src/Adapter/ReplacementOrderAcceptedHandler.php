@@ -43,6 +43,8 @@ final class ReplacementOrderAcceptedHandler
             if ($lifecycle->getAcceptanceStatus() !== OrderStoreLifecycle::ACCEPTANCE_ACCEPTED) return;
             $bindings = $this->em->getRepository(OrderCounter::class)->findBy(['tradeOrderUuid' => $order->getUuid()]);
             if (count($bindings) !== 1 || $bindings[0]->getStoreUuid() !== $payload['storeUuid']) return;
+            $counter = $bindings[0]->getCounter();
+            if ($counter === null) return;
 
             // Only a committed employee replacement receipt authorizes automatic
             // confirmation. Mutable order metadata is not an authorization source.
@@ -50,12 +52,12 @@ final class ReplacementOrderAcceptedHandler
             // decoded fields below establish the exact result identity.
             $receipts = $this->em->getConnection()->fetchFirstColumn(
                 'SELECT result FROM store_staff_operation WHERE store_uuid = ? AND action = ? AND result LIKE ?',
-                [$payload['storeUuid'], 'counter_order.replace.'.$bindings[0]->getCounter()->getUuid(), '%'.$order->getUuid().'%'],
+                [$payload['storeUuid'], 'counter_order.replace.'.$counter->getUuid(), '%'.$order->getUuid().'%'],
             );
             foreach ($receipts as $receipt) {
                 $result = json_decode($receipt, true, flags: JSON_THROW_ON_ERROR);
                 if (($result['orderUuid'] ?? null) !== $order->getUuid()
-                    || ($result['counterUuid'] ?? null) !== $bindings[0]->getCounter()->getUuid()
+                    || ($result['counterUuid'] ?? null) !== $counter->getUuid()
                     || !is_string($result['replacedOrderUuid'] ?? null)) continue;
                 if ($this->workflow->can($order, 'confirm')) $this->workflow->apply($order, 'confirm');
                 return;
