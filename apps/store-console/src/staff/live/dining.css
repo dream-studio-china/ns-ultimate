@@ -81,6 +81,8 @@
 .dining-round { border: 1px solid var(--ws-line); border-radius: 18px; padding: 16px; min-width: 0; }
 .dining-round header { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
 .dining-round p { margin: 10px 0; overflow-wrap: anywhere; }
+.dining-round-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.dining-round-actions .adm-button { flex: 0 0 auto; margin: 0; }
 .live-app .dining-collect-payment.adm-button-fill-outline, .live-sheet-content .dining-collect-payment.adm-button-fill-outline { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 48%, var(--ws-line)); background: color-mix(in srgb, var(--brand) 6%, var(--theme-paper)); }
 .dining-lines, .dining-menu { list-style: none; padding: 0; margin: 12px 0; }
 .dining-lines li, .dining-menu li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--ws-line); }
@@ -303,7 +305,7 @@
 .dining-payment-scan header p { margin: 3px 0 0; color: var(--ws-muted); font-size: 11px; }
 .dining-payment-loading { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 110px; color: var(--ws-muted); font-size: 12px; }
 .dining-payment-code { display: grid; justify-items: center; gap: 10px; padding: 14px; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px var(--ws-line); }
-.dining-payment-code svg { display: block; width: min(208px, 62vw); height: auto; }
+.dining-payment-code .dining-payment-qr { display: block; width: min(208px, 62vw); height: auto; }
 .dining-payment-code p { margin: 0; color: var(--ws-muted); text-align: center; font-size: 11px; }
 .dining-payment-link { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 43px; border: 1px solid var(--brand); border-radius: 12px; color: var(--brand); font-size: 12px; font-weight: 700; text-decoration: none; }
 .dining-payment-success { display: grid; justify-items: center; gap: 9px; padding: 32px 18px; border: 1px solid color-mix(in srgb, #64844e 28%, var(--ws-line)); border-radius: 18px; color: #557044; background: color-mix(in srgb, #64844e 7%, var(--theme-paper)); text-align: center; }

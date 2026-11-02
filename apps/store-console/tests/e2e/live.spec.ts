@@ -20,8 +20,8 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; productCount?: number; soldOut?: boolean; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
-  const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; productCount?: number; soldOut?: boolean; productCover?: string; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
+  const requests: { path: string; method: string; body: Record<string, unknown> | null; rawBody: string }[] = []
   let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = Array.from({ length: options.productCount ?? 1 }, (_, index) => ({
     uuid: index === 0 ? productId : `00000000-0000-4000-8000-${String(index + 2).padStart(12, '0')}`,
     name: index === 0 ? 'API product' : `API product ${index + 1}`,
@@ -29,6 +29,7 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
     status: 'active',
     isSoldout: Boolean(options.soldOut),
     settings: { kitchenPrinterEnable: Boolean(options.kitchenPrint), startSaleTime: '', endSaleTime: '' },
+    metadata: options.productCover ? { subtitle: null, cover: options.productCover } : undefined,
   }))
   let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = options.specifications?.map((item) => ({ ...item })) ?? []
@@ -42,7 +43,7 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
     const path = actualPath.replace('/operations/', '/')
     const method = request.method()
     const body = request.headers()['content-type']?.startsWith('multipart/') ? null : request.postDataJSON() as Record<string, unknown> | null
-    requests.push({ path: actualPath, method, body })
+    requests.push({ path: actualPath, method, body, rawBody: request.postData() ?? '' })
     const respond = (data: unknown, paged = false) => {
       if (actualPath.includes('/operations/')) {
         if (paged) return operationalList(route, data as Record<string, unknown>[])
@@ -81,12 +82,24 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
       if (method === 'POST') { products.push({ ...body, uuid: '00000000-0000-4000-8000-000000000007', name: String(body!.name), status: String(body!.status), category: body!.category ? { uuid: String(body!.category) } : null }); return respond(products.at(-1)) }
       return respond(options.malformed ? [{ uuid: 'not-a-uuid' }] : products, true)
     }
-    if (path === `/api/v1/store/${storeId}/products/${productId}`) {
-      if (method === 'PUT') { products = products.map((item) => ({ ...item, ...body, category: body!.category ? { uuid: String(body!.category) } : null,
-        metadata: { subtitle: body!.subtitle ?? null, cover: body!.coverImageUuid ? '/uploads/test-image.png' : null },
-        settings: { kitchenPrinterEnable: body!.kitchenPrinterEnable ?? false, startSaleTime: body!.startSaleTime ?? '', endSaleTime: body!.endSaleTime ?? '' },
-      })); return respond(products[0]) }
-      if (method === 'DELETE') { products = []; return route.fulfill({ status: 204 }) }
+    const productRecord = path.match(new RegExp(`^/api/v1/store/${storeId}/products/([0-9a-f-]{36})$`))
+    if (productRecord) {
+      const index = products.findIndex((item) => item.uuid === productRecord[1])
+      if (index < 0) return route.fulfill({ status: 404, json: { code: 404 } })
+      if (method === 'PUT') {
+        const existing = products[index]!
+        const updated = { ...existing, ...body }
+        if (Object.hasOwn(body!, 'category')) updated.category = body!.category ? { uuid: String(body!.category) } : null
+        if (Object.hasOwn(body!, 'subtitle') || Object.hasOwn(body!, 'coverImageUuid')) {
+          updated.metadata = { subtitle: body!.subtitle ?? null, cover: body!.coverImageUuid ? '/uploads/test-image.png' : null }
+        }
+        if (['kitchenPrinterEnable', 'startSaleTime', 'endSaleTime'].some((key) => Object.hasOwn(body!, key))) {
+          updated.settings = { kitchenPrinterEnable: body!.kitchenPrinterEnable ?? false, startSaleTime: body!.startSaleTime ?? '', endSaleTime: body!.endSaleTime ?? '' }
+        }
+        products[index] = updated
+        return respond(updated)
+      }
+      if (method === 'DELETE') { products.splice(index, 1); return route.fulfill({ status: 204 }) }
     }
     if (path.endsWith('/specifications')) {
       if (method === 'POST') { specifications.push({ uuid: specId, name: String(body!.name), price: Number(body!.price), status: String(body!.status), sort: Number(body!.sort) }); return respond(specifications.at(-1)) }
@@ -166,16 +179,54 @@ test('live catalog, separate variants, categories, tables and read-only orders u
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
-test('read-only grants hide mutations, and reload clears staff authentication', async ({ page }) => {
+test('table configuration downloads ordering QR codes with table names', async ({ page }) => {
+  await mockApi(page)
+  await login(page)
+  await expect(page.getByRole('heading', { name: 'Real A01', exact: true })).toBeVisible()
+  await expect(page.locator(`canvas[data-table-qr="${counterId}"]`)).toHaveCount(0)
+  await page.getByRole('button', { name: '查看二维码', exact: true }).click()
+  await expect(page.locator(`canvas[data-table-qr="${counterId}"]`)).toBeVisible()
+  await expect(page.getByText('https://ns-ultimate.wscoffee.com.cn/h5/order/index.html?counterId=00000000-0000-4000-8000-000000000006&storeUuid=00000000-0000-4000-8000-000000000001', { exact: true })).toBeVisible()
+
+  const singleDownload = page.waitForEvent('download')
+  await page.getByRole('dialog').getByRole('button', { name: '下载二维码', exact: true }).click()
+  expect((await singleDownload).suggestedFilename()).toBe('Real A01.png')
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+
+  const batchDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: '下载全部二维码', exact: true }).click()
+  expect((await batchDownload).suggestedFilename()).toMatch(/^桌台点餐二维码-\d{4}-\d{2}-\d{2}\.zip$/)
+})
+
+test('read-only grants hide catalog editing while sold-out remains directly controllable', async ({ page }) => {
   await mockApi(page, { readOnly: true })
   await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
   await expect(page.getByRole('button', { name: '新增商品', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '设为售罄', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '售罄', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '售罄', exact: true }).click()
+  await expect(page.getByRole('button', { name: '恢复', exact: true })).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('heading', { name: '登录', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toHaveCount(0)
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toBeVisible()
+})
+
+test('kitchen defaults to the first category and restores sold-out products without product update permission', async ({ page }) => {
+  const requests = await mockApi(page, { readOnly: true, soldOut: true })
+  await login(page, '/?view=kitchen')
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'API product', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'API category', exact: true })).toHaveClass(/active/)
+  await expect(page.getByRole('button', { name: '全部', exact: true })).not.toHaveClass(/active/)
+  const restoreAll = page.getByRole('button', { name: '全部恢复', exact: true })
+  await expect(restoreAll).toBeVisible()
+  await expect(restoreAll).toBeEnabled()
+  await restoreAll.click()
+  await expect(page.getByText('在售', { exact: true })).toHaveClass(/is-positive/)
+  expect(requests.filter((request) => request.method === 'PUT' && request.path.endsWith(`/operations/products/${productId}`))).toHaveLength(1)
+  expect(requests.some((request) => request.path.endsWith('/operations/products/availability'))).toBe(false)
 })
 
 test('reports summarize Trade Orders from the deployed counter query', async ({ page }) => {
@@ -188,22 +239,35 @@ test('reports summarize Trade Orders from the deployed counter query', async ({ 
   expect(requests.some((request) => request.path.endsWith('/operations/reporting-orders'))).toBe(false)
 })
 
-test('kitchen-only staff see availability without catalog management or cashier access', async ({ page }) => {
-  const requests = await mockApi(page, { grants: ['store:product:read', 'store:product:availability'] })
+test('kitchen-only staff toggle sold-out products with product edit permission', async ({ page }) => {
+  const requests = await mockApi(page, { grants: ['store:product:read', 'store:product:update'] })
   await login(page, '/?view=cashier')
   const nav = page.getByRole('navigation')
   await expect(nav.getByRole('button')).toHaveText(['厨房', '我的'])
   await expect(nav.getByRole('button', { name: '厨房', exact: true })).toHaveAttribute('aria-current', 'page')
-  for (const name of ['新增商品', '编辑', '删除', '管理规格', '分类管理', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
-  await expect(page.locator('.catalog-print-flag')).toHaveText('不显示')
-  await page.getByRole('button', { name: '设为售罄', exact: true }).click()
+  for (const name of ['新增商品', '删除', '管理规格', '分类管理', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
+  await expect(page.locator('.catalog-print-flag')).toHaveText('不打印小票')
+  await page.getByRole('button', { name: '售罄', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '恢复', exact: true })).toBeVisible()
   for (const width of [320, 768, 1280]) {
     await page.setViewportSize({ width, height: 800 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   }
+  expect(requests.some((request) => request.path.endsWith('/operations/products/availability'))).toBe(false)
   expect(requests.filter((request) => request.path.startsWith('/api/v1/store/')).every((request) => /\/operations\/products(?:[/?]|$)/.test(request.path))).toBe(true)
+})
+
+test('catalog operators always see restore all beside add product', async ({ page }) => {
+  await mockApi(page, { grants: ['store:product:read', 'store:product:create'] })
+  await login(page, '/?view=kitchen')
+  const restoreAll = page.getByRole('button', { name: /全部恢复/ })
+  const addProduct = page.getByRole('button', { name: '新增商品', exact: true })
+  await expect(restoreAll).toBeVisible()
+  await expect(restoreAll).toBeDisabled()
+  await expect(addProduct).toBeVisible()
+  expect((await restoreAll.boundingBox())!.x).toBeLessThan((await addProduct.boundingBox())!.x)
 })
 
 test('kitchen product card toggles availability directly and shows every specification price', async ({ page }) => {
@@ -222,20 +286,20 @@ test('kitchen product card toggles availability directly and shows every specifi
   await expect(restoreAll).toBeDisabled()
   await expect(card.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
-  await expect(card.getByRole('button', { name: '设为售罄', exact: true })).toBeVisible()
+  await expect(card.locator('.catalog-product-actions > button')).toHaveText(['编辑', '管理规格', '售罄'])
   await expect(card.locator('.catalog-print-flag')).toHaveText('打印小票')
   await expect(card.locator('.catalog-product-price')).toHaveText([/大份\s*¥16\.90/, /小份\s*¥12\.90/])
   await expect(card.getByText('在售', { exact: true })).toHaveClass(/is-positive/)
-  await card.getByRole('button', { name: '设为售罄', exact: true }).click()
+  await card.getByRole('button', { name: '售罄', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(card.getByText('已售罄', { exact: true })).toHaveClass(/is-negative/)
-  await expect(card.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '恢复', exact: true })).toBeVisible()
   await expect(restoreAll).toBeEnabled()
   await restoreAll.click()
   await expect(card.getByText('在售', { exact: true })).toHaveClass(/is-positive/)
-  expect(requests.filter((request) => request.path.endsWith('/operations/products/availability')).map((request) => request.body)).toEqual([
-    { commandUuid: expect.any(String), isSoldout: true, items: [{ uuid: productId, version }] },
-    { commandUuid: expect.any(String), isSoldout: false, items: [{ uuid: productId, version }] },
+  expect(requests.filter((request) => request.method === 'PUT' && request.path.endsWith(`/operations/products/${productId}`)).map((request) => request.body)).toEqual([
+    { commandUuid: expect.any(String), version, isSoldout: true },
+    { commandUuid: expect.any(String), version, isSoldout: false },
   ])
   for (const width of [320, 390, 768, 1280]) {
     await page.setViewportSize({ width, height: 800 })
@@ -307,26 +371,42 @@ test('the customer payment entry ignores staff view preferences and never calls 
 test('catalog operating fields and raster image uploads save through one versioned staff command', async ({ page }) => {
   const requests = await mockApi(page)
   await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByLabel('商品副标题', { exact: true }).fill('Lunch special')
   await page.getByLabel('商品描述', { exact: true }).fill('Freshly prepared')
   await page.locator('.resource-editor input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64') })
   await page.getByRole('switch', { name: '后厨打印标记', exact: true }).click()
-  await page.getByLabel('开始售卖时间', { exact: true }).fill('22:00')
-  await page.getByLabel('结束售卖时间', { exact: true }).fill('02:00')
   await page.locator('.editor-advanced summary').click()
   await page.getByLabel('排序值', { exact: true }).fill('5')
   await page.getByLabel('推荐等级', { exact: true }).fill('2')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   const save = requests.find((request) => request.method === 'PUT')!
-  expect(save.body).toMatchObject({ subtitle: 'Lunch special', description: 'Freshly prepared', sortOrder: 5, recommendationLevel: 2, kitchenPrinterEnable: true, startSaleTime: '22:00', endSaleTime: '02:00', coverImageUuid: counterId, version, commandUuid: expect.any(String) })
-  expect(requests.filter((request) => request.path.endsWith('/operations/images'))).toHaveLength(1)
+  expect(save.body).toMatchObject({ subtitle: 'Lunch special', description: 'Freshly prepared', sortOrder: 5, recommendationLevel: 2, kitchenPrinterEnable: true, startSaleTime: '', endSaleTime: '', coverImageUuid: counterId, version, commandUuid: expect.any(String) })
+  const imageUpload = requests.find((request) => request.path.endsWith('/operations/images'))
+  expect(imageUpload).toBeDefined()
+  expect(imageUpload?.rawBody).toContain('name="storage"\r\n\r\nqiniu')
   await expect(page.locator('.catalog-product-info')).toContainText('Lunch special')
 })
 
-test('restore all clears every sold-out product in API-sized batches', async ({ page }) => {
-  const requests = await mockApi(page, { grants: ['store:product:read', 'store:product:availability'], productCount: 31, soldOut: true })
+test('product editor previews the existing cover image', async ({ page }) => {
+  await mockApi(page, { productCover: '/uploads/test-image.png' })
+  await page.route('**/uploads/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64'),
+  }))
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  const preview = page.locator('.product-image-preview img')
+  await expect(preview).toBeVisible()
+  await expect(preview).toHaveAttribute('src', '/uploads/test-image.png')
+})
+
+test('restore all updates every sold-out product through the product edit endpoint', async ({ page }) => {
+  const requests = await mockApi(page, { grants: ['store:product:read', 'store:product:update'], productCount: 31, soldOut: true })
   await login(page, '/?view=kitchen')
   await expect(page.locator('.catalog-product-card')).toHaveCount(31)
   const restoreAll = page.getByRole('button', { name: '全部恢复', exact: true })
@@ -334,12 +414,10 @@ test('restore all clears every sold-out product in API-sized batches', async ({ 
   await restoreAll.click()
   await expect(page.getByText('已售罄', { exact: true })).toHaveCount(0)
   await expect(restoreAll).toBeDisabled()
-  const batches = requests.filter((request) => request.path.endsWith('/operations/products/availability')).map((request) => request.body!)
-  expect(batches.map((batch) => ({ isSoldout: batch.isSoldout, count: (batch.items as unknown[]).length }))).toEqual([
-    { isSoldout: false, count: 30 },
-    { isSoldout: false, count: 1 },
-  ])
-  expect(batches.every((batch) => (batch.items as { version: string }[]).every((item) => item.version === version))).toBe(true)
+  const updates = requests.filter((request) => request.method === 'PUT' && request.path.includes('/operations/products/')).map((request) => request.body!)
+  expect(updates).toHaveLength(31)
+  expect(updates.every((body) => body.isSoldout === false && body.version === version && typeof body.commandUuid === 'string')).toBe(true)
+  expect(requests.some((request) => request.path.endsWith('/operations/products/availability'))).toBe(false)
 })
 
 test('availability conflicts remain visible without hiding the product form', async ({ page }) => {
@@ -347,7 +425,7 @@ test('availability conflicts remain visible without hiding the product form', as
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
   await page.route('**/operations/products/*', (route) => route.fulfill({ status: 409, json: { code: 409, message: 'stale_record' } }))
-  await page.getByRole('button', { name: '设为售罄', exact: true }).click()
+  await page.getByRole('button', { name: '售罄', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('记录已变化')
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByLabel('商品名称', { exact: true }).fill('Conflict input')

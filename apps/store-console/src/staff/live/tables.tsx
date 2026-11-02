@@ -1,8 +1,11 @@
-import { useCallback, useId, useState } from 'react'
+import { useCallback, useId, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ChevronDown, Clock3, LayoutGrid, Minus, Pencil, Plus, ReceiptText, UsersRound } from 'lucide-react'
+import JSZip from 'jszip'
+import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, QrCode, ReceiptText, UsersRound } from 'lucide-react'
+import { QRCodeCanvas } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCounter, type SessionOrder } from '../adapters/live'
+import { counterQrFileNames, customerOrderingUrl } from '../table-qr'
 import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, PageControls, StatusPill, usePage, LiveSheet as Sheet } from './ui'
 import { LiveDining } from './dining'
 
@@ -41,15 +44,73 @@ function CounterConfiguration({ api, access }: { api: StoreApi; access: StoreAcc
   const load = useCallback(() => api.allCounters(), [api])
   const list = usePage(load, can(access, 'counter', 'read'))
   const [editing, setEditing] = useState<LiveCounter | null>(null)
+  const [selectedQr, setSelectedQr] = useState<LiveCounter | null>(null)
+  const [qrBusy, setQrBusy] = useState(false)
+  const [qrFeedback, setQrFeedback] = useState<MessageKey | null>(null)
+  const qrCanvases = useRef(new Map<string, HTMLCanvasElement>())
   const visible = list.items
+  const downloadQrs = async (counters: LiveCounter[], all: boolean) => {
+    if (qrBusy || !counters.length) return
+    setQrBusy(true)
+    setQrFeedback(null)
+    try {
+      const canvases = counters.map((counter) => {
+        const canvas = qrCanvases.current.get(counter.uuid)
+        if (!canvas) throw new Error('QR canvas is not ready')
+        return canvas
+      })
+      if (!all) {
+        downloadBlob(await canvasPngBlob(canvases[0]), counterQrFileNames(counters)[0])
+        setQrFeedback('tableQrDownloadReady')
+        return
+      }
+      const zip = new JSZip()
+      const names = counterQrFileNames(counters)
+      for (let index = 0; index < canvases.length; index += 1) {
+        zip.file(names[index], await canvasPngBlob(canvases[index]))
+      }
+      const archive = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+      downloadBlob(archive, `桌台点餐二维码-${new Date().toISOString().slice(0, 10)}.zip`)
+      setQrFeedback('tableQrDownloadAllReady')
+    } catch {
+      setQrFeedback('tableQrDownloadFailed')
+    } finally {
+      setQrBusy(false)
+    }
+  }
+  const feedback = qrFeedback && <p className={`table-qr-feedback ${qrFeedback === 'tableQrDownloadFailed' ? 'is-error' : ''}`} role="status">{t(qrFeedback)}</p>
   return <>{!can(access, 'counter', 'read') ? <AccessNotice /> : <>
       <ListFeedback state={{ ...list, items: visible }} empty="firstTable" hint="existingTablesHint" icon={LayoutGrid} />
+      <div className="table-qr-toolbar"><div><strong>{t('tableQrBatchTitle')}</strong><small>{t('tableQrBatchHint')}</small></div><Button loading={qrBusy} disabled={!visible.length || qrBusy} onClick={() => void downloadQrs(visible, true)}><Download size={15} />{qrBusy ? t('tableQrDownloading') : t('tableQrDownloadAll')}</Button></div>
+      {!selectedQr && feedback}
       <div className="workspace-table-grid workspace-table-grid-compact">{visible.map((counter) => <article className={`workspace-table-card workspace-table-card-compact ${counter.enabled ? '' : 'is-disabled'}`} key={counter.uuid}>
         <div className="table-config-top"><h2>{counter.name}</h2><Button size="mini" className="table-config-edit" aria-label={t('edit')} disabled={!can(access, 'counter', 'update')} onClick={() => setEditing(counter)}><Pencil size={13} /></Button></div><p className="table-config-seats"><UsersRound size={14} />{counter.capacity ?? '—'} {t('capacity')}</p>
+        <Button block className="table-qr-open" onClick={() => { setQrFeedback(null); setSelectedQr(counter) }}><QrCode size={14} />{t('tableQrView')}</Button>
       </article>)}</div><PageControls state={list} detail />
+      <div className="table-qr-export-stage" aria-hidden="true">{visible.map((counter) => <QRCodeCanvas key={counter.uuid} ref={(canvas) => { if (canvas) qrCanvases.current.set(counter.uuid, canvas); else qrCanvases.current.delete(counter.uuid) }} data-table-export-qr={counter.uuid} value={customerOrderingUrl(counter.uuid, access.store.uuid)} size={320} level="M" marginSize={2} bgColor="#ffffff" fgColor="#201813" />)}</div>
     </>}
     {editing && <CounterForm api={api} counter={editing} onClose={() => setEditing(null)} done={() => { setEditing(null); list.reload() }} />}
+    {selectedQr && <Sheet open title={t('tableQrTitle')} onClose={() => { setSelectedQr(null); setQrFeedback(null) }} className="table-qr-sheet">
+      <div className="table-qr-dialog"><header><span>{t('tableNumber')}</span><h2>{selectedQr.name}</h2><small>{selectedQr.code}</small></header><div className="table-qr-code"><QRCodeCanvas data-table-qr={selectedQr.uuid} value={customerOrderingUrl(selectedQr.uuid, access.store.uuid)} size={220} level="M" marginSize={2} bgColor="#ffffff" fgColor="#201813" title={`${selectedQr.name || selectedQr.code} ${t('tableQrTitle')}`} /></div><p className="table-qr-hint">{t('tableQrScanHint')}</p><code className="table-qr-url" title={customerOrderingUrl(selectedQr.uuid, access.store.uuid)}>{customerOrderingUrl(selectedQr.uuid, access.store.uuid)}</code><Button block className="table-qr-download" loading={qrBusy} disabled={qrBusy} onClick={() => void downloadQrs([selectedQr], false)}><Download size={14} />{t('tableQrDownload')}</Button>{feedback}</div>
+    </Sheet>}
   </>
+}
+
+function canvasPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('PNG generation failed')), 'image/png')
+  })
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 const statusLabels: Record<string, MessageKey> = { draft: 'diningDraft', pending: 'diningPending', confirmed: 'diningConfirmed', paid: 'diningPaid', fulfilled: 'stateFulfilled', completed: 'diningCompleted', cancelled: 'stateCancelled', refunded: 'diningRefunded', merged: 'diningMerged' }

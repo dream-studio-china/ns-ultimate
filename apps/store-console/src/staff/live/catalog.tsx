@@ -22,6 +22,10 @@ function StatusField({ value, set }: { value: 'active' | 'inactive'; set: (value
   return <EditorToggle label="productStatus" hint="listingHint" checked={value === 'active'} onChange={(enabled) => set(enabled ? 'active' : 'inactive')} />
 }
 
+function safeProductCover(cover: string | null | undefined): string {
+  return cover && (/^https:\/\//.test(cover) || /^\/(?!\/)/.test(cover)) && !cover.includes('\\') ? cover : ''
+}
+
 function ProductForm({ api, access, product, done, onClose }: { api: StoreApi; access: StoreAccess; product: LiveProduct | null; done: () => void; onClose: () => void }) {
   const { t } = useI18n()
   const [name, setName] = useState(product?.name ?? '')
@@ -39,8 +43,21 @@ function ProductForm({ api, access, product, done, onClose }: { api: StoreApi; a
   const [image, setImage] = useState<File | null>(null)
   const [uploadCommand, setUploadCommand] = useState(() => crypto.randomUUID())
   const [removeCover, setRemoveCover] = useState(false)
+  const existingCover = safeProductCover(product?.metadata?.cover)
+  const [imagePreview, setImagePreview] = useState(existingCover)
+  const [imagePreviewBroken, setImagePreviewBroken] = useState(false)
   const imageInput = useRef<HTMLInputElement>(null)
   const uploaded = useRef<{ file: File; uuid: string } | null>(null)
+  useEffect(() => {
+    setImagePreviewBroken(false)
+    if (!image) {
+      setImagePreview(removeCover ? '' : existingCover)
+      return
+    }
+    const objectUrl = URL.createObjectURL(image)
+    setImagePreview(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [existingCover, image, removeCover])
   const extended = product?.extensionEditable ?? true
   const body = { name: name.trim(), status, category: category || null, description: description.trim(), subtitle: subtitle.trim(),
     ...(extended ? { isSoldout, sortOrder, recommendationLevel, kitchenPrinterEnable, startSaleTime, endSaleTime } : {}),
@@ -55,7 +72,7 @@ function ProductForm({ api, access, product, done, onClose }: { api: StoreApi; a
     await api.saveProduct(product?.uuid ?? null, { ...body, commandUuid, ...(coverImageUuid !== undefined ? { coverImageUuid } : {}) })
   }} preview={<EditorPreview icon={CookingPot} label="products" name={name.trim() || t('editorNewProduct')}><StatusPill muted={status !== 'active'}>{t(status === 'active' ? 'listingActive' : 'listingInactive')}</StatusPill></EditorPreview>}>
     <EditorSection title="editorBasics" index="01"><label className="field">{t('productName')}<input required maxLength={60} value={name} placeholder={t('productName')} onChange={(event) => setName(event.target.value)} /></label><CategoryPicker api={api} enabled={can(access, 'product_category', 'read')} value={category} choose={setCategory} /></EditorSection>
-    <EditorSection title="productDisplay" index="02"><label className="field">{t('productSubtitle')}<input maxLength={255} value={subtitle} onChange={(event) => setSubtitle(event.target.value)} /></label><label className="field">{t('productDescription')}<textarea maxLength={5000} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label><label className="field">{t('coverUpload')}<input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" disabled={!can(access, 'catalog_image', 'create')} onChange={(event) => {
+    <EditorSection title="productDisplay" index="02"><label className="field">{t('productSubtitle')}<input maxLength={255} value={subtitle} onChange={(event) => setSubtitle(event.target.value)} /></label><label className="field">{t('productDescription')}<textarea maxLength={5000} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>{imagePreview && !imagePreviewBroken && <div className="product-image-preview"><span>{t('productImage')}</span><img src={imagePreview} alt={t('productImage')} onError={() => setImagePreviewBroken(true)} /></div>}<label className="field">{t('coverUpload')}<input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" disabled={!can(access, 'catalog_image', 'create')} onChange={(event) => {
       const file = event.target.files?.[0] ?? null
       if (file && (file.size > 2 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))) { event.target.setCustomValidity(t('imageUploadHint')); return }
       event.target.setCustomValidity(''); setImage(file); setUploadCommand(crypto.randomUUID()); setRemoveCover(false)
@@ -111,8 +128,8 @@ function ProductVisual({ product }: { product: LiveProduct }) {
   const [broken, setBroken] = useState(false)
   const cover = product.metadata?.cover
   useEffect(() => { setBroken(false) }, [cover])
-  const safe = cover && (/^https:\/\//.test(cover) || /^\/(?!\/)/.test(cover)) && !cover.includes('\\')
-  return <div className="catalog-product-visual" aria-hidden="true">{safe && !broken ? <img src={cover} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} /> : <><CookingPot size={31} strokeWidth={1.15} /><span>{product.name.slice(0, 1)}</span></>}</div>
+  const safeCover = safeProductCover(cover)
+  return <div className="catalog-product-visual" aria-hidden="true">{safeCover && !broken ? <img src={safeCover} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} /> : <><CookingPot size={31} strokeWidth={1.15} /><span>{product.name.slice(0, 1)}</span></>}</div>
 }
 function ProductPrices({ api, access, product }: { api: StoreApi; access: StoreAccess; product: LiveProduct }) {
   const { t } = useI18n()
@@ -143,7 +160,7 @@ function ProductPrices({ api, access, product }: { api: StoreApi; access: StoreA
 }
 function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t } = useI18n()
-  const [category, setCategory] = useState('all')
+  const [category, setCategory] = useState('')
   const loadProducts = useCallback(() => api.allProducts(), [api])
   const loadCategories = useCallback(() => api.allCategories(), [api])
   const list = usePage(loadProducts, can(access, 'product', 'read'))
@@ -158,7 +175,7 @@ function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const sortLock = useRef(false)
   const availabilityLock = useRef(new Set<string>())
   const restoreAllLock = useRef(false)
-  if (!can(access, 'product', 'read')) return <AccessNotice />
+  const canUpdateProducts = can(access, 'product', 'update')
   const orderedCategories = [...categoryList.items].sort((left, right) => left.sortOrder - right.sortOrder)
   const categoryNames = new Map(orderedCategories.map((item) => [item.uuid, item.name]))
   const categoryOrder = new Map(orderedCategories.map((item, index) => [item.uuid, index]))
@@ -177,17 +194,23 @@ function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   }
   for (const group of grouped.values()) group.products.sort((left, right) => left.sortOrder - right.sortOrder)
   const categoryGroups = [...grouped.values()].sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name))
-  const visibleGroups = category === 'all' ? categoryGroups : categoryGroups.filter((group) => (group.uuid ?? 'uncategorized') === category)
+  const firstCategory = categoryGroups[0] ? categoryGroups[0].uuid ?? 'uncategorized' : ''
+  const selectedCategory = category || firstCategory
+  useEffect(() => {
+    if (!category && firstCategory) setCategory(firstCategory)
+  }, [category, firstCategory])
+  if (!can(access, 'product', 'read')) return <AccessNotice />
+  const visibleGroups = selectedCategory === 'all' ? categoryGroups : categoryGroups.filter((group) => (group.uuid ?? 'uncategorized') === selectedCategory)
   const visible = visibleGroups.flatMap((group) => group.products)
   const soldoutProducts = list.items.filter((product) => product.isSoldout && product.extensionEditable)
   const toggleAvailability = async (product: LiveProduct) => {
-    if (restoringAll || restoreAllLock.current || availabilityLock.current.has(product.uuid) || !can(access, 'product', 'availability') || !product.extensionEditable) return
+    if (restoringAll || restoreAllLock.current || availabilityLock.current.has(product.uuid) || !product.extensionEditable) return
     if (!navigator.onLine) { setAvailabilityError('offline'); return }
     availabilityLock.current.add(product.uuid)
     setAvailabilityBusy((current) => new Set(current).add(product.uuid))
     setAvailabilityError(null)
     try {
-      await api.availability([product], !product.isSoldout, crypto.randomUUID())
+      await api.saveProduct(product.uuid, { commandUuid: crypto.randomUUID(), version: product.version, isSoldout: !product.isSoldout })
       list.reload()
     } catch (error) {
       setAvailabilityError(errorKey(error))
@@ -197,14 +220,14 @@ function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
     }
   }
   const restoreAll = async () => {
-    if (restoreAllLock.current || availabilityLock.current.size || !soldoutProducts.length || !can(access, 'product', 'availability')) return
+    if (restoreAllLock.current || availabilityLock.current.size || !soldoutProducts.length) return
     if (!navigator.onLine) { setAvailabilityError('offline'); return }
     restoreAllLock.current = true
     setRestoringAll(true)
     setAvailabilityError(null)
     try {
-      for (let index = 0; index < soldoutProducts.length; index += 30) {
-        await api.availability(soldoutProducts.slice(index, index + 30), false, crypto.randomUUID())
+      for (const product of soldoutProducts) {
+        await api.saveProduct(product.uuid, { commandUuid: crypto.randomUUID(), version: product.version, isSoldout: false })
       }
     } catch (error) {
       setAvailabilityError(errorKey(error))
@@ -236,15 +259,15 @@ function ProductList({ api, access }: { api: StoreApi; access: StoreAccess }) {
   return <>
     {sortError && <p className="workspace-sort-status error" role="alert">{t(sortError)}</p>}
     {sorting && <p className="workspace-sort-status" role="status">{t('sortingRecords')}</p>}
-    {(can(access, 'product', 'create') || can(access, 'product', 'availability')) && <div className="workspace-toolbar catalog-toolbar">{can(access, 'product', 'availability') && <Button className="catalog-restore-button" disabled={restoringAll || availabilityBusy.size > 0 || sorting || !soldoutProducts.length} aria-busy={restoringAll} onClick={() => void restoreAll()}><RotateCcw size={15} className={restoringAll ? 'is-spinning' : ''} />{t('restoreAll')}</Button>}{can(access, 'product', 'create') && <Button className="workspace-primary" color="primary" disabled={restoringAll} onClick={() => setEditing(null)}><Plus size={17} />{t('addProduct')}</Button>}</div>}
-    {categoryGroups.length > 0 && <div className="workspace-filters catalog-category-filters" aria-label={t('diningCategoryFilter')}><button className={category === 'all' ? 'active' : ''} aria-pressed={category === 'all'} onClick={() => setCategory('all')}>{t('all')}</button>{categoryGroups.map((group) => <button key={group.uuid ?? 'uncategorized'} className={category === (group.uuid ?? 'uncategorized') ? 'active' : ''} aria-pressed={category === (group.uuid ?? 'uncategorized')} onClick={() => setCategory(group.uuid ?? 'uncategorized')}>{group.name}</button>)}</div>}
+    <div className="workspace-toolbar catalog-toolbar"><Button className="catalog-restore-button" aria-label={t('restoreAll')} disabled={restoringAll || availabilityBusy.size > 0 || sorting || !soldoutProducts.length} aria-busy={restoringAll} onClick={() => void restoreAll()}><RotateCcw size={15} className={restoringAll ? 'is-spinning' : ''} />{t('restoreAll')}</Button>{can(access, 'product', 'create') && <Button className="workspace-primary" color="primary" disabled={restoringAll} onClick={() => setEditing(null)}><Plus size={17} />{t('addProduct')}</Button>}</div>
+    {categoryGroups.length > 0 && <div className="workspace-filters catalog-category-filters" aria-label={t('diningCategoryFilter')}><button className={selectedCategory === 'all' ? 'active' : ''} aria-pressed={selectedCategory === 'all'} onClick={() => setCategory('all')}>{t('all')}</button>{categoryGroups.map((group) => <button key={group.uuid ?? 'uncategorized'} className={selectedCategory === (group.uuid ?? 'uncategorized') ? 'active' : ''} aria-pressed={selectedCategory === (group.uuid ?? 'uncategorized')} onClick={() => setCategory(group.uuid ?? 'uncategorized')}>{group.name}</button>)}</div>}
     {availabilityError && <div className="workspace-error" role="alert"><p>{t(availabilityError)}</p></div>}
-    <ListFeedback state={{ ...list, items: visible }} empty={category !== 'all' ? 'noSearchResults' : 'firstProduct'} hint={category !== 'all' ? 'adjustSearch' : 'firstProductHint'} icon={CookingPot} />
+    <ListFeedback state={{ ...list, items: visible }} empty={selectedCategory !== 'all' ? 'noSearchResults' : 'firstProduct'} hint={selectedCategory !== 'all' ? 'adjustSearch' : 'firstProductHint'} icon={CookingPot} />
     <div className="catalog-category-sections">{visibleGroups.map((group) => <section className="catalog-category-section" key={group.uuid ?? 'uncategorized'}>
       <div className="catalog-category-heading"><h2>{group.name}</h2><span>{group.products.length}</span></div>
       <div className="catalog-product-grid">{group.products.map((product, index) => <article className="catalog-product-card" key={product.uuid}>
         <div className="catalog-product-top"><ProductVisual product={product} /><div className="catalog-product-info"><div className="catalog-product-statuses"><StatusPill muted={product.status !== 'active'}>{t(product.status === 'active' ? 'listingActive' : 'listingInactive')}</StatusPill><StatusPill tone={product.isSoldout ? 'negative' : 'positive'}>{t(product.isSoldout ? 'soldOut' : 'onSale')}</StatusPill><span className={`catalog-print-flag ${product.settings.kitchenPrinterEnable ? 'is-enabled' : 'is-disabled'}`} aria-label={`${t('kitchenPrint')}: ${t(product.settings.kitchenPrinterEnable ? 'kitchenPrintEnabled' : 'kitchenPrintHidden')}`}>{t(product.settings.kitchenPrinterEnable ? 'kitchenPrintEnabled' : 'kitchenPrintHidden')}</span></div><h2>{product.name}</h2><ProductPrices api={api} access={access} product={product} />{product.metadata?.subtitle && <p>{product.metadata.subtitle}</p>}</div></div>
-        {can(access, 'product', 'update') || can(access, 'specification', 'read') || (can(access, 'product', 'availability') && product.extensionEditable) ? <div className="catalog-product-actions">{can(access, 'product', 'update') && <div className="catalog-sort-actions" role="group" aria-label={`${t('sortOrder')} ${product.name}`}><button type="button" className="workspace-icon" aria-label={`${t('moveUp')} ${product.name}`} disabled={sorting || restoringAll || index === 0 || group.products.some((item) => !item.extensionEditable)} onClick={() => void reorderProducts(group.products, index, -1)}><ArrowUp size={16} /></button><button type="button" className="workspace-icon" aria-label={`${t('moveDown')} ${product.name}`} disabled={sorting || restoringAll || index === group.products.length - 1 || group.products.some((item) => !item.extensionEditable)} onClick={() => void reorderProducts(group.products, index, 1)}><ArrowDown size={16} /></button></div>}{can(access, 'product', 'update') && <Button disabled={sorting || restoringAll} onClick={() => setEditing(product)}><Pencil size={14} />{t('edit')}</Button>}{can(access, 'specification', 'read') && <Button disabled={sorting || restoringAll} onClick={() => setSpecs(product)}><Layers3 size={14} />{t('specManagement')}</Button>}{can(access, 'product', 'availability') && product.extensionEditable && <Button className={`catalog-availability-action ${product.isSoldout ? 'is-restore' : ''}`} disabled={sorting || restoringAll || availabilityBusy.has(product.uuid)} aria-busy={availabilityBusy.has(product.uuid)} onClick={() => void toggleAvailability(product)}>{product.isSoldout ? <RotateCcw size={14} /> : <Ban size={14} />}{t(product.isSoldout ? 'restoreAvailability' : 'markSoldout')}</Button>}</div> : null}
+        {(product.extensionEditable || can(access, 'specification', 'read')) ? <div className="catalog-product-actions">{canUpdateProducts && <div className="catalog-sort-actions" role="group" aria-label={`${t('sortOrder')} ${product.name}`}><button type="button" className="workspace-icon" aria-label={`${t('moveUp')} ${product.name}`} disabled={sorting || restoringAll || index === 0 || group.products.some((item) => !item.extensionEditable)} onClick={() => void reorderProducts(group.products, index, -1)}><ArrowUp size={16} /></button><button type="button" className="workspace-icon" aria-label={`${t('moveDown')} ${product.name}`} disabled={sorting || restoringAll || index === group.products.length - 1 || group.products.some((item) => !item.extensionEditable)} onClick={() => void reorderProducts(group.products, index, 1)}><ArrowDown size={16} /></button></div>}{canUpdateProducts && <Button disabled={sorting || restoringAll} onClick={() => setEditing(product)}><Pencil size={14} />{t('edit')}</Button>}{can(access, 'specification', 'read') && <Button disabled={sorting || restoringAll} onClick={() => setSpecs(product)}><Layers3 size={14} />{t('specManagement')}</Button>}{product.extensionEditable && <Button className={`catalog-availability-action ${product.isSoldout ? 'is-restore' : ''}`} disabled={sorting || restoringAll || availabilityBusy.has(product.uuid)} aria-busy={availabilityBusy.has(product.uuid)} onClick={() => void toggleAvailability(product)}>{product.isSoldout ? <RotateCcw size={14} /> : <Ban size={14} />}{t(product.isSoldout ? 'restoreSoldOutAction' : 'soldOutAction')}</Button>}</div> : null}
         <RecordIdentity id={product.uuid} />
       </article>)}</div>
     </section>)}</div>

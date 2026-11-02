@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "antd-mobile": "^5.43.0",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.468.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",

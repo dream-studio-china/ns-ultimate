@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button, CenterPopup } from 'antd-mobile'
-import { CheckCircle2, ChevronDown, Clock3, CreditCard, ExternalLink, LayoutGrid, LoaderCircle, Minus, Pencil, Plus, Printer, QrCode, ReceiptText, UsersRound } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Clock3, CreditCard, LayoutGrid, Minus, Pencil, Plus, Printer, QrCode, ReceiptText, UsersRound } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, legacyCounterSession, StoreApi, type StoreAccess, type CounterSessionView, type SessionOrder, type OrderQuote, type OrderCart, type CounterCommand, type LegacyCatalogItem, type LiveCounter } from '../adapters/live'
@@ -10,7 +10,8 @@ import { checkoutPaymentMethods, type CheckoutPaymentMethod } from '../checkout-
 import { checkoutMergeBlockers, type CheckoutMergeBlocker } from '../checkout-merge'
 import { submitCheckoutReplacement } from '../checkout-replacement'
 import { waitForStoreOrderProjection } from '../checkout-store-order'
-import { confirmedOrderCanCollect, invoiceReferenceUuid, paymentStatusIsPaid, paymentStatusStartsAttempt, type StaffPaymentResult } from '../order-payment'
+import { confirmedOrderCanCollect, paymentStatusIsPaid } from '../order-payment'
+import { customerPaymentUrl } from '../order-payment-url'
 import { isOccupiedDiningTable as isDining, unsettledDiningOrders as effectiveDiningOrders } from '../dining-table-state'
 import { ApiError } from '../adapters/api-client'
 import { errorKey, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, usePageRefresh } from './ui'
@@ -335,8 +336,10 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
             <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
             {order.notes && <p className="dining-notes">{order.notes}</p>}
             {order.status === 'pending' && permitted(access, 'confirm') && <ConfirmPendingOrder api={api} table={table} order={order} onDone={() => { detail.reload(); changed() }} />}
-            {confirmedOrderCanCollect(order) && <Button className="dining-collect-payment" color="primary" fill="outline" onClick={() => setCollectOrder({ table, order })}><CreditCard size={16} />{t('collectPayment')}</Button>}
-            {permitted(access, 'replace') && <Button onClick={() => setReplaceOrder({ table, order })}>{t('replaceDining')}</Button>}
+            {(confirmedOrderCanCollect(order) || permitted(access, 'replace')) && <div className="dining-round-actions">
+              {confirmedOrderCanCollect(order) && <Button className="dining-collect-payment" color="primary" fill="outline" onClick={() => setCollectOrder({ table, order })}><CreditCard size={16} />{t('collectPayment')}</Button>}
+              {permitted(access, 'replace') && <Button onClick={() => setReplaceOrder({ table, order })}>{t('replaceDining')}</Button>}
+            </div>}
             {cancelMode && !order.canCancel && <p className="dining-cancel-unavailable">{t('cancelOrderUnavailable')}</p>}
           </article>)}
           {cancelMode && <div className="dining-cancel-selection">
@@ -359,48 +362,12 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
   onSettled: () => void
 }) {
   const { t, locale } = useI18n()
-  const initialInvoice = useMemo(() => invoiceReferenceUuid(order), [order])
-  const [invoiceUuid, setInvoiceUuid] = useState<string | null>(initialInvoice)
-  const [loadingInvoice, setLoadingInvoice] = useState(!initialInvoice && order.hasInvoice)
-  const [invoiceLookupFailed, setInvoiceLookupFailed] = useState(false)
-  const [payment, setPayment] = useState<StaffPaymentResult | null>(null)
   const [paid, setPaid] = useState(() => paymentStatusIsPaid(order.paymentStatus))
-  const [busy, setBusy] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [printPending, setPrintPending] = useState(false)
   const [error, setError] = useState<MessageKey | null>(null)
-  const canCreatePayment = can(access, 'huifu_payment', 'create')
-  const paymentStarted = paymentStatusStartsAttempt(order.paymentStatus)
+  const paymentUrl = useMemo(() => customerPaymentUrl(order.tradeOrderUuid, access.store.uuid), [access.store.uuid, order.tradeOrderUuid])
   const amount = new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)
-  const qrValue = payment?.qrCode ?? payment?.payUrl ?? null
-
-  useEffect(() => {
-    if (initialInvoice || !order.hasInvoice) return
-    let active = true
-    void api.orderInvoiceReference(order.tradeOrderUuid)
-      .then((reference) => { if (active) setInvoiceUuid(reference) })
-      .catch(() => { if (active) setInvoiceLookupFailed(true) })
-      .finally(() => { if (active) setLoadingInvoice(false) })
-    return () => { active = false }
-  }, [api, initialInvoice, order.hasInvoice, order.tradeOrderUuid])
-
-  const startPayment = async () => {
-    if (!invoiceUuid || busy || paymentStarted || !canCreatePayment) return
-    if (!navigator.onLine) { setError('offline'); return }
-    setBusy(true)
-    setError(null)
-    try {
-      const result = await api.startHuifuPayment(invoiceUuid, { channel: 'native', tradeType: 'T_NATIVE' })
-      setPayment(result)
-      if (paymentStatusIsPaid(result.status)) {
-        setPaid(true)
-        onSettled()
-      }
-    } catch (cause) {
-      setError(errorKey(cause))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const refreshPayment = async () => {
     if (checking) return
@@ -414,7 +381,6 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
         : null
       if (latest && paymentStatusIsPaid(latest.paymentStatus)) {
         setPaid(true)
-        setPayment((existing) => ({ ...(existing ?? { invoiceUuid, payUrl: null, qrCode: null, payInfo: null, message: null }), status: 'paid' }))
         onSettled()
       } else {
         setError('paymentNotConfirmed')
@@ -429,9 +395,7 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
   const footer = <div className="dining-confirm-bar">
     {paid
       ? <Button block color="primary" onClick={onClose}>{t('close')}</Button>
-      : payment
-        ? <><Button disabled={checking} onClick={() => void refreshPayment()}>{checking ? t('checkingPayment') : t('paymentRefreshStatus')}</Button><Button block onClick={onClose}>{t('close')}</Button></>
-        : <><Button onClick={onClose}>{t('close')}</Button><Button block color="primary" loading={busy} disabled={busy || !invoiceUuid || loadingInvoice || paymentStarted || !canCreatePayment} onClick={() => void startPayment()}>{t('paymentGenerateQr')}</Button></>}
+      : <><Button onClick={() => setPrintPending(true)}>{t('paymentPrintReceipt')}</Button><Button block color="primary" disabled={checking} onClick={() => void refreshPayment()}>{checking ? t('checkingPayment') : t('paymentRefreshStatus')}</Button></>}
   </div>
 
   return <LiveSheet open title={t('collectPaymentTitle')} className="dining-payment-sheet" onClose={onClose} footer={footer}>
@@ -445,14 +409,9 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
     {paid ? <section className="dining-payment-success" role="status"><CheckCircle2 size={48} strokeWidth={1.35} /><h3>{t('paymentSuccess')}</h3><p>{t('paymentThanks')}</p><strong>{amount}</strong></section>
       : <section className="dining-payment-scan">
         <header><QrCode size={20} /><div><h3>{t('paymentScanTitle')}</h3><p>{t('paymentScanMethods')}</p></div></header>
-        {loadingInvoice && <div className="dining-payment-loading" role="status"><LoaderCircle className="is-spinning" size={24} /><span>{t('paymentInvoiceChecking')}</span></div>}
-        {!loadingInvoice && !invoiceUuid && <><Notice title="paymentInvoiceMissingTitle">{t('paymentInvoiceMissingHint')}</Notice>{invoiceLookupFailed && <p className="helper">{t('paymentInvoiceLookupFailed')}</p>}</>}
-        {!loadingInvoice && invoiceUuid && !canCreatePayment && <Notice>{t('paymentStartPermission')}</Notice>}
-        {!loadingInvoice && invoiceUuid && canCreatePayment && paymentStarted && !payment && !paid && <Notice>{t('paymentAlreadyStarted')}</Notice>}
-        {qrValue && <div className="dining-payment-code"><QRCodeSVG value={qrValue} size={208} level="M" marginSize={1} bgColor="#ffffff" fgColor="#201813" /><p>{t('paymentQrHint')}</p></div>}
-        {payment && !qrValue && !paid && <Notice>{t('paymentNoQr')}</Notice>}
-        {payment?.payUrl && <a className="dining-payment-link" href={payment.payUrl} target="_blank" rel="noreferrer"><ExternalLink size={17} />{t('paymentOpenLink')}</a>}
+        <div className="dining-payment-code"><QRCodeSVG className="dining-payment-qr" value={paymentUrl} size={208} level="M" marginSize={1} bgColor="#ffffff" fgColor="#201813" /><p>{t('paymentQrHint')}</p></div>
       </section>}
+    {printPending && <Notice>{t('paymentPrintPending')}</Notice>}
     {error && <Notice>{t(error)}</Notice>}
   </LiveSheet>
 }

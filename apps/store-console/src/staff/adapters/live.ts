@@ -566,9 +566,12 @@ export class StoreApi {
   availability(items: LiveProduct[], isSoldout: boolean, commandUuid: string) {
     return this.client.request(`${this.base}/operations/products/availability`, 'POST', { commandUuid, isSoldout, items: items.map(({ uuid, version }) => ({ uuid, version })) })
   }
-  uploadImage(file: File, commandUuid = crypto.randomUUID()) {
-    const body = new FormData(); body.append('file', file); body.append('commandUuid', commandUuid)
-    return this.client.data(`${this.base}/operations/images`, z.object({ uuid, url: z.string().regex(/^\/(?!\/)/) }), 'POST', body)
+  uploadImage(file: File, commandUuid = crypto.randomUUID(), storage: 'qiniu' = 'qiniu') {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('commandUuid', commandUuid)
+    body.append('storage', storage)
+    return this.client.data(`${this.base}/operations/images`, z.object({ uuid, url: z.string().max(2048).refine((value) => (/^https:\/\//.test(value) || /^\/(?!\/)/.test(value)) && !value.includes('\\')) }), 'POST', body)
   }
   // Existing configuration CRUD stays separate from versioned product/order commands.
   save(resource: 'product-categories' | 'counters', id: string | null, body: Record<string, unknown>) {
