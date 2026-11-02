@@ -50,6 +50,7 @@ export const zhCN = {
   mergeReasonProjectionPending: '门店订单尚未同步生成', mergeReasonInventoryReserved: '订单已经存在库存预留', mergeReasonOrderProcessed: '门店订单已进入当前不可合并的处理阶段', mergeReasonCode: '后端返回的订单限制：{code}',
   mergeBackendLocked: '后端复核返回 staff_order_locked，但没有指出具体订单或字段。前端已通过桌台、场次、支付、发票、订单状态、商品规格和数量检查；后端仍可能因订单生命周期、库存预留、门店同步或历史合并关系拒绝。',
   mergeBackendLockedDetail: '后端错误：staff_order_locked（HTTP {status}）。当前接口没有返回具体 blocker，前端无法精确到单笔订单或单个字段。',
+  diningDailyAmounts: '今日交易额',
   tableQrTitle: '点餐二维码',
   tableQrBatchTitle: '桌台点餐码',
   tableQrBatchHint: '顾客扫码后直接进入对应桌台的用户点餐界面',

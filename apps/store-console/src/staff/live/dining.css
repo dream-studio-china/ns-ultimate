@@ -1,4 +1,12 @@
 .dining-board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.dining-daily-summary { width: min(100%, 620px); margin: 0 0 14px auto; padding: 12px; border: 1px solid color-mix(in srgb, var(--brand) 20%, var(--ws-line)); border-radius: 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--ws-soft) 76%, white), var(--theme-paper)); box-shadow: 0 7px 22px color-mix(in srgb, var(--brand) 5%, transparent); }
+.dining-daily-summary > p { margin: 0 0 9px 2px; color: var(--ws-muted); font-size: 9px; font-weight: 600; letter-spacing: .08em; }
+.dining-daily-summary > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.dining-daily-summary article { min-width: 0; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--brand) 10%, var(--ws-line)); border-radius: 11px; background: #ffffffb8; }
+.dining-daily-summary article:first-child { background: color-mix(in srgb, var(--brand) 8%, white); }
+.dining-daily-summary span { display: block; color: var(--ws-muted); font-size: 9px; line-height: 1.45; white-space: nowrap; }
+.dining-daily-summary strong { display: block; margin-top: 5px; color: var(--ws-ink); font-size: clamp(12px, 3.6vw, 18px); font-weight: 680; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dining-daily-summary article:first-child strong { color: var(--brand); }
 .dining-summary { display: grid; gap: 8px; margin-bottom: 14px; }
 .dining-summary-counts, .dining-finance-breakdown { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .dining-summary-item { min-width: 0; padding: 12px 13px; border: 1px solid var(--ws-line); border-radius: 14px; background: var(--theme-paper); }
@@ -313,7 +321,7 @@
 .dining-payment-success p { margin: 0; color: #708166; font-size: 12px; }
 .dining-payment-success strong { margin-top: 5px; color: #38542d; font-size: 29px; font-variant-numeric: tabular-nums; }
 .live-app .checkout-print-button.adm-button { min-height: 47px; border-color: color-mix(in srgb, var(--brand) 25%, var(--ws-line)); color: var(--brand); background: var(--theme-paper); }
-@media (min-width: 700px) { .dining-summary { gap: 10px; margin-bottom: 20px; } .dining-summary-counts, .dining-finance-breakdown { gap: 10px; } .dining-summary-item { padding: 14px; } .dining-summary-item strong { font-size: 21px; } .dining-summary-counts .dining-summary-item strong { font-size: 27px; } .dining-finance-toggle { min-height: 72px; padding-inline: 18px; } .dining-finance-toggle > strong { font-size: 28px; } .dining-finance-breakdown { padding: 0 12px 12px; } .dining-board { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } .dining-card { padding: 18px; } .dining-choice-scroll button { flex-basis: 44%; } .dining-cancel-selection { bottom: 24px; width: min(calc(100vw - 48px), 500px); } }
+@media (min-width: 700px) { .dining-daily-summary { margin-bottom: 20px; padding: 14px; } .dining-daily-summary > div { gap: 9px; } .dining-daily-summary article { padding: 11px 13px; } .dining-daily-summary span { font-size: 10px; } .dining-daily-summary strong { font-size: 21px; } .dining-summary { gap: 10px; margin-bottom: 20px; } .dining-summary-counts, .dining-finance-breakdown { gap: 10px; } .dining-summary-item { padding: 14px; } .dining-summary-item strong { font-size: 21px; } .dining-summary-counts .dining-summary-item strong { font-size: 27px; } .dining-finance-toggle { min-height: 72px; padding-inline: 18px; } .dining-finance-toggle > strong { font-size: 28px; } .dining-finance-breakdown { padding: 0 12px 12px; } .dining-board { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } .dining-card { padding: 18px; } .dining-choice-scroll button { flex-basis: 44%; } .dining-cancel-selection { bottom: 24px; width: min(calc(100vw - 48px), 500px); } }
 @media (min-width: 1000px) { .dining-board { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media print {
   body { background: #fff; }

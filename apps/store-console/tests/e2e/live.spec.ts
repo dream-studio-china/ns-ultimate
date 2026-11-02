@@ -230,8 +230,15 @@ test('kitchen defaults to the first category and restores sold-out products with
 })
 
 test('reports summarize Trade Orders from the deployed counter query', async ({ page }) => {
-  const requests = await mockApi(page)
+  const requests = await mockApi(page, { grants: ['store:counter:read', 'store:counter_session:read', 'store:counter_order:read', 'store:order:read'] })
   await login(page)
+  const dailySummary = page.locator('.dining-daily-summary')
+  await expect(dailySummary).toContainText('今日交易额')
+  await expect(dailySummary.getByText('总营业额', { exact: true })).toHaveCount(1)
+  await expect(dailySummary.getByText('已收金额', { exact: true })).toHaveCount(1)
+  await expect(dailySummary.getByText('待收金额', { exact: true })).toHaveCount(1)
+  await expect(dailySummary).toContainText('¥15.90')
+  await expect(dailySummary).toContainText('¥0.00')
   await page.getByRole('navigation').getByRole('button', { name: '统计', exact: true }).click()
   await expect(page.locator('.report-hero')).toContainText('¥15.90')
   await expect(page.locator('.sales-ranking')).toContainText('API product')

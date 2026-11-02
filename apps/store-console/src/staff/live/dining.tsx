@@ -14,6 +14,7 @@ import { confirmedOrderCanCollect, paymentStatusIsPaid } from '../order-payment'
 import { customerPaymentUrl } from '../order-payment-url'
 import { isOccupiedDiningTable as isDining, unsettledDiningOrders as effectiveDiningOrders } from '../dining-table-state'
 import { ApiError } from '../adapters/api-client'
+import { reportingOrdersFromCounterSessions, summarizeReport } from '../reporting'
 import { errorKey, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, usePageRefresh } from './ui'
 import './dining.css'
 
@@ -215,6 +216,24 @@ export function DiningSummary({ tables, loading, currency, locale, available = t
   </section>
 }
 
+function DailyTransactionSummary({ tables, loading, error, currency, timezone, locale }: { tables: CounterSessionView[]; loading: boolean; error: MessageKey | null; currency: string; timezone: string; locale: string }) {
+  const { t } = useI18n()
+  const summary = useMemo(() => summarizeReport(reportingOrdersFromCounterSessions(tables), 'today', 1, new Date(), timezone), [tables, timezone])
+  const ready = !loading && !error && tables.every((table) => table.ordersVisible)
+  const money = (value: number) => ready
+    ? new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value / 100)
+    : '—'
+  const metrics = [
+    { key: 'diningSummaryRevenue' as MessageKey, value: summary.totalAmount },
+    { key: 'diningSummaryCollected' as MessageKey, value: summary.settledAmount },
+    { key: 'diningSummaryPending' as MessageKey, value: summary.pendingAmount },
+  ]
+  return <section className="dining-daily-summary" aria-label={t('diningDailyAmounts')}>
+    <p>{t('diningDailyAmounts')}</p>
+    <div>{metrics.map(({ key, value }) => <article key={key}><span>{t(key)}</span><strong>{money(value)}</strong></article>)}</div>
+  </section>
+}
+
 export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: StoreApi; access: StoreAccess; onEdit?: (counter: LiveCounter) => void; refreshKey?: number }) {
   const { t, locale } = useI18n()
   const list = useDiningSessions(api, access, refreshKey)
@@ -244,7 +263,7 @@ export function LiveDining({ api, access, onEdit, refreshKey = 0 }: { api: Store
     setActionError(null)
     setOrdering({ table, mode: effectiveDiningOrders(table).length === 0 ? 'new' : 'add' })
   }
-  return <><ListFeedback state={list} empty="firstTable" hint="existingTablesHint" icon={LayoutGrid} />
+  return <><DailyTransactionSummary tables={list.allItems} loading={list.loading} error={list.error} currency={access.store.currency} timezone={access.store.timezone} locale={locale} /><ListFeedback state={list} empty="firstTable" hint="existingTablesHint" icon={LayoutGrid} />
     {actionError && <Notice>{t(actionError)}</Notice>}
     <div className="dining-board">{list.items.map((table) => {
       const orders = effectiveDiningOrders(table)

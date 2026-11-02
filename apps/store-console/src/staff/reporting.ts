@@ -26,7 +26,7 @@ interface ReportingCounterOrder {
   items: readonly { productName: string; quantity: number; unitPrice?: number; amount?: number }[]
 }
 
-interface ReportingCounterSession {
+export interface ReportingCounterSession {
   ordersVisible: boolean
   orders?: readonly ReportingCounterOrder[]
 }
@@ -35,10 +35,9 @@ export interface ReportingOrderSource {
   allCounterSessions(): Promise<readonly ReportingCounterSession[]>
 }
 
-/** Reporting reads Trade Orders from the deployed counter-order query, never StoreOrder projections. */
-export async function loadTradeReportingOrders(api: ReportingOrderSource): Promise<ReportingOrder[]> {
+export function reportingOrdersFromCounterSessions(tables: readonly ReportingCounterSession[]): ReportingOrder[] {
   const orders = new Map<string, ReportingOrder>()
-  for (const table of await api.allCounterSessions()) {
+  for (const table of tables) {
     if (!table.ordersVisible) continue
     for (const order of table.orders ?? []) {
       if (orders.has(order.uuid)) continue
@@ -57,6 +56,11 @@ export async function loadTradeReportingOrders(api: ReportingOrderSource): Promi
     }
   }
   return [...orders.values()]
+}
+
+/** Reporting reads Trade Orders from the deployed counter-order query, never StoreOrder projections. */
+export async function loadTradeReportingOrders(api: ReportingOrderSource): Promise<ReportingOrder[]> {
+  return reportingOrdersFromCounterSessions(await api.allCounterSessions())
 }
 
 export interface ReportingWindow {

@@ -35,6 +35,7 @@ export const en: Record<keyof typeof zhCN, string> = {
   mergeReasonProjectionPending: 'the Store order projection has not been created yet', mergeReasonInventoryReserved: 'the order has an inventory reservation', mergeReasonOrderProcessed: 'the Store order has entered a processing state that cannot currently be merged', mergeReasonCode: 'Server order restriction: {code}',
   mergeBackendLocked: 'The server returned staff_order_locked without identifying a specific order or field. Frontend checks for the table, session, payment, invoice, order status, item specification and quantity passed; the server may still reject due to order lifecycle, inventory reservation, projection or an existing merge relationship.',
   mergeBackendLockedDetail: 'Server error: staff_order_locked (HTTP {status}). The endpoint did not return a specific blocker, so the frontend cannot identify the exact order or field.',
+  diningDailyAmounts: 'Today’s transactions',
   tableQrTitle: 'Ordering QR code',
   tableQrBatchTitle: 'Table ordering codes',
   tableQrBatchHint: 'Guests scan a code to enter the customer ordering page for that table',
