@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClient, ApiError } from '../../src/staff/adapters/api-client'
 import { can, counterCommandResultSchema, counterSessionSchema, orderQuoteSchema, sessionOrderSchema, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
-import { loadTradeReportingOrders, type ReportingOrder } from '../../src/staff/reporting'
+import { loadTradeReportingOrders } from '../../src/staff/reporting'
 
 const id = '00000000-0000-4000-8000-000000000001'
 const version = 'a'.repeat(64)
@@ -179,14 +179,26 @@ describe('live counter session boundary', () => {
     ])
   })
 
-  it('builds report statistics from the Trade Order list without falling back to table sessions', async () => {
-    const rows = [{ uuid: id }] as ReportingOrder[]
-    const allReportingOrders = vi.fn().mockResolvedValue({ items: rows })
-    const allCounterSessions = vi.fn()
+  it('builds report rows from Trade Orders returned by the deployed counter query', async () => {
+    const order = { uuid: id, status: 'paid', paymentStatus: 'paid', totalAmount: 1590, currency: 'USD', createdAt: '2026-10-31T10:00:00Z', items: [item] }
+    const allCounterSessions = vi.fn().mockResolvedValue([
+      { ordersVisible: true, orders: [order, order] },
+      { ordersVisible: false },
+    ])
 
-    await expect(loadTradeReportingOrders({ allReportingOrders })).resolves.toEqual(rows)
-    expect(allReportingOrders).toHaveBeenCalledTimes(1)
-    expect(allCounterSessions).not.toHaveBeenCalled()
+    await expect(loadTradeReportingOrders({ allCounterSessions })).resolves.toEqual([{
+      uuid: id,
+      tradeOrderUuid: id,
+      status: 'paid',
+      paymentStatus: 'paid',
+      paymentMethod: null,
+      paidAt: null,
+      totalAmount: 1590,
+      currency: 'USD',
+      createdAt: '2026-10-31T10:00:00Z',
+      orderSnapshot: { items: [item] },
+    }])
+    expect(allCounterSessions).toHaveBeenCalledTimes(1)
   })
 
   it('looks up the Store order projection by the new Trade order UUID', async () => {

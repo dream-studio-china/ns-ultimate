@@ -14,13 +14,49 @@ export interface ReportingOrder {
   orderSnapshot?: unknown
 }
 
-export interface ReportingOrderSource {
-  allReportingOrders(): Promise<{ items: ReportingOrder[] }>
+interface ReportingCounterOrder {
+  uuid: string
+  status: string
+  paymentStatus?: string | null
+  paymentMethod?: string | null
+  paidAt?: string | null
+  totalAmount: number
+  currency: string
+  createdAt: string
+  items: readonly { productName: string; quantity: number; unitPrice?: number; amount?: number }[]
 }
 
-/** Reporting starts from the Store-scoped Trade Order list, never table/session projections. */
+interface ReportingCounterSession {
+  ordersVisible: boolean
+  orders?: readonly ReportingCounterOrder[]
+}
+
+export interface ReportingOrderSource {
+  allCounterSessions(): Promise<readonly ReportingCounterSession[]>
+}
+
+/** Reporting reads Trade Orders from the deployed counter-order query, never StoreOrder projections. */
 export async function loadTradeReportingOrders(api: ReportingOrderSource): Promise<ReportingOrder[]> {
-  return (await api.allReportingOrders()).items
+  const orders = new Map<string, ReportingOrder>()
+  for (const table of await api.allCounterSessions()) {
+    if (!table.ordersVisible) continue
+    for (const order of table.orders ?? []) {
+      if (orders.has(order.uuid)) continue
+      orders.set(order.uuid, {
+        uuid: order.uuid,
+        tradeOrderUuid: order.uuid,
+        status: order.status,
+        paymentStatus: order.paymentStatus ?? null,
+        paymentMethod: order.paymentMethod ?? null,
+        paidAt: order.paidAt ?? null,
+        totalAmount: order.totalAmount,
+        currency: order.currency,
+        createdAt: order.createdAt,
+        orderSnapshot: { items: order.items.map((item) => ({ ...item })) },
+      })
+    }
+  }
+  return [...orders.values()]
 }
 
 export interface ReportingWindow {

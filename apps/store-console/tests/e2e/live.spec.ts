@@ -27,7 +27,7 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
-  const reportingOrder = { uuid: orderId, status: 'paid', paymentStatus: 'paid', paymentMethod: 'cash', paidAt: new Date().toISOString(), totalAmount: 1590, currency: 'CNY', createdAt: new Date().toISOString(), orderSnapshot: { items: [{ productName: 'API product', quantity: 1, unitPrice: 1590, amount: 1590 }] } }
+  const reportingOrder = { uuid: orderId, tradeOrderUuid: orderId, status: 'paid', paymentStatus: 'paid', hasInvoice: false, totalAmount: 1590, currency: 'CNY', notes: null, createdAt: new Date().toISOString(), items: [{ specificationUuid: specId, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: false, canCancel: false }
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -63,7 +63,7 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
       return respond({ permissions: Object.keys(scopes), storeScopes: scopes })
     }
     if (options.denyWrite && method !== 'GET') return route.fulfill({ status: 403, json: { code: 403, message: 'denied' } })
-    if (actualPath.endsWith('/operations/reporting-orders')) return respond({ items: [reportingOrder], total: 1, page: 1, hasNext: false })
+    if (actualPath.endsWith('/counter-operations/counters')) return respond({ items: [{ counter: { uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, enabled: true }, session: null, ordersVisible: true, orders: [reportingOrder], openAmount: 0, orderedAmount: 1590, openOrderCount: 0, currency: 'CNY', canEnd: true, version, paymentHold: false }], total: 1, page: 1, hasNext: false })
     if (path === `/api/v1/store/${storeId}/products/availability`) {
       const ids = (body!.items as { uuid: string }[]).map((item) => item.uuid)
       products = products.map((item) => ids.includes(item.uuid) ? { ...item, isSoldout: Boolean(body!.isSoldout) } : item)
@@ -171,14 +171,14 @@ test('read-only grants hide mutations, and reload clears staff authentication', 
   await expect(page.getByRole('heading', { name: 'API product', exact: true })).toHaveCount(0)
 })
 
-test('reports summarize the Store Trade Order list instead of counter session projections', async ({ page }) => {
+test('reports summarize Trade Orders from the deployed counter query', async ({ page }) => {
   const requests = await mockApi(page)
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '统计', exact: true }).click()
   await expect(page.locator('.report-hero')).toContainText('¥15.90')
   await expect(page.locator('.sales-ranking')).toContainText('API product')
-  expect(requests.some((request) => request.path.endsWith('/operations/reporting-orders'))).toBe(true)
-  expect(requests.filter((request) => request.path.includes('/counter-operations/'))).toHaveLength(0)
+  expect(requests.some((request) => request.path.endsWith('/counter-operations/counters'))).toBe(true)
+  expect(requests.some((request) => request.path.endsWith('/operations/reporting-orders'))).toBe(false)
 })
 
 test('kitchen-only staff see availability without catalog management or cashier access', async ({ page }) => {
