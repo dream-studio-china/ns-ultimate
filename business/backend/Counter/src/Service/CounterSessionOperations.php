@@ -101,7 +101,7 @@ final class CounterSessionOperations
                 }
                 $rows[] = ['uuid' => $order->getUuid(), 'status' => $order->getStatus(), 'operationalStatus' => $storeOrder?->getOperationalStatus(),
                     'paymentStatus' => $order->getPaymentStatus(), 'hasInvoice' => $order->getInvoiceId() !== null,
-                    'currency' => $order->getCurrency(), 'totalAmount' => $order->getTotalAmount(), 'notes' => $order->getNotes(),
+                    'currency' => $order->getCurrency(), 'totalAmount' => $order->getTotalAmount(), 'notes' => $order->getNotes(), 'metadata' => $order->getMetadata(),
                     'createdAt' => $order->getCreatedAt()->format(DATE_ATOM), 'items' => $items,
                     'canReplace' => $this->canReplace($order, $lifecycle, $storeOrder), 'canCancel' => $this->canCancel($order, $lifecycle, $storeOrder),
                     'changeBlockedReason' => $this->changeBlockedReason($order, $lifecycle, $storeOrder),
