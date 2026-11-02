@@ -109,7 +109,7 @@ final class OrderCounterController extends RestController
     }
 
     /** @param mixed $entities
-     * @return list<array{uuid: string, status: string, totalAmount: int, currency: string, createdAt: string, mergedIntoOrderUuid: ?string, items: list<array{productName: ?string, specificationName: ?string, quantity: int, unitPrice: int, price: int}>}> */
+     * @return list<array{uuid: string, status: string, totalAmount: int, currency: string, createdAt: string, mergedIntoOrderUuid: ?string, diningModeUuid: ?string, diningModeName: ?string, items: list<array{productName: ?string, specificationName: ?string, quantity: int, unitPrice: int, price: int}>}> */
     protected function listProcessor(mixed $entities): array
     {
         if ($entities instanceof QueryBuilder) {
@@ -134,7 +134,11 @@ final class OrderCounterController extends RestController
         usort($orders, static fn (Order $left, Order $right): int => $left->getCreatedAt() <=> $right->getCreatedAt());
 
         return array_map(static function (Order $order): array {
-            $targetUuid = ($order->getMetadata() ?? [])['mergedIntoOrderUuid'] ?? null;
+            $metadata = $order->getMetadata() ?? [];
+            $targetUuid = $metadata['mergedIntoOrderUuid'] ?? null;
+            $diningMode = is_array($metadata['diningMode'] ?? null) ? $metadata['diningMode'] : [];
+            $diningModeUuid = $metadata['diningModeUuid'] ?? $metadata['dining_mode_uuid'] ?? $diningMode['uuid'] ?? null;
+            $diningModeName = $metadata['diningModeName'] ?? $metadata['dining_mode_name'] ?? $diningMode['name'] ?? null;
             return [
                 'uuid' => $order->getUuid(),
                 'status' => $order->getStatus(),
@@ -142,6 +146,8 @@ final class OrderCounterController extends RestController
                 'currency' => $order->getCurrency(),
                 'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
                 'mergedIntoOrderUuid' => is_string($targetUuid) ? $targetUuid : null,
+                'diningModeUuid' => is_string($diningModeUuid) && trim($diningModeUuid) !== '' ? trim($diningModeUuid) : null,
+                'diningModeName' => is_string($diningModeName) && trim($diningModeName) !== '' ? trim($diningModeName) : null,
                 'items' => array_values(array_map(static function (OrderItem $item): array {
                     $productSnapshot = $item->getProductSnapshot();
 

@@ -250,6 +250,7 @@ final class CounterOrderBindingTest extends KernelTestCase
         $counter = (new Counter())->setStoreUuid($store->getUuid())->setCode('A01')->setName('Table A01');
         $openOrder = new Order();
         $openOrder->setStatus(Order::STATUS_PENDING);
+        $openOrder->setMetadata(['diningModeUuid' => 'dining-mode-hotpot', 'diningModeName' => 'Hotpot']);
         $openOrder->addItem((new OrderItem())
             ->setProductSnapshot(['name' => 'Coffee'])
             ->setSpecificationTitle('Latte')
@@ -298,6 +299,8 @@ final class CounterOrderBindingTest extends KernelTestCase
             'unitPrice' => 450,
             'price' => 900,
         ], $openOrderData['items'][0]);
+        self::assertSame('dining-mode-hotpot', $openOrderData['diningModeUuid']);
+        self::assertSame('Hotpot', $openOrderData['diningModeName']);
         self::assertArrayNotHasKey('cost', $openOrderData['items'][0]);
         self::assertArrayNotHasKey('profit', $openOrderData['items'][0]);
     }

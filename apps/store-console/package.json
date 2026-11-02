@@ -6,7 +6,9 @@
   "author": "Lam K.",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "type-check": "tsc --noEmit",
@@ -18,6 +20,7 @@
   "dependencies": {
     "antd-mobile": "^5.43.0",
     "lucide-react": "^0.468.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zod": "^4.1.0"

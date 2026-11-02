@@ -127,7 +127,7 @@ final class CounterOperationsController extends RestController
         });
     }
 
-    #[Route('/counters/{uuid}/orders/{action}', name: 'orders', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}', 'action' => 'quote|create|replace|cancel'])]
+    #[Route('/counters/{uuid}/orders/{action}', name: 'orders', methods: ['POST'], requirements: ['uuid' => '[0-9a-fA-F-]{36}', 'action' => 'quote|create|replace|cancel|confirm'])]
     public function orders(Request $request, string $scopeId, string $uuid, string $action): JsonResponse
     {
         if ($action === 'quote') {
@@ -150,15 +150,19 @@ final class CounterOperationsController extends RestController
             });
         }
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $scopeId]);
-        if (!$store instanceof Store || !$this->isGranted('store:counter_order:'.$action, $store)) throw new AccessDeniedException();
+        $granted = $store instanceof Store && ($this->isGranted('store:counter_order:'.$action, $store)
+            || ($action === 'confirm' && $this->isGranted('store:counter_order:create', $store)));
+        if (!$granted) throw new AccessDeniedException();
         return $this->respond(function () use ($request, $store, $uuid, $action): array {
             $actor = $this->getUser();
             if (!$actor instanceof User) throw new AccessDeniedException();
             $data = $this->body($request);
             return $this->commands->run($store, $actor->getUuid(), 'counter_order.'.$action.'.'.$uuid, $data,
-                fn(): array => $action === 'cancel'
-                    ? $this->operations->cancel($store, $uuid, $data)
-                    : $this->operations->submit($store, $uuid, $data, $action === 'replace'));
+                fn(): array => match ($action) {
+                    'cancel' => $this->operations->cancel($store, $uuid, $data),
+                    'confirm' => $this->operations->confirm($store, $uuid, $data),
+                    default => $this->operations->submit($store, $uuid, $data, $action === 'replace'),
+                });
         });
     }
 

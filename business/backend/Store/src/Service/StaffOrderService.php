@@ -34,7 +34,14 @@ final class StaffOrderService
     {
         $settings = StoreSettings::from($store->getSettings());
         $context = new StoreContext($store->getUuid(), $store->getCode(), $store->getName(), 'staff', $store->getCurrency(), $settings->requireAcceptance, $settings->requireInventory, $settings->requireVerification);
-        return $this->orders->createOrder($calculation->items, $customer, $calculation->totalAmount, $store->getCurrency(), $notes, $metadata, $context);
+        $order = $this->orders->createOrder($calculation->items, $customer, $calculation->totalAmount, $store->getCurrency(), $notes, $metadata, $context);
+        // Employee-created rounds are real orders, not drafts. Keep the state machine and
+        // Store acceptance/inventory policy authoritative: confirmation only happens when
+        // the configured policy permits it.
+        if ($this->workflow->can($order, 'confirm')) {
+            $this->workflow->apply($order, 'confirm');
+        }
+        return $order;
     }
 
     /** Cancels the Trade order and its projected Store order in the caller's transaction. */

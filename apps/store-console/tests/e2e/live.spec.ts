@@ -20,9 +20,9 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[] } = {}) {
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
-  let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active' }]
+  let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active', settings: { kitchenPrinterEnable: Boolean(options.kitchenPrint), startSaleTime: '', endSaleTime: '' } }]
   let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
@@ -111,7 +111,6 @@ async function login(page: Page, entry = '/') {
   await page.getByLabel('密码', { exact: true }).fill('test-only-password')
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.getByRole('button', { name: 'Contract store S1', exact: true }).click()
-  await page.getByRole('button', { name: '连接门店', exact: true }).click()
 }
 
 test('live catalog, separate variants, categories, tables and read-only orders use employee APIs', async ({ page }) => {
@@ -177,14 +176,26 @@ test('kitchen-only staff see availability without catalog management or cashier 
   await expect(nav.getByRole('button')).toHaveText(['厨房', '我的'])
   await expect(nav.getByRole('button', { name: '厨房', exact: true })).toHaveAttribute('aria-current', 'page')
   for (const name of ['新增商品', '编辑', '删除', '管理规格', '分类管理', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: '设为售罄', exact: true }).click()
+  await expect(page.locator('.catalog-print-flag')).toHaveText('不显示')
+  await page.getByRole('button', { name: '售罄', exact: true }).click()
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.getByRole('button', { name: '恢复售卖', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '在售', exact: true })).toBeVisible()
   for (const width of [320, 768, 1280]) {
     await page.setViewportSize({ width, height: 800 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   }
   expect(requests.filter((request) => request.path.startsWith('/api/v1/store/')).every((request) => /\/operations\/products(?:[/?]|$)/.test(request.path))).toBe(true)
+})
+
+test('kitchen product card keeps delete while showing the kitchen print status', async ({ page }) => {
+  await mockApi(page, { kitchenPrint: true })
+  await login(page, '/?view=kitchen')
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
+  const card = page.locator('.catalog-product-card')
+  await expect(card.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '删除', exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '售罄', exact: true })).toBeVisible()
+  await expect(card.locator('.catalog-print-flag')).toHaveText('打印小票')
 })
 
 test('cashier staff land on dining without product configuration, fulfillment or payment', async ({ page }) => {
