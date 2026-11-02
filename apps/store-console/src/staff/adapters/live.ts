@@ -422,6 +422,9 @@ export class StoreApi {
   specifications(productUuid: string, page: number) {
     return this.client.list(`${this.base}/products/${uuid.parse(productUuid)}/specifications`, specificationSchema, page)
   }
+  allSpecifications(productUuid: string) {
+    return this.client.all(`${this.base}/products/${uuid.parse(productUuid)}/specifications`, specificationSchema)
+  }
   private async sessionList<T>(resource: string, schema: z.ZodType<T>, page: number, q: string) {
     const result = await this.client.data(`${this.base}/counter-operations/${resource}?${new URLSearchParams({ page: String(page), q: q.trim() })}`, z.object({ items: z.array(schema), page: z.number().int().positive(), hasNext: z.boolean(), total: z.number().int().nonnegative() }))
     if (result.page !== page) throw new ApiError('invalid')

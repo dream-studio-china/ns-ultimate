@@ -93,6 +93,13 @@
 .catalog-print-flag.is-disabled { background: var(--theme-paper); color: var(--theme-muted); }
 .catalog-product-info h2 { font-size: 16px; font-weight: 600; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }
 .catalog-product-info p { color: var(--theme-muted); font-size: 11px; line-height: 1.6; margin-top: 5px; overflow-wrap: anywhere; }
+.catalog-product-prices { display: grid; gap: 4px; margin-top: 7px; }
+.catalog-product-price { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; color: var(--theme-muted); font-size: 12px; line-height: 1.55; }
+.catalog-product-price span { min-width: 0; overflow-wrap: anywhere; }
+.catalog-product-price strong { flex-shrink: 0; color: var(--brand); font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.catalog-product-price.is-inactive { opacity: .55; }
+.catalog-product-price-note { font-size: 11px; line-height: 1.55; }
+.catalog-product-price-note.error { color: #a04432; }
 .catalog-product-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0 5px; }
 .catalog-product-actions .adm-button { padding-inline: 12px; font-size: 11px; min-height: 44px; background: #fff; }
 .catalog-product-actions > .adm-button + .adm-button { border-color: var(--theme-line); color: var(--brand); background: var(--ws-soft); }

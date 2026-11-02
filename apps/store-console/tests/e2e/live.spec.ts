@@ -20,11 +20,11 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean } = {}) {
+async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = [{ uuid: productId, name: 'API product', category: { uuid: categoryId }, status: 'active', settings: { kitchenPrinterEnable: Boolean(options.kitchenPrint), startSaleTime: '', endSaleTime: '' } }]
   let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
-  let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = []
+  let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = options.specifications?.map((item) => ({ ...item })) ?? []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
   const reportingOrder = { uuid: orderId, tradeOrderUuid: orderId, status: 'paid', paymentStatus: 'paid', hasInvoice: false, totalAmount: 1590, currency: 'CNY', notes: null, createdAt: new Date().toISOString(), items: [{ specificationUuid: specId, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: false, canCancel: false }
@@ -189,9 +189,9 @@ test('kitchen-only staff see availability without catalog management or cashier 
   await expect(nav.getByRole('button', { name: '厨房', exact: true })).toHaveAttribute('aria-current', 'page')
   for (const name of ['新增商品', '编辑', '删除', '管理规格', '分类管理', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   await expect(page.locator('.catalog-print-flag')).toHaveText('不显示')
-  await page.getByRole('button', { name: '售罄', exact: true }).click()
-  await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.getByRole('button', { name: '在售', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '设为售罄', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
   for (const width of [320, 768, 1280]) {
     await page.setViewportSize({ width, height: 800 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -199,15 +199,30 @@ test('kitchen-only staff see availability without catalog management or cashier 
   expect(requests.filter((request) => request.path.startsWith('/api/v1/store/')).every((request) => /\/operations\/products(?:[/?]|$)/.test(request.path))).toBe(true)
 })
 
-test('kitchen product card keeps delete while showing the kitchen print status', async ({ page }) => {
-  await mockApi(page, { kitchenPrint: true })
+test('kitchen product card toggles availability directly and shows every specification price', async ({ page }) => {
+  const requests = await mockApi(page, { kitchenPrint: true, specifications: [
+    { uuid: '00000000-0000-4000-8000-000000000008', name: '小份', price: 1290, status: 'active', sort: 1 },
+    { uuid: '00000000-0000-4000-8000-000000000009', name: '大份', price: 1690, status: 'active', sort: 0 },
+  ] })
   await login(page, '/?view=kitchen')
   await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
   const card = page.locator('.catalog-product-card')
   await expect(card.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
-  await expect(card.getByRole('button', { name: '删除', exact: true })).toBeVisible()
-  await expect(card.getByRole('button', { name: '售罄', exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+  await expect(card.getByRole('button', { name: '设为售罄', exact: true })).toBeVisible()
   await expect(card.locator('.catalog-print-flag')).toHaveText('打印小票')
+  await expect(card.locator('.catalog-product-price')).toHaveText([/大份\s*¥16\.90/, /小份\s*¥12\.90/])
+  await card.getByRole('button', { name: '设为售罄', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(card.getByText('已售罄', { exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
+  expect(requests.find((request) => request.path.endsWith('/operations/products/availability'))?.body).toEqual({
+    commandUuid: expect.any(String), isSoldout: true, items: [{ uuid: productId, version }],
+  })
+  for (const width of [320, 390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 800 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
 })
 
 test('cashier staff land on dining without product configuration, fulfillment or payment', async ({ page }) => {
@@ -295,12 +310,11 @@ test('catalog operating fields and raster image uploads save through one version
 test('single and explicit-page batch availability use selected record versions and preserve errors', async ({ page }) => {
   const requests = await mockApi(page)
   await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
   await page.getByRole('button', { name: '设为售罄', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('API product')
-  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '恢复售卖', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '恢复本页售罄商品', exact: true }).click()
+  await expect(page.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '恢复当前分类售罄商品', exact: true }).click()
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(requests.filter((request) => request.path.endsWith('/availability')).map((request) => request.body)).toEqual([
