@@ -247,7 +247,7 @@ test('enlarges legacy and custom sidebar icons consistently', () => {
   assert.match(readFileSync(new URL('../../business/admin/icons/counter.svg', import.meta.url), 'utf8'), /<svg[^>]+viewBox="0 0 24 24"/)
 })
 
-test('adds a read-only counter number column to the StoreOrder list', () => {
+test('adds read-only dining mode and counter number columns to the StoreOrder list', () => {
   const source = readFileSync(new URL('../../business/admin/config/overrides/store/store-order.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '')
     .replace('export default', 'globalThis.config =')
@@ -255,14 +255,21 @@ test('adds a read-only counter number column to the StoreOrder list', () => {
     entity: { name: 'StoreOrder', plural: 'store-orders' },
     list: { list_display: ['id', 'storeCodeSnapshot', 'storeNameSnapshot', 'totalAmount'] }
   }
-  const context = { StoreOrder: { StoreOrder: base }, t: key => key, StoreOrderCounterNumbers: {} }
+  const diningModeField = { property: 'tradeOrderUuid', component: { marker: 'dining-mode' } }
+  const context = {
+    StoreOrder: { StoreOrder: base },
+    t: key => key,
+    StoreOrderCounterNumbers: {},
+    createStoreOrderDiningModeField: () => diningModeField,
+  }
   runInNewContext(source, context)
   const config = context.config
   assert.equal(config.entity, base.entity)
   assert.deepEqual(Array.from(config.list.list_display, field => typeof field === 'string' ? field : field.property), [
-    'id', 'storeCodeSnapshot', 'storeNameSnapshot', 'tradeOrderUuid', 'totalAmount'
+    'id', 'storeCodeSnapshot', 'storeNameSnapshot', 'tradeOrderUuid', 'tradeOrderUuid', 'totalAmount'
   ])
-  const counterColumn = config.list.list_display[3]
+  assert.equal(config.list.list_display[3], diningModeField)
+  const counterColumn = config.list.list_display[4]
   assert.equal(counterColumn.label, 'Counter number')
   assert.equal(counterColumn.property, 'tradeOrderUuid')
   assert.equal(counterColumn.field_options.sortable, false)
