@@ -323,6 +323,7 @@ final class CounterSessionOperations
             $this->orders->cancel($original, $storeOrder);
             $before['reason'] = trim($data['reason']);
             $result['replacedOrderUuid'] = $original->getUuid();
+            if ($this->workflow->can($order, 'confirm')) $this->workflow->apply($order, 'confirm');
         }
         $session->changed();
         return ['before' => $before, 'result' => $result];

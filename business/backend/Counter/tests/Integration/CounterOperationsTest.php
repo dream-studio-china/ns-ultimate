@@ -686,6 +686,120 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(403, $this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/quote', [...$this->quoteInput(), 'replaceOrderUuid' => $uuid])->getStatusCode());
     }
 
+    public function testReplacementConfirmsImmediatelyWhenAcceptanceIsNotRequired(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
+        $store->setSettings(['order' => ['requireAcceptance' => false]]);
+        $this->em->flush();
+        $body = $this->replacementInput($uuid);
+        $path = '/counters/'.$this->counter->getUuid().'/orders/replace';
+        $result = $this->data($this->request('POST', $path, $body));
+        self::assertSame('confirmed', $this->orderByUuid($result['orderUuid'])['status']);
+        self::assertSame(3180, $this->orderByUuid($result['orderUuid'])['totalAmount']);
+        self::assertSame('cancelled', $this->orderByUuid($uuid)['status']);
+        self::assertSame($result, $this->data($this->request('POST', $path, $body)));
+        self::assertSame(2, $this->em->getRepository(Order::class)->count([]));
+    }
+
+    public function testReplacementConfirmsAfterAcceptanceAndDoesNotConfirmOrdinaryOrders(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $body = $this->replacementInput($uuid);
+        $result = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $body));
+        self::assertSame('pending', $this->orderByUuid($result['orderUuid'])['status']);
+        $this->project($result['orderUuid']);
+        $projection = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $result['orderUuid']]);
+        self::getContainer()->get(StoreOrderServiceInterface::class)->accept($projection);
+        $message = new \App\Trade\Message\StoreOrderAcceptedMessage([
+            'eventId' => UUID::v4(),
+            'payload' => ['orderUuid' => $result['orderUuid'], 'storeUuid' => $this->store->getUuid(), 'storeOrderUuid' => $projection->getUuid()],
+        ]);
+        // This handler alone cannot bypass the Trade acceptance lifecycle.
+        self::getContainer()->get(\NsUltimate\Business\Counter\Adapter\ReplacementOrderAcceptedHandler::class)($message);
+        self::assertSame('pending', $this->orderByUuid($result['orderUuid'])['status']);
+        $bus = self::getContainer()->get('messenger.default_bus');
+        $bus->dispatch($message, [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('confirmed', $this->orderByUuid($result['orderUuid'])['status']);
+        $bus->dispatch($message, [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('confirmed', $this->orderByUuid($result['orderUuid'])['status']);
+        self::assertSame(3180, $this->orderByUuid($result['orderUuid'])['totalAmount']);
+
+        $ordinary = $this->place(); $this->project($ordinary['orderUuid']);
+        $projection = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $ordinary['orderUuid']]);
+        self::getContainer()->get(StoreOrderServiceInterface::class)->accept($projection);
+        $bus->dispatch(new \App\Trade\Message\StoreOrderAcceptedMessage([
+            'eventId' => UUID::v4(),
+            'payload' => ['orderUuid' => $ordinary['orderUuid'], 'storeUuid' => $this->store->getUuid(), 'storeOrderUuid' => $projection->getUuid()],
+        ]), [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('pending', $this->orderByUuid($ordinary['orderUuid'])['status']);
+    }
+
+    public function testReplacementConfirmationFailureRollsBackCancellationAndCreation(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
+        $store->setSettings(['order' => ['requireAcceptance' => false]]);
+        $this->em->flush();
+        $body = $this->replacementInput($uuid);
+        self::getContainer()->get('event_dispatcher')->addListener('workflow.order.transition.confirm', static function (): void {
+            throw new \LogicException('Simulated confirmation failure.');
+        });
+        $events = $this->em->getRepository(TradeOutboxMessage::class)->count([]);
+        self::assertSame(409, $this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $body)->getStatusCode());
+        self::assertSame('pending', $this->orderByUuid($uuid)['status']);
+        self::assertSame('pending_validation', $this->orderByUuid($uuid)['operationalStatus']);
+        self::assertSame(1, $this->em->getRepository(Order::class)->count([]));
+        self::assertSame($events, $this->em->getRepository(TradeOutboxMessage::class)->count([]));
+        self::assertSame(0, $this->em->getRepository(StaffOperation::class)->count([]));
+    }
+
+    public function testLateAcceptanceCannotConfirmACancelledReplacement(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $replacement = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $this->replacementInput($uuid)));
+        $this->project($replacement['orderUuid']);
+        $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/cancel', [
+            'commandUuid' => UUID::v4(), 'version' => $this->view()['version'],
+            'orderUuid' => $replacement['orderUuid'], 'reason' => 'Customer left before acceptance',
+        ]));
+        self::getContainer()->get('messenger.default_bus')->dispatch(new \App\Trade\Message\StoreOrderAcceptedMessage([
+            'eventId' => UUID::v4(),
+            'payload' => ['orderUuid' => $replacement['orderUuid'], 'storeUuid' => $this->store->getUuid()],
+        ]), [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('cancelled', $this->orderByUuid($replacement['orderUuid'])['status']);
+    }
+
+    public function testDeferredReplacementConfirmationCanRetryAfterFailure(): void
+    {
+        $uuid = $this->startCustomerSession(false); $this->project($uuid);
+        $replacement = $this->data($this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/replace', $this->replacementInput($uuid)));
+        $this->project($replacement['orderUuid']);
+        $projection = $this->em->getRepository(StoreOrder::class)->findOneBy(['tradeOrderUuid' => $replacement['orderUuid']]);
+        self::getContainer()->get(StoreOrderServiceInterface::class)->accept($projection);
+        $message = new \App\Trade\Message\StoreOrderAcceptedMessage([
+            'eventId' => UUID::v4(),
+            'payload' => ['orderUuid' => $replacement['orderUuid'], 'storeUuid' => $this->store->getUuid(), 'storeOrderUuid' => $projection->getUuid()],
+        ]);
+        $dispatcher = self::getContainer()->get('event_dispatcher');
+        $failure = static function (): void { throw new \LogicException('Simulated deferred confirmation failure.'); };
+        $dispatcher->addListener('workflow.order.transition.confirm', $failure);
+        try {
+            self::getContainer()->get('messenger.default_bus')->dispatch($message, [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+            self::fail('Confirmation failure must remain retryable.');
+        } catch (\Symfony\Component\Messenger\Exception\HandlerFailedException $error) {
+            self::assertStringContainsString('Simulated deferred confirmation failure.', $error->getMessage());
+        } finally {
+            $dispatcher->removeListener('workflow.order.transition.confirm', $failure);
+        }
+        // A worker retry boots a fresh EntityManager after a failed ORM transaction.
+        self::ensureKernelShutdown(); self::bootKernel();
+        $this->em = self::getContainer()->get(EntityManagerInterface::class);
+        self::assertSame('pending', $this->orderByUuid($replacement['orderUuid'])['status']);
+        self::getContainer()->get('messenger.default_bus')->dispatch($message, [new \Symfony\Component\Messenger\Stamp\ReceivedStamp('async')]);
+        self::assertSame('confirmed', $this->orderByUuid($replacement['orderUuid'])['status']);
+    }
+
     public function testReplacementRejectsProcessingPaymentInventoryAndForeignTargets(): void
     {
         $uuid = $this->startCustomerSession(false);
