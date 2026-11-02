@@ -103,6 +103,7 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame('staff', $order->getMetadata()['source']);
         self::assertSame(['label' => 'priority'], $order->getMetadata()['custom']);
         self::assertSame($this->counter->getUuid(), $order->getMetadata()['counterUuid']);
+        self::assertSame($order->getMetadata(), $this->orderByUuid($created['orderUuid'])['metadata']);
         $this->project($created['orderUuid']);
         $replacement = [...$this->quoteInput(), 'replaceOrderUuid' => $created['orderUuid'], 'metadata' => ['source' => 'updated']];
         $newQuote = $this->data($this->request('POST', $base.'quote', $replacement));
@@ -111,6 +112,7 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame('updated', $updated->getMetadata()['source']);
         self::assertSame(['label' => 'priority'], $updated->getMetadata()['custom']);
         self::assertSame($this->counter->getUuid(), $updated->getMetadata()['counterUuid']);
+        self::assertSame($updated->getMetadata(), $this->orderByUuid($result['orderUuid'])['metadata']);
     }
 
     public function testStaffOrderMetadataRejectsInvalidAndReservedFields(): void
@@ -280,10 +282,15 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(422, $this->request('GET', '/counters?page=0')->getStatusCode());
         self::assertSame(1, $this->data($this->request('GET', '/catalog'))['total']);
         self::assertStringContainsString('no-store', $this->request('GET', '/counters')->headers->get('Cache-Control'));
-        $this->startCustomerSession();
+        $orderUuid = $this->startCustomerSession();
+        $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $orderUuid]);
+        $metadata = [...($order->getMetadata() ?? []), 'custom' => ['label' => 'priority'], '_internal' => ['flag' => true]];
+        $order->setMetadata($metadata); $this->em->flush();
         $detail = $this->view();
         self::assertTrue($detail['ordersVisible']);
         self::assertArrayHasKey('openAmount', $detail);
+        self::assertSame($metadata, $detail['orders'][0]['metadata']);
+        self::assertSame($metadata, $this->data($this->request('GET', '/counters'))['items'][0]['orders'][0]['metadata']);
         // Session reads alone must not disclose order rows or amounts.
         $role = $this->em->getRepository(Role::class)->findOneBy(['code' => 'counter-session-test']);
         $read = $this->em->getRepository(Permission::class)->findOneBy(['code' => 'store:counter_order:read']);
@@ -295,6 +302,9 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertArrayNotHasKey('orders', $redacted);
         self::assertArrayNotHasKey('openAmount', $redacted);
         self::assertSame($detail['version'], $redacted['version']);
+        $redactedList = $this->data($this->request('GET', '/counters'))['items'][0];
+        self::assertFalse($redactedList['ordersVisible']);
+        self::assertArrayNotHasKey('orders', $redactedList);
         $this->em->getConnection()->executeStatement('DELETE FROM authorization_assignment');
         self::getContainer()->get('cache.app')->delete('authorization_effective_'.$this->user->getUuid());
         self::assertSame(403, $this->request('GET', '/counters')->getStatusCode());
