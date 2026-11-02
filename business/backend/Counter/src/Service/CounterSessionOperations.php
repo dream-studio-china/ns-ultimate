@@ -172,14 +172,14 @@ final class CounterSessionOperations
         return $this->cancelBlockedReason($order, $lifecycle, $storeOrder) === null;
     }
 
-    /** Replacement remains limited to a Store order that has not progressed past validation. */
+    /** Pending and accepted Store orders remain replaceable until fulfillment begins. */
     private function changeBlockedReason(Order $order, OrderStoreLifecycle $lifecycle, ?StoreOrder $storeOrder): ?string
     {
         $common = $this->commonBlockedReason($order, $lifecycle, $storeOrder);
         if ($common !== null) return $common;
         if (!$storeOrder instanceof StoreOrder) return 'projection_pending';
-        if ($storeOrder->getOperationalStatus() !== StoreOrder::STATUS_PENDING_VALIDATION
-            || $lifecycle->getAcceptanceStatus() !== OrderStoreLifecycle::ACCEPTANCE_PENDING
+        if (!in_array($storeOrder->getOperationalStatus(), [StoreOrder::STATUS_PENDING_VALIDATION, StoreOrder::STATUS_ACCEPTED], true)
+            || !in_array($lifecycle->getAcceptanceStatus(), [OrderStoreLifecycle::ACCEPTANCE_PENDING, OrderStoreLifecycle::ACCEPTANCE_ACCEPTED], true)
             || $lifecycle->getFulfillmentStatus() !== OrderStoreLifecycle::FULFILLMENT_PENDING
             || $lifecycle->getVerificationStatus() === OrderStoreLifecycle::VERIFICATION_VERIFIED) return 'order_processed';
         return null;
