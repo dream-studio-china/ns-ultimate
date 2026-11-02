@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClient, ApiError } from '../../src/staff/adapters/api-client'
 import { can, counterCommandResultSchema, counterSessionSchema, orderQuoteSchema, sessionOrderSchema, StoreApi, type StoreAccess } from '../../src/staff/adapters/live'
+import { loadTradeReportingOrders, type ReportingOrder } from '../../src/staff/reporting'
 
 const id = '00000000-0000-4000-8000-000000000001'
 const version = 'a'.repeat(64)
@@ -176,6 +177,16 @@ describe('live counter session boundary', () => {
       `/api/v1/store/${id}/operations/reporting-orders?page=1&limit=100`,
       `/api/v1/store/${id}/operations/reporting-orders?page=2&limit=100`,
     ])
+  })
+
+  it('builds report statistics from the Trade Order list without falling back to table sessions', async () => {
+    const rows = [{ uuid: id }] as ReportingOrder[]
+    const allReportingOrders = vi.fn().mockResolvedValue({ items: rows })
+    const allCounterSessions = vi.fn()
+
+    await expect(loadTradeReportingOrders({ allReportingOrders })).resolves.toEqual(rows)
+    expect(allReportingOrders).toHaveBeenCalledTimes(1)
+    expect(allCounterSessions).not.toHaveBeenCalled()
   })
 
   it('looks up the Store order projection by the new Trade order UUID', async () => {

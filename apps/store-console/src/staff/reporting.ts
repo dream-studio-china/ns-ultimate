@@ -14,6 +14,15 @@ export interface ReportingOrder {
   orderSnapshot?: unknown
 }
 
+export interface ReportingOrderSource {
+  allReportingOrders(): Promise<{ items: ReportingOrder[] }>
+}
+
+/** Reporting starts from the Store-scoped Trade Order list, never table/session projections. */
+export async function loadTradeReportingOrders(api: ReportingOrderSource): Promise<ReportingOrder[]> {
+  return (await api.allReportingOrders()).items
+}
+
 export interface ReportingWindow {
   start: string
   end: string

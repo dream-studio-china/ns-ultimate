@@ -1,39 +1,15 @@
 import { useCallback, useMemo, useState } from 'react'
 import { CalendarDays, ChartNoAxesCombined, ReceiptText } from 'lucide-react'
 import { useI18n } from '../../shared/i18n'
-import { can, type SessionOrder, type StoreAccess, type StoreApi } from '../adapters/live'
+import type { StoreAccess, StoreApi } from '../adapters/live'
 import {
+  loadTradeReportingOrders,
   readReportingDay,
   summarizeReport,
   type ReportPaymentMethod,
   type ReportRange,
-  type ReportingOrder,
 } from '../reporting'
 import { ListFeedback, PageHeading, usePage } from './ui'
-
-function counterLabel(order: SessionOrder, currency: string): ReportingOrder {
-  return {
-    uuid: order.uuid,
-    tradeOrderUuid: order.uuid,
-    status: order.status,
-    paymentStatus: order.paymentStatus,
-    paymentMethod: null,
-    paidAt: null,
-    totalAmount: order.totalAmount,
-    currency,
-    createdAt: order.createdAt,
-    orderSnapshot: { items: order.items.map((item) => ({ productName: item.productName, quantity: item.quantity, amount: item.amount })) },
-  }
-}
-
-async function loadReportingOrders(api: StoreApi, access: StoreAccess): Promise<ReportingOrder[]> {
-  const canReadOrders = can(access, 'order', 'read')
-  const canReadSessions = can(access, 'counter_session', 'read')
-  if (canReadOrders) return (await api.allReportingOrders()).items
-  if (!canReadSessions) return []
-  const tables = await api.allCounterSessions().catch(() => [])
-  return tables.flatMap((table) => table.ordersVisible ? table.orders.map((order) => counterLabel(order, table.currency)) : [])
-}
 
 function formatDateKey(key: string, locale: string): string {
   const date = new Date(`${key}T12:00:00Z`)
@@ -47,10 +23,10 @@ export function LiveReports({ api, access }: { api: StoreApi; access: StoreAcces
   const [range, setRange] = useState<ReportRange>('today')
   const reportingDay = useMemo(() => readReportingDay(access.store.uuid), [access.store.uuid])
   const load = useCallback(async () => ({
-    items: await loadReportingOrders(api, access),
+    items: await loadTradeReportingOrders(api),
     page: 1,
     hasNext: false,
-  }), [access, api])
+  }), [api])
   const list = usePage(load)
   const summary = useMemo(() => summarizeReport(list.items, range, reportingDay, new Date(), access.store.timezone), [access.store.timezone, list.items, range, reportingDay])
   const money = (cents: number) => new Intl.NumberFormat(locale, { style: 'currency', currency: access.store.currency }).format(cents / 100)
@@ -59,11 +35,10 @@ export function LiveReports({ api, access }: { api: StoreApi; access: StoreAcces
     return row ? [row] : []
   })
   const rangeLabel = `${formatDateKey(summary.window.start, locale)} - ${formatDateKey(summary.window.end, locale)}`
-  const canReadOrders = can(access, 'order', 'read')
   return <>
     <PageHeading eyebrow="reportEyebrow" title="reportTitle" subtitle="reportLiveSubtitle" />
     <div className="segmented">{(['today', 'week', 'month'] as const).map((value) => <button key={value} className={range === value ? 'active' : ''} onClick={() => setRange(value)}>{t(value)}</button>)}</div>
-    <ListFeedback state={{ ...list, items: summary.orders }} empty="noReportOrders" hint={canReadOrders ? 'noReportOrdersHint' : 'reportSessionScopeHint'} icon={ChartNoAxesCombined} />
+    <ListFeedback state={{ ...list, items: summary.orders }} empty="noReportOrders" hint="noReportOrdersHint" icon={ChartNoAxesCombined} />
     {!list.loading && !list.error && <>
       <section className="report-hero" aria-label={t('reportRevenue')}>
         <p>{t('reportRevenue')}</p>
@@ -76,7 +51,6 @@ export function LiveReports({ api, access }: { api: StoreApi; access: StoreAcces
         </div>
       </section>
       <p className="workspace-report-hint">{t('reportScopeHint')}</p>
-      {!canReadOrders && <p className="workspace-report-hint">{t('reportSessionScopeHint')}</p>}
       <section className="surface-card workspace-report-card"><div className="section-heading"><h2>{t('salesRanking')}</h2><span className="section-mark">TOP PRODUCTS</span></div>
         {summary.products.length ? <div className="sales-ranking">{summary.products.map((item, index) => <div key={item.name}><span className="rank-number">{String(index + 1).padStart(2, '0')}</span><div><h3>{item.name}</h3><div className="rank-track"><span style={{ width: `${item.quantity / summary.products[0]!.quantity * 100}%` }} /></div></div><strong>{item.quantity}<small>{t('portion')}</small></strong></div>)}</div>
           : <p className="workspace-report-empty">{t('noSales')}</p>}
