@@ -139,7 +139,7 @@ final class CounterSessionOperations
         if ($orderedAmount > 9007199254740991 || $openAmount > 9007199254740991) throw new HttpException(409, 'counter_amount_limit');
         $sessionDiningMode = ['diningModeUuid' => null, 'diningModeName' => null];
         $diningModeRows = $rows;
-        usort($diningModeRows, static fn(array $left, array $right): int => $left['createdAt'] <=> $right['createdAt']);
+        usort($diningModeRows, static fn(array $left, array $right): int => strcmp((string) ($left['createdAt'] ?? ''), (string) ($right['createdAt'] ?? '')));
         foreach ($diningModeRows as $diningModeRow) {
             if (is_string($diningModeRow['diningModeUuid'] ?? null) || is_string($diningModeRow['diningModeName'] ?? null)) {
                 $sessionDiningMode = [
@@ -482,7 +482,7 @@ final class CounterSessionOperations
         $session = $this->sessions->activeSession($counter);
         if (!$counter->isEnabled() || !$session instanceof CounterSession || $view['paymentHold'] || count($view['orders']) >= 200) throw new HttpException(409, 'staff_order_locked');
         $modeRows = $view['orders'];
-        usort($modeRows, static fn(array $left, array $right): int => $left['createdAt'] <=> $right['createdAt']);
+        usort($modeRows, static fn(array $left, array $right): int => strcmp((string) ($left['createdAt'] ?? ''), (string) ($right['createdAt'] ?? '')));
         $diningMode = null;
         foreach ($modeRows as $modeRow) {
             $current = array_filter(['diningModeUuid' => $modeRow['diningModeUuid'] ?? null, 'diningModeName' => $modeRow['diningModeName'] ?? null], static fn(mixed $value): bool => is_string($value) && $value !== '');
