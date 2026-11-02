@@ -97,8 +97,8 @@ export function ListFeedback({ state, empty, hint, icon: Icon }: { state: { load
   if (state.items.length) return null
   return <div className="workspace-empty"><span className="empty-illustration"><Icon size={30} strokeWidth={1.3} /></span><h2>{t(empty)}</h2><p>{t(hint)}</p></div>
 }
-export function StatusPill({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
-  return <span className={`workspace-status ${muted ? 'muted' : ''}`}><i />{children}</span>
+export function StatusPill({ children, muted = false, tone }: { children: ReactNode; muted?: boolean; tone?: 'positive' | 'negative' }) {
+  return <span className={`workspace-status ${muted ? 'muted' : ''} ${tone ? `is-${tone}` : ''}`}><i />{children}</span>
 }
 export function RecordIdentity({ id, children }: { id: string; children?: ReactNode }) {
   const { t } = useI18n()

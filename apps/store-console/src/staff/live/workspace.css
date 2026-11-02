@@ -71,6 +71,8 @@
 .workspace-status { display: inline-flex; align-items: center; gap: 5px; border-radius: 5px; background: #edf4e7; color: #587245; padding: 4px 6px; font-size: 10px; line-height: 1.4; white-space: nowrap; }
 .workspace-status i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
 .workspace-status.muted { background: var(--theme-paper); color: var(--theme-muted); }
+.workspace-status.is-positive { background: #edf4e7; color: #4f733d; }
+.workspace-status.is-negative { background: #fcebe7; color: #a04432; }
 .catalog-product-grid { display: grid; gap: 12px; }
 .catalog-category-sections { display: grid; gap: 28px; }
 .catalog-category-section { min-width: 0; }

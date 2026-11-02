@@ -225,13 +225,14 @@ test('kitchen product card toggles availability directly and shows every specifi
   await expect(card.getByRole('button', { name: '设为售罄', exact: true })).toBeVisible()
   await expect(card.locator('.catalog-print-flag')).toHaveText('打印小票')
   await expect(card.locator('.catalog-product-price')).toHaveText([/大份\s*¥16\.90/, /小份\s*¥12\.90/])
+  await expect(card.getByText('在售', { exact: true })).toHaveClass(/is-positive/)
   await card.getByRole('button', { name: '设为售罄', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(card.getByText('已售罄', { exact: true })).toBeVisible()
+  await expect(card.getByText('已售罄', { exact: true })).toHaveClass(/is-negative/)
   await expect(card.getByRole('button', { name: '恢复在售', exact: true })).toBeVisible()
   await expect(restoreAll).toBeEnabled()
   await restoreAll.click()
-  await expect(card.getByText('在售', { exact: true })).toBeVisible()
+  await expect(card.getByText('在售', { exact: true })).toHaveClass(/is-positive/)
   expect(requests.filter((request) => request.path.endsWith('/operations/products/availability')).map((request) => request.body)).toEqual([
     { commandUuid: expect.any(String), isSoldout: true, items: [{ uuid: productId, version }] },
     { commandUuid: expect.any(String), isSoldout: false, items: [{ uuid: productId, version }] },
