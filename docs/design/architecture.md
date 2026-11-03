@@ -53,6 +53,65 @@ Records layer boundaries, local development decisions, core compatibility, and s
 
 The admin merge helpers and independent assistant have Node tests. The backend has a `Dummy` example module and an isolated SQLite integration test configuration. The example's API is under `/api/v1/manage/dummies`; its prior Note migration identity is retained to support a forward table rename on existing databases. GitHub Actions runs project workflow, assistant, and admin composition tests, integration/business PHPUnit tests, and the composed Vite build; it intentionally excludes upstream core test suites. Interactive business flows still require separate validation. Project-owned environment loading and local commands are described in [the development guide](../operations/development.md).
 
+## Payment evolution: multiple invoices and public checkout
+
+**Status: proposed follow-up, recorded on 2026-11-03; not an implemented payment guarantee.** This section records the intended behavior for a later change. It does not enable public payment initiation, introduce metadata fields, or change existing payment flows.
+
+### Current behavior and limitations
+
+- [Trade payment creation](../../core/crud-skeleton/src/Trade/Service/OrderService.php) requires a confirmed order, reuses a linked pending Invoice, and otherwise creates a new Invoice and changes the order's current Invoice reference. The previous Invoice retains its `sourceType = trade_order` and `sourceId = orderUuid`; changing the reference does not close its provider transaction.
+- An Invoice receives its UUID and `outTradeNo` at creation, not on each `pay` call. A new Invoice has new identifiers. Huifu additionally creates its own attempt UUID and request sequence for a permitted new attempt; unresolved attempts are blocked per Invoice, not across every Invoice for the same order. See the [Huifu adapter](../../business/backend/HuifuFin/README.md).
+- [Invoice event handling](../../core/crud-skeleton/src/Trade/EventListener/OrderInvoiceListener.php) resolves the order by the Invoice's source, not its current Invoice reference. An older Invoice can therefore settle a still-payable order if amount and currency match. A second success currently returns early when the order is already paid, without a dedicated duplicate-payment record. Failed and cancelled Invoice events currently overwrite the order's `paymentStatus` without checking whether the Invoice is current. Refund events also lack current/settled-Invoice isolation.
+
+### Intended multiple-Invoice policy
+
+Provider closure can take minutes. A deliberately requested new payment may therefore create a new Invoice while the previous provider transaction is still unresolved; forcing customers to wait for closure is not the intended universal policy. Retain all Invoice/provider records. Distinguish the currently presented payment from the Invoice that actually settled the order; do not use one mutable association as the sole record of both concepts.
+
+The first verified, eligible success with the correct order amount and currency settles the order once, even if it belongs to an older Invoice. A later success on a different Invoice must not replace the settled Invoice, repeat order side effects, or disappear silently: record it for manual review. Automated refunding is not required. Repeated delivery of the same Invoice success is idempotent, not a second collection. An additional success after fulfillment or completion must still be recognized as a duplicate collection; checking only `order.status == paid` is insufficient.
+
+Failure or cancellation of a superseded Invoice must update that Invoice's own history but must not overwrite the current payment's state or downgrade an already settled order. Record the ignored stale event and its association for investigation. Apply the same isolation principle to refunds: refunding an extra collection must not make the settled order appear refunded. A success after order cancellation, an amount/currency mismatch, or another non-payable state also requires visible manual-review evidence rather than fabricated settlement. Locally cancelling an Invoice is not proof that the provider transaction was closed; a late success requires reconciliation even if the ordinary local workflow rejects it.
+
+### Proposed metadata evidence
+
+Initially, order metadata can hold the exception history rather than introducing a new exception entity. The following is illustrative, not a finalized schema or current API response:
+
+```json
+{
+  "_paymentExceptions": [
+    {
+      "type": "duplicate_payment",
+      "settledInvoiceUuid": "<settled-invoice-uuid>",
+      "extraInvoiceUuid": "<extra-invoice-uuid>",
+      "transactionId": "<provider-transaction-id>",
+      "amount": 35000,
+      "currency": "CNY",
+      "paidAt": "<provider-payment-time>",
+      "recordedAt": "<server-time>",
+      "status": "pending_review"
+    },
+    {
+      "type": "stale_invoice_event",
+      "invoiceUuid": "<superseded-invoice-uuid>",
+      "currentInvoiceUuid": "<current-invoice-uuid>",
+      "event": "cancelled",
+      "orderPaymentStatus": "paid",
+      "recordedAt": "<server-time>",
+      "effect": "ignored_for_order_state"
+    }
+  ]
+}
+```
+
+Failure events use the same stale-event structure with `event = failed`. Exception evidence should retain Invoice identifiers, relevant provider references, amounts, currencies and event/recording times, without raw provider payloads, credentials or payer personal data. Manual resolution can append the operator, resolution time, refund/reference details and a bounded note; resolving a record must not erase the original evidence or automatically refund a payment. Informational stale-event records need not all become refund work items.
+
+Server-side protection must cover every metadata creation/update path, not just the public checkout endpoint. Deduplicate extra successes by Invoice identity and stale events by Invoice/event identity (including a provider event identifier where applicable). Serialize settlement and metadata appends under an order lock and transaction so concurrent callbacks cannot settle twice or lose evidence. Metadata is an audit/display projection, not authorization or proof of payment; verified Invoice/provider records remain authoritative. If later history size or review queries require a dedicated entity, preserve the same semantics rather than relying on unbounded JSON growth. Intended validation includes concurrent successes, callback replay, old failure/cancellation after a newer payment, duplicate collection after completion, and refunding an extra collection without refunding the order.
+
+### Public checkout boundary
+
+The read-only order-UUID payment summary is now implemented under the [public order payment contract](../contracts/public-order-payment.md). It exposes a restricted Store/item/Invoice projection and configured Huifu channels, not payment-launch credentials. Anonymous lookup uses possession of the order UUID; stronger checkout credentials and payment initiation remain proposed. Store ownership comes from the trusted Trade lifecycle, not arbitrary metadata. An `outTradeNo` alone is not a payment-launch credential.
+
+Huifu initiation can return Native QR data or JSAPI launch parameters after a provider request, but it is a write operation, not a side effect of GET. Reuse the existing Huifu attempt tracking and verified notification/reconciliation path; refreshes must not blindly initiate another payment, and deliberate new attempts must be distinguished from retries. Existing app Invoice payment requires the bound payer, management payment requires an administrator, and Store Huifu initiation requires scoped employee permissions; none is an existing anonymous checkout contract. Public initiation needs explicit order-level access/anti-abuse controls and safe credential expiry/reuse behavior. Huifu JSAPI currently resolves WeChat identity from `invoice.payer`, so guest/third-party payment must not silently use the original customer or employee's identity. Public access credentials, exact routes and DTOs, and manual-review permissions remain undecided. No changes to confirm-time pricing are part of this follow-up; existing creation/replacement pricing remains in place.
+
 ## Change policy
 
 1. New business behavior belongs in `business/`.
