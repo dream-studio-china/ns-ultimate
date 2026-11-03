@@ -14,7 +14,6 @@ use App\Store\Entity\Store;
 use App\Store\Entity\StoreOrder;
 use App\Store\Service\StoreOrderServiceInterface;
 use App\Storage\Service\MediaStorageRegistry;
-use App\Trade\Entity\Order as TradeOrder;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Entity\Counter;
@@ -171,54 +170,6 @@ final class OperationsController extends RestController
             $items = array_map(fn(object $item): array => $this->row($item, $store), $query->getQuery()->getResult());
             return ['items' => $items, 'page' => $page, 'hasNext' => $page * $limit < $total, 'total' => $total];
         });
-    }
-
-    #[Route('/reporting-orders', name: 'reporting-orders', methods: ['GET'])]
-    public function reportingOrders(Request $request, string $scopeId): JsonResponse
-    {
-        $store = $this->store($scopeId, 'store:order:read');
-        return $this->respond(function () use ($request, $store): array {
-            $page = filter_var($request->query->get('page', '1'), FILTER_VALIDATE_INT);
-            $limit = filter_var($request->query->get('limit', '100'), FILTER_VALIDATE_INT);
-            if (!$page || $page < 1 || $page > 100000 || !$limit || $limit < 1 || $limit > 100) throw new HttpException(422, 'invalid_pagination');
-
-            $storeOrders = $this->em->createQueryBuilder()->select('projection.tradeOrderUuid')->from(StoreOrder::class, 'projection')
-                ->where('projection.store = :store')->getDQL();
-            $query = $this->em->createQueryBuilder()->select('tradeOrder')->from(TradeOrder::class, 'tradeOrder')
-                ->where('tradeOrder.uuid IN ('.$storeOrders.')')->setParameter('store', $store)
-                ->orderBy('tradeOrder.createdAt', 'DESC')->addOrderBy('tradeOrder.id', 'DESC');
-            $count = clone $query;
-            $total = (int) $count->select('COUNT(tradeOrder.uuid)')->resetDQLPart('orderBy')->getQuery()->getSingleScalarResult();
-            $orders = $query->setFirstResult(($page - 1) * $limit)->setMaxResults($limit)->getQuery()->getResult();
-
-            return ['items' => array_map(fn(TradeOrder $order): array => $this->reportingOrder($order), $orders),
-                'page' => $page, 'hasNext' => $page * $limit < $total, 'total' => $total];
-        });
-    }
-
-    /** @return array<string, mixed> */
-    private function reportingOrder(TradeOrder $order): array
-    {
-        $items = [];
-        foreach ($order->getItems() as $item) {
-            $snapshot = $item->getProductSnapshot();
-            $name = $snapshot['name'] ?? null;
-            $quantity = $item->getQuantity();
-            if (!is_string($name) || trim($name) === '' || $quantity < 1) continue;
-            $items[] = ['productName' => trim($name), 'quantity' => $quantity, 'unitPrice' => $item->getUnitPrice(), 'amount' => $item->getPrice()];
-        }
-
-        return [
-            'uuid' => $order->getUuid(),
-            'status' => $order->getStatus(),
-            'paymentStatus' => $order->getPaymentStatus(),
-            'paymentMethod' => $order->getPaymentMethod(),
-            'paidAt' => $order->getPaidAt()?->format(DATE_ATOM),
-            'totalAmount' => $order->getTotalAmount(),
-            'currency' => $order->getCurrency(),
-            'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
-            'orderSnapshot' => ['items' => $items],
-        ];
     }
 
     /** @return array<string, mixed> */

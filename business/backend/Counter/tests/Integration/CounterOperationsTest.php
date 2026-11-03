@@ -16,7 +16,6 @@ use App\Store\Entity\Store;
 use App\Store\Entity\StoreOrder;
 use App\Store\Service\StoreOrderServiceInterface;
 use App\Trade\Entity\Order;
-use App\Trade\Entity\OrderStoreLifecycle;
 use App\Trade\Entity\TradeOutboxMessage;
 use App\Trade\Service\OrderServiceInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -95,10 +94,7 @@ final class CounterOperationsTest extends KernelTestCase
     {
         $this->startCustomerSession();
         $base = '/counters/'.$this->counter->getUuid().'/orders/';
-        $input = [...$this->quoteInput(), 'metadata' => [
-            'source' => 'staff', 'custom' => ['label' => 'priority'],
-            'diningModeUuid' => 'dining-mode-hotpot', 'diningModeName' => 'Hotpot',
-        ]];
+        $input = [...$this->quoteInput(), 'metadata' => ['source' => 'staff', 'custom' => ['label' => 'priority']]];
         $quote = $this->data($this->request('POST', $base.'quote', $input));
         $body = [...$input, 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()];
         self::assertSame(409, $this->request('POST', $base.'create', [...$body, 'metadata' => ['source' => 'changed']])->getStatusCode());
@@ -110,9 +106,6 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame($this->counter->getUuid(), $order->getMetadata()['counterUuid']);
         self::assertSame($order->getMetadata(), $this->orderByUuid($created['orderUuid'])['metadata']);
         $this->project($created['orderUuid']);
-        $row = $this->orderByUuid($created['orderUuid']);
-        self::assertSame('dining-mode-hotpot', $row['diningModeUuid']);
-        self::assertSame('Hotpot', $row['diningModeName']);
         $replacement = [...$this->quoteInput(), 'replaceOrderUuid' => $created['orderUuid'], 'metadata' => ['source' => 'updated']];
         $newQuote = $this->data($this->request('POST', $base.'quote', $replacement));
         $result = $this->data($this->request('POST', $base.'replace', [...$replacement, 'quoteToken' => $newQuote['quoteToken'], 'commandUuid' => UUID::v4(), 'reason' => 'Update order']));
@@ -121,35 +114,10 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame($created['orderUuid'], $updated->getMetadata()['replacedOrderUuid']);
         self::assertSame(['label' => 'priority'], $updated->getMetadata()['custom']);
         self::assertSame($this->counter->getUuid(), $updated->getMetadata()['counterUuid']);
-        self::assertSame('dining-mode-hotpot', $updated->getMetadata()['diningModeUuid']);
-        self::assertSame('Hotpot', $updated->getMetadata()['diningModeName']);
         self::assertSame($updated->getMetadata(), $this->orderByUuid($result['orderUuid'])['metadata']);
         $this->project($result['orderUuid']);
         $next = $this->data($this->request('POST', $base.'replace', $this->replacementInput($result['orderUuid'])));
         self::assertSame($result['orderUuid'], $this->orderByUuid($next['orderUuid'])['metadata']['replacedOrderUuid']);
-    }
-
-    public function testCounterViewResolvesDiningModeNameFromStoreSettings(): void
-    {
-        $this->store->setSettings([
-            'order' => ['requireAcceptance' => true],
-            'diningModes' => ['version' => 1, 'modes' => [[
-                'uuid' => 'dining-mode-breakfast', 'name' => 'Breakfast', 'enabled' => true,
-            ]]],
-        ]);
-        $this->em->flush();
-        $orderUuid = $this->startCustomerSession(false);
-        $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $orderUuid]);
-        self::assertNotNull($order);
-        $order->setMetadata([...($order->getMetadata() ?? []), 'diningModeUuid' => 'dining-mode-breakfast']);
-        $this->em->flush();
-
-        $view = $this->view();
-        $row = $this->orderByUuid($orderUuid);
-        self::assertSame('dining-mode-breakfast', $view['session']['diningModeUuid']);
-        self::assertSame('Breakfast', $view['session']['diningModeName']);
-        self::assertSame('dining-mode-breakfast', $row['diningModeUuid']);
-        self::assertSame('Breakfast', $row['diningModeName']);
     }
 
     public function testStaffOrderMetadataRejectsInvalidAndReservedFields(): void
@@ -166,12 +134,7 @@ final class CounterOperationsTest extends KernelTestCase
         $this->startCustomerSession();
         $first = $this->place(); $this->project($first['orderUuid']);
         $second = $this->place(); $this->project($second['orderUuid']);
-        foreach ([$first, $second] as $source) {
-            $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
-            $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $source['orderUuid']]);
-            $order->setMetadata([...($order->getMetadata() ?? []), 'diningModeUuid' => 'dining-mode-hotpot', 'diningModeName' => 'Hotpot']);
-        }
-        $this->em->flush();
+        foreach ([$first, $second] as $source) $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
         $owner = (new User())->setUsername('merge-owner')->setEmail('merge-owner@example.test');
         $this->em->persist($owner); $this->em->flush(); $ownerUuid = $owner->getUuid();
         $this->em->clear();
@@ -187,10 +150,7 @@ final class CounterOperationsTest extends KernelTestCase
         $result = $this->data($this->request('POST', $base.'confirm', $body));
         self::assertSame($result, $this->data($this->request('POST', $base.'confirm', $body)));
         $target = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']]);
-        self::assertNotNull($target);
         self::assertSame($ownerUuid, $target->getUser()->getUuid());
-        self::assertSame('dining-mode-hotpot', $target->getMetadata()['diningModeUuid']);
-        self::assertSame('Hotpot', $target->getMetadata()['diningModeName']);
         foreach ([$first, $second] as $source) {
             self::assertSame('merged', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $source['orderUuid']])->getStatus());
             self::assertSame('cancelled', $this->em->getRepository(\App\Store\Entity\StoreOrder::class)->findOneBy(['tradeOrderUuid' => $source['orderUuid']])->getOperationalStatus());
@@ -323,44 +283,6 @@ final class CounterOperationsTest extends KernelTestCase
         $receipt = $this->em->getRepository(StaffOperation::class)->findOneBy(['commandUuid' => $result['_input']['commandUuid']]);
         self::assertSame($this->user->getUuid(), $receipt->summary()['actorUuid']);
         self::assertSame($this->store->getUuid(), $event->getPayload()['store']['uuid']);
-    }
-
-    public function testCounterOperatorCanConfirmAPendingTradeOrderAfterAcceptance(): void
-    {
-        $orderUuid = $this->startCustomerSession(false);
-        $this->project($orderUuid);
-        self::assertSame(Order::STATUS_PENDING, $this->orderByUuid($orderUuid)['status']);
-
-        $path = '/counters/'.$this->counter->getUuid().'/orders/confirm';
-        $blockedBody = ['commandUuid' => UUID::v4(), 'version' => $this->view()['version'], 'orderUuid' => $orderUuid];
-        // Store acceptance still remains authoritative: a counter operator cannot bypass it.
-        self::assertSame(409, $this->request('POST', $path, $blockedBody)->getStatusCode());
-
-        $lifecycle = $this->em->getRepository(OrderStoreLifecycle::class)->findOneBy(['tradeOrderUuid' => $orderUuid]);
-        self::assertInstanceOf(OrderStoreLifecycle::class, $lifecycle);
-        $lifecycle->markAccepted();
-        $this->em->flush();
-        $this->em->clear();
-
-        $body = ['commandUuid' => UUID::v4(), 'version' => $this->view()['version'], 'orderUuid' => $orderUuid];
-        $result = $this->data($this->request('POST', $path, $body));
-        self::assertSame($orderUuid, $result['orderUuid']);
-        self::assertSame(Order::STATUS_CONFIRMED, $result['status']);
-        self::assertSame(Order::STATUS_CONFIRMED, $this->orderByUuid($orderUuid)['status']);
-        // A replayed command returns its durable result without double-applying the transition.
-        self::assertSame($result, $this->data($this->request('POST', $path, $body)));
-    }
-
-    public function testStaffCreatedOrdersAreImmediatelyConfirmedWhenAcceptanceIsNotRequired(): void
-    {
-        $this->startCustomerSession();
-        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
-        $store->setSettings(['order' => ['requireAcceptance' => false]]);
-        $this->em->flush();
-        $this->em->clear();
-
-        $created = $this->place();
-        self::assertSame(Order::STATUS_CONFIRMED, $this->orderByUuid($created['orderUuid'])['status']);
     }
 
     public function testQuoteChangesRejectWithoutNewOrdersOrReceipts(): void
@@ -988,13 +910,12 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame(Role::SCOPE_STORE, $manager->getScopeType());
         self::assertTrue($manager->hasPermission('store:counter:update'));
         // Counter configuration must not silently grant session or order authority.
-        foreach (['store:counter_session:read', 'store:counter_session:update', 'store:counter_session:end', 'store:counter_order:read', 'store:counter_order:create', 'store:counter_order:confirm', 'store:counter_order:replace', 'store:counter_order:cancel'] as $code) {
+        foreach (['store:counter_session:read', 'store:counter_session:update', 'store:counter_session:end', 'store:counter_order:read', 'store:counter_order:create', 'store:counter_order:replace', 'store:counter_order:cancel'] as $code) {
             self::assertFalse($manager->hasPermission($code), $code);
         }
         $operator = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_counter_session_operator']);
         self::assertTrue($operator->hasPermission('store:counter_session:end'));
         self::assertTrue($operator->hasPermission('store:counter_order:create'));
-        self::assertTrue($operator->hasPermission('store:counter_order:confirm'));
         self::assertFalse($operator->hasPermission('store:counter_order:replace'));
         self::assertFalse($operator->hasPermission('store:counter_order:cancel'));
         self::assertFalse($operator->hasPermission('store:counter:update'));

@@ -77,7 +77,6 @@ final class CounterSessionOperations
     {
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $counter->getStoreUuid()]);
         if (!$store instanceof Store) throw new HttpException(409, 'invalid_counter_store');
-        $diningModeNames = $this->diningModeNames($store);
         $session = $lock ? $this->sessions->activeSession($counter) : $this->em->getRepository(CounterSession::class)->findOneBy(['counter' => $counter, 'endedAt' => null]);
         $rows = []; $openAmount = 0; $orderedAmount = 0; $paymentHold = false; $openOrders = 0;
         if ($session instanceof CounterSession) {
@@ -104,7 +103,6 @@ final class CounterSessionOperations
                     'paymentStatus' => $order->getPaymentStatus(), 'hasInvoice' => $order->getInvoiceId() !== null,
                     'currency' => $order->getCurrency(), 'totalAmount' => $order->getTotalAmount(), 'notes' => $order->getNotes(), 'metadata' => $order->getMetadata(),
                     'createdAt' => $order->getCreatedAt()->format(DATE_ATOM), 'items' => $items,
-                    ...$this->recordedDiningMode($order, $diningModeNames),
                     'canReplace' => $this->canReplace($order, $lifecycle, $storeOrder), 'canCancel' => $this->canCancel($order, $lifecycle, $storeOrder),
                     'changeBlockedReason' => $this->changeBlockedReason($order, $lifecycle, $storeOrder),
                     'cancelBlockedReason' => $this->cancelBlockedReason($order, $lifecycle, $storeOrder),
@@ -137,58 +135,12 @@ final class CounterSessionOperations
             }
         }
         if ($orderedAmount > 9007199254740991 || $openAmount > 9007199254740991) throw new HttpException(409, 'counter_amount_limit');
-        $sessionDiningMode = ['diningModeUuid' => null, 'diningModeName' => null];
-        $diningModeRows = $rows;
-        usort($diningModeRows, static fn(array $left, array $right): int => strcmp((string) ($left['createdAt'] ?? ''), (string) ($right['createdAt'] ?? '')));
-        foreach ($diningModeRows as $diningModeRow) {
-            if (is_string($diningModeRow['diningModeUuid'] ?? null) || is_string($diningModeRow['diningModeName'] ?? null)) {
-                $sessionDiningMode = [
-                    'diningModeUuid' => $diningModeRow['diningModeUuid'] ?? null,
-                    'diningModeName' => $diningModeRow['diningModeName'] ?? null,
-                ];
-                break;
-            }
-        }
         $state = ['counter' => ['uuid' => $counter->getUuid(), 'code' => $counter->getCode(), 'name' => $counter->getName(), 'enabled' => $counter->isEnabled(), 'capacity' => $counter->getCapacity()],
-            'session' => $session === null ? null : ['uuid' => $session->getUuid(), 'participantCount' => $session->getParticipantCount(), 'notes' => $session->getNotes(), 'startedAt' => $session->getStartedAt()->format(DATE_ATOM), 'revision' => $session->getRevision(), ...$sessionDiningMode],
+            'session' => $session === null ? null : ['uuid' => $session->getUuid(), 'participantCount' => $session->getParticipantCount(), 'notes' => $session->getNotes(), 'startedAt' => $session->getStartedAt()->format(DATE_ATOM), 'revision' => $session->getRevision()],
             'orders' => $rows, 'openAmount' => $openAmount, 'orderedAmount' => $orderedAmount, 'openOrderCount' => $openOrders,
             'currency' => $store->getCurrency(), 'paymentHold' => $paymentHold, 'canEnd' => $session !== null && $openOrders === 0];
         $state['version'] = StaffCommandService::version($state);
         return $state;
-    }
-
-    /** @return array<string, string> */
-    private function diningModeNames(Store $store): array
-    {
-        $modes = $store->getSettings()['diningModes']['modes'] ?? null;
-        if (!is_array($modes)) return [];
-        $names = [];
-        foreach ($modes as $mode) {
-            if (!is_array($mode)) continue;
-            $uuid = $mode['uuid'] ?? null;
-            $name = $mode['name'] ?? null;
-            if (is_string($uuid) && trim($uuid) !== '' && is_string($name) && trim($name) !== '') {
-                $names[trim($uuid)] = trim($name);
-            }
-        }
-        return $names;
-    }
-
-    /**
-     * Counter reads are authorized per store and must not depend on Trade admin grants.
-     * @param array<string, string> $diningModeNames
-     * @return array{diningModeUuid: string|null, diningModeName: string|null}
-     */
-    private function recordedDiningMode(Order $order, array $diningModeNames): array
-    {
-        $metadata = $order->getMetadata();
-        $relation = is_array($metadata['diningMode'] ?? null) ? $metadata['diningMode'] : [];
-        $uuid = $metadata['diningModeUuid'] ?? $metadata['dining_mode_uuid'] ?? $relation['uuid'] ?? null;
-        $name = $metadata['diningModeName'] ?? $metadata['dining_mode_name'] ?? $relation['name'] ?? null;
-        $uuid = is_string($uuid) && trim($uuid) !== '' ? trim($uuid) : null;
-        $name = is_string($name) && trim($name) !== '' ? trim($name) : null;
-        if ($name === null && $uuid !== null) $name = $diningModeNames[$uuid] ?? null;
-        return ['diningModeUuid' => $uuid, 'diningModeName' => $name];
     }
 
     /** The canonical version is computed before redaction so every actor sees the same state token.
@@ -403,34 +355,6 @@ final class CounterSessionOperations
     }
 
     /** @param array<string, mixed> $data
-     * @return array{before: array<string, mixed>, result: array<string, mixed>} */
-    public function confirm(Store $store, string $counterUuid, array $data): array
-    {
-        $this->fields($data, ['commandUuid', 'version', 'orderUuid']);
-        if (!is_string($data['orderUuid'] ?? null) || !UUID::is_valid($data['orderUuid'])) throw new HttpException(422, 'invalid_staff_order_confirmation');
-        $counter = $this->counter($store, $counterUuid, true);
-        $before = $this->view($counter, true);
-        StaffCommandService::expectVersion($data, $before['version']);
-        $session = $this->sessions->activeSession($counter);
-        if (!$session instanceof CounterSession) throw new HttpException(409, 'counter_session_changed');
-        $row = null;
-        foreach ($before['orders'] as $candidate) if ($candidate['uuid'] === $data['orderUuid']) { $row = $candidate; break; }
-        if ($row === null) throw new HttpException(409, 'staff_order_locked');
-        if ($row['status'] === Order::STATUS_CONFIRMED) {
-            return ['before' => ['version' => $before['version'], 'session' => $before['session'], 'order' => $row],
-                'result' => ['counterUuid' => $counterUuid, 'sessionUuid' => $session->getUuid(), 'orderUuid' => $row['uuid'], 'status' => Order::STATUS_CONFIRMED]];
-        }
-        if ($row['status'] !== Order::STATUS_PENDING) throw new HttpException(409, 'staff_order_confirm_invalid_status');
-        $order = $this->findCurrent(Order::class, ['uuid' => $row['uuid']], true);
-        if (!$order instanceof Order || $order->getInvoiceId() !== null || $order->getPaymentStatus() !== null) throw new HttpException(409, 'staff_order_locked');
-        if (!$this->workflow->can($order, 'confirm')) throw new HttpException(409, 'staff_order_confirm_blocked');
-        $this->workflow->apply($order, 'confirm');
-        $session->changed();
-        return ['before' => ['version' => $before['version'], 'session' => $before['session'], 'order' => $row],
-            'result' => ['counterUuid' => $counterUuid, 'sessionUuid' => $session->getUuid(), 'orderUuid' => $row['uuid'], 'status' => Order::STATUS_CONFIRMED]];
-    }
-
-    /** @param array<string, mixed> $data
      * @return array<string, mixed> */
     public function mergePreview(Store $store, string $counterUuid, User $actor, array $data): array
     {
@@ -446,10 +370,8 @@ final class CounterSessionOperations
         $prepared = $this->prepareMerge($store, $counterUuid, $actor, $data);
         if (!is_string($data['quoteToken'] ?? null) || !hash_equals($prepared['quote']['quoteToken'], $data['quoteToken'])) throw new HttpException(409, 'staff_order_quote_changed');
         $session = $prepared['session'];
-        $targetMetadata = ['counterUuid' => $counterUuid, 'counterSessionUuid' => $session->getUuid(), 'counterSettlement' => true];
-        $diningMode = $prepared['diningMode'];
-        if ($diningMode !== null) $targetMetadata = array_replace($targetMetadata, $diningMode);
-        $target = $this->orders->create($store, $prepared['calculation'], $prepared['owner'], null, $targetMetadata);
+        $target = $this->orders->create($store, $prepared['calculation'], $prepared['owner'], null,
+            ['counterUuid' => $counterUuid, 'counterSessionUuid' => $session->getUuid(), 'counterSettlement' => true]);
         foreach ($prepared['sources'] as $source) $this->em->persist(new OrderMerge($source->getUuid(), $target->getUuid()));
         $this->em->flush();
         foreach ($prepared['sources'] as $source) {
@@ -481,13 +403,6 @@ final class CounterSessionOperations
         StaffCommandService::expectVersion($data, $view['version']);
         $session = $this->sessions->activeSession($counter);
         if (!$counter->isEnabled() || !$session instanceof CounterSession || $view['paymentHold'] || count($view['orders']) >= 200) throw new HttpException(409, 'staff_order_locked');
-        $modeRows = $view['orders'];
-        usort($modeRows, static fn(array $left, array $right): int => strcmp((string) ($left['createdAt'] ?? ''), (string) ($right['createdAt'] ?? '')));
-        $diningMode = null;
-        foreach ($modeRows as $modeRow) {
-            $current = array_filter(['diningModeUuid' => $modeRow['diningModeUuid'] ?? null, 'diningModeName' => $modeRow['diningModeName'] ?? null], static fn(mixed $value): bool => is_string($value) && $value !== '');
-            if ($current !== []) { $diningMode = $current; break; }
-        }
         $sources = []; $quantities = []; $sourceTotal = 0;
         foreach ($view['orders'] as $row) {
             if (in_array($row['status'], self::CLOSED, true)) continue;
@@ -527,7 +442,7 @@ final class CounterSessionOperations
             'differenceAmount' => $calculation->totalAmount - $sourceTotal, 'currency' => $calculation->currency];
         $quote['quoteToken'] = StaffCommandService::version(['counterUuid' => $counterUuid, 'session' => $view['session'], 'version' => $view['version'],
             'policy' => StoreSettings::from($store->getSettings())->toArray(), 'quote' => $quote, 'calculation' => $calculation->items]);
-        return ['quote' => $quote, 'sources' => $sources, 'session' => $session, 'owner' => $owner, 'calculation' => $calculation, 'version' => $view['version'], 'diningMode' => $diningMode];
+        return ['quote' => $quote, 'sources' => $sources, 'session' => $session, 'owner' => $owner, 'calculation' => $calculation, 'version' => $view['version']];
     }
 
     /** @param array<string, mixed> $data

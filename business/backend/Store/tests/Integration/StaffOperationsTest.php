@@ -15,8 +15,6 @@ use App\Store\Entity\ProductCategory;
 use App\Store\Entity\Specification;
 use App\Store\Entity\Store;
 use App\Store\Entity\StoreOrder;
-use App\Trade\Entity\Order;
-use App\Trade\Entity\OrderItem;
 use App\Trade\Service\Catalog\CatalogResolverInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
@@ -167,31 +165,6 @@ final class StaffOperationsTest extends KernelTestCase
         self::assertSame('verified', $verified['operationalStatus']);
         self::assertSame([], $verified['allowedActions']);
         self::assertSame(3, $this->em->getRepository(StaffOperation::class)->count([]));
-    }
-
-    public function testReportingOrdersReadsTradeOrderContentAndKeepsStoreIsolation(): void
-    {
-        $tradeOrder = (new Order())->setStatus(Order::STATUS_PENDING)->setTotalAmount(2460)->setCurrency('CNY')->setPaymentStatus('unpaid');
-        $tradeOrder->addItem((new OrderItem())->setProductSnapshot(['name' => 'Trade hotpot'])->setSpecificationTitle('Large')
-            ->setQuantity(2)->setUnitPrice(1230)->setPrice(2460));
-        $otherTradeOrder = (new Order())->setStatus(Order::STATUS_COMPLETED)->setTotalAmount(990);
-        $this->em->persist($tradeOrder);
-        $this->em->persist($otherTradeOrder);
-        $this->em->persist(new StoreOrder($this->store, $tradeOrder->getUuid(), $this->store->getCode(), $this->store->getName(), null,
-            'CNY', 2460, ['items' => [['productName' => 'Stale StoreOrder snapshot', 'quantity' => 1]]], true));
-        $this->em->persist(new StoreOrder($this->other, $otherTradeOrder->getUuid(), $this->other->getCode(), $this->other->getName(), null,
-            'CNY', 990, ['items' => [['productName' => 'Other store', 'quantity' => 1]]]));
-        $this->em->flush();
-
-        $result = $this->data($this->request('GET', '/reporting-orders?page=1&limit=100'));
-        self::assertSame(1, $result['total']);
-        self::assertSame($tradeOrder->getUuid(), $result['items'][0]['uuid']);
-        self::assertSame(Order::STATUS_PENDING, $result['items'][0]['status']);
-        self::assertSame('unpaid', $result['items'][0]['paymentStatus']);
-        self::assertSame('Trade hotpot', $result['items'][0]['orderSnapshot']['items'][0]['productName']);
-        self::assertSame(2, $result['items'][0]['orderSnapshot']['items'][0]['quantity']);
-        self::assertSame(2460, $result['items'][0]['orderSnapshot']['items'][0]['amount']);
-        self::assertSame(403, $this->request('GET', '/reporting-orders', null, $this->other->getUuid())->getStatusCode());
     }
 
     public function testAvailabilityIsEnforcedByTheComposedPricingPort(): void
