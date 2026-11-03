@@ -24,6 +24,9 @@
 .resource-editor .editor-section .field { font-size: 11px; color: var(--theme-muted); gap: 8px; }
 .resource-editor .editor-section .field input, .resource-editor .editor-section .field select, .resource-editor .editor-advanced .field input { min-height: 47px; background: var(--theme-paper); border-color: var(--theme-line); border-radius: 11px; padding: 12px 14px; color: var(--theme-ink); font-size: 14px; box-shadow: none; }
 .resource-editor .editor-section .field input:focus, .resource-editor .editor-section .field select:focus, .resource-editor .editor-advanced .field input:focus { border-color: var(--brand); background: var(--theme-header); box-shadow: 0 0 0 3px var(--theme-soft); }
+.product-image-preview { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--theme-line); border-radius: 14px; background: var(--theme-paper); }
+.product-image-preview > span { color: var(--theme-muted); font-size: 11px; font-weight: 550; }
+.product-image-preview img { display: block; width: 100%; max-height: 240px; aspect-ratio: 4 / 3; border-radius: 10px; background: var(--theme-soft); object-fit: cover; }
 .editor-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .editor-toggle { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px; background: var(--theme-paper); border: 1px solid var(--theme-line); border-radius: 12px; }
 .editor-toggle strong { font-size: 12px; color: var(--theme-ink); font-weight: 550; }

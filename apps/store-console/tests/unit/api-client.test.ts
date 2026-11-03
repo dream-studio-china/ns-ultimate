@@ -132,14 +132,16 @@ describe('store-scoped permissions and adapters', () => {
     expect(() => api.remove('products', '../orders')).toThrow()
   })
   it('sends raster uploads as multipart without overriding the browser boundary', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(tokens())).mockResolvedValueOnce(json({ code: 0, data: { uuid: store, url: '/uploads/test.png' } }))
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(tokens())).mockResolvedValueOnce(json({ code: 0, data: { uuid: store, url: 'https://cdn.example.com/test.png' } }))
     const client = new ApiClient(fetcher)
     await client.login('staff', 'test-only')
-    await new StoreApi(client, store).uploadImage(new File(['test'], 'test.png', { type: 'image/png' }), store)
+    const uploaded = await new StoreApi(client, store).uploadImage(new File(['test'], 'test.png', { type: 'image/png' }), store)
     const init = fetcher.mock.calls[1]![1]!
     expect(init.body).toBeInstanceOf(FormData)
     expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined()
     expect((init.body as FormData).get('commandUuid')).toBe(store)
+    expect((init.body as FormData).get('storage')).toBe('qiniu')
+    expect(uploaded).toEqual({ uuid: store, url: 'https://cdn.example.com/test.png' })
     expect(init.credentials).toBe('omit')
   })
   it('validates server-wide result pagination and sends bounded search parameters without query expressions', async () => {

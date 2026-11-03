@@ -1,0 +1,64 @@
+import { useCallback, useMemo, useState } from 'react'
+import { CalendarDays, ChartNoAxesCombined, ReceiptText } from 'lucide-react'
+import { useI18n } from '../../shared/i18n'
+import type { StoreAccess, StoreApi } from '../adapters/live'
+import {
+  loadTradeReportingOrders,
+  readReportingDay,
+  summarizeReport,
+  type ReportPaymentMethod,
+  type ReportRange,
+} from '../reporting'
+import { ListFeedback, PageHeading, usePage } from './ui'
+
+function formatDateKey(key: string, locale: string): string {
+  const date = new Date(`${key}T12:00:00Z`)
+  return new Intl.DateTimeFormat(locale, { timeZone: 'UTC', month: '2-digit', day: '2-digit' }).format(date)
+}
+
+const paymentOrder: ReportPaymentMethod[] = ['wechat', 'alipay', 'cash', 'other', 'unrecorded']
+
+export function LiveReports({ api, access }: { api: StoreApi; access: StoreAccess }) {
+  const { t, locale } = useI18n()
+  const [range, setRange] = useState<ReportRange>('today')
+  const reportingDay = useMemo(() => readReportingDay(access.store.uuid), [access.store.uuid])
+  const load = useCallback(async () => ({
+    items: await loadTradeReportingOrders(api),
+    page: 1,
+    hasNext: false,
+  }), [api])
+  const list = usePage(load)
+  const summary = useMemo(() => summarizeReport(list.items, range, reportingDay, new Date(), access.store.timezone), [access.store.timezone, list.items, range, reportingDay])
+  const money = (cents: number) => new Intl.NumberFormat(locale, { style: 'currency', currency: access.store.currency }).format(cents / 100)
+  const payments = paymentOrder.flatMap((method) => {
+    const row = summary.payments.find((payment) => payment.method === method)
+    return row ? [row] : []
+  })
+  const rangeLabel = `${formatDateKey(summary.window.start, locale)} - ${formatDateKey(summary.window.end, locale)}`
+  return <>
+    <PageHeading eyebrow="reportEyebrow" title="reportTitle" subtitle="reportLiveSubtitle" />
+    <div className="segmented">{(['today', 'week', 'month'] as const).map((value) => <button key={value} className={range === value ? 'active' : ''} onClick={() => setRange(value)}>{t(value)}</button>)}</div>
+    <ListFeedback state={{ ...list, items: summary.orders }} empty="noReportOrders" hint="noReportOrdersHint" icon={ChartNoAxesCombined} />
+    {!list.loading && !list.error && <>
+      <section className="report-hero" aria-label={t('reportRevenue')}>
+        <p>{t('reportRevenue')}</p>
+        <h2>{money(summary.totalAmount)}</h2>
+        <span><CalendarDays size={13} />{t(range)} · {rangeLabel}</span>
+        <div className="report-hero-metrics report-live-metrics">
+          <div><ReceiptText size={18} /><p>{t('settledOrders')}</p><strong>{summary.settledOrders.length}</strong></div>
+          <div><ChartNoAxesCombined size={18} /><p>{t('pendingOrders')}</p><strong>{summary.pendingOrders.length}</strong></div>
+          <div><ReceiptText size={18} /><p>{t('avgOrder')}</p><strong>{money(summary.averageOrder)}</strong></div>
+        </div>
+      </section>
+      <p className="workspace-report-hint">{t('reportScopeHint')}</p>
+      <section className="surface-card workspace-report-card"><div className="section-heading"><h2>{t('salesRanking')}</h2><span className="section-mark">TOP PRODUCTS</span></div>
+        {summary.products.length ? <div className="sales-ranking">{summary.products.map((item, index) => <div key={item.name}><span className="rank-number">{String(index + 1).padStart(2, '0')}</span><div><h3>{item.name}</h3><div className="rank-track"><span style={{ width: `${item.quantity / summary.products[0]!.quantity * 100}%` }} /></div></div><strong>{item.quantity}<small>{t('portion')}</small></strong></div>)}</div>
+          : <p className="workspace-report-empty">{t('noSales')}</p>}
+      </section>
+      <section className="surface-card workspace-report-card"><div className="section-heading"><h2>{t('paymentMix')}</h2><span className="section-mark">{t('settledOrders')}</span></div>
+        {payments.length ? <div className="payment-mix">{payments.map(({ method, amount }) => <div key={method}><span className={`method-dot ${method === 'unrecorded' || method === 'other' ? 'unknown' : method}`} />{t(method)}<strong>{money(amount)}</strong></div>)}</div> : <p className="workspace-report-empty">{t('noRecordedPayments')}</p>}
+      </section>
+      <p className="workspace-report-hint">{t('reportDataHint')}</p>
+    </>}
+  </>
+}

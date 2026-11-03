@@ -1,8 +1,12 @@
 import { t } from '@/i18n'
 import StoreOrder from '../../../../../core/crud-admin/src/configs/collections/store/StoreOrder.js'
 import StoreOrderCounterNumbers from '../../components/StoreOrderCounterNumbers.js'
+import { createStoreOrderDiningModeField } from '../../components/StoreOrderDiningMode.js'
 
 const config = StoreOrder.StoreOrder
+const diningModeField = typeof createStoreOrderDiningModeField === 'function'
+  ? createStoreOrderDiningModeField()
+  : null
 const counterNumberField = {
   property: 'tradeOrderUuid',
   label: t('Counter number'),
@@ -20,6 +24,7 @@ export default {
     ...config.list,
     list_display: [
       ...config.list.list_display.slice(0, 3),
+      ...(diningModeField ? [diningModeField] : []),
       counterNumberField,
       ...config.list.list_display.slice(3)
     ]

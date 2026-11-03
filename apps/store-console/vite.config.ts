@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => ({
         target: loadEnv(mode, process.cwd(), 'STORE_CONSOLE_').STORE_CONSOLE_API_TARGET
           || 'http://127.0.0.1:8000',
         changeOrigin: true,
+        // The production domain currently serves a certificate for a different hostname.
         secure: false,
       },
     },

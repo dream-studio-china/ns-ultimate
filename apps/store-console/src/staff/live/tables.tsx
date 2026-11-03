@@ -1,9 +1,12 @@
-import { useCallback, useId, useState } from 'react'
+import { useCallback, useId, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ChevronDown, Clock3, LayoutGrid, LockKeyhole, Minus, Pencil, Plus, ReceiptText, UsersRound } from 'lucide-react'
+import JSZip from 'jszip'
+import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, QrCode, ReceiptText, UsersRound } from 'lucide-react'
+import { QRCodeCanvas } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
-import { can, orderActions, type OrderAction, type StoreAccess, StoreApi, type LiveCounter, type LiveOrder } from '../adapters/live'
-import { AccessNotice, EditorAdvanced, EditorPreview, EditorSection, EditorSheet, EditorToggle, ListFeedback, Notice, PageControls, PageHeading, PageScope, RecordIdentity, SearchField, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
+import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCounter, type SessionOrder } from '../adapters/live'
+import { counterQrFileNames, customerOrderingUrl } from '../table-qr'
+import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, PageControls, StatusPill, usePage, LiveSheet as Sheet } from './ui'
 import { LiveDining } from './dining'
 
 function CounterForm({ api, counter, done, onClose }: { api: StoreApi; counter: LiveCounter; done: () => void; onClose: () => void }) {
@@ -25,85 +28,138 @@ function TableGlyph() {
 }
 export function LiveTables({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t } = useI18n()
-  const [configuration, setConfiguration] = useState(!can(access, 'counter_session', 'read'))
-  return <>{can(access, 'counter_session', 'read') && can(access, 'counter', 'read') && <div className="workspace-filters">{([false, true] as const).map((value) => <button key={String(value)} aria-pressed={configuration === value} className={configuration === value ? 'active' : ''} onClick={() => setConfiguration(value)}>{t(value ? 'tableConfiguration' : 'diningBoard')}</button>)}</div>}{configuration ? <CounterConfiguration api={api} access={access} /> : <LiveDining api={api} access={access} />}</>
+  const cashier = can(access, 'counter_session', 'read')
+  const configurationAccess = can(access, 'counter', 'read')
+  const [configuration, setConfiguration] = useState(!cashier && configurationAccess)
+  const [editing, setEditing] = useState<LiveCounter | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  return <>
+    {cashier && configurationAccess && <div className="workspace-filters cashier-view-tabs">{[false, true].map((value) => <button type="button" key={String(value)} aria-pressed={configuration === value} className={configuration === value ? 'active' : ''} onClick={() => setConfiguration(value)}>{t(value ? 'tableConfiguration' : 'diningBoard')}</button>)}</div>}
+    {configuration ? <CounterConfiguration api={api} access={access} /> : <LiveDining api={api} access={access} onEdit={setEditing} refreshKey={refreshKey} />}
+    {editing && <CounterForm api={api} counter={editing} onClose={() => setEditing(null)} done={() => { setEditing(null); setRefreshKey((value) => value + 1) }} />}
+  </>
 }
 function CounterConfiguration({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t } = useI18n()
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
-  const load = useCallback((page: number) => api.counters(page, query, filter), [api, query, filter])
+  const load = useCallback(() => api.allCounters(), [api])
   const list = usePage(load, can(access, 'counter', 'read'))
   const [editing, setEditing] = useState<LiveCounter | null>(null)
+  const [selectedQr, setSelectedQr] = useState<LiveCounter | null>(null)
+  const [qrBusy, setQrBusy] = useState(false)
+  const [qrFeedback, setQrFeedback] = useState<MessageKey | null>(null)
+  const qrCanvases = useRef(new Map<string, HTMLCanvasElement>())
   const visible = list.items
-  return <><PageHeading eyebrow="tablesEyebrow" title="tables" subtitle="tablesLiveSubtitle"><span className="configuration-badge"><LayoutGrid size={13} />{t('configurationOnly')}</span></PageHeading>
-    {!can(access, 'counter', 'read') ? <AccessNotice /> : <>
-      <PageScope count={list.items.length} total={list.total} /><div className="workspace-toolbar"><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /></div>
-      <div className="workspace-filters">{(['all', 'enabled', 'disabled'] as const).map((value) => <button key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} onClick={() => { setFilter(value); list.setPage(1) }}>{t(value === 'all' ? 'allStatuses' : value === 'enabled' ? 'tableEnabled' : 'tableDisabled')}</button>)}</div>
-      <ListFeedback state={{ ...list, items: visible }} empty={query.trim() || filter !== 'all' ? 'noSearchResults' : 'firstTable'} hint={query.trim() || filter !== 'all' ? 'adjustSearch' : 'existingTablesHint'} icon={LayoutGrid} />
-      <div className="workspace-table-grid">{visible.map((counter) => <article className={`workspace-table-card ${counter.enabled ? '' : 'is-disabled'}`} key={counter.uuid}>
-        <div className="table-config-top"><strong title={counter.code}>{counter.code}</strong><StatusPill muted={!counter.enabled}>{t(counter.enabled ? 'tableEnabled' : 'tableDisabled')}</StatusPill></div><TableGlyph /><h2>{counter.name}</h2><p className="table-config-seats"><UsersRound size={14} />{counter.capacity ?? '—'} {t('capacity')}</p>
-        <div className="table-config-actions"><Button disabled={!can(access, 'counter', 'update')} onClick={() => setEditing(counter)}><Pencil size={14} />{t('edit')}</Button></div><RecordIdentity id={counter.uuid}><dt>{t('tableCode')}</dt><dd>{counter.code}</dd></RecordIdentity>
-      </article>)}</div><PageControls state={list} /><Notice subtle icon={LayoutGrid}>{t('basicTableHint')}</Notice>
+  const downloadQrs = async (counters: LiveCounter[], all: boolean) => {
+    if (qrBusy || !counters.length) return
+    setQrBusy(true)
+    setQrFeedback(null)
+    try {
+      const canvases = counters.map((counter) => {
+        const canvas = qrCanvases.current.get(counter.uuid)
+        if (!canvas) throw new Error('QR canvas is not ready')
+        return canvas
+      })
+      if (!all) {
+        downloadBlob(await canvasPngBlob(canvases[0]), counterQrFileNames(counters)[0])
+        setQrFeedback('tableQrDownloadReady')
+        return
+      }
+      const zip = new JSZip()
+      const names = counterQrFileNames(counters)
+      for (let index = 0; index < canvases.length; index += 1) {
+        zip.file(names[index], await canvasPngBlob(canvases[index]))
+      }
+      const archive = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+      downloadBlob(archive, `桌台点餐二维码-${new Date().toISOString().slice(0, 10)}.zip`)
+      setQrFeedback('tableQrDownloadAllReady')
+    } catch {
+      setQrFeedback('tableQrDownloadFailed')
+    } finally {
+      setQrBusy(false)
+    }
+  }
+  const feedback = qrFeedback && <p className={`table-qr-feedback ${qrFeedback === 'tableQrDownloadFailed' ? 'is-error' : ''}`} role="status">{t(qrFeedback)}</p>
+  return <>{!can(access, 'counter', 'read') ? <AccessNotice /> : <>
+      <ListFeedback state={{ ...list, items: visible }} empty="firstTable" hint="existingTablesHint" icon={LayoutGrid} />
+      <div className="table-qr-toolbar"><div><strong>{t('tableQrBatchTitle')}</strong><small>{t('tableQrBatchHint')}</small></div><Button loading={qrBusy} disabled={!visible.length || qrBusy} onClick={() => void downloadQrs(visible, true)}><Download size={15} />{qrBusy ? t('tableQrDownloading') : t('tableQrDownloadAll')}</Button></div>
+      {!selectedQr && feedback}
+      <div className="workspace-table-grid workspace-table-grid-compact">{visible.map((counter) => <article className={`workspace-table-card workspace-table-card-compact ${counter.enabled ? '' : 'is-disabled'}`} key={counter.uuid}>
+        <div className="table-config-top"><h2>{counter.name}</h2><Button size="mini" className="table-config-edit" aria-label={t('edit')} disabled={!can(access, 'counter', 'update')} onClick={() => setEditing(counter)}><Pencil size={13} /></Button></div><p className="table-config-seats"><UsersRound size={14} />{counter.capacity ?? '—'} {t('capacity')}</p>
+        <Button block className="table-qr-open" onClick={() => { setQrFeedback(null); setSelectedQr(counter) }}><QrCode size={14} />{t('tableQrView')}</Button>
+      </article>)}</div><PageControls state={list} detail />
+      <div className="table-qr-export-stage" aria-hidden="true">{visible.map((counter) => <QRCodeCanvas key={counter.uuid} ref={(canvas) => { if (canvas) qrCanvases.current.set(counter.uuid, canvas); else qrCanvases.current.delete(counter.uuid) }} data-table-export-qr={counter.uuid} value={customerOrderingUrl(counter.uuid, access.store.uuid)} size={320} level="M" marginSize={2} bgColor="#ffffff" fgColor="#201813" />)}</div>
     </>}
     {editing && <CounterForm api={api} counter={editing} onClose={() => setEditing(null)} done={() => { setEditing(null); list.reload() }} />}
+    {selectedQr && <Sheet open title={t('tableQrTitle')} onClose={() => { setSelectedQr(null); setQrFeedback(null) }} className="table-qr-sheet">
+      <div className="table-qr-dialog"><header><span>{t('tableNumber')}</span><h2>{selectedQr.name}</h2><small>{selectedQr.code}</small></header><div className="table-qr-code"><QRCodeCanvas data-table-qr={selectedQr.uuid} value={customerOrderingUrl(selectedQr.uuid, access.store.uuid)} size={220} level="M" marginSize={2} bgColor="#ffffff" fgColor="#201813" title={`${selectedQr.name || selectedQr.code} ${t('tableQrTitle')}`} /></div><p className="table-qr-hint">{t('tableQrScanHint')}</p><code className="table-qr-url" title={customerOrderingUrl(selectedQr.uuid, access.store.uuid)}>{customerOrderingUrl(selectedQr.uuid, access.store.uuid)}</code><Button block className="table-qr-download" loading={qrBusy} disabled={qrBusy} onClick={() => void downloadQrs([selectedQr], false)}><Download size={14} />{t('tableQrDownload')}</Button>{feedback}</div>
+    </Sheet>}
   </>
 }
 
-const statusLabels: Record<string, MessageKey> = { pending_validation: 'statePendingValidation', awaiting_inventory: 'stateAwaitingInventory', accepted: 'stateAccepted', rejected: 'stateRejected', fulfillment_pending: 'stateFulfillmentPending', fulfilling: 'stateFulfilling', fulfilled: 'stateFulfilled', verified: 'stateVerified', cancelled: 'stateCancelled' }
+function canvasPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('PNG generation failed')), 'image/png')
+  })
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+const statusLabels: Record<string, MessageKey> = { draft: 'diningDraft', pending: 'diningPending', confirmed: 'diningConfirmed', paid: 'diningPaid', fulfilled: 'stateFulfilled', completed: 'diningCompleted', cancelled: 'stateCancelled', refunded: 'diningRefunded', merged: 'diningMerged' }
+const hiddenOrderStatuses = new Set(['cancelled', 'refunded', 'merged'])
+interface CounterTradeOrder {
+  order: SessionOrder
+  counter: CounterSessionView['counter']
+  currency: string
+}
+
 export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t, locale } = useI18n()
-  const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
-  const load = useCallback((page: number) => api.orders(page, query, status), [api, query, status])
-  const list = usePage(load, can(access, 'order', 'read'))
-  const [selected, setSelected] = useState<string | null>(null)
-  const visible = list.items
-  const writable = orderActions.some((action) => can(access, 'order', action))
-  return <><PageHeading eyebrow="ordersEyebrow" title={writable ? 'storeOrders' : 'readOnlyOrders'} subtitle="ordersLiveSubtitle"><span className="configuration-badge"><LockKeyhole size={13} />{t(writable ? 'orderOperations' : 'readOnly')}</span></PageHeading>
-    {!can(access, 'order', 'read') ? <AccessNotice /> : <>
-      <PageScope count={list.items.length} total={list.total} /><SearchField server value={query} onChange={(value) => { setQuery(value); list.setPage(1) }} /><label className="field order-status-filter">{t('orderStatus')}<select value={status} onChange={(event) => { setStatus(event.target.value); list.setPage(1) }}><option value="all">{t('allStatuses')}</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label><ListFeedback state={{ ...list, items: visible }} empty={query.trim() || status !== 'all' ? 'noSearchResults' : 'firstOrder'} hint={query.trim() || status !== 'all' ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
-      <div className="workspace-order-list">{visible.map((order) => <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('orderReference')}</span><StatusPill muted={['cancelled', 'rejected'].includes(order.operationalStatus)}>{statusLabels[order.operationalStatus] ? t(statusLabels[order.operationalStatus]) : order.operationalStatus}</StatusPill></div><div className="order-card-body"><div><h2 title={order.tradeOrderUuid}>#{order.tradeOrderUuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, locale)}</strong></div><div className="order-card-footer"><span>{t('operationalStatusHint')}</span><Button onClick={() => setSelected(order.uuid)}>{t('view')}<ChevronDown size={14} /></Button></div></article>)}</div>
-      <PageControls state={list} /><Notice subtle icon={LockKeyhole}>{t('operationalStatusHint')}</Notice>
+  const canReadOrders = can(access, 'counter_order', 'read')
+  const load = useCallback(async () => {
+    const tables = await api.allCounterSessions()
+    const orders = new Map<string, CounterTradeOrder>()
+    for (const table of tables) {
+      if (!table.ordersVisible) continue
+      for (const order of table.orders) {
+        if (hiddenOrderStatuses.has(order.status)) continue
+        orders.set(order.uuid, { order, counter: table.counter, currency: table.currency })
+      }
+    }
+    const items = [...orders.values()].sort((left, right) => right.order.createdAt.localeCompare(left.order.createdAt) || right.order.uuid.localeCompare(left.order.uuid))
+    return { items, hasNext: false, total: items.length }
+  }, [api])
+  const list = usePage(load, canReadOrders)
+  const [selected, setSelected] = useState<CounterTradeOrder | null>(null)
+  const visible = status === 'all' ? list.items : list.items.filter(({ order }) => order.status === status)
+  return <>
+    {!canReadOrders ? <AccessNotice /> : <>
+      <label className="field order-status-filter">{t('orderStatus')}<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">{t('allStatuses')}</option>{Object.entries(statusLabels).filter(([value]) => !hiddenOrderStatuses.has(value)).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label><ListFeedback state={{ ...list, items: visible }} empty={status !== 'all' ? 'noSearchResults' : 'firstOrder'} hint={status !== 'all' ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
+      <div className="workspace-order-list">{visible.map(({ order, counter, currency }) => <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('tableNumber')} {counter.code}</span><StatusPill muted={order.status !== 'pending' && order.status !== 'confirmed'}>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill></div><div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><Button onClick={() => setSelected({ order, counter, currency })}>{t('view')}<ChevronDown size={14} /></Button></div></article>)}</div>
+      <PageControls state={list} />
     </>}
-    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail api={api} access={access} id={selected} changed={list.reload} /></Sheet>}
+    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} /></Sheet>}
   </>
 }
-function formatOrderAmount(order: LiveOrder, locale: string) { return new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100) }
+function formatOrderAmount(order: SessionOrder, currency: string, locale: string) { return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(order.totalAmount / 100) }
 function formatDate(value: string, locale: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
-function snapshotItems(snapshot: unknown): { name?: string; quantity?: number }[] {
-  if (!snapshot || typeof snapshot !== 'object' || !('items' in snapshot) || !Array.isArray(snapshot.items)) return []
-  return snapshot.items.flatMap((item: unknown) => {
-    if (!item || typeof item !== 'object') return []
-    const value = item as Record<string, unknown>
-    const product = value.productSnapshot && typeof value.productSnapshot === 'object' ? value.productSnapshot as Record<string, unknown> : null
-    const name = typeof value.productName === 'string' ? value.productName : typeof product?.name === 'string' ? product.name : undefined
-    const quantity = typeof value.quantity === 'number' && Number.isInteger(value.quantity) && value.quantity > 0 ? value.quantity : undefined
-    return name || quantity ? [{ name, quantity }] : []
-  })
-}
-const actionLabels: Record<OrderAction, MessageKey> = { accept: 'acceptOrder', reject: 'rejectOrder', fulfill: 'fulfillOrder', verify: 'verifyOrder' }
-function OrderDetail({ api, access, id, changed }: { api: StoreApi; access: StoreAccess; id: string; changed: () => void }) {
+function OrderDetail({ order, counter, currency }: CounterTradeOrder) {
   const { t, locale } = useI18n()
-  const load = useCallback(async () => ({ items: [await api.order(id)], hasNext: false }), [api, id])
-  const detail = usePage(load)
-  const [operation, setOperation] = useState<{ order: LiveOrder; action: OrderAction } | null>(null)
-  return <><ListFeedback state={detail} empty="emptyLive" hint="firstOrderHint" icon={ReceiptText} />{detail.items.map((order) => <div className="workspace-order-detail" key={order.uuid}>
-    <div className="order-detail-hero"><span><ReceiptText size={28} strokeWidth={1.3} /></span><p>{t('amount')}</p><strong>{formatOrderAmount(order, locale)}</strong><StatusPill>{statusLabels[order.operationalStatus] ? t(statusLabels[order.operationalStatus]) : order.operationalStatus}</StatusPill><small>{order.operationalStatus}</small></div>
-    <dl className="order-detail-meta"><dt>{t('orderNo')}</dt><dd>{order.tradeOrderUuid}</dd><dt>{t('createdAt')}</dt><dd>{formatDate(order.createdAt, locale)}</dd></dl>
-    <h3>{t('orderItems')}</h3><div className="order-snapshot-items">{snapshotItems(order.orderSnapshot).length ? snapshotItems(order.orderSnapshot).map((item, index) => <div key={index}><span className="snapshot-item-index">{String(index + 1).padStart(2, '0')}</span><span>{item.name ?? t('orderItem')}</span>{item.quantity !== undefined && <strong>×{item.quantity}</strong>}</div>) : <p className="helper">{t('noSnapshotItems')}</p>}</div>
-    {order.rejectionReason && <p className="helper">{t('rejectionReason')} · {order.rejectionReason}</p>}
-    <div className="order-operation-actions">{order.allowedActions.filter((action) => can(access, 'order', action)).map((action) => <Button key={action} color={action === 'reject' ? 'default' : 'primary'} onClick={() => setOperation({ order, action })}>{t(actionLabels[action])}</Button>)}</div>
-    <Notice icon={LockKeyhole} subtle>{t('operationalStatusHint')}</Notice><details className="workspace-advanced"><summary>{t('rawSnapshot')}<ChevronDown size={14} /></summary><pre>{JSON.stringify(order.orderSnapshot ?? null, null, 2)}</pre></details>
-  </div>)}<PageControls state={detail} detail />{operation && <OrderOperation api={api} {...operation} onClose={() => setOperation(null)} done={() => { setOperation(null); detail.reload(); changed() }} />}</>
-}
-
-function OrderOperation({ api, order, action, onClose, done }: { api: StoreApi; order: LiveOrder; action: OrderAction; onClose: () => void; done: () => void }) {
-  const { t } = useI18n()
-  const [reason, setReason] = useState('')
-  const command = useCommand({ uuid: order.uuid, version: order.version, action, reason: reason.trim() })
-  return <EditorSheet title={t(actionLabels[action])} description="orderCommandHint" onClose={onClose} onDone={done} submit={() => api.orderCommand(order, action, reason, command)} preview={<EditorPreview icon={ReceiptText} label="orderReference" name={`#${order.tradeOrderUuid.slice(0, 8).toUpperCase()}`} detail={t(statusLabels[order.operationalStatus] ?? 'orderStatus')} />}><Notice subtle>{t('orderCommandHint')}</Notice>{action === 'reject' && <label className="field">{t('rejectionReason')}<textarea required maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>}</EditorSheet>
+  return <div className="workspace-order-detail">
+    <div className="order-detail-hero"><span><ReceiptText size={28} strokeWidth={1.3} /></span><p>{t('amount')}</p><strong>{formatOrderAmount(order, currency, locale)}</strong><StatusPill>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill><small>{order.status}</small></div>
+    <dl className="order-detail-meta"><dt>{t('tableNumber')}</dt><dd>{counter.name} · {counter.code}</dd><dt>{t('orderNo')}</dt><dd>{order.uuid}</dd><dt>{t('createdAt')}</dt><dd>{formatDate(order.createdAt, locale)}</dd><dt>{t('diningMode')}</dt><dd>{order.diningModeName ?? t('diningModeNotRecorded')}</dd><dt>{t('diningPaymentState')}</dt><dd>{order.paymentStatus ?? t('diningNoPayment')}</dd></dl>
+    <h3>{t('orderItems')}</h3><div className="order-snapshot-items">{order.items.map((item, index) => <div key={`${item.specificationUuid ?? item.productName}-${index}`}><span className="snapshot-item-index">{String(index + 1).padStart(2, '0')}</span><span>{item.productName}{item.specificationName ? ` · ${item.specificationName}` : ''}</span><strong>×{item.quantity}</strong></div>)}</div>
+  </div>
 }
