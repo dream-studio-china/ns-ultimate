@@ -428,7 +428,7 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
     {paid ? <section className="dining-payment-success" role="status"><CheckCircle2 size={48} strokeWidth={1.35} /><h3>{t('paymentSuccess')}</h3><p>{t('paymentThanks')}</p><strong>{amount}</strong></section>
       : <section className="dining-payment-scan">
         <header><QrCode size={20} /><div><h3>{t('paymentScanTitle')}</h3><p>{t('paymentScanMethods')}</p></div></header>
-        <div className="dining-payment-code"><QRCodeSVG className="dining-payment-qr" value={paymentUrl} size={208} level="M" marginSize={1} bgColor="#ffffff" fgColor="#201813" /><p>{t('paymentQrHint')}</p></div>
+        <div className="dining-payment-code"><QRCodeSVG className="dining-payment-qr" value={paymentUrl} size={208} level="M" marginSize={1} bgColor="#ffffff" fgColor="#201813" /><p>{t('paymentQrHint')}</p><a className="dining-payment-url" href={paymentUrl} target="_blank" rel="noreferrer">{paymentUrl}</a></div>
       </section>}
     {printPending && <Notice>{t('paymentPrintPending')}</Notice>}
     {error && <Notice>{t(error)}</Notice>}

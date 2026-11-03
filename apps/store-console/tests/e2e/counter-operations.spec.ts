@@ -177,6 +177,9 @@ test('payment QR opens the customer payment entry without starting Huifu directl
   await page.getByRole('button', { name: '收款', exact: true }).click()
   const paymentDialog = page.getByRole('dialog', { name: '订单收款' })
   await expect(page.locator('.dining-payment-qr')).toBeVisible()
+  const paymentUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/payment/index.html?orderUuid=10000000-0000-4000-8000-000000000009&storeUuid=10000000-0000-4000-8000-000000000001'
+  await expect(page.locator('.dining-payment-url')).toHaveText(paymentUrl)
+  await expect(page.getByRole('link', { name: paymentUrl, exact: true })).toHaveAttribute('href', paymentUrl)
   await expect(page.getByRole('button', { name: '生成收款码', exact: true })).toHaveCount(0)
   await expect(page.getByRole('link', { name: '打开用户端收款页', exact: true })).toHaveCount(0)
   const printReceipt = page.getByRole('button', { name: '打印结账小票', exact: true })
