@@ -6,6 +6,7 @@ namespace NsUltimate\Business\HuifuFin\Service\Configuration;
 
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\HuifuFin\Entity\HuifuMerchant;
+use NsUltimate\Business\HuifuFin\Entity\HuifuMerchantStoreGrant;
 use NsUltimate\Business\HuifuFin\Entity\HuifuPaymentAttempt;
 use NsUltimate\Business\HuifuFin\Entity\HuifuProviderProfile;
 use NsUltimate\Business\HuifuFin\Entity\StoreHuifuSetting;
@@ -93,6 +94,25 @@ final class HuifuProfileResolver
         }
 
         return $setting;
+    }
+
+    /** Configured channel capabilities only; does not decrypt credentials or initiate payment.
+     * @return array{channels: list<string>, defaultChannel: ?string} */
+    public function publicChannels(string $storeUuid): array
+    {
+        $empty = ['channels' => [], 'defaultChannel' => null];
+        $setting = $this->entityManager->getRepository(StoreHuifuSetting::class)->findOneBy(['storeUuid' => $storeUuid]);
+        if (!$setting instanceof StoreHuifuSetting || !$setting->isEnabled()) return $empty;
+        $merchant = $setting->getMerchant();
+        if (!$merchant instanceof HuifuMerchant || !$merchant->isEnabled() || $merchant->getProviderUuid() === null) return $empty;
+        if (!$merchant->getProvider()->isEnabled() || !$merchant->getProvider()->hasCredentials()) return $empty;
+        if ($this->entityManager->getRepository(HuifuMerchantStoreGrant::class)->findOneBy(['merchant' => $merchant, 'storeUuid' => $storeUuid]) === null) return $empty;
+        $channels = array_values(array_filter($setting->getAllowedMethods(), $merchant->allows(...)));
+
+        return [
+            'channels' => $channels,
+            'defaultChannel' => in_array($setting->getDefaultMethod(), $channels, true) ? $setting->getDefaultMethod() : ($channels[0] ?? null),
+        ];
     }
 
     /** @return array<string, string> */
