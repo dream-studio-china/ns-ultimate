@@ -4,7 +4,9 @@ import StoreOrderCounterNumbers from '../../components/StoreOrderCounterNumbers.
 import { createStoreOrderDiningModeField } from '../../components/StoreOrderDiningMode.js'
 
 const config = StoreOrder.StoreOrder
-const diningModeField = createStoreOrderDiningModeField()
+const diningModeField = typeof createStoreOrderDiningModeField === 'function'
+  ? createStoreOrderDiningModeField()
+  : null
 const counterNumberField = {
   property: 'tradeOrderUuid',
   label: t('Counter number'),
@@ -22,7 +24,7 @@ export default {
     ...config.list,
     list_display: [
       ...config.list.list_display.slice(0, 3),
-      diningModeField,
+      ...(diningModeField ? [diningModeField] : []),
       counterNumberField,
       ...config.list.list_display.slice(3)
     ]
