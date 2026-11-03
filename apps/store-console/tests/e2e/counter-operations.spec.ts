@@ -4,6 +4,8 @@ const storeId = '10000000-0000-4000-8000-000000000001'
 const counterId = '10000000-0000-4000-8000-000000000002'
 const sessionId = '10000000-0000-4000-8000-000000000003'
 const specId = '10000000-0000-4000-8000-000000000004'
+const productId = '10000000-0000-4000-8000-000000000005'
+const categoryId = '10000000-0000-4000-8000-000000000006'
 const store = { uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'USD', timezone: 'UTC' }
 const item = { specificationUuid: specId, productName: 'Soup', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }
 const stamp = '2026-10-31T10:00:00+00:00'
@@ -16,6 +18,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
   let orders: { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; diningModeUuid: string; diningModeName: string; canReplace: boolean; canCancel: boolean }[] = options.empty ? [] : [{ uuid: '10000000-0000-4000-8000-000000000009', status: initialStatus, operationalStatus: initialStatus === 'completed' ? 'fulfilled' : 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: '', createdAt: stamp, items: [item], diningModeUuid: 'dining-mode-hotpot', diningModeName: '火锅', canReplace: initialStatus === 'confirmed', canCancel: initialStatus === 'pending' || initialStatus === 'confirmed' }]
   const receipts = new Map<string, Record<string, unknown>>()
   const version = () => revision.toString(16).padStart(64, 'a')
+  const newOrderUuid = () => `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
   const view = () => {
     const base = { counter: { uuid: counterId, code: 'A01', name: 'Window table', capacity: 4, enabled: true }, session,
       currency: 'USD', canEnd: session !== null && orders.every((order) => ['cancelled', 'completed'].includes(order.status)), version: version() }
@@ -52,6 +55,22 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     if (path.endsWith('/counter-operations/counters')) return list([view()])
     if (path.endsWith(`/counter-operations/counters/${counterId}`)) return respond(view())
     if (path.endsWith('/counter-operations/catalog')) return list([{ uuid: specId, productName: 'Soup', name: 'Regular', price: 1590, available: true }])
+    if (path === '/api/v1/app/products') return route.fulfill({ json: { code: 0, data: [{ id: 1, uuid: productId, name: 'Soup', status: 'active', metadata: null, category: { id: 1, uuid: categoryId, name: 'Menu', enabled: true }, specifications: [{ id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', sort: 0 }] }], paginator: { page: 1, has_next: false } } })
+    if (path === '/api/v1/app/orders' && method === 'POST') {
+      if (options.conflict) return route.fulfill({ status: 409, json: { code: 409, message: 'order_changed' } })
+      if (options.uncertain && !failed) { failed = true; return route.abort('failed') }
+      revision++
+      const createdUuid = newOrderUuid()
+      const quantities = new Map((body!.items as { specificationUuid: string; quantity: number }[]).map((entry) => [entry.specificationUuid, entry.quantity]))
+      orders.push({ uuid: createdUuid, status: 'pending', operationalStatus: 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590 * (quantities.get(specId) ?? 1), notes: String(body!.notes ?? ''), createdAt: stamp, items: [{ ...item, quantity: quantities.get(specId) ?? 1, amount: 1590 * (quantities.get(specId) ?? 1) }], diningModeUuid: 'dining-mode-hotpot', diningModeName: '火锅', canReplace: true, canCancel: true })
+      return respond({ uuid: createdUuid })
+    }
+    const appOrderConfirm = path.match(new RegExp('^/api/v1/app/orders/([0-9a-f-]{36})/confirm$'))
+    if (appOrderConfirm && method === 'POST') {
+      const orderUuid = appOrderConfirm[1]!
+      orders = orders.map((order) => order.uuid === orderUuid ? { ...order, status: 'confirmed' } : order)
+      return respond({ uuid: orderUuid, status: 'confirmed' })
+    }
     if (method === 'POST' && path.includes('/counter-operations/counters/')) {
       if (path.endsWith('/orders/quote')) {
         const quantity = (body!.items as { quantity: number }[])[0]!.quantity
@@ -82,7 +101,7 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
         result.status = 'confirmed'
       }
       if (path.endsWith('/orders/create') || path.endsWith('/orders/replace')) {
-        const uuid = `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
+        const uuid = newOrderUuid()
         const quantity = (body!.items as { quantity: number }[])[0]!.quantity
         if (path.endsWith('/orders/replace')) {
           expect(body!.reason).toBeTruthy()
@@ -109,26 +128,26 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
 }
 
 async function viewTable(page: Page) {
-  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
-  await expect(page.getByRole('button', { name: '点单／加菜', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await expect(page.getByRole('button', { name: '加单', exact: true })).toBeVisible()
 }
 async function quote(page: Page) {
-  await page.getByRole('button', { name: '点单／加菜', exact: true }).click()
+  await page.getByRole('button', { name: '加单', exact: true }).click()
   await page.getByRole('button', { name: '加菜 Soup Regular', exact: true }).click()
-  await page.getByRole('button', { name: '获取服务端报价', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '确认服务端报价', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认下单', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '订单确认', exact: true })).toBeVisible()
 }
 
 for (const width of [320, 390, 768, 1280]) {
   test(`customer-opened dining allows staff additions and eligible edits at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
-    const requests = await setup(page)
+    const requests = await setup(page, { customerOrder: true })
     const card = page.locator('.dining-card')
     await expect(card).toContainText('Window table')
     await expect(card).toContainText('用餐中')
     await expect(card).toContainText('点餐方式')
     await expect(card).toContainText('火锅')
-    await expect(card.getByRole('button', { name: '查看桌次', exact: true })).toBeVisible()
+    await expect(card.getByRole('button', { name: 'Window table', exact: true })).toBeVisible()
     expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
     await viewTable(page)
     await expect(page.locator('.dining-detail-hero')).toContainText('点餐方式')
@@ -139,18 +158,18 @@ for (const width of [320, 390, 768, 1280]) {
     await expect(page.getByRole('button', { name: '结束桌次', exact: true })).toHaveCount(0)
     await quote(page)
     await expect(page.getByRole('dialog').last()).toContainText('$15.90')
-    await page.getByRole('button', { name: '确认下单', exact: true }).click()
+    await page.getByRole('button', { name: '创建订单', exact: true }).click()
     await expect(page.locator('.dining-round')).toHaveCount(2)
     await quote(page)
-    await page.getByRole('button', { name: '确认下单', exact: true }).click()
+    await page.getByRole('button', { name: '创建订单', exact: true }).click()
     await expect(page.locator('.dining-round')).toHaveCount(3)
-    await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(2)
+    await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(3)
     await expect(page.getByRole('button', { name: '取消批次', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: '开台', exact: true })).toHaveCount(0)
     expect(requests.some((request) => request.path.endsWith('/open'))).toBe(false)
-    expect(requests.filter((request) => request.path.endsWith('/orders/create'))).toHaveLength(2)
+    expect(requests.filter((request) => request.path === '/api/v1/app/orders' && request.method === 'POST')).toHaveLength(2)
     expect(requests.some((request) => request.path.endsWith('/orders/replace') || request.path.endsWith('/cancel'))).toBe(false)
-    expect(requests.some((request) => request.path.includes('/app/orders') || request.path.includes('/payment'))).toBe(false)
+    expect(requests.some((request) => request.path.includes('/payment'))).toBe(false)
     expect(requests.some((request) => request.path.startsWith('/api/v1/manage/orders/'))).toBe(false)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
@@ -194,16 +213,15 @@ test('payment QR opens the customer payment entry without starting Huifu directl
 
 test('an edit-only employee can modify a customer order with a reviewed quote and reason', async ({ page }) => {
   const requests = await setup(page, { customerOrder: true, editOnly: true })
-  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
-  await expect(page.getByRole('button', { name: '点单／加菜', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await expect(page.getByRole('button', { name: '加单', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '修改批次', exact: true }).click()
-  await page.getByLabel('数量 Soup Regular', { exact: true }).fill('2')
+  await page.getByRole('button', { name: '增加数量 Soup Regular', exact: true }).click()
   await page.getByLabel('操作原因', { exact: true }).fill('Guest requested two')
   await page.getByRole('button', { name: '获取服务端报价', exact: true }).click()
   await expect(page.getByRole('dialog').last()).toContainText('$31.80')
   await page.getByRole('button', { name: '确认下单', exact: true }).click()
-  await expect(page.locator('.dining-round')).toHaveCount(2)
-  await expect(page.locator('.dining-round').first()).toContainText('已取消')
+  await expect(page.locator('.dining-round')).toHaveCount(1)
   const write = requests.find((request) => request.path.endsWith('/orders/replace'))!
   expect(write.body).toMatchObject({ replaceOrderUuid: '10000000-0000-4000-8000-000000000009', reason: 'Guest requested two', quoteToken: 'f'.repeat(64), commandUuid: expect.any(String) })
   expect(write.body).not.toHaveProperty('user')
@@ -212,11 +230,11 @@ test('an edit-only employee can modify a customer order with a reviewed quote an
 
 test('session readers without counter-order grants see the session but no order rows or amounts', async ({ page }) => {
   const requests = await setup(page, { sessionOnly: true })
-  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.getByRole('dialog').getByText('当前账号可查看场次，但没有关联订单及金额的读取权限。', { exact: true })).toBeVisible()
   await expect(page.locator('.dining-round')).toHaveCount(0)
   await expect(page.locator('.dining-detail-hero')).not.toContainText('未结订单金额')
-  for (const name of ['点单／加菜', '修改批次', '人数与备注', '结束桌次']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  for (const name of ['加单', '修改批次', '人数与备注', '结束桌次']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   expect(requests.some((request) => request.path.endsWith('/catalog'))).toBe(false)
 })
 
@@ -267,65 +285,66 @@ test('an eligible order can be cancelled and closes the order dialog', async ({ 
 
 test('cancellation and replacement use independent grants', async ({ page }) => {
   await setup(page, { customerOrder: true, editOnly: true })
-  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.getByRole('button', { name: '修改批次', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '取消订单', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeDisabled()
 })
 
 test('cancel-only staff can cancel without ordering or replacement access', async ({ page }) => {
   await setup(page, { customerOrder: true, cancelOnly: true })
-  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '点单／加菜', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '加单', exact: true })).toHaveCount(0)
 })
 
 test('read-only dining grants never expose commands or load the menu', async ({ page }) => {
-  const requests = await setup(page, { readOnly: true })
-  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
+  const requests = await setup(page, { readOnly: true, customerOrder: true })
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.locator('.dining-round')).toHaveCount(1)
-  for (const name of ['开台', '点单／加菜', '修改桌次', '结束桌次', '修改批次', '取消订单', '取消批次']) {
+  for (const name of ['开台', '加单', '结算', '修改桌次', '结束桌次', '修改批次', '取消批次']) {
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
+  await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeDisabled()
   expect(requests.some((request) => request.path.endsWith('/catalog') || request.method !== 'GET' && request.path.includes('/counter-operations/'))).toBe(false)
 })
 
 test('quote conflicts keep the reviewed cart without pretending an order succeeded', async ({ page }) => {
-  await setup(page, { conflict: true })
+  await setup(page, { conflict: true, customerOrder: true })
   await viewTable(page); await quote(page)
-  await page.getByRole('button', { name: '确认下单', exact: true }).click()
+  await page.getByRole('button', { name: '创建订单', exact: true }).click()
   await expect(page.getByRole('dialog').last().getByRole('alert')).toContainText('记录已变化')
-  await expect(page.getByRole('button', { name: '返回修改', exact: true })).toBeDisabled()
-  await expect(page.locator('.dining-round')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '返回修改', exact: true })).toBeEnabled()
+  await expect(page.locator('.dining-card')).toContainText('1 订单批次')
 })
 
-test('an uncertain committed order retries with its original durable command key', async ({ page }) => {
-  const requests = await setup(page, { uncertain: true })
+test('an uncertain order submission retries with the unchanged order payload', async ({ page }) => {
+  const requests = await setup(page, { uncertain: true, customerOrder: true })
   await viewTable(page); await quote(page)
-  await page.getByRole('button', { name: '确认下单', exact: true }).click()
+  await page.getByRole('button', { name: '创建订单', exact: true }).click()
   await expect(page.getByRole('dialog').last().getByRole('alert')).toContainText('网络异常')
-  await page.getByRole('button', { name: '确认下单', exact: true }).click()
+  await page.getByRole('button', { name: '创建订单', exact: true }).click()
   await expect(page.locator('.dining-round')).toHaveCount(2)
-  const writes = requests.filter((request) => request.path.endsWith('/orders/create'))
+  const writes = requests.filter((request) => request.path === '/api/v1/app/orders' && request.method === 'POST')
   expect(writes).toHaveLength(2)
   expect(writes[0]!.body).toEqual(writes[1]!.body)
 })
 
 test('offline dining submission is paused before sending a write', async ({ page, context }) => {
-  const requests = await setup(page)
+  const requests = await setup(page, { customerOrder: true })
   await viewTable(page); await quote(page)
   await context.setOffline(true)
-  await page.getByRole('button', { name: '确认下单', exact: true }).click()
+  await page.getByRole('button', { name: '创建订单', exact: true }).click()
   await expect(page.getByRole('dialog').last().getByRole('alert')).toContainText('网络不可用')
-  expect(requests.some((request) => request.path.endsWith('/orders/create'))).toBe(false)
+  expect(requests.some((request) => request.path === '/api/v1/app/orders' && request.method === 'POST')).toBe(false)
   await context.setOffline(false)
 })
 
 test('staff cannot open or order on an empty table', async ({ page }) => {
   const requests = await setup(page, { empty: true })
-  await page.getByRole('button', { name: '查看桌次', exact: true }).click()
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.getByRole('button', { name: '开台', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '点单／加菜', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '加单', exact: true })).toHaveCount(0)
   await expect(page.locator('.dining-round')).toHaveCount(0)
   expect(requests.some((request) => request.method !== 'GET' && request.path.includes('/counter-operations/'))).toBe(false)
 })
