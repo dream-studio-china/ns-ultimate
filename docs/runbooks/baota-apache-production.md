@@ -80,6 +80,8 @@ ALIYUN_SMS_DRY_RUN=1
 
 Configure mail, Redis, and external provider values only when the feature is enabled. Use a dedicated MySQL account, never `root`; do not expose MySQL publicly. URL-encode special characters in the database password.
 
+`DEFAULT_URI` must be the public backend origin that the payment provider can reach. Huifu `notify_url` values are generated from it instead of the incoming request host, so a wrong value produces callbacks that never arrive.
+
 ### Generate JWT keys once
 
 Do this only if production keys do not already exist. Key replacement can invalidate issued tokens.

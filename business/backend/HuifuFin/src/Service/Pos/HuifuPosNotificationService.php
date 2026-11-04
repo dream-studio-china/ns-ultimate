@@ -87,28 +87,36 @@ final class HuifuPosNotificationService
         }
         $existing = $this->entityManager->getRepository(HuifuPosReceipt::class)
             ->findOneBy(['providerTransactionId' => $transactionId]);
-        if ($existing instanceof HuifuPosReceipt) {
+        // A `received` receipt may be an interrupted first delivery. Reprocess it
+        // instead of acknowledging a payment that was never applied to an invoice.
+        if ($existing instanceof HuifuPosReceipt && $existing->getStatus() !== HuifuPosReceipt::STATUS_RECEIVED) {
             return 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? '');
         }
         $amount = $this->amountToCents((string) ($data['trans_amt'] ?? ''));
         if ($amount <= 0) {
             throw new PaymentVerificationException('Huifu POS notification has an invalid amount.');
         }
-        $receipt = new HuifuPosReceipt(
-            providerTransactionId: $transactionId,
-            merchantUuid: $resolved['merchant']->getUuid(),
-            storeUuid: $device->getStoreUuid(),
-            terminalId: $terminalId,
-            amount: $amount,
-            currency: (string) ($data['currency'] ?? 'CNY'),
-            paidAt: $this->date($data['end_time'] ?? null),
-        );
-        $receipt->setRawData($this->snapshot($data));
-        $this->entityManager->persist($receipt);
-        try {
-            $this->entityManager->flush();
-        } catch (UniqueConstraintViolationException) {
-            return 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? '');
+        $receipt = $existing;
+        if (!$receipt instanceof HuifuPosReceipt) {
+            $receipt = new HuifuPosReceipt(
+                providerTransactionId: $transactionId,
+                merchantUuid: $resolved['merchant']->getUuid(),
+                storeUuid: $device->getStoreUuid(),
+                terminalId: $terminalId,
+                amount: $amount,
+                currency: (string) ($data['currency'] ?? 'CNY'),
+                paidAt: $this->date($data['end_time'] ?? null),
+            );
+            $receipt->setRawData($this->snapshot($data));
+            $this->entityManager->persist($receipt);
+            try {
+                $this->entityManager->flush();
+            } catch (UniqueConstraintViolationException) {
+                // Another delivery inserted the receipt first. Never acknowledge
+                // a receipt that may still be unprocessed; the provider retry
+                // will resume or re-check its terminal state.
+                throw new \RuntimeException('A concurrent Huifu POS notification is still being processed.');
+            }
         }
 
         $invoice = $this->entityManager->getRepository(Invoice::class)
@@ -124,29 +132,48 @@ final class HuifuPosNotificationService
                 $this->entityManager->flush();
                 throw new PaymentVerificationException('Huifu POS amount does not match the invoice.');
             }
-            if (!in_array($invoice->getStatus(), [Invoice::STATUS_PENDING, Invoice::STATUS_PAYING], true)) {
+            if ($invoice->getStatus() === Invoice::STATUS_PAID) {
+                // Core may have committed the payment before this receipt was linked.
+                if ($invoice->getTransactionId() !== $receipt->getProviderTransactionId()) {
+                    $receipt->markUnclaimed('The invoice was already settled by a different provider transaction.');
+                    $this->entityManager->flush();
+                    throw new PaymentVerificationException('Huifu POS invoice was already settled by another transaction.');
+                }
+                $receipt->setInvoice($invoice);
+                $receipt->markLinked();
+            } elseif (!in_array($invoice->getStatus(), [Invoice::STATUS_PENDING, Invoice::STATUS_PAYING], true)) {
                 $receipt->markUnclaimed('The invoice is no longer payable.');
                 $this->entityManager->flush();
                 throw new PaymentVerificationException('Huifu POS invoice is no longer payable.');
-            }
-            try {
-                $this->invoices->handleNotifyResult(new PaymentNotifyResult(
-                    payment: 'huifu-pos',
-                    outTradeNo: $invoice->getOutTradeNo(),
-                    status: Invoice::STATUS_PAID,
-                    amount: $amount,
-                    currency: $invoice->getCurrency(),
-                    transactionId: $transactionId,
-                    paidAt: $receipt->getPaidAt(),
-                    rawData: $this->snapshot($data),
-                    responseBody: 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? ''),
-                ));
-                $receipt->setInvoice($invoice);
-                $receipt->markLinked();
-            } catch (\Throwable $exception) {
-                $receipt->markUnclaimed('Invoice payment failed: '.$exception->getMessage());
-                $this->entityManager->flush();
-                throw $exception;
+            } else {
+                try {
+                    $this->invoices->handleNotifyResult(new PaymentNotifyResult(
+                        payment: 'huifu-pos',
+                        outTradeNo: $invoice->getOutTradeNo(),
+                        status: Invoice::STATUS_PAID,
+                        amount: $amount,
+                        currency: $invoice->getCurrency(),
+                        transactionId: $transactionId,
+                        paidAt: $receipt->getPaidAt(),
+                        rawData: $this->snapshot($data),
+                        responseBody: 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? ''),
+                    ));
+                    $receipt->setInvoice($invoice);
+                    $receipt->markLinked();
+                } catch (\Throwable $exception) {
+                    // Keep the receipt retryable so the next delivery retries the
+                    // invoice application instead of acknowledging a partial result.
+                    if ($this->entityManager->isOpen()) {
+                        $receipt->markProcessingError('Invoice payment failed: '.$exception->getMessage());
+                        try {
+                            $this->entityManager->flush();
+                        } catch (\Throwable) {
+                            // The receipt is already stored as `received`; preserve
+                            // the original failure instead of masking it.
+                        }
+                    }
+                    throw $exception;
+                }
             }
         } else {
             $receipt->markUnclaimed('No matching store-scoped invoice.');
@@ -171,12 +198,21 @@ final class HuifuPosNotificationService
     private function content(Request $request): array
     {
         $content = $request->request->all();
-        if ($content === []) {
-            parse_str($request->getContent(), $content);
+        if ($content !== []) {
+            return $content;
         }
-        if ($content === []) {
-            $decoded = json_decode($request->getContent(), true);
-            $content = is_array($decoded) ? $decoded : [];
+
+        $raw = $request->getContent();
+        if ($request->getContentTypeFormat() === 'json') {
+            $decoded = json_decode($raw, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        parse_str($raw, $parsed);
+        $content = [];
+        foreach ($parsed as $key => $value) {
+            $content[(string) $key] = $value;
         }
 
         return $content;

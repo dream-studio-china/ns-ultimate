@@ -147,7 +147,11 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
         self::assertCount(1, $this->huifu->requests);
         self::assertSame(1, $this->durableSubmissions);
         self::assertSame('24.00', $this->huifu->requests[0]['payload']['data']['trans_amt']);
-        self::assertStringEndsWith('/api/payment/notify/huifu/'.$attempt->getUuid(), $this->huifu->requests[0]['payload']['data']['notify_url']);
+        $notifyUrl = $this->huifu->requests[0]['payload']['data']['notify_url'];
+        self::assertStringEndsWith('/api/payment/notify/huifu/'.$attempt->getUuid(), $notifyUrl);
+        $publicOrigin = $_ENV['DEFAULT_URI'] ?? $_SERVER['DEFAULT_URI'] ?? null;
+        self::assertIsString($publicOrigin);
+        self::assertStringStartsWith(rtrim($publicOrigin, '/').'/', $notifyUrl);
 
         // Payment access must not grant private order access or cancellation rights.
         self::assertSame(404, $this->request('GET', '/api/v1/app/orders/'.$orderUuid, $this->payerToken)->getStatusCode());

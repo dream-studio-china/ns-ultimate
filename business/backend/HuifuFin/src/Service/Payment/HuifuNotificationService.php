@@ -99,7 +99,10 @@ final class HuifuNotificationService
             try {
                 $this->entityManager->flush();
             } catch (\Doctrine\DBAL\Exception\UniqueConstraintViolationException) {
-                return 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? '');
+                // Another delivery inserted the same event first. Never
+                // acknowledge an event that may still be unprocessed; the
+                // provider retry will re-check its terminal state.
+                throw new \RuntimeException('A concurrent Huifu notification is still being processed.');
             }
         }
 
@@ -218,12 +221,21 @@ final class HuifuNotificationService
     private function content(Request $request): array
     {
         $content = $request->request->all();
-        if ($content === []) {
-            parse_str($request->getContent(), $content);
+        if ($content !== []) {
+            return $content;
         }
-        if ($content === []) {
-            $decoded = json_decode($request->getContent(), true);
-            $content = is_array($decoded) ? $decoded : [];
+
+        $raw = $request->getContent();
+        if ($request->getContentTypeFormat() === 'json') {
+            $decoded = json_decode($raw, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        parse_str($raw, $parsed);
+        $content = [];
+        foreach ($parsed as $key => $value) {
+            $content[(string) $key] = $value;
         }
 
         return $content;
