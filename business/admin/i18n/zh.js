@@ -321,7 +321,7 @@ export default {
   'Async notification public key': '异步通知公钥',
   'Huifu merchant private key help': '加密存储。创建支付前必须配置。',
   'Huifu response public key help': '用于验证汇付同步响应。',
-  'Huifu async public key help': '用于验证汇付支付及 POS 异步通知。',
+  'Huifu async public key help': '用于验证汇付 POS 异步通知；在线支付回调使用汇付响应公钥。',
   'Huifu ID': '汇付编号',
   'Payment capabilities': '支付能力',
   'Huifu capabilities help': '允许的能力 JSON 列表：jspay、native、quickpay。',

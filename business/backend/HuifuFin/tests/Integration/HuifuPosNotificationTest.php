@@ -50,6 +50,9 @@ final class HuifuPosNotificationTest extends KernelTestCase
     public function testPosReceiptLinksOnlyToTheRegisteredStoreAndIsIdempotent(): void
     {
         [$privateKey, $publicKey] = $this->keyPair();
+        // POS notifications must keep using the async key even when the
+        // response key is configured with a different value.
+        [, $huifuPublicKey] = $this->keyPair();
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $cipher = self::getContainer()->get(HuifuSecretCipher::class);
         $user = (new User())->setEmail('huifu-pos@example.test')->setUsername('huifu-pos');
@@ -60,7 +63,7 @@ final class HuifuPosNotificationTest extends KernelTestCase
         $provider = new HuifuProviderProfile('POS provider', 'production', '6666000000000001', 'YMFZS');
         $provider->setCredentials([
             'merchant_private_key' => $privateKey,
-            'huifu_public_key' => $publicKey,
+            'huifu_public_key' => $huifuPublicKey,
             'async_public_key' => $publicKey,
         ], $cipher);
         $merchant = new HuifuMerchant('POS merchant', '6666000000000101', $provider);

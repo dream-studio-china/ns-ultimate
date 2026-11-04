@@ -53,8 +53,7 @@ final class HuifuPosNotificationService
             throw new PaymentVerificationException('Huifu POS notification is not signed.');
         }
         $resolved = $this->profiles->resolveForMerchant($merchantUuid, false);
-        $publicKey = $resolved['credentials']['async_public_key'] ?? $resolved['credentials']['huifu_public_key'] ?? '';
-        if ($publicKey === '' || !$this->signer->verify($signedData, $signature, $publicKey)) {
+        if (!$this->verifySignature($signedData, $signature, $resolved['credentials'])) {
             throw new PaymentVerificationException('Huifu POS notification signature verification failed.');
         }
         $huifuId = $data['huifu_id'] ?? null;
@@ -181,6 +180,24 @@ final class HuifuPosNotificationService
         $this->entityManager->flush();
 
         return 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? '');
+    }
+
+    /**
+     * POS notifications are signed by the async notification key. Keep the
+     * platform response key as a fallback for deployments that share one key.
+     *
+     * @param array<string, string> $credentials
+     */
+    private function verifySignature(string $data, string $signature, array $credentials): bool
+    {
+        foreach (['async_public_key', 'huifu_public_key'] as $name) {
+            $publicKey = $credentials[$name] ?? '';
+            if ($publicKey !== '' && $this->signer->verify($data, $signature, $publicKey)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function belongsToStore(Invoice $invoice, string $storeUuid): bool

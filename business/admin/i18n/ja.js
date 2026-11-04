@@ -315,7 +315,7 @@ export default {
   'Async notification public key': '非同期通知公開鍵',
   'Huifu merchant private key help': '暗号化して保存されます。支払い作成前に必須です。',
   'Huifu response public key help': 'Huifu の同期応答を検証します。',
-  'Huifu async public key help': 'Huifu の支払いおよび POS 非同期通知を検証します。',
+  'Huifu async public key help': 'Huifu の POS 非同期通知を検証します。オンライン決済の通知には応答公開鍵を使用します。',
   'Huifu ID': 'Huifu ID',
   'Payment capabilities': '支払い機能',
   'Huifu capabilities help': '許可する機能の JSON リスト：jspay、native、quickpay。',

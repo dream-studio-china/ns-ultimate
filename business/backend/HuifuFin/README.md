@@ -95,6 +95,11 @@ can select the original provider profile and credential version. The service
 verifies the signature, merchant, request sequence, amount, currency, and Store
 association, then applies the result through Core's invoice service.
 
+Online payment notifications are verified with the provider's
+`huifu_public_key` (the same key used for synchronous responses). POS
+notifications use `async_public_key` first. Either endpoint falls back to the
+other configured key so a single shared key still works.
+
 Rejected notifications keep the generic HTTP 400 `FAIL` response so Huifu
 retries and callers learn nothing. The precise reason, request fields, outbound
 provider request/response and the generated `notify_url` are written to the

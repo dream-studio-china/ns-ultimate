@@ -317,7 +317,7 @@ export default {
   'Async notification public key': 'Async notification public key',
   'Huifu merchant private key help': 'Encrypted at rest. Required before payments can be created.',
   'Huifu response public key help': 'Used to verify synchronous Huifu responses.',
-  'Huifu async public key help': 'Used to verify Huifu payment and POS notifications.',
+  'Huifu async public key help': 'Used to verify Huifu POS notifications. Online payment notifications use the response public key.',
   'Huifu ID': 'Huifu ID',
   'Payment capabilities': 'Payment capabilities',
   'Huifu capabilities help': 'JSON list of allowed capabilities: jspay, native, quickpay.',
