@@ -93,6 +93,12 @@ can select the original provider profile and credential version. The service
 verifies the signature, merchant, request sequence, amount, currency, and Store
 association, then applies the result through Core's invoice service.
 
+Rejected notifications keep the generic HTTP 400 `FAIL` response so Huifu
+retries and callers learn nothing. The precise reason, request fields, outbound
+provider request/response and the generated `notify_url` are written to the
+project audit log. See the [API audit logging guide](../../../docs/operations/audit-logging.md)
+for the file location, rotation and lookup commands.
+
 Duplicates are acknowledged without emitting a second payment event. The attempt
 is locked and reloaded before applying a result, so a concurrent notification or
 reconciliation query cannot downgrade a confirmed payment. A conflicting

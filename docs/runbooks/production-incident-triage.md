@@ -3,7 +3,7 @@
 ## First response
 
 1. Record the time, affected domain/routes, current release SHA, and recent deployment/config changes.
-2. Check the Baota Apache and PHP 8.5-FPM error logs. Production Monolog writes to `php://stderr`; it does not create `var/log/backend/prod.log` by default. Log paths depend on panel configuration.
+2. Check the Baota Apache and PHP 8.5-FPM error logs. Production Monolog writes to `php://stderr`; it does not create `var/log/backend/prod.log` by default. Log paths depend on panel configuration. Project API and provider-callback auditing is written separately to rotating `var/log/backend/audit-<date>.log` files; see [API audit logging](../operations/audit-logging.md).
 3. Preserve logs and the failed release. Do not run development reset commands or make broad ownership/permission changes.
 4. If the issue began immediately after a release, follow [release and rollback](release-and-rollback.md); first check whether the database migration is compatible with the old code.
 
@@ -38,10 +38,10 @@ Production dependencies intentionally omit development bundles. The integration 
 
 ## Symfony cannot create `var/cache/...` or application logs are not visible
 
-The integration Kernel uses repository-root `var/cache/backend/<env>`, outside the public document root. Symfony creates nested paths such as `prod/translations` automatically. In production, Monolog writes JSON to `php://stderr`, not to a `prod.log` file. The main `fingers_crossed` handler emits its buffered records when an error occurs and excludes 404/405.
+The integration Kernel uses repository-root `var/cache/backend/<env>`, outside the public document root. Symfony creates nested paths such as `prod/translations` automatically. In production, Monolog writes JSON to `php://stderr`, not to a `prod.log` file. The main `fingers_crossed` handler emits its buffered records when an error occurs and excludes 404/405. The project audit channel writes rotating JSON lines to `var/log/backend/audit-<date>.log` (or `AUDIT_LOG_PATH`); see [API audit logging](../operations/audit-logging.md).
 
 1. Confirm the actual PHP 8.5-FPM user/group; Baota commonly uses `www`, but verify it.
-2. Grant write access only to `var/cache/backend` and configured `APP_SHARE_DIR`; `var/log/backend` is not the production Monolog destination unless explicitly configured.
+2. Grant write access only to `var/cache/backend`, `var/log/backend` for the audit channel, and configured `APP_SHARE_DIR`.
 3. Check execute/traverse permission on all parent directories.
 4. Check the Baota site's Apache/PHP-FPM error logs. If FPM does not capture worker stderr, inspect `catch_workers_output` for the site's pool. Avoid changing a shared pool without considering its other applications.
 5. Do not make the whole repository writable or owned by the web user. If CLI cache warmup used a different owner, repair only the runtime cache directory.

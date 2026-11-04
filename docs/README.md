@@ -9,6 +9,7 @@ Start with the task below. This page is a stable map, not a second copy of confi
 | Set up and run the project | [Quickstart](../QUICKSTART.md) ([Simplified Chinese](../QUICKSTART.zh-cn.md)) | [Development and debugging](operations/development.md) |
 | Deploy the composed application | [Deployment](../DEPLOY.md) ([Simplified Chinese](../DEPLOY.zh-cn.md)) | [Docker deployment](../infra/docker/README.md) ([Simplified Chinese](../infra/docker/README.zh-cn.md)) or [production runbooks](runbooks/README.md) |
 | Release, roll back, or investigate an incident | [Production runbooks](runbooks/README.md) | Follow the procedure for your actual deployment topology |
+| Audit API calls, payments, and provider callbacks | [API audit logging](operations/audit-logging.md) | [Linked provider contract](contracts/huifu-customer-payments.md) |
 | Understand ownership and architecture | [Architecture](design/architecture.md) | [App package boundaries](../apps/README.md) and [cross-layer contracts](contracts/README.md) |
 | Understand the customer H5 checkout flow | [H5 checkout](design/h5-checkout-flow.md) ([Simplified Chinese](design/h5-checkout-flow.zh-cn.md)) | [Store console operations](contracts/store-console-operations.md) and [Store counter operations](contracts/store-console-counter-operations.md) |
 | Use, configure, or extend the assistant | [Assistant app guide](../apps/admin-agent/README.md) | [Operation contract](contracts/admin-agent.md); [design and proposals](design/admin-ai-assistant.md) |

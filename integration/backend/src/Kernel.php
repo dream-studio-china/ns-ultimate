@@ -52,6 +52,9 @@ final class Kernel extends CoreKernel
         $container->import($configDir.'/{packages}/'.$this->getEnvironment().'/*.{php,yaml}');
         $container->import($configDir.'/services.yaml');
         $container->import($configDir.'/{services}_'.$this->getEnvironment().'.yaml');
+        // Project-owned logging configuration, including the persistent audit
+        // channel that production writes to a file instead of stderr.
+        $container->import(__DIR__.'/../config/packages/*.{php,yaml}');
         // Counter's terminal merge state is application composition, not a core workflow change.
         $container->extension('framework', ['workflows' => ['order' => [
             'places' => ['merged'],

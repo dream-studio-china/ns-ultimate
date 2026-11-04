@@ -8,6 +8,8 @@ For upstream module concepts and module-level procedures, consult the [core runb
 - [Release and rollback](release-and-rollback.md) ([简体中文](release-and-rollback.zh-cn.md)) — repeatable release-directory deployment, migrations, traffic switch, and rollback.
 - [Production incident triage](production-incident-triage.md) ([简体中文](production-incident-triage.zh-cn.md)) — diagnose common Composer, environment, `open_basedir`, permissions, database, and key failures.
 
+See [API audit logging](../operations/audit-logging.md) for the persistent API and provider-callback log path, fields, credential exclusions and retention.
+
 ## Scope and safety
 
 - Examples use placeholders. Replace them with the actual domain, paths, runtime account, database version, and PHP-FPM socket; never paste secrets into Git or tickets.
