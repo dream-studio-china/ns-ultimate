@@ -63,6 +63,9 @@ final class HuifuPaymentFlowTest extends KernelTestCase
     public function testPaymentAndRefundRequireProviderConfirmation(): void
     {
         [$privateKey, $publicKey] = $this->keyPair();
+        // The online notification must use the response key even when the POS
+        // async key is configured with a different value.
+        [, $asyncPublicKey] = $this->keyPair();
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $cipher = self::getContainer()->get(HuifuSecretCipher::class);
         $user = (new User())->setEmail('huifu-flow@example.test')->setUsername('huifu-flow');
@@ -75,7 +78,7 @@ final class HuifuPaymentFlowTest extends KernelTestCase
         $provider->setCredentials([
             'merchant_private_key' => $privateKey,
             'huifu_public_key' => $publicKey,
-            'async_public_key' => $publicKey,
+            'async_public_key' => $asyncPublicKey,
         ], $cipher);
         $merchant = new HuifuMerchant('Flow merchant', '6666000000000101', $provider);
         $merchant->setCapabilities(['native']);

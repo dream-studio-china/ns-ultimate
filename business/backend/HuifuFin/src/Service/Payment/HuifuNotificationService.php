@@ -55,8 +55,7 @@ final class HuifuNotificationService
             throw new PaymentVerificationException('Huifu notification is not signed.');
         }
         $credentials = $this->profiles->resolveForAttempt($attempt)['credentials'];
-        $publicKey = $credentials['async_public_key'] ?? $credentials['huifu_public_key'] ?? '';
-        if ($publicKey === '' || !$this->signer->verify($signedData, $signature, $publicKey)) {
+        if (!$this->verifySignature($signedData, $signature, $credentials)) {
             throw new PaymentVerificationException('Huifu notification signature verification failed.');
         }
         if (($data['req_seq_id'] ?? null) !== $attempt->getReqSeqId()) {
@@ -180,6 +179,25 @@ final class HuifuNotificationService
         }
 
         return 'RECV_ORD_ID_'.(string) ($data['req_seq_id'] ?? '');
+    }
+
+    /**
+     * Online payment notifications are signed by the Huifu platform key. The
+     * separate async key belongs to POS notifications, so it is only a fallback
+     * for deployments that previously stored it for both kinds of callback.
+     *
+     * @param array<string, string> $credentials
+     */
+    private function verifySignature(string $data, string $signature, array $credentials): bool
+    {
+        foreach (['huifu_public_key', 'async_public_key'] as $name) {
+            $publicKey = $credentials[$name] ?? '';
+            if ($publicKey !== '' && $this->signer->verify($data, $signature, $publicKey)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @param array<string, mixed> $payload */
