@@ -117,6 +117,34 @@ so a confirmed record cannot be consumed directly through the generic route.
 Only a confirmed record is returned to Core. Refunds use the original payment's merchant, request date,
 request sequence, and credential version.
 
+### Core refund transaction boundary
+
+The refund workflow calls the Core invoice-source policy under the same
+source-before-Invoice lock order before sending a new provider refund request.
+For Trade invoices this rejects a non-paid order or a different linked Invoice
+before any Huifu request is made. The Core policy still rechecks eligibility
+when applying the confirmed result.
+
+Refund entry points (`request`, `refresh` and `applyToCore`) must run without a
+caller-owned outer transaction. Applying an already-confirmed Huifu refund uses
+three boundaries: a short transaction reloads and validates the Huifu record;
+Core then owns its refund reservation/finalization transactions; a final short
+transaction marks `coreApplied`. No Huifu application lock spans the Core call.
+Core's reservation-before-side-effects guard is not bypassed.
+
+The stable Core `idempotencyKey` is `huifu-refund:<refundUuid>`. If Core commits
+but marking `coreApplied` fails, reconciliation retries with the same key and
+recovers the completed Core result before marking the local record. This must
+not add the refund amount twice, dispatch another refund event, or submit a
+second provider request. Concurrent processing may require retry/reconciliation
+rather than a new refund key. Do not manually change the key to clear an
+unresolved Core refund attempt.
+
+Isolated tests cover partial application/replay, recovery after a committed full
+refund with a missing local marker, outer-transaction rejection, and source-policy
+rejection before provider submission. They do not establish real provider or
+MySQL concurrency behavior.
+
 The refund query endpoint is implemented from the product's scan-pay family. It
 must be verified against the actual contracted product before production use.
 

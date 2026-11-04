@@ -11,7 +11,9 @@ use App\Payment\Service\Adjustment\PaymentAdjustmentRegistry;
 use App\Payment\Service\InvoiceServiceInterface;
 use App\Payment\Service\PaymentGatewayRegistry;
 use App\Store\Entity\Store;
+use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderStoreLifecycle;
+use App\Trade\Service\OrderInvoiceSourcePolicy;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\HuifuFin\Client\HuifuResponseParser;
@@ -83,7 +85,9 @@ final class HuifuPaymentFlowTest extends KernelTestCase
         foreach ([$provider, $merchant, $setting] as $entity) {
             $em->persist($entity);
         }
-        $orderUuid = 'order-huifu-flow';
+        $order = (new Order())->setUser($user)->setStatus(Order::STATUS_CONFIRMED)->setTotalAmount(1000)->setCurrency('CNY');
+        $em->persist($order);
+        $orderUuid = $order->getUuid();
         $em->persist(new OrderStoreLifecycle($orderUuid, $store->getUuid()));
         $em->flush();
 
@@ -249,6 +253,7 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             $invoiceService,
             self::getContainer()->get(PaymentAdjustmentRegistry::class),
             $proof,
+            [self::getContainer()->get(OrderInvoiceSourcePolicy::class)],
         );
         $refund = $refunds->request($invoice, 400, 'Test refund');
         self::assertSame(HuifuRefund::STATUS_SUCCEEDED, $refund->getStatus());
@@ -260,7 +265,7 @@ final class HuifuPaymentFlowTest extends KernelTestCase
         self::assertSame(Invoice::STATUS_PARTIAL_REFUNDED, $invoice->getStatus());
 
         try {
-            $invoiceService->refund($invoice, 400, 'Replay the same Huifu refund', ['huifuRefundUuid' => $refund->getUuid()]);
+            $gateway->refund($invoice, 400, 1000, 'Replay the same Huifu refund', ['huifuRefundUuid' => $refund->getUuid()]);
             self::fail('A confirmed Huifu refund must not be applied twice.');
         } catch (\RuntimeException $exception) {
             self::assertStringContainsString('already been applied', $exception->getMessage());
@@ -298,6 +303,7 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             $invoiceService,
             self::getContainer()->get(PaymentAdjustmentRegistry::class),
             $proof,
+            [self::getContainer()->get(OrderInvoiceSourcePolicy::class)],
         );
         $pending = $pendingRefunds->request($invoice, 600, 'Pending refund');
         self::assertSame(HuifuRefund::STATUS_PROCESSING, $pending->getStatus());
@@ -315,8 +321,8 @@ final class HuifuPaymentFlowTest extends KernelTestCase
         $pending->markSucceeded(600);
         $em->flush();
         try {
-            $invoiceService->refund($invoice, 600, 'Apply without the HuifuFin proof', ['huifuRefundUuid' => $pending->getUuid()]);
-            self::fail('The generic refund route must not consume an unapplied Huifu refund.');
+            $gateway->refund($invoice, 600, 1000, 'Apply without the HuifuFin proof', ['huifuRefundUuid' => $pending->getUuid()]);
+            self::fail('The gateway must not consume an unapplied Huifu refund without the workflow proof.');
         } catch (\RuntimeException $exception) {
             self::assertStringContainsString('refund workflow', $exception->getMessage());
         }
