@@ -22,18 +22,30 @@ final class HuifuPaymentService
         private readonly HuifuStoreContextResolver $storeContext,
         private readonly InvoiceServiceInterface $invoices,
         private readonly HuifuOperationProof $proof,
+        private readonly ?CustomerPaymentPolicy $customerPolicy = null,
     ) {
     }
 
     /** @param array<string, mixed> $options */
     public function start(Invoice $invoice, string $channel, array $options = []): PaymentResult
     {
+        $customer = $options['_customerOrder'] ?? null;
+        if (array_key_exists('_customerOrder', $options) && !$customer instanceof CustomerPaymentContext) {
+            throw new \InvalidArgumentException('Invalid internal customer payment context.');
+        }
         if ($invoice->getId() === null) {
             throw new \RuntimeException('The Huifu payment invoice has not been persisted.');
         }
         $connection = $this->entityManager->getConnection();
+        if ($customer instanceof CustomerPaymentContext && $connection->isTransactionActive()) {
+            throw new \LogicException('Customer payment attempts must be committed outside the preparation transaction.');
+        }
         $connection->beginTransaction();
         try {
+            if ($customer instanceof CustomerPaymentContext) {
+                if ($this->customerPolicy === null) throw new \LogicException('Customer payment policy is not configured.');
+                $this->customerPolicy->assertReady($invoice, $customer, $channel);
+            }
             /** @var Invoice|null $invoice */
             $invoice = $this->entityManager->find(Invoice::class, $invoice->getId(), LockMode::PESSIMISTIC_WRITE);
             if (!$invoice instanceof Invoice) {

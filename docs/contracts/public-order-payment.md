@@ -56,7 +56,7 @@ All controller responses, including its 404/409 errors, use `Cache-Control: no-s
 
 This projection neither decrypts nor validates stored credentials, contacts Huifu, checks the payer's WeChat identity, nor guarantees browser/device or currency compatibility. In particular, JSAPI can still require WeChat sign-in. These checks remain the responsibility of the future payment initiation flow.
 
-GET never creates/replaces an Invoice, generates an attempt/request sequence, recalculates prices, confirms an order, or initiates/retries payment. It does not return a QR code, JSAPI `payInfo`, or signing material. `outTradeNo` is an identifier, not a launch credential. Public initiation and multiple-Invoice exception handling remain [proposed follow-ups](../design/architecture.md#payment-evolution-multiple-invoices-and-public-checkout).
+GET never creates/replaces an Invoice, generates an attempt/request sequence, recalculates prices, confirms an order, or initiates/retries payment. It does not return a QR code, JSAPI `payInfo`, or signing material. `outTradeNo` is an identifier, not a launch credential. Signed-in customers can use the separate [Huifu customer payment endpoint](huifu-customer-payments.md). Anonymous initiation and multiple-Invoice exception handling remain [proposed follow-ups](../design/architecture.md#payment-evolution-multiple-invoices-and-public-checkout).
 
 ## Validation
 

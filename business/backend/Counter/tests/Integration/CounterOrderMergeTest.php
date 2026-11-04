@@ -84,7 +84,15 @@ final class CounterOrderMergeTest extends KernelTestCase
 
     public function testOrderServiceDecorationIsComposed(): void
     {
-        self::assertInstanceOf(CounterTradeOrderService::class, self::getContainer()->get(OrderServiceInterface::class));
+        $service = self::getContainer()->get(OrderServiceInterface::class);
+        // Other business adapters may wrap Counter while preserving its checks.
+        while (!$service instanceof CounterTradeOrderService) {
+            $reflection = new \ReflectionObject($service);
+            self::assertTrue($reflection->hasProperty('inner'), 'The composed service must retain the Counter adapter.');
+            $service = $reflection->getProperty('inner')->getValue($service);
+            self::assertInstanceOf(OrderServiceInterface::class, $service);
+        }
+        self::assertInstanceOf(CounterTradeOrderService::class, $service);
     }
 
     public function testAuthenticatedApiMergePaymentAndFulfillmentFlow(): void
