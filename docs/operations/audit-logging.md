@@ -49,6 +49,15 @@ Credential fields are replaced with `[redacted]`, and `Authorization`, `Cookie`,
 policy forbids writing real secrets or tokens to logs. This is the only masking
 applied; other business fields and provider payloads are recorded verbatim.
 
+The redaction list is known to be incomplete. It does not cover every credential
+field accepted by the project: administrator requests that store WeChat `secret`,
+`aesKey`/`aes_key`, or `apiV3Key` values are currently recorded verbatim in the
+request and response bodies. Query strings are also logged unchanged. Until the
+list is expanded, treat the audit file as containing credential material, restrict
+read access to operators, and avoid copying raw entries from credential-management
+or payment requests into tickets. Rotate a credential that is believed to have
+been exposed through the log.
+
 The log contains full business payloads, including customer data and signed
 provider messages. Restrict read access to operators, keep it inside the backup
 and retention policy, and do not paste raw entries into public tickets.
