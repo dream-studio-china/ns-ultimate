@@ -7,6 +7,7 @@ namespace NsUltimate\Business\HuifuFin\Service\Refund;
 use App\Payment\Entity\Invoice;
 use App\Payment\Service\Adjustment\PaymentAdjustmentRegistry;
 use App\Payment\Service\InvoiceServiceInterface;
+use App\Payment\Service\InvoiceSourcePolicyInterface;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\HuifuFin\Client\HuifuClientInterface;
@@ -17,9 +18,14 @@ use NsUltimate\Business\HuifuFin\Entity\HuifuPaymentAttempt;
 use NsUltimate\Business\HuifuFin\Entity\HuifuRefund;
 use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuOperationProof;
 use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuProfileResolver;
+use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 
 final class HuifuRefundWorkflow
 {
+    /** @var array<string, InvoiceSourcePolicyInterface> */
+    private readonly array $sourcePolicies;
+
+    /** @param iterable<InvoiceSourcePolicyInterface> $sourcePolicies */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly HuifuProfileResolver $profiles,
@@ -29,12 +35,17 @@ final class HuifuRefundWorkflow
         private readonly InvoiceServiceInterface $invoices,
         private readonly PaymentAdjustmentRegistry $adjustments,
         private readonly HuifuOperationProof $proof,
+        #[AutowireIterator('payment.invoice_source_policy')] iterable $sourcePolicies = [],
     ) {
+        $policies = [];
+        foreach ($sourcePolicies as $policy) $policies[$policy::getSourceType()] = $policy;
+        $this->sourcePolicies = $policies;
     }
 
     /** @param array<string, mixed> $options */
     public function request(Invoice $invoice, int $amount, string $reason, array $options = []): HuifuRefund
     {
+        $this->assertNoOuterTransaction();
         if ($amount <= 0) {
             throw new \InvalidArgumentException('Huifu refund amount must be positive.');
         }
@@ -47,11 +58,17 @@ final class HuifuRefundWorkflow
         $attempt = null;
         $connection->beginTransaction();
         try {
+            // Match Core's source-before-Invoice lock order, and reject an
+            // ineligible source before any external refund is requested.
+            $sourcePolicy = $this->sourcePolicies[$invoice->getSourceType()] ?? null;
+            $sourcePolicy?->lock($invoice);
             /** @var Invoice|null $invoice */
             $invoice = $this->entityManager->find(Invoice::class, $invoice->getId(), LockMode::PESSIMISTIC_WRITE);
             if (!$invoice instanceof Invoice) {
                 throw new \RuntimeException('The Huifu refund invoice was not found.');
             }
+            $this->entityManager->refresh($invoice, LockMode::PESSIMISTIC_WRITE);
+            $sourcePolicy?->assertRefundable($invoice);
             if (!in_array($invoice->getStatus(), [Invoice::STATUS_PAID, Invoice::STATUS_PARTIAL_REFUNDED], true)) {
                 throw new \RuntimeException('Only a paid invoice can be refunded through Huifu.');
             }
@@ -176,6 +193,7 @@ final class HuifuRefundWorkflow
 
     public function refresh(HuifuRefund $refund): HuifuRefund
     {
+        $this->assertNoOuterTransaction();
         if (in_array($refund->getStatus(), [HuifuRefund::STATUS_FAILED, HuifuRefund::STATUS_CANCELLED], true)) {
             return $refund;
         }
@@ -264,6 +282,7 @@ final class HuifuRefundWorkflow
 
     public function applyToCore(HuifuRefund $refund): void
     {
+        $this->assertNoOuterTransaction();
         if ($refund->getId() === null) {
             throw new \RuntimeException('The Huifu refund has not been persisted.');
         }
@@ -276,6 +295,7 @@ final class HuifuRefundWorkflow
             if (!$refund instanceof HuifuRefund) {
                 throw new \RuntimeException('The Huifu refund record was not found.');
             }
+            $this->entityManager->refresh($refund, LockMode::PESSIMISTIC_WRITE);
             if ($refund->isCoreApplied()) {
                 $connection->commit();
                 return;
@@ -287,20 +307,32 @@ final class HuifuRefundWorkflow
             if (!$invoice instanceof Invoice || $invoice->getId() === null) {
                 throw new \RuntimeException('The Huifu refund has no invoice.');
             }
-            $invoice = $this->entityManager->find(Invoice::class, $invoice->getId(), LockMode::PESSIMISTIC_WRITE);
-            if (!$invoice instanceof Invoice) {
-                throw new \RuntimeException('The Huifu refund invoice was not found.');
-            }
+            // Commit validation before Core reserves/finalizes the refund in its
+            // own transactions. No provider/core side effects run under this lock.
+            $connection->commit();
+        } catch (\Throwable $exception) {
+            if ($connection->isTransactionActive()) $connection->rollBack();
+            $this->refreshAfterRollback($refund, $invoice);
+            throw $exception;
+        }
+
+        try {
             $this->invoices->refund(
                 $invoice,
                 $refund->getAmount(),
                 'Huifu refund '.$refund->getRefundNo(),
                 [
+                    // Recover a committed Core result if the final local marker
+                    // fails. Never reserve a second Core refund on retry.
+                    'idempotencyKey' => 'huifu-refund:'.$refund->getUuid(),
                     'huifuRefundUuid' => $refund->getUuid(),
                     'huifuRefundProof' => $this->proof->refund($refund->getUuid()),
                 ],
             );
-            $refund->markCoreApplied();
+
+            $connection->beginTransaction();
+            $this->entityManager->refresh($refund, LockMode::PESSIMISTIC_WRITE);
+            if (!$refund->isCoreApplied()) $refund->markCoreApplied();
             $this->entityManager->flush();
             $connection->commit();
         } catch (\Throwable $exception) {
@@ -309,6 +341,13 @@ final class HuifuRefundWorkflow
             }
             $this->refreshAfterRollback($refund, $invoice);
             throw $exception;
+        }
+    }
+
+    private function assertNoOuterTransaction(): void
+    {
+        if ($this->entityManager->getConnection()->isTransactionActive()) {
+            throw new \LogicException('Huifu refund operations must run outside an outer transaction.');
         }
     }
 
