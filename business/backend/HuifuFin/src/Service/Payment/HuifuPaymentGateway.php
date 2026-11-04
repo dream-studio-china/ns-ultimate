@@ -35,6 +35,7 @@ final class HuifuPaymentGateway implements PaymentGatewayInterface
         private readonly HuifuResponseParser $responses,
         private readonly HuifuSigner $signer,
         private readonly HuifuOperationProof $proof,
+        private readonly ?CustomerPaymentPolicy $customerPolicy = null,
     ) {
     }
 
@@ -64,6 +65,13 @@ final class HuifuPaymentGateway implements PaymentGatewayInterface
         }
         if ($attempt->getStatus() !== HuifuPaymentAttempt::STATUS_CREATED) {
             throw new \RuntimeException('The Huifu payment attempt has already been submitted or resolved.');
+        }
+        $customer = $options['_customerOrder'] ?? null;
+        if ($customer instanceof CustomerPaymentContext) {
+            if ($this->customerPolicy === null) throw new \LogicException('Customer payment policy is not configured.');
+            // Core already owns the source/Invoice transaction here. Revalidate
+            // after the durable attempt commit, before sending money instructions.
+            $this->customerPolicy->assertReady($invoice, $customer, $attempt->getChannel());
         }
         $merchant = $this->entityManager->getRepository(HuifuMerchant::class)
             ->findOneBy(['uuid' => $attempt->getMerchantUuid()]);

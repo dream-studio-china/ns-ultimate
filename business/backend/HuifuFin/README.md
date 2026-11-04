@@ -45,6 +45,16 @@ historical attempts. Credentials and descriptive fields remain editable.
 
 ## Online payment
 
+Signed-in customer initiation uses the unified `POST /api/v1/app/orders/{id}/payment`
+with `payment: huifu`, `gateway: native|jspay|quickpay` and an optional matching `tradeType`.
+It supports the order owner and globally enabled third-party payment without
+employee Store permissions. It reuses the composed Trade preparation checks and
+the Huifu attempt/proof pipeline, with an explicit commit boundary before any
+provider call. See the [customer payment contract](../../../docs/contracts/huifu-customer-payments.md)
+for payer identity, launch data, unknown outcomes and retry limitations. The
+public order payment GET remains read-only. Customer tests simulate provider
+responses/notifications only; real merchant/browser acceptance remains required.
+
 Payment initiation goes through:
 
 ```text
