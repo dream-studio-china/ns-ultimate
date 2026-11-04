@@ -3,7 +3,7 @@
 ## 首要响应
 
 1. 记录发生时间、受影响域名/路由、当前 release SHA，以及最近的部署/配置变更。
-2. 检查宝塔 Apache 和 PHP 8.5-FPM 错误日志。生产 Monolog 写入 `php://stderr`，默认不会创建 `var/log/backend/prod.log`。日志位置由面板配置决定。
+2. 检查宝塔 Apache 和 PHP 8.5-FPM 错误日志。生产 Monolog 写入 `php://stderr`，默认不会创建 `var/log/backend/prod.log`。日志位置由面板配置决定。项目 API 与支付回调审计会另外写入轮转文件 `var/log/backend/audit-<日期>.log`，参见[API 审计日志](../operations/audit-logging.md)。
 3. 保留日志和故障 release。不要运行开发重置命令，也不要大范围修改属主/权限。
 4. 若故障紧随发布出现，参照[发布与回滚](release-and-rollback.zh-cn.md)处理；先确认数据库迁移是否兼容旧代码。
 
@@ -38,10 +38,10 @@ src/Promotion/Exception/PromotionException.php does not comply with psr-4 ... Sk
 
 ## Symfony 无法创建 `var/cache/...` 或看不到应用日志
 
-集成 Kernel 将缓存写入公开文档根目录之外的项目级 `var/cache/backend/<环境>`。Symfony 会自动创建 `prod/translations` 等子目录。生产 Monolog 将 JSON 日志写入 `php://stderr`，默认不写入 `prod.log`。主 `fingers_crossed` handler 在发生错误时才输出缓冲记录，且忽略 404/405。
+集成 Kernel 将缓存写入公开文档根目录之外的项目级 `var/cache/backend/<环境>`。Symfony 会自动创建 `prod/translations` 等子目录。生产 Monolog 将 JSON 日志写入 `php://stderr`，默认不写入 `prod.log`。主 `fingers_crossed` handler 在发生错误时才输出缓冲记录，且忽略 404/405。项目审计通道将 JSON 日志轮转写入 `var/log/backend/audit-<日期>.log`（或 `AUDIT_LOG_PATH`），参见[API 审计日志](../operations/audit-logging.md)。
 
 1. 确认 PHP 8.5-FPM 的实际用户/组；宝塔常见为 `www`，但必须核实。
-2. 只给 `var/cache/backend` 和配置的 `APP_SHARE_DIR` 写权限；除非显式更改了生产日志配置，否则 `var/log/backend` 不是生产 Monolog 的输出位置。
+2. 只给 `var/cache/backend`、审计通道使用的 `var/log/backend` 和配置的 `APP_SHARE_DIR` 写权限。
 3. 检查所有上级目录的遍历（execute）权限。
 4. 检查宝塔本站 Apache/PHP-FPM 错误日志。若 FPM 未捕获 worker stderr，检查本站 pool 的 `catch_workers_output`。修改共享 pool 前要考虑其他应用。
 5. 不要让 Web 用户拥有或写入整个仓库。如果 CLI 预热缓存使用了不同属主，只修复运行时缓存目录。

@@ -56,7 +56,7 @@ ln -s /etc/ns-ultimate/backend.env \
 
 The per-site web request environment must separately provide `APP_ENV=prod` and `APP_DEBUG=0`; `.env.prod.local` alone does not select the environment before bootstrap. Ensure the Apache vhost or site-specific FPM configuration points to the active release and the PHP process can read the linked file and keys.
 
-The Kernel uses repository-root `var/cache/backend/`. Production Monolog writes to `php://stderr`, so it does not require `var/log/backend/prod.log`; check PHP-FPM/Apache error-log capture. For release directories, provision the cache per release or link only that cache path to a shared writable location. Keep `APP_SHARE_DIR` persistent and outside disposable releases. Do not replace a non-empty directory with a symlink without inspecting and preserving its contents.
+The Kernel uses repository-root `var/cache/backend/`. Production Monolog writes general logs to `php://stderr`, so it does not require `var/log/backend/prod.log`; check PHP-FPM/Apache error-log capture. The project audit channel writes rotating JSON files to `var/log/backend/audit-<date>.log` (or `AUDIT_LOG_PATH`); see [API audit logging](../operations/audit-logging.md). For release directories, provision the cache and audit log directory per release or link only those paths to a shared writable location. Keep `APP_SHARE_DIR` persistent and outside disposable releases. Do not replace a non-empty directory with a symlink without inspecting and preserving its contents.
 
 ## 3. Validate, back up, and migrate
 

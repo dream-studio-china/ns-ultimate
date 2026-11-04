@@ -80,6 +80,8 @@ ALIYUN_SMS_DRY_RUN=1
 
 仅在实际启用邮件、Redis 和外部服务时配置对应变量。使用专用 MySQL 账号，不要使用 `root`；不要将 MySQL 暴露到公网。数据库密码中的特殊字符必须 URL 编码。
 
+`DEFAULT_URI` 必须是支付服务商能够访问的公开后端地址。汇付的 `notify_url` 由它生成，而不是取自入站请求的域名；配置错误会导致回调无法送达。
+
 ### 只生成一次 JWT 密钥
 
 只有在生产密钥尚不存在时才执行。更换密钥可能导致已签发令牌失效。
@@ -198,13 +200,14 @@ PHP_BIN=/www/server/php/85/bin/php bash scripts/deploy.sh --all
 
 ## 7. 仅授权运行时目录
 
-集成 Kernel 使用以下缓存路径。生产 Monolog 将日志写到 `php://stderr`，不会写入 `var/log/backend` 下的文件：
+集成 Kernel 使用以下缓存路径。生产 Monolog 将一般日志写到 `php://stderr`，项目审计通道则轮转写入 `var/log/backend` 下的 JSON 文件：
 
 ```text
 <项目根目录>/var/cache/backend/<环境>/
+<项目根目录>/var/log/backend/
 ```
 
-缓存目录位于仓库根目录下，但不在 Web 文档根目录中。Symfony 会自动创建 `prod/translations` 等子目录。生产错误日志会输出到 PHP-FPM worker stderr；请检查宝塔 Apache/PHP-FPM 错误日志，若看不到输出，再核实是否捕获 stderr。只有缓存和配置的 `APP_SHARE_DIR` 需要 PHP-FPM 写权限。若宝塔 PHP-FPM 用户/组确实为 `www:www`：
+缓存目录位于仓库根目录下，但不在 Web 文档根目录中。Symfony 会自动创建 `prod/translations` 等子目录。生产错误日志会输出到 PHP-FPM worker stderr；请检查宝塔 Apache/PHP-FPM 错误日志，若看不到输出，再核实是否捕获 stderr。只有缓存、审计日志目录和配置的 `APP_SHARE_DIR` 需要 PHP-FPM 写权限。审计文件、轮转与保留策略参见[API 审计日志](../operations/audit-logging.md)。若宝塔 PHP-FPM 用户/组确实为 `www:www`：
 
 ```sh
 ROOT=/www/wwwroot/<项目根目录>
@@ -212,6 +215,9 @@ sudo install -d -o www -g www -m 0750 \
   "$ROOT/var/cache/backend"
 sudo chown -R www:www "$ROOT/var/cache/backend"
 sudo chmod -R u+rwX "$ROOT/var/cache/backend"
+sudo install -d -o www -g www -m 0750 "$ROOT/var/log/backend"
+sudo chown -R www:www "$ROOT/var/log/backend"
+sudo chmod -R u+rwX "$ROOT/var/log/backend"
 sudo install -d -o www -g www -m 0750 /www/secure/<应用>/data
 ```
 

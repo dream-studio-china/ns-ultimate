@@ -19,6 +19,7 @@ final class HuifuRequestFactory
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly WechatUserRepository $wechatUsers,
         private readonly StoreWechatResolver $wechatResolver,
+        private readonly string $notifyBaseUrl = '',
     ) {
     }
 
@@ -33,11 +34,7 @@ final class HuifuRequestFactory
         array $options = [],
     ): array {
         $tradeType = $attempt->getTradeType();
-        $notifyUrl = $this->urlGenerator->generate(
-            'huifu-payment-notify',
-            ['attemptUuid' => $attempt->getUuid()],
-            UrlGeneratorInterface::ABSOLUTE_URL,
-        );
+        $notifyUrl = $this->notifyUrl($attempt);
         $goodsDesc = $invoice->getSubject() ?? $invoice->getDescription() ?? 'Payment';
         $amount = number_format($attempt->getAmount() / 100, 2, '.', '');
 
@@ -88,6 +85,25 @@ final class HuifuRequestFactory
             'data' => $data,
             'sign' => $sign,
         ];
+    }
+
+    /**
+     * Huifu must reach the public backend origin. Deriving it from the incoming
+     * request is unreliable behind TLS-terminating proxies, so a configured base
+     * URL takes precedence over the request host.
+     */
+    private function notifyUrl(HuifuPaymentAttempt $attempt): string
+    {
+        $parameters = ['attemptUuid' => $attempt->getUuid()];
+        if (trim($this->notifyBaseUrl) === '') {
+            return $this->urlGenerator->generate('huifu-payment-notify', $parameters, UrlGeneratorInterface::ABSOLUTE_URL);
+        }
+
+        return rtrim(trim($this->notifyBaseUrl), '/').$this->urlGenerator->generate(
+            'huifu-payment-notify',
+            $parameters,
+            UrlGeneratorInterface::ABSOLUTE_PATH,
+        );
     }
 
     private function openid(Invoice $invoice, string $storeUuid, string $tradeType): string

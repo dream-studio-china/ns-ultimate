@@ -1,0 +1,36 @@
+parameters:
+    audit_log_path: '%kernel.logs_dir%/audit.log'
+
+monolog:
+    channels:
+        - audit
+    handlers:
+        audit:
+            type: rotating_file
+            path: '%env(default:audit_log_path:AUDIT_LOG_PATH)%'
+            level: info
+            channels: ['audit']
+            max_files: 30
+            formatter: monolog.formatter.json
+
+when@dev:
+    monolog:
+        handlers:
+            main:
+                channels: ['!audit']
+            console:
+                channels: ['!audit']
+
+when@test:
+    monolog:
+        handlers:
+            main:
+                channels: ['!audit']
+
+when@prod:
+    monolog:
+        handlers:
+            main:
+                channels: ['!audit']
+            console:
+                channels: ['!audit']

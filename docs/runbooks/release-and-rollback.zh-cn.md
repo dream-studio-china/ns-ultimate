@@ -56,7 +56,7 @@ ln -s /etc/ns-ultimate/backend.env \
 
 站点 Web 请求环境还必须单独提供 `APP_ENV=prod` 和 `APP_DEBUG=0`；单靠 `.env.prod.local` 无法在 bootstrap 前选择环境。确认 Apache 虚拟主机或本站 FPM 配置指向当前 release，且 PHP 进程能读取环境文件和密钥。
 
-Kernel 使用项目根目录的 `var/cache/backend/`。生产 Monolog 写入 `php://stderr`，不需要 `var/log/backend/prod.log`；请检查 PHP-FPM/Apache 错误日志捕获。使用 release 目录时，可为每个 release 配置缓存，或将缓存路径链接到共享可写目录。`APP_SHARE_DIR` 应位于持久化路径，不应放在可丢弃的 release 中。检查并保留已有非空目录内容，切勿未经检查就将其替换为符号链接。
+Kernel 使用项目根目录的 `var/cache/backend/`。生产 Monolog 将一般日志写入 `php://stderr`，不需要 `var/log/backend/prod.log`；请检查 PHP-FPM/Apache 错误日志捕获。项目审计通道将 JSON 日志轮转写入 `var/log/backend/audit-<日期>.log`（或 `AUDIT_LOG_PATH`），参见[API 审计日志](../operations/audit-logging.md)。使用 release 目录时，可为每个 release 配置缓存和审计日志目录，或将这些路径链接到共享可写目录。`APP_SHARE_DIR` 应位于持久化路径，不应放在可丢弃的 release 中。检查并保留已有非空目录内容，切勿未经检查就将其替换为符号链接。
 
 ## 3. 验证、备份并迁移
 

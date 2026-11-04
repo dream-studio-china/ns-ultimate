@@ -6,6 +6,7 @@ namespace NsUltimate\Business\HuifuFin\Tests\Integration;
 
 use App\Identity\Entity\User;
 use App\Payment\DTO\CreateInvoiceRequest;
+use App\Payment\DTO\PaymentNotifyResult;
 use App\Payment\Entity\Invoice;
 use App\Payment\Exception\PaymentVerificationException;
 use App\Payment\Service\InvoiceServiceInterface;
@@ -128,6 +129,18 @@ final class HuifuPosNotificationTest extends KernelTestCase
         self::assertSame('RECV_ORD_ID_'.$invoice->getOutTradeNo(), $service->handle($request, $merchant->getUuid()));
         self::assertSame(1, $em->getRepository(HuifuPosReceipt::class)->count([]));
 
+        $jsonRequest = Request::create(
+            '/api/payment/notify/huifu-pos/'.$merchant->getUuid(),
+            'POST',
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: json_encode([
+                'resp_code' => '00000000',
+                'resp_data' => $respData,
+                'sign' => $this->signRaw($respData, $privateKey),
+            ], JSON_THROW_ON_ERROR),
+        );
+        self::assertSame('RECV_ORD_ID_'.$invoice->getOutTradeNo(), $service->handle($jsonRequest, $merchant->getUuid()));
+
         $mismatchedMerchantData = json_decode($respData, true, flags: JSON_THROW_ON_ERROR);
         $mismatchedMerchantData['huifu_id'] = '6666000000009999';
         $mismatchedMerchantData['out_trans_id'] = 'POS-TRANSACTION-MISMATCHED-MERCHANT';
@@ -172,6 +185,128 @@ final class HuifuPosNotificationTest extends KernelTestCase
         );
         $this->expectException(PaymentVerificationException::class);
         $service->handle($unknownRequest, $merchant->getUuid());
+    }
+
+    public function testInterruptedReceiptIsReprocessedInsteadOfAcknowledged(): void
+    {
+        [$privateKey, $publicKey] = $this->keyPair();
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $cipher = self::getContainer()->get(HuifuSecretCipher::class);
+        $user = (new User())->setEmail('huifu-pos-retry@example.test')->setUsername('huifu-pos-retry');
+        $store = new Store('huifu-pos-retry-store', 'Huifu POS Retry Store');
+        $em->persist($user);
+        $em->persist($store);
+        $em->flush();
+        $provider = new HuifuProviderProfile('Retry provider', 'production', '6666000000000001', 'YMFZS');
+        $provider->setCredentials([
+            'merchant_private_key' => $privateKey,
+            'huifu_public_key' => $publicKey,
+            'async_public_key' => $publicKey,
+        ], $cipher);
+        $merchant = new HuifuMerchant('Retry merchant', '6666000000000101', $provider);
+        $setting = new StoreHuifuSetting($store->getUuid(), $merchant);
+        $setting->setPosEnabled(true);
+        $device = new HuifuPosDevice($merchant, $store->getUuid(), 'RETRY-TERMINAL');
+        $device->setMode(HuifuPosDevice::MODE_LINKED_ORDER);
+        foreach ([$provider, $merchant, $setting, $device] as $entity) {
+            $em->persist($entity);
+        }
+        $orderUuid = 'order-huifu-pos-retry';
+        $em->persist(new OrderStoreLifecycle($orderUuid, $store->getUuid()));
+        $em->flush();
+
+        $realInvoiceService = self::getContainer()->get(InvoiceServiceInterface::class);
+        $invoice = $realInvoiceService->createInvoice(new CreateInvoiceRequest(
+            sourceType: 'trade_order',
+            sourceId: $orderUuid,
+            scene: Invoice::SCENE_ORDER,
+            amount: 2500,
+            currency: 'CNY',
+            payer: $user,
+            subject: 'POS retry order',
+        ));
+
+        $respData = json_encode([
+            'resp_code' => '00000000',
+            'resp_desc' => '交易成功',
+            'req_seq_id' => $invoice->getOutTradeNo(),
+            'req_date' => '20261101',
+            'huifu_id' => $merchant->getHuifuId(),
+            'trans_amt' => '25.00',
+            'trans_stat' => 'S',
+            'out_trans_id' => 'POS-RETRY-TRANSACTION-1',
+            'devs_id' => 'RETRY-TERMINAL',
+            'end_time' => '20261101120000',
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $request = Request::create(
+            '/api/payment/notify/huifu-pos/'.$merchant->getUuid(),
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/x-www-form-urlencoded'],
+            http_build_query([
+                'resp_code' => '00000000',
+                'resp_data' => $respData,
+                'sign' => $this->signRaw($respData, $privateKey),
+            ]),
+        );
+
+        $calls = 0;
+        $invoiceService = $this->createStub(InvoiceServiceInterface::class);
+        $invoiceService->method('handleNotifyResult')->willReturnCallback(
+            function (PaymentNotifyResult $result) use (&$calls, $realInvoiceService): Invoice {
+                if (++$calls === 1) {
+                    throw new \RuntimeException('simulated invoice failure');
+                }
+
+                return $realInvoiceService->handleNotifyResult($result);
+            },
+        );
+        $service = new HuifuPosNotificationService(
+            $em,
+            self::getContainer()->get(HuifuProfileResolver::class),
+            self::getContainer()->get(HuifuSigner::class),
+            self::getContainer()->get(HuifuResponseParser::class),
+            $invoiceService,
+        );
+
+        try {
+            $service->handle($request, $merchant->getUuid());
+            self::fail('The simulated invoice failure must be reported.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('simulated invoice failure', $exception->getMessage());
+        }
+
+        $em->clear();
+        $receipt = $em->getRepository(HuifuPosReceipt::class)
+            ->findOneBy(['providerTransactionId' => 'POS-RETRY-TRANSACTION-1']);
+        self::assertInstanceOf(HuifuPosReceipt::class, $receipt);
+        self::assertSame(HuifuPosReceipt::STATUS_RECEIVED, $receipt->getStatus());
+        self::assertSame(Invoice::STATUS_PENDING, $em->getRepository(Invoice::class)->find($invoice->getId())?->getStatus());
+
+        // A retry must apply the payment instead of acknowledging the stored receipt.
+        self::assertSame('RECV_ORD_ID_'.$invoice->getOutTradeNo(), $service->handle($request, $merchant->getUuid()));
+        $em->clear();
+        $receipt = $em->getRepository(HuifuPosReceipt::class)
+            ->findOneBy(['providerTransactionId' => 'POS-RETRY-TRANSACTION-1']);
+        self::assertInstanceOf(HuifuPosReceipt::class, $receipt);
+        self::assertSame(HuifuPosReceipt::STATUS_LINKED, $receipt->getStatus());
+        self::assertSame(Invoice::STATUS_PAID, $em->getRepository(Invoice::class)->find($invoice->getId())?->getStatus());
+
+        // Core may commit the invoice before the receipt is linked; a retry links it.
+        $em->getConnection()->executeStatement(
+            'UPDATE huifu_pos_receipt SET status = :status, invoice_id = NULL WHERE id = :id',
+            ['status' => HuifuPosReceipt::STATUS_RECEIVED, 'id' => $receipt->getId()],
+        );
+        $em->clear();
+        self::assertSame('RECV_ORD_ID_'.$invoice->getOutTradeNo(), $service->handle($request, $merchant->getUuid()));
+        $em->clear();
+        $receipt = $em->getRepository(HuifuPosReceipt::class)
+            ->findOneBy(['providerTransactionId' => 'POS-RETRY-TRANSACTION-1']);
+        self::assertInstanceOf(HuifuPosReceipt::class, $receipt);
+        self::assertSame(HuifuPosReceipt::STATUS_LINKED, $receipt->getStatus());
+        self::assertSame($invoice->getUuid(), $receipt->getInvoiceUuid());
     }
 
     /** @return array{0: string, 1: string} */

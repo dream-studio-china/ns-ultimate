@@ -116,6 +116,8 @@ class HuifuPosReceipt
         return $this->touch();
     }
     public function markRejected(string $reason): self { $this->status = self::STATUS_REJECTED; $this->error = $reason; return $this->touch(); }
+    /** Keep the receipt retryable after a transient failure while applying the invoice. */
+    public function markProcessingError(string $reason): self { $this->error = $reason; return $this->touch(); }
     /** @return array<string, mixed>|null */
     public function getRawData(): ?array { return $this->rawData; }
     /** @param array<string, mixed> $rawData */

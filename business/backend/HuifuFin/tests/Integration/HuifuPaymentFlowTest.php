@@ -178,6 +178,15 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             $parser,
             $invoiceService,
         );
+        // A delivery recorded by an interrupted attempt must still be applied
+        // instead of being acknowledged as if it had already completed.
+        $em->persist(new HuifuWebhookEvent(
+            eventKey: sprintf('payment:%s:%s:%s:%s', $attempt->getUuid(), $attempt->getReqSeqId(), 'S', 'WX-TRANSACTION-1'),
+            type: 'payment',
+            attempt: $attempt,
+            bodyHash: hash('sha256', 'interrupted-delivery'),
+        ));
+        $em->flush();
         $respData = json_encode([
             'resp_code' => '00000000',
             'resp_desc' => '交易成功',
@@ -209,6 +218,18 @@ final class HuifuPaymentFlowTest extends KernelTestCase
 
         self::assertSame('RECV_ORD_ID_'.$attempt->getReqSeqId(), $notification->handle($request, $attempt->getUuid()));
         self::assertSame(1, $em->getRepository(HuifuWebhookEvent::class)->count([]));
+
+        $jsonRequest = Request::create(
+            '/api/payment/notify/huifu/'.$attempt->getUuid(),
+            'POST',
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: json_encode([
+                'resp_code' => '00000000',
+                'resp_data' => $respData,
+                'sign' => $sign,
+            ], JSON_THROW_ON_ERROR),
+        );
+        self::assertSame('RECV_ORD_ID_'.$attempt->getReqSeqId(), $notification->handle($jsonRequest, $attempt->getUuid()));
 
         $lateFailure = json_decode($respData, true, flags: JSON_THROW_ON_ERROR);
         $lateFailure['resp_desc'] = '交易失败';

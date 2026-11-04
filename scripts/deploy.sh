@@ -153,6 +153,13 @@ if [[ "$MODE" != frontend ]]; then
   chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$cache_dir"
   chmod -R u+rwX "$cache_dir"
 
+  # The project audit channel writes rotating JSON lines here; PHP-FPM creates
+  # the file, so the runtime account needs ownership of the directory.
+  log_dir="$ROOT/var/log/backend"
+  install -d -o "$PHP_FPM_USER" -g "$PHP_FPM_GROUP" -m 0750 "$log_dir"
+  chown -R "$PHP_FPM_USER:$PHP_FPM_GROUP" "$log_dir"
+  chmod -R u+rwX "$log_dir"
+
   # Production does not track container configuration changes. Rebuild it before
   # discovering migrations, including newly registered app or business namespaces.
   # Defer optional cache warmers until the database schema has been migrated.

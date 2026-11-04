@@ -15,6 +15,13 @@ services:
 
     NsUltimate\Business\HuifuFin\Client\HuifuClientInterface: '@NsUltimate\Business\HuifuFin\Client\HuifuClient'
 
+    NsUltimate\Business\HuifuFin\Service\Payment\HuifuRequestFactory:
+        autowire: true
+        arguments:
+            # Public backend origin used for Huifu notify_url values. It must be
+            # reachable by Huifu and is not derived from the incoming request.
+            $notifyBaseUrl: '%env(DEFAULT_URI)%'
+
     NsUltimate\Business\HuifuFin\Service\Payment\HuifuPaymentGateway:
         autowire: true
         autoconfigure: false

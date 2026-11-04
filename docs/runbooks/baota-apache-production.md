@@ -80,6 +80,8 @@ ALIYUN_SMS_DRY_RUN=1
 
 Configure mail, Redis, and external provider values only when the feature is enabled. Use a dedicated MySQL account, never `root`; do not expose MySQL publicly. URL-encode special characters in the database password.
 
+`DEFAULT_URI` must be the public backend origin that the payment provider can reach. Huifu `notify_url` values are generated from it instead of the incoming request host, so a wrong value produces callbacks that never arrive.
+
 ### Generate JWT keys once
 
 Do this only if production keys do not already exist. Key replacement can invalidate issued tokens.
@@ -198,13 +200,14 @@ This updates a live checkout in place: backend PHP files become current during t
 
 ## 7. Grant only runtime-directory write access
 
-The integration Kernel uses the cache path below. Production Monolog writes logs to `php://stderr`, not to a file under `var/log/backend`:
+The integration Kernel uses the cache path below. Production Monolog writes general logs to `php://stderr`, while the project audit channel writes rotating JSON files under `var/log/backend`:
 
 ```text
 <project-root>/var/cache/backend/<environment>/
+<project-root>/var/log/backend/
 ```
 
-The cache is under the repository root but outside the public document root. Symfony creates directories such as `prod/translations` automatically. Production error logs are emitted to PHP-FPM worker stderr; check Baota's Apache/PHP-FPM error logs and verify stderr capture if output is not visible. Only the cache and configured `APP_SHARE_DIR` paths need PHP-FPM write access. For a Baota account whose actual PHP-FPM user/group is `www:www`:
+The cache is under the repository root but outside the public document root. Symfony creates directories such as `prod/translations` automatically. Production error logs are emitted to PHP-FPM worker stderr; check Baota's Apache/PHP-FPM error logs and verify stderr capture if output is not visible. Only the cache, the audit log directory and configured `APP_SHARE_DIR` paths need PHP-FPM write access. See [API audit logging](../operations/audit-logging.md) for the audit file, rotation and retention. For a Baota account whose actual PHP-FPM user/group is `www:www`:
 
 ```sh
 ROOT=/www/wwwroot/<project-root>
@@ -212,6 +215,9 @@ sudo install -d -o www -g www -m 0750 \
   "$ROOT/var/cache/backend"
 sudo chown -R www:www "$ROOT/var/cache/backend"
 sudo chmod -R u+rwX "$ROOT/var/cache/backend"
+sudo install -d -o www -g www -m 0750 "$ROOT/var/log/backend"
+sudo chown -R www:www "$ROOT/var/log/backend"
+sudo chmod -R u+rwX "$ROOT/var/log/backend"
 sudo install -d -o www -g www -m 0750 /www/secure/<app>/data
 ```
 
