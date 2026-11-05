@@ -77,7 +77,6 @@
 </template>
 
 <script>
-import { ElMessageBox } from 'element-plus'
 import { createUiFeedback } from '@/easyadmin/ui/vue/feedback'
 import { t } from '@/i18n'
 import request from '@/utils/request'
@@ -174,15 +173,7 @@ export default {
 
       const amount = validation.cents
       const formattedAmount = formatMoney(validation.cents, this.context.currency)
-      try {
-        await ElMessageBox.confirm(
-          `${t('Confirm refund')}: ${formattedAmount} · ${this.context.payment || t('Unknown')}`,
-          t('Refund order'),
-          { type: 'warning', confirmButtonText: t('Confirm'), cancelButtonText: t('Cancel') }
-        )
-      } catch {
-        return
-      }
+      if (!window.confirm(`${t('Confirm refund')}: ${formattedAmount} · ${this.context.payment || t('Unknown')}`)) return
 
       this.submitting = true
       this.refundKey ||= `admin-order-refund:${Date.now()}:${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`
