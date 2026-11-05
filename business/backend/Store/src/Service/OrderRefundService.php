@@ -186,7 +186,7 @@ final class OrderRefundService
             $this->em->getRepository(Order::class)->findByUuidForUpdate($refund->orderUuid);
             $invoice = $this->current($this->em->createQueryBuilder()->select('i')->from(Invoice::class, 'i')
                 ->where('i.uuid = :invoice')->setParameter('invoice', $refund->invoiceUuid)->getQuery())->getOneOrNullResult();
-            $summary = ['uuid' => $refund->uuid, 'orderUuid' => $refund->orderUuid, 'invoiceUuid' => $refund->invoiceUuid,
+            $summary = ['uuid' => $refund->uuid, 'tradeOrderUuid' => $refund->orderUuid, 'invoiceUuid' => $refund->invoiceUuid,
                 'amount' => $refund->amount, 'reason' => $refund->reason, 'status' => $this->status($refund),
                 'actorUuid' => $refund->actorUuid, 'createdAt' => $refund->createdAt->format(DATE_ATOM),
                 'invoiceStatus' => $invoice?->getStatus(), 'refundedAmount' => $invoice?->getRefundedAmount()];

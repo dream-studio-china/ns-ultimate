@@ -15,7 +15,8 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/store/{scopeId}/orders/{orderUuid}', name: 'store-order-refund-', requirements: ['scopeId' => '[0-9a-fA-F-]{36}', 'orderUuid' => '[0-9a-fA-F-]{36}'])]
+/** Refunds the linked Invoice of a Trade order, not the StoreOrder fulfillment aggregate. */
+#[Route('/store/{scopeId}/trade-orders/{tradeOrderUuid}', name: 'store-trade-order-refund-', requirements: ['scopeId' => '[0-9a-fA-F-]{36}', 'tradeOrderUuid' => '[0-9a-fA-F-]{36}'])]
 #[IsGranted('ROLE_USER')]
 final class OrderRefundController extends RestController
 {
@@ -35,11 +36,11 @@ final class OrderRefundController extends RestController
     }
 
     #[Route('/refund', name: 'create', methods: ['POST'])]
-    public function createAction(string $scopeId, string $orderUuid, Request $request): JsonResponse
+    public function createAction(string $scopeId, string $tradeOrderUuid, Request $request): JsonResponse
     {
         $this->authorize($scopeId);
         try {
-            $this->refunds->order($scopeId, $orderUuid);
+            $this->refunds->order($scopeId, $tradeOrderUuid);
             if (strlen($request->getContent()) > 65536) throw new HttpException(413, 'request_too_large');
             try { $body = json_decode($request->getContent(), true, 32, JSON_THROW_ON_ERROR); }
             catch (\JsonException) { throw new HttpException(400, 'invalid_json'); }
@@ -51,7 +52,7 @@ final class OrderRefundController extends RestController
                 || !is_string($key) || trim($key) === '' || strlen($key) > 200) throw new HttpException(400, 'invalid_fields');
             $actor = $this->getUser();
             if (!$actor instanceof User) throw new HttpException(401, 'authentication_required');
-            $refund = $this->refunds->request($scopeId, $orderUuid, $actor->getUuid(), $amount, trim($reason), $key);
+            $refund = $this->refunds->request($scopeId, $tradeOrderUuid, $actor->getUuid(), $amount, trim($reason), $key);
             $data = $this->refunds->summary($refund);
             return $this->result(['code' => 0, 'data' => $data], in_array($data['status'], ['processing', 'unknown'], true) ? 202 : 200);
         } catch (HttpException $error) {
@@ -60,11 +61,11 @@ final class OrderRefundController extends RestController
     }
 
     #[Route('/refunds/{refundUuid}', name: 'detail', methods: ['GET'], requirements: ['refundUuid' => '[0-9a-fA-F-]{36}'])]
-    public function detailAction(string $scopeId, string $orderUuid, string $refundUuid): JsonResponse
+    public function detailAction(string $scopeId, string $tradeOrderUuid, string $refundUuid): JsonResponse
     {
         $this->authorize($scopeId);
         try {
-            $refund = $this->refunds->find($scopeId, $orderUuid, $refundUuid);
+            $refund = $this->refunds->find($scopeId, $tradeOrderUuid, $refundUuid);
             return $this->result(['code' => 0, 'data' => $this->refunds->summary($refund)]);
         } catch (HttpException $error) {
             return $this->result(['code' => $error->getStatusCode(), 'message' => $error->getMessage()], $error->getStatusCode());

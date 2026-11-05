@@ -123,7 +123,7 @@ also documents a different webhook-key variant.
 ## Refund
 
 ```text
-POST /api/v1/store/{scopeId}/orders/{orderUuid}/refund
+POST /api/v1/store/{scopeId}/trade-orders/{tradeOrderUuid}/refund
 {"amount": 1000, "reason": "Customer request", "idempotencyKey": "unique-operation-key"}
 ```
 
