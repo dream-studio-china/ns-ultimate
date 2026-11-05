@@ -120,6 +120,35 @@ final class OrderRefundApiTest extends KernelTestCase
         }
     }
 
+    public function testRefundRoutesAndResponsesExplicitlyIdentifyTheTradeOrder(): void
+    {
+        $storeOrder = $this->storeOrder();
+        $response = $this->post(100, 'explicit-trade-order');
+        self::assertSame(200, $response->getStatusCode());
+        $data = $this->data($response);
+        self::assertSame($this->order->getUuid(), $data['tradeOrderUuid']);
+        self::assertNotSame($storeOrder->getUuid(), $data['tradeOrderUuid']);
+        self::assertArrayNotHasKey('orderUuid', $data);
+        $detail = $this->data($this->request('GET', '/refunds/'.$data['uuid']));
+        self::assertSame($data['tradeOrderUuid'], $detail['tradeOrderUuid']);
+        self::assertArrayNotHasKey('orderUuid', $detail);
+
+        $prefix = '/api/v1/store/'.$this->store->getUuid();
+        foreach ([
+            ['POST', $prefix.'/trade-orders/'.$storeOrder->getUuid().'/refund'],
+            ['GET', $prefix.'/trade-orders/'.$storeOrder->getUuid().'/refunds/'.$data['uuid']],
+            ['POST', $prefix.'/orders/'.$this->order->getUuid().'/refund'],
+            ['GET', $prefix.'/orders/'.$this->order->getUuid().'/refunds/'.$data['uuid']],
+        ] as [$method, $path]) {
+            $result = self::$kernel->handle(Request::create($path, $method,
+                server: ['HTTP_AUTHORIZATION' => 'Bearer '.$this->token, 'CONTENT_TYPE' => 'application/json'],
+                content: json_encode(['amount' => 100, 'reason' => 'Wrong order namespace', 'idempotencyKey' => 'wrong-namespace'], JSON_THROW_ON_ERROR)));
+            self::assertSame(404, $result->getStatusCode(), $result->getContent());
+        }
+        self::assertSame(1, $this->em->getRepository(InvoiceRefundAttempt::class)->count([]));
+        self::assertSame($data['uuid'], $this->data($this->post(100, 'explicit-trade-order'))['uuid']);
+    }
+
     public function testFullRefundBlocksStoreFulfillmentEvenWithAStaleTradeEntity(): void
     {
         $storeOrder = $this->storeOrder();
@@ -359,7 +388,7 @@ final class OrderRefundApiTest extends KernelTestCase
 
     public function testAuthorizationAndInvoiceIdentityAreChecked(): void
     {
-        $path = '/api/v1/store/'.$this->store->getUuid().'/orders/'.$this->order->getUuid().'/refund';
+        $path = '/api/v1/store/'.$this->store->getUuid().'/trade-orders/'.$this->order->getUuid().'/refund';
         self::assertSame(401, self::$kernel->handle(Request::create($path, 'POST'))->getStatusCode());
         $other = new Store('other-refunds', 'Other refunds');
         $this->em->persist($other); $this->em->flush();
@@ -401,7 +430,7 @@ final class OrderRefundApiTest extends KernelTestCase
         $this->em->persist($other);
         $this->em->persist(new OrderStoreLifecycle($other->getUuid(), $this->store->getUuid()));
         $this->em->flush();
-        $path = '/api/v1/store/'.$this->store->getUuid().'/orders/'.$other->getUuid().'/refunds/'.$data['uuid'];
+        $path = '/api/v1/store/'.$this->store->getUuid().'/trade-orders/'.$other->getUuid().'/refunds/'.$data['uuid'];
         self::assertSame(404, self::$kernel->handle(Request::create($path, 'GET', server: ['HTTP_AUTHORIZATION' => 'Bearer '.$this->token]))->getStatusCode());
         $this->em->getConnection()->executeStatement('DELETE FROM authorization_assignment');
         self::getContainer()->get('cache.app')->delete('authorization_effective_'.$this->user->getUuid());
@@ -448,7 +477,7 @@ final class OrderRefundApiTest extends KernelTestCase
     /** @param array<string, mixed>|null $body */
     private function request(string $method, string $suffix, ?array $body = null): Response
     {
-        return self::$kernel->handle(Request::create('/api/v1/store/'.$this->store->getUuid().'/orders/'.$this->order->getUuid().$suffix,
+        return self::$kernel->handle(Request::create('/api/v1/store/'.$this->store->getUuid().'/trade-orders/'.$this->order->getUuid().$suffix,
             $method, server: ['HTTP_AUTHORIZATION' => 'Bearer '.$this->token, 'CONTENT_TYPE' => 'application/json'],
             content: $body === null ? null : json_encode($body, JSON_THROW_ON_ERROR)));
     }
