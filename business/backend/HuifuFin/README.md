@@ -123,11 +123,14 @@ also documents a different webhook-key variant.
 ## Refund
 
 ```text
-POST /api/v1/store/{scopeId}/huifu-refunds
-{"invoiceUuid": "...", "amount": 1000, "reason": "..."}
+POST /api/v1/store/{scopeId}/orders/{orderUuid}/refund
+{"amount": 1000, "reason": "Customer request", "idempotencyKey": "unique-operation-key"}
 ```
 
-Integer amounts are cents; decimal strings are also accepted. A refund record is
+The Store-owned [unified order refund contract](../../../docs/contracts/store-console-operations.md#order-refund-command-backend-only)
+requires `store:order:refund` and a paid order. Integer amounts are cents; decimal
+strings are rejected. The former Store GET/POST `huifu-refunds` routes are removed;
+admin record reads/refresh and internal reconciliation remain available. A refund record is
 committed before submission, and concurrent requests reserve the remaining
 amount under an invoice lock. Huifu acceptance is not treated as a completed
 refund. Only a confirmed success is applied to Core, exactly once; otherwise the
@@ -206,11 +209,13 @@ The seed command creates:
 
 - `store:huifu_setting:read`, `create`, `update`, `delete`;
 - `store:huifu_payment:read`, `create`;
-- `store:huifu_refund:read`, `create`;
 - `store:huifu_pos_receipt:read`.
 
 Store endpoints require active membership and the matching scoped permission.
 Platform credential and merchant management remains admin-only.
+Order refund permissions are registered separately by `app:store:seed-staff-authorization`
+and assigned explicitly through `store_order_refund_operator`. Historical Huifu
+refund grants are not migrated automatically and no longer authorize a Store route.
 
 ## Validation
 

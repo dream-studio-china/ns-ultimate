@@ -51,7 +51,7 @@ final class StaffOperationsTest extends KernelTestCase
         $this->store = new Store('staff-operations', 'Staff operations', 'Asia/Shanghai');
         $this->other = new Store('staff-other', 'Other store');
         $this->role = new Role('staff-operations', 'Staff operations', Role::SCOPE_STORE);
-        foreach (['product:read', 'product:create', 'product:update', 'product:availability', 'product_category:read', 'counter:read', 'order:read', 'order:accept', 'order:reject', 'order:fulfill', 'order:verify', 'operation:read', 'catalog_image:create'] as $name) {
+        foreach (['product:read', 'product:create', 'product:update', 'product:availability', 'product_category:read', 'counter:read', 'order:read', 'order:accept', 'order:reject', 'order:fulfill', 'order:verify', 'order:refund', 'operation:read', 'catalog_image:create'] as $name) {
             [$resource, $action] = explode(':', $name);
             $permission = new Permission('store:'.$name, 'store', $resource, $action, $name);
             $this->role->addPermission($permission);
@@ -89,6 +89,21 @@ final class StaffOperationsTest extends KernelTestCase
         self::assertSame(403, $this->request('GET', '/products', null, $this->other->getUuid())->getStatusCode());
         self::assertSame(404, $this->request('PUT', '/products/'.UUID::v4(), [...$body, 'commandUuid' => UUID::v4()])->getStatusCode());
         self::assertSame(401, $this->request('GET', '/products', null, null, false)->getStatusCode());
+    }
+
+    public function testOrderRefundCommandRequiresStoreScopedRefundPermission(): void
+    {
+        $path = '/api/v1/store/'.$this->store->getUuid().'/orders/'.UUID::v4().'/refund';
+        self::assertSame(404, self::$kernel->handle(Request::create($path, 'POST', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$this->token,
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['amount' => 100, 'reason' => 'Customer request'], JSON_THROW_ON_ERROR)))->getStatusCode());
+
+        $otherPath = '/api/v1/store/'.$this->other->getUuid().'/orders/'.UUID::v4().'/refund';
+        self::assertSame(403, self::$kernel->handle(Request::create($otherPath, 'POST', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$this->token,
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['amount' => 100, 'reason' => 'Customer request'], JSON_THROW_ON_ERROR)))->getStatusCode());
     }
 
     public function testSearchIsServerSideBoundedAndCannotOverrideTheStore(): void
@@ -198,6 +213,11 @@ final class StaffOperationsTest extends KernelTestCase
         self::assertSame(Role::SCOPE_STORE, $role->getScopeType());
         self::assertTrue($role->hasPermission('store:order:reject'));
         self::assertFalse($role->hasPermission('store:order:refund'));
+        $refundRole = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_order_refund_operator']);
+        self::assertInstanceOf(Role::class, $refundRole);
+        self::assertSame(Role::SCOPE_STORE, $refundRole->getScopeType());
+        self::assertTrue($refundRole->hasPermission('store:order:refund'));
+        self::assertFalse($refundRole->hasPermission('store:order:fulfill'));
         $reader = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_order_reader']);
         self::assertInstanceOf(Role::class, $reader);
         self::assertSame(Role::SCOPE_STORE, $reader->getScopeType());
