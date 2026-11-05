@@ -180,7 +180,7 @@ function StoreSelection({ client, connected }: { client: ApiClient; connected: (
 
 const roleLabels: Record<string, MessageKey> = { owner: 'membershipOwner', manager: 'membershipManager', clerk: 'membershipClerk', fulfillment: 'membershipFulfillment' }
 const resourceLabels: Record<string, MessageKey> = { product: 'products', product_category: 'categoryManagement', specification: 'specifications', counter: 'tables', order: 'orderReference', catalog_image: 'coverUpload', operation: 'operationHistory', counter_session: 'serviceSessions', counter_order: 'sessionOrders' }
-const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', create: 'permissionCreate', update: 'permissionUpdate', delete: 'permissionDelete', availability: 'availabilityControl', accept: 'acceptOrder', reject: 'cancelOrder', fulfill: 'fulfillOrder', verify: 'verifyOrder', place: 'placeDining', replace: 'replaceDining', end: 'endDining' }
+const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', create: 'permissionCreate', update: 'permissionUpdate', delete: 'permissionDelete', availability: 'availabilityControl', accept: 'acceptOrder', reject: 'cancelOrder', fulfill: 'fulfillOrder', verify: 'verifyOrder', refund: 'refund', place: 'placeDining', replace: 'replaceDining', end: 'endDining' }
 function LiveAccount({ api, access, logout }: { api: StoreApi; access: StoreAccess; logout: () => void }) {
   const { t, locale, setLocale } = useI18n()
   const [history, setHistory] = useState(false)

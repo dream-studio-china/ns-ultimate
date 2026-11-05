@@ -98,9 +98,9 @@ Content-Type: application/json
 {"storeUuid":"...","orderUuid":"...","terminal":"alipay"}
 ```
 
-返回结构与其他登录接口一致，包含 access token 和 refresh token。服务端必须解析已配置的固定游客主体，增加限流，避免收集无关个人信息，并且不能给游客赋予门店管理或员工权限。后端通过现有身份服务使用固定账号名 `游客` 登录；密码作为部署密钥配置，不得写入 H5 代码、接口响应、日志或本仓库。建议配置项为 `GUEST_LOGIN_IDENTIFIER=游客` 和 `GUEST_LOGIN_PASSWORD=<部署密钥>`。
+返回结构与其他登录接口一致，包含 access token 和 refresh token。服务端必须解析已配置的固定游客主体，增加限流，避免收集无关个人信息，并且不能给游客赋予门店管理或员工权限。后端通过现有身份服务使用固定账号名 `游客` 登录；密码作为部署密钥配置，必须使用最新提供的固定游客密码，不得写入 H5 代码、接口响应、日志或本仓库。配置项为 `GUEST_LOGIN_IDENTIFIER=游客` 和 `GUEST_LOGIN_PASSWORD=<当前固定游客密码>`。
 
-当前仓库尚未实现此接口。该接口每次登录已有固定账号，不能为每个扫码者创建独立游客账号。
+当前联调版本尚未部署独立游客登录接口，H5 直接调用现有 `POST /api/auth/login`，使用固定账号名 `游客` 和部署方提供的固定密码换取 token。该方式会让固定密码进入浏览器代码，仅适用于当前联调；正式上线前应改由服务端 `/api/auth/guest` 使用部署密钥登录，避免继续向客户端分发固定密码。
 
 由于所有支付宝客户都登录为同一个固定账号，invoice 的 `payer` 无法区分两次支付宝扫码。判断“是否由当前用户发起”时还必须比较服务端为本次扫码订单签发的结账会话标识。该标识在加载订单时产生并记录到 invoice/支付尝试中；即使付款人相同，不同扫码会话也会得到不同标识。
 
@@ -108,43 +108,47 @@ JWT 不得出现在结账 URL、二维码、日志或统计事件中。token 过
 
 ## 5. 获取结账订单
 
-建议新增结账专用接口，而不是复用按订单所有者限制的 `GET /api/v1/app/orders/{id}`。门店收银台创建的订单可能是匿名订单，扫码后才登录的客户不一定是 Trade 订单的 `user`。
+结账页使用公开的只读订单投影接口，不复用按订单所有者限制的 `GET /api/v1/app/orders/{id}`。门店收银台创建的订单可能是匿名订单，扫码后才登录的客户不一定是 Trade 订单的 `user`；公开接口按订单 UUID 定位订单，并只返回支付页所需的受限字段。
 
-建议读取契约：
+已上线读取契约：
 
 ```http
-GET /api/v1/app/checkout/orders/{orderUuid}?storeUuid=<storeUuid>
-Authorization: Bearer <token>
+GET /api/v1/public/orders/{orderUuid}/payment
+Authorization: 可选（公开只读，不用于支付授权）
 ```
 
 响应只包含客户核对账单所需字段：
 
 ```json
 {
-  "orderUuid": "...",
-  "storeName": "示例门店",
-  "orderNo": "A001",
-  "status": "confirmed",
-  "paymentStatus": "pending",
-  "currency": "CNY",
-  "items": [
-    {
-      "productName": "商品",
-      "specificationName": "规格",
-      "quantity": 2,
-      "unitAmount": 1200,
-      "lineAmount": 2400
-    }
-  ],
-  "payableAmount": 2400,
-  "payable": true,
-  "displayState": "payable"
+  "code": 0,
+  "message": "SUCCESS",
+  "data": {
+    "orderUuid": "...",
+    "status": "confirmed",
+    "store": { "uuid": "...", "name": "示例门店" },
+    "currency": "CNY",
+    "amount": 2400,
+    "items": [
+      {
+        "name": "商品",
+        "specification": "规格",
+        "quantity": 2,
+        "unitPrice": 1200,
+        "amount": 2400
+      }
+    ],
+    "provider": "huifu",
+    "channels": ["jspay", "native"],
+    "defaultChannel": "jspay",
+    "invoice": null
+  }
 }
 ```
 
-金额统一使用最小货币单位整数。后端必须检查订单存在、通过可信生命周期数据属于指定门店、处于可支付的 `confirmed` 状态，并且尚未支付或进入其他终态。门店不匹配统一返回 `404`，不能泄露订单在其他门店是否存在。
+金额统一使用最小货币单位整数。门店信息由订单的可信生命周期数据解析，客户端不需要再用 `storeUuid` 指定查询范围。订单不存在、门店不可用或生命周期缺失统一返回 `404`；当前 invoice 来源、金额、币种等与订单不一致时返回 `409 order_payment_conflict`。接口只读，不得创建 invoice、支付尝试或返回客户身份、商品快照、额外 metadata 等非页面字段。
 
-`payable: false` 应配合安全的原因码，覆盖已取消、已支付、已合并、订单被锁定等情况。
+公开投影返回订单和当前 invoice 状态。H5 只有在 `status=confirmed`、invoice 不是终态且门店 `channels` 非空时展示支付按钮；已取消、已支付、已合并等状态展示对应结果，不继续创建 invoice。
 
 H5 不得自行重新计算应收金额，也不能把各行小计相加后替代服务端金额。界面展示服务端订单快照；遇到版本冲突时刷新后重新展示。
 
@@ -291,7 +295,7 @@ Content-Type: application/json
 
 仓库目前已经具备结账 URL 生成器、门店控制台二维码界面、门店范围微信登录、invoice/支付基础、门店微信支付网关，以及汇付 JSAPI/Native 网关。要把本设计称为已实现，还需要：
 
-- 用认证后的 H5 替换仅演示的 `payment.html`；
+- 公开订单投影已经上线，H5 支付页已改为按订单 UUID 调用该接口；
 - 新增客户结账模块/facade，承载受限订单读取、invoice 处理、支付分发和状态轮询；
 - 新增支付宝固定游客账号的服务端自动登录接口，并把密码保存在部署密钥配置中；
 - 新增并验证支付宝或汇付支付宝支付适配器；

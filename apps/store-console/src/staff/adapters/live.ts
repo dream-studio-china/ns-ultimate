@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ApiClient, ApiError } from './api-client'
 import { inDiningCatalog, normalizeDiningMode, type DiningCatalog, type DiningMode } from '../dining-mode'
 import { invoiceReferenceUuid, parseStaffPaymentResult, type StaffPaymentResult } from '../order-payment'
+import { parseRefundPreview, type RefundPreview } from '../order-refund'
 
 const uuid = z.string().uuid()
 const diningModeReferenceId = z.string().trim().min(1).max(120)
@@ -104,6 +105,19 @@ export const orderSchema = z.object({
   paymentMethod: z.string().nullable().optional(), paidAt: z.string().nullable().optional(),
 })
 const storeOrderProjectionSchema = z.object({ tradeOrderUuid: uuid }).passthrough()
+export const orderRefundResultSchema = z.object({
+  uuid,
+  tradeOrderUuid: uuid,
+  invoiceUuid: uuid,
+  amount: cents,
+  reason: z.string().min(1).max(1000),
+  status: z.enum(['processing', 'unknown', 'succeeded', 'failed']),
+  actorUuid: uuid,
+  createdAt: z.string(),
+  invoiceStatus: z.string().nullable(),
+  refundedAmount: cents.nullable(),
+}).passthrough()
+export type OrderRefundResult = z.infer<typeof orderRefundResultSchema>
 const reportingOrderItemSchema = z.object({ productName: z.string(), quantity: z.number().int().positive(), unitPrice: cents, amount: cents })
 export const reportingOrderSchema = z.object({
   uuid, status: z.string(), paymentStatus: z.string().nullable().optional(),
@@ -455,6 +469,27 @@ export class StoreApi {
       tradeType: options.tradeType ?? 'T_NATIVE',
     })
     return parseStaffPaymentResult(result)
+  }
+  async refundPreview(orderUuid: string): Promise<RefundPreview> {
+    const id = uuid.parse(orderUuid)
+    const data = await this.client.data(`/api/v1/public/orders/${id}/payment`, z.unknown())
+    const preview = parseRefundPreview(data, id)
+    if (!preview) throw new ApiError('invalid')
+    return preview
+  }
+  async refundOrder(tradeOrderUuid: string, amount: number, reason: string, idempotencyKey: string): Promise<OrderRefundResult> {
+    const id = uuid.parse(tradeOrderUuid)
+    const trimmedReason = reason.trim()
+    if (!Number.isSafeInteger(amount) || amount <= 0
+      || !trimmedReason || new TextEncoder().encode(trimmedReason).length > 1000
+      || !idempotencyKey.trim() || idempotencyKey.length > 200) throw new ApiError('invalid')
+    const result = await this.client.data(`${this.base}/trade-orders/${id}/refund`, orderRefundResultSchema, 'POST', {
+      amount,
+      reason: trimmedReason,
+      idempotencyKey,
+    })
+    if (result.tradeOrderUuid !== id || result.amount !== amount) throw new ApiError('invalid')
+    return result
   }
   async legacyCounters(): Promise<LiveCounter[]> {
     const counters: LiveCounter[] = []

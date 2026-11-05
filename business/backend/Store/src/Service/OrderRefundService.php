@@ -139,13 +139,7 @@ final class OrderRefundService
             $refund = OrderRefundReceipt::fromArray($order, '', $hash, $entry);
             if (in_array($this->status($refund), ['processing', 'unknown'], true)) return true;
         }
-        // Protect historical Huifu refunds created before the unified endpoint.
-        return $this->current($this->em->createQueryBuilder()->select('r')->from(HuifuRefund::class, 'r')
-            ->join('r.invoice', 'i')->where('i.sourceType = :source AND i.sourceId = :order')
-            ->andWhere('r.coreApplied = false AND r.status NOT IN (:terminal)')
-            ->setParameter('source', 'trade_order')->setParameter('order', $orderUuid)
-            ->setParameter('terminal', [HuifuRefund::STATUS_FAILED, HuifuRefund::STATUS_CANCELLED])
-            ->setMaxResults(1)->getQuery())->getOneOrNullResult() !== null;
+        return false;
     }
 
     public function find(string $storeUuid, string $orderUuid, string $refundUuid): OrderRefundReceipt

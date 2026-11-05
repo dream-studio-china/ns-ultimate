@@ -131,12 +131,17 @@ unrelated personal data, and not expose store administration or staff
 permissions. The backend signs in through the normal identity service using the
 fixed identifier `游客`; the password is supplied as deployment secret
 configuration and is never bundled into the H5, returned by the API, written to
-logs, or committed to this repository. Suggested configuration names are
-`GUEST_LOGIN_IDENTIFIER=游客` and `GUEST_LOGIN_PASSWORD=<deployment secret>`.
+logs, or committed to this repository. The deployment must use the latest
+operator-supplied password value. Suggested configuration names are
+`GUEST_LOGIN_IDENTIFIER=游客` and
+`GUEST_LOGIN_PASSWORD=<current fixed guest password>`.
 
-This route is not implemented in the current repository. It authenticates one
-existing fixed account rather than creating a new guest account for every
-scanner.
+The current integration build does not yet expose this route. The H5 therefore
+calls the existing `POST /api/auth/login` with the fixed identifier `游客` and the
+operator-provided password. That exposes the fixed password to browser code and
+is acceptable only for the current integration phase. Before production, move
+the login to the server-owned guest endpoint so the password remains a
+deployment secret.
 
 Because every Alipay customer signs in as the same fixed account, the invoice
 `payer` alone cannot distinguish two Alipay sessions. Invoice resolution must
@@ -151,48 +156,59 @@ the same order rather than starting a new checkout.
 
 ## 5. Checkout order read
 
-Use a checkout-specific projection rather than the owner-scoped
-`GET /api/v1/app/orders/{id}` route. Store-counter orders may be anonymous, so
-the customer who signs in after scanning is not necessarily the Trade order's
-`user`.
+The payment page uses the public read-only order projection rather than the
+owner-scoped `GET /api/v1/app/orders/{id}` route. Store-counter orders may be
+anonymous, so the customer who signs in after scanning is not necessarily the
+Trade order's `user`. The public route locates the order by UUID and exposes
+only the fields needed to verify and pay the bill.
 
-Candidate read contract:
+Implemented read contract:
 
 ```http
-GET /api/v1/app/checkout/orders/{orderUuid}?storeUuid=<storeUuid>
-Authorization: Bearer <token>
+GET /api/v1/public/orders/{orderUuid}/payment
+Authorization: optional (public read-only; never payment authorization)
 ```
 
 The response contains only what the customer needs to verify the bill:
 
 ```json
 {
-  "orderUuid": "...",
-  "storeName": "Example Store",
-  "orderNo": "A001",
-  "status": "confirmed",
-  "paymentStatus": "pending",
-  "currency": "CNY",
-  "items": [
-    {
-      "productName": "Product",
-      "specificationName": "Specification",
-      "quantity": 2,
-      "unitAmount": 1200,
-      "lineAmount": 2400
-    }
-  ],
-  "payableAmount": 2400,
-  "payable": true,
-  "displayState": "payable"
+  "code": 0,
+  "message": "SUCCESS",
+  "data": {
+    "orderUuid": "...",
+    "status": "confirmed",
+    "store": { "uuid": "...", "name": "Example Store" },
+    "currency": "CNY",
+    "amount": 2400,
+    "items": [
+      {
+        "name": "Product",
+        "specification": "Specification",
+        "quantity": 2,
+        "unitPrice": 1200,
+        "amount": 2400
+      }
+    ],
+    "provider": "huifu",
+    "channels": ["jspay", "native"],
+    "defaultChannel": "jspay",
+    "invoice": null
+  }
 }
 ```
 
-All amounts are integer minor units. The backend verifies that the order exists,
-belongs to the requested Store through trusted lifecycle data, is confirmed for
-payment, and is not already paid or otherwise terminal. A Store mismatch returns
-`404`, not a detailed cross-Store existence error. `payable: false` plus a safe
-reason code covers cancelled, already-paid, merged, and otherwise locked orders.
+All amounts are integer minor units. The backend resolves the Store from trusted
+order lifecycle data, so the client no longer supplies a Store scope. An invalid
+or invisible order returns `404`; an invoice whose source, amount, currency, or
+scene does not match the order returns `409 order_payment_conflict`. The route is
+read-only: it must not create invoices or payment attempts, and it must not
+return customer identity, product snapshots, or unrelated metadata.
+
+The projection includes the order status and current invoice status. The H5 only
+shows Pay when the order is `confirmed`, the invoice is not settled, and the Store
+has at least one enabled payment channel. Cancelled, paid, and merged orders show
+their terminal state instead.
 
 The customer UI must not recalculate the amount due or infer it from line totals.
 It displays the server's order snapshot and refreshes it after a stale-state
@@ -404,7 +420,7 @@ Store-scoped WeChat login, invoice/payment foundations, direct Store WeChat
 gateway, and Huifu JSAPI/Native gateway. The following pieces are still needed
 before this design can be called implemented:
 
-- replace the demo-only `payment.html` application with the authenticated H5;
+- the public order projection is live and the H5 payment page now reads by order UUID;
 - add a customer checkout module/facade with scoped order reads, invoice
   resolution, payment dispatch, and status polling;
 - add server-side fixed guest-account auto-login for Alipay and keep its password

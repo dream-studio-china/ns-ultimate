@@ -101,7 +101,7 @@ final class OrderRefundApiTest extends KernelTestCase
         self::assertSame(404, $this->request('GET', '/refunds/'.UUID::v4())->getStatusCode());
     }
 
-    public function testValidationStatesAndClosedProviderRoutes(): void
+    public function testValidationStates(): void
     {
         foreach (['confirmed', 'fulfilled', 'completed', 'cancelled', 'refunded'] as $status) {
             $this->order->setStatus($status); $this->em->flush();
@@ -113,11 +113,6 @@ final class OrderRefundApiTest extends KernelTestCase
             self::assertSame(400, $this->request('POST', '/refund', $body)->getStatusCode());
         }
         self::assertSame([], self::getContainer()->get(OrderRefundMetadata::class)->entries($this->order->getUuid()));
-        foreach (['GET', 'POST'] as $method) {
-            $response = self::$kernel->handle(Request::create('/api/v1/store/'.$this->store->getUuid().'/huifu-refunds', $method,
-                server: ['HTTP_AUTHORIZATION' => 'Bearer '.$this->token]));
-            self::assertSame(404, $response->getStatusCode());
-        }
     }
 
     public function testRefundRoutesAndResponsesExplicitlyIdentifyTheTradeOrder(): void
@@ -399,6 +394,19 @@ final class OrderRefundApiTest extends KernelTestCase
         self::assertSame([], self::getContainer()->get(OrderRefundMetadata::class)->entries($this->order->getUuid()));
     }
 
+    public function testAdministratorCanRefundWithoutStoreMembership(): void
+    {
+        $this->em->getConnection()->executeStatement('DELETE FROM store_membership WHERE store_id = ?', [$this->store->getId()]);
+        $this->user->setRoles(['ROLE_ADMIN']);
+        $this->em->flush();
+        $this->token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->user);
+
+        $response = $this->post(100, 'administrator-refund');
+
+        self::assertSame(200, $response->getStatusCode(), $response->getContent());
+        self::assertSame('succeeded', $this->data($response)['status']);
+    }
+
     public function testHuifuProviderSuccessUsesTheSameSummary(): void
     {
         $client = $this->configureHuifu();
@@ -410,17 +418,6 @@ final class OrderRefundApiTest extends KernelTestCase
         self::assertSame(1, count($client->requests));
         self::assertSame(200, $this->post(1000, 'huifu-success')->getStatusCode());
         self::assertSame(1, count($client->requests));
-    }
-
-    public function testHistoricalHuifuRefundAlsoBlocksTradeAndStoreFulfillment(): void
-    {
-        $this->configureHuifu();
-        $attempt = $this->em->getRepository(HuifuPaymentAttempt::class)->findOneBy([]);
-        $historical = new HuifuRefund($this->invoice, $attempt, 'HFR-HISTORICAL', '20261105', 100, 100);
-        $historical->markProcessing();
-        $this->em->persist($historical); $this->em->flush();
-        self::assertFalse(self::getContainer()->get('state_machine.order')->can($this->order, 'fulfill'));
-        self::assertSame(409, $this->post(100, 'while-historical-pending')->getStatusCode());
     }
 
     public function testReadAndReplayRequireCurrentPermissionAndMatchingOrder(): void

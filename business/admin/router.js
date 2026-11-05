@@ -79,7 +79,6 @@ export default {
       },
       children: [
         ...r('HuifuPaymentAttempt', t('Huifu payment attempts')),
-        ...r('HuifuRefund', t('Huifu refunds')),
         ...r('HuifuPosReceipt', t('Huifu POS receipts'))
       ]
     },
