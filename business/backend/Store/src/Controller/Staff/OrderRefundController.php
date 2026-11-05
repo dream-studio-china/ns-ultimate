@@ -61,6 +61,17 @@ final class OrderRefundController extends RestController
         }
     }
 
+    #[Route('/refunds', name: 'history', methods: ['GET'])]
+    public function historyAction(string $scopeId, string $tradeOrderUuid): JsonResponse
+    {
+        $this->authorize($scopeId);
+        try {
+            return $this->result(['code' => 0, 'data' => $this->refunds->history($scopeId, $tradeOrderUuid)]);
+        } catch (HttpException $error) {
+            return $this->result(['code' => $error->getStatusCode(), 'message' => $error->getMessage()], $error->getStatusCode());
+        }
+    }
+
     #[Route('/refunds/{refundUuid}', name: 'detail', methods: ['GET'], requirements: ['refundUuid' => '[0-9a-fA-F-]{36}'])]
     public function detailAction(string $scopeId, string $tradeOrderUuid, string $refundUuid): JsonResponse
     {

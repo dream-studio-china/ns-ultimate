@@ -433,3 +433,7 @@
 @media (prefers-reduced-motion: reduce) {
   .workspace-page, .workspace-skeleton span, .workspace-skeleton i, .is-spinning { animation: none; }
 }
+.order-refund-visibility { margin-top: 20px; }
+.order-refund-visibility ul { padding: 0; list-style: none; }
+.order-refund-visibility li { padding: 12px 0; border-bottom: 1px solid var(--adm-color-border); overflow-wrap: anywhere; }
+.order-refund-visibility li p { margin: 6px 0; }

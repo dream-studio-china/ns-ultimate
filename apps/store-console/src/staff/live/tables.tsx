@@ -6,7 +6,8 @@ import { QRCodeCanvas } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCounter, type SessionOrder } from '../adapters/live'
 import { ApiError } from '../adapters/api-client'
-import { minorUnitsToInput, paidOrderCanRefund, refundReasonBytes, refundResultKind, validateRefundAmount } from '../order-refund'
+import { minorUnitsToInput, paidOrderCanRefund, paymentStatusMessage, refundReasonBytes, refundResultKind, validateRefundAmount } from '../order-refund'
+import { OrderRefundDetails } from './OrderRefundDetails'
 import { counterQrFileNames, customerOrderingUrl } from '../table-qr'
 import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, PageControls, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
 import { LiveDining } from './dining'
@@ -116,7 +117,7 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 const statusLabels: Record<string, MessageKey> = { draft: 'diningDraft', pending: 'diningPending', confirmed: 'diningConfirmed', paid: 'diningPaid', fulfilled: 'stateFulfilled', completed: 'diningCompleted', cancelled: 'stateCancelled', refunded: 'diningRefunded', merged: 'diningMerged' }
-const hiddenOrderStatuses = new Set(['cancelled', 'refunded', 'merged'])
+const hiddenOrderStatuses = new Set(['cancelled', 'merged'])
 interface CounterTradeOrder {
   order: SessionOrder
   counter: CounterSessionView['counter']
@@ -155,11 +156,14 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
       <div className="workspace-order-list">{visible.map((item) => {
         const { order, counter, currency } = item
         const refundable = paidOrderCanRefund(order)
-        return <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('tableNumber')} {counter.code}</span><StatusPill muted={order.status !== 'pending' && order.status !== 'confirmed'}>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill></div><div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><div className="order-card-actions">{refundable && <Button disabled={!canRefundOrders} aria-label={canRefundOrders ? t('refund') : t('refundPermissionRequired')} onClick={() => openRefund(item)}><RotateCcw size={14} />{t('refund')}</Button>}<Button onClick={() => setSelected(item)}>{t('view')}<ChevronDown size={14} /></Button></div></div></article>
+        const paymentLabel = paymentStatusMessage(order.paymentStatus)
+        return <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('tableNumber')} {counter.code}</span><StatusPill muted={order.status !== 'pending' && order.status !== 'confirmed'}>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill></div>
+          {paymentLabel && <p>{t('diningPaymentState')} · {t(paymentLabel)}</p>}
+          <div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><div className="order-card-actions">{refundable && <Button disabled={!canRefundOrders} aria-label={canRefundOrders ? t('refund') : t('refundPermissionRequired')} onClick={() => openRefund(item)}><RotateCcw size={14} />{t('refund')}</Button>}<Button onClick={() => setSelected(item)}>{t('view')}<ChevronDown size={14} /></Button></div></div></article>
       })}</div>
       <PageControls state={list} />
     </>}
-    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} canRefund={paidOrderCanRefund(selected.order)} refundAllowed={canRefundOrders} onRefund={() => openRefund(selected)} /></Sheet>}
+    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} canRefund={paidOrderCanRefund(selected.order)} refundAllowed={canRefundOrders} onRefund={() => openRefund(selected)} />{selected.order.hasInvoice && <OrderRefundDetails api={api} tradeOrderUuid={selected.order.tradeOrderUuid} historyAllowed={canRefundOrders} />}</Sheet>}
     {refunding && <OrderRefundSheet api={api} target={refunding} onClose={() => setRefunding(null)} onRefunded={list.reload} />}
   </>
 }

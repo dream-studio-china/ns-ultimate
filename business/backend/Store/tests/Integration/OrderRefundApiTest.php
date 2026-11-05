@@ -101,6 +101,38 @@ final class OrderRefundApiTest extends KernelTestCase
         self::assertSame(404, $this->request('GET', '/refunds/'.UUID::v4())->getStatusCode());
     }
 
+    public function testRefundHistoryShowsConfirmedAmountsWithoutResubmitting(): void
+    {
+        self::assertSame([], $this->data($this->request('GET', '/refunds')));
+        $first = $this->data($this->post(300, 'history-partial'));
+        self::assertSame('paid', $this->order->getStatus());
+        $rows = $this->data($this->request('GET', '/refunds'));
+        self::assertCount(1, $rows);
+        self::assertSame($first['uuid'], $rows[0]['uuid']);
+        self::assertSame('succeeded', $rows[0]['status']);
+        self::assertSame('partial_refunded', $rows[0]['invoiceStatus']);
+        self::assertSame(300, $rows[0]['refundedAmount']);
+        $this->post(700, 'history-full');
+        $response = $this->request('GET', '/refunds');
+        self::assertSame(200, $response->getStatusCode());
+        $rows = $this->data($response);
+        self::assertCount(2, $rows);
+        $amounts = array_column($rows, 'amount');
+        sort($amounts);
+        self::assertSame([300, 700], $amounts);
+        foreach ($rows as $row) {
+            self::assertSame('refunded', $row['invoiceStatus']);
+            self::assertSame(1000, $row['refundedAmount']);
+            self::assertArrayNotHasKey('requestSnapshot', $row);
+            self::assertArrayNotHasKey('rawData', $row);
+        }
+        self::assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        self::assertSame(2, $this->em->getRepository(InvoiceRefundAttempt::class)->count([]));
+        $this->em->getConnection()->executeStatement('DELETE FROM authorization_assignment');
+        self::getContainer()->get('cache.app')->delete('authorization_effective_'.$this->user->getUuid());
+        self::assertSame(403, $this->request('GET', '/refunds')->getStatusCode());
+    }
+
     public function testValidationStates(): void
     {
         foreach (['confirmed', 'fulfilled', 'completed', 'cancelled', 'refunded'] as $status) {

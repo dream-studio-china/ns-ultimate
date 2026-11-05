@@ -151,6 +151,18 @@ final class OrderRefundService
         throw new HttpException(404, 'refund_not_found');
     }
 
+    /** @return list<array<string, mixed>> */
+    public function history(string $storeUuid, string $orderUuid): array
+    {
+        $order = $this->order($storeUuid, $orderUuid);
+        $rows = [];
+        foreach ($this->metadata->entries($orderUuid) as $hash => $entry) {
+            $rows[] = $this->summary(OrderRefundReceipt::fromArray($order, $storeUuid, $hash, $entry));
+        }
+        usort($rows, static fn (array $left, array $right): int => strcmp($right['createdAt'], $left['createdAt']) ?: strcmp($right['uuid'], $left['uuid']));
+        return $rows;
+    }
+
     /**
      * @template TKey of array-key|null
      * @template TResult

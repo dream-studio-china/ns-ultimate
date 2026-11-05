@@ -215,6 +215,22 @@ describe('live counter session boundary', () => {
     await expect(api.storeOrderExists(id)).resolves.toBeNull()
   })
 
+  it('reads refund history without a mutation and rejects a mismatched Trade order', async () => {
+    const tradeOrderUuid = '00000000-0000-4000-8000-000000000004'
+    const refund = {
+      uuid: id, tradeOrderUuid, invoiceUuid: id, amount: 500,
+      reason: 'Customer request', status: 'succeeded', actorUuid: id, createdAt: '2026-11-05T10:00:00+08:00',
+      invoiceStatus: 'partial_refunded', refundedAmount: 500,
+    }
+    const client = new ApiClient()
+    const data = vi.spyOn(client, 'data').mockResolvedValueOnce([refund]).mockResolvedValueOnce([{ ...refund, tradeOrderUuid: id }])
+    const api = new StoreApi(client, id)
+    await expect(api.refundHistory(tradeOrderUuid)).resolves.toEqual([refund])
+    expect(data.mock.calls[0]![0]).toBe(`/api/v1/store/${id}/trade-orders/${tradeOrderUuid}/refunds`)
+    expect(data.mock.calls[0]![2]).toBeUndefined()
+    await expect(api.refundHistory(tradeOrderUuid)).rejects.toBeInstanceOf(ApiError)
+  })
+
   it('submits a store order refund through the unified Trade order API', async () => {
     const invoiceUuid = '00000000-0000-4000-8000-000000000003'
     const tradeOrderUuid = '00000000-0000-4000-8000-000000000004'

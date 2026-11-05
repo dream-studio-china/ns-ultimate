@@ -111,7 +111,7 @@ export function orderPaymentState(order: ReportingOrder): { settled: boolean; me
   const paymentStatus = (order.paymentStatus ?? stringValue(snapshot.paymentStatus))?.toLowerCase() ?? null
   const snapshotStatus = stringValue(snapshot.status)?.toLowerCase() ?? null
   const settled = Boolean(order.paidAt ?? snapshot.paidAt)
-    || (paymentStatus !== null && ['paid', 'partially_refunded'].includes(paymentStatus))
+    || (paymentStatus !== null && ['paid', 'partial_refunded', 'partially_refunded'].includes(paymentStatus))
     || paidStatuses.has(status)
     || (snapshotStatus !== null && paidStatuses.has(snapshotStatus))
   const rawMethod = (order.paymentMethod ?? stringValue(snapshot.paymentMethod) ?? stringValue(payment.method))?.toLowerCase() ?? ''

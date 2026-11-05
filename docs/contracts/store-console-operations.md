@@ -41,6 +41,14 @@ No backend role encodes a frontend job title. The store console's "Kitchen" and 
 
 The Admin order refund dialog uses the same Store Trade order refund command as the counter. It resolves the owning Store from server data and submits the same amount, reason and idempotency fields. There is one refund entry point and one permission for every payment method; provider selection and channel-specific handling remain internal to the backend refund service.
 
+### Refund visibility
+
+Admin Trade order lists and details display payment status separately from order workflow status. A partial refund leaves the order `paid` but labels its payment state as partially refunded. The refund/details dialog displays the Invoice amount, confirmed cumulative refunded amount, remaining Invoice balance and unified refund request history. It remains readable for fully refunded orders without offering another submission. The detail page also exposes this dialog; no Core collection is modified.
+
+Store Console order cards label the canonical `partial_refunded` payment state (and accept the historical `partially_refunded` spelling). Order details display payment status, confirmed refunded/remaining Invoice amounts and a manual refresh control. Refund history is fetched only when the employee has `store:order:refund`; ordinary order readers are not granted access to protected refund reasons or actor information. Refunded orders in the currently loaded counter sessions remain visible in the Orders view, without a refund action. This is not an archive of ended sessions or a net-sales reporting change; amounts on the cards remain gross order totals.
+
+`GET /api/v1/store/{storeUuid}/trade-orders/{tradeOrderUuid}/refunds` lists that order's unified receipt summaries, newest request timestamp first, with a UUID tie-breaker. It uses the same authorization and allowlisted fields as single-refund detail and remains available after full refund. Each row's request amount is historical; `invoiceStatus` and `refundedAmount` reflect the Invoice at query time. Queries never submit a new refund or contact the payment provider. Empty history means no unified request receipts, not proof that no historical channel refund exists. A pending/unknown request is not included in confirmed refunded totals until Core applies it. Refresh reads persisted reconciliation results and does not itself perform reconciliation.
+
 ```json
 {"amount": 100, "reason": "Customer request", "idempotencyKey": "unique-operation-key"}
 ```

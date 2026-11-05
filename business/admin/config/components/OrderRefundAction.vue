@@ -1,7 +1,15 @@
 <template>
-  <span class="order-refund-action">
-    <el-button v-if="record.status === 'paid'" link type="warning" :loading="loading" :disabled="!record.id" @click="open">
-      {{ $t('Refund') }}
+  <span v-if="['paid', 'refunded', 'fulfilled', 'completed'].includes(record.status)" class="order-refund-action">
+    <el-button
+      :type="record.status === 'paid' ? 'warning' : 'info'"
+      size="small"
+      plain
+      icon="el-icon-refresh-left"
+      :loading="loading"
+      :disabled="!record.id"
+      @click="open"
+    >
+      <span>{{ $t(record.status === 'paid' ? 'Refund' : 'Refund details') }}</span>
     </el-button>
 
     <el-dialog
@@ -9,6 +17,7 @@
       :title="$t('Refund order')"
       width="min(520px, 94vw)"
       append-to-body
+      align-center
       :close-on-click-modal="false"
       destroy-on-close
       @closed="reset"
@@ -21,6 +30,7 @@
           <el-descriptions :column="2" border>
             <el-descriptions-item :label="$t('Order')">#{{ order.id }}</el-descriptions-item>
             <el-descriptions-item :label="$t('Payment Method')">{{ context.payment || $t('Unknown') }}</el-descriptions-item>
+            <el-descriptions-item :label="$t('Payment status')" :span="2">{{ $t(paymentStatusLabel(invoice.status)) }}</el-descriptions-item>
             <el-descriptions-item :label="$t('Paid amount')">{{ formatMoney(context.amount, context.currency) }}</el-descriptions-item>
             <el-descriptions-item :label="$t('Already refunded')">{{ formatMoney(context.refundedAmount, context.currency) }}</el-descriptions-item>
             <el-descriptions-item :label="$t('Refundable amount')" :span="2">
@@ -28,7 +38,17 @@
             </el-descriptions-item>
           </el-descriptions>
 
-          <el-form label-position="top" class="order-refund__form" @submit.prevent>
+          <h3>{{ $t('Refund history') }}</h3>
+          <el-alert v-if="historyError" :title="historyError" type="error" :closable="false" />
+          <el-table v-else :data="history" :empty-text="$t('No refund requests')">
+            <el-table-column prop="createdAt" :label="$t('Created at')" min-width="170" />
+            <el-table-column :label="$t('Refund amount')" min-width="110"><template #default="{ row }">{{ formatMoney(row.amount, context.currency) }}</template></el-table-column>
+            <el-table-column :label="$t('Status')" min-width="150"><template #default="{ row }">{{ $t(refundStatusLabel(row.status)) }}</template></el-table-column>
+            <el-table-column prop="reason" :label="$t('Refund reason')" min-width="150" />
+          </el-table>
+          <p class="order-refund__hint">{{ $t('Refund history confirmation hint') }}</p>
+
+          <el-form v-if="order.status === 'paid' && context.canRefund" label-position="top" class="order-refund__form" @submit.prevent>
             <el-form-item :label="$t('Refund amount')" :error="amountError">
               <el-input
                 v-model="amount"
@@ -63,7 +83,9 @@
 
       <template #footer>
         <el-button :disabled="submitting" @click="visible = false">{{ $t('Close') }}</el-button>
+        <el-button :disabled="submitting || loading" @click="open">{{ $t('Refresh refund details') }}</el-button>
         <el-button
+          v-if="order.status === 'paid' && context.canRefund"
           type="warning"
           :loading="submitting"
           :disabled="!loaded || loading || !context.canRefund"
@@ -87,6 +109,8 @@ import {
   orderStoreUuid,
   refundContext,
   refundReasonBytes,
+  paymentStatusLabel,
+  refundStatusLabel,
   validateRefundAmount
 } from './order-refund.mjs'
 
@@ -112,7 +136,9 @@ export default {
       reason: '',
       amountTouched: false,
       reasonTouched: false,
-      refundKey: ''
+      refundKey: '',
+      history: [],
+      historyError: ''
     }
   },
   computed: {
@@ -130,8 +156,11 @@ export default {
   },
   methods: {
     formatMoney,
+    paymentStatusLabel,
+    refundStatusLabel,
     async open() {
       if (!this.record.id || this.loading) return
+      const preserveInput = this.visible && this.loaded
       this.visible = true
       this.loading = true
       this.loaded = false
@@ -141,6 +170,8 @@ export default {
       this.invoice = {}
       this.storeUuid = ''
       this.context = {}
+      this.history = []
+      this.historyError = ''
       try {
         const orderResponse = await request.get(`/api/v1/manage/orders/${this.record.id || this.record.uuid}`)
         this.order = orderResponse.data || {}
@@ -152,11 +183,16 @@ export default {
         this.invoice = invoiceResponse.data || {}
         this.context = refundContext(this.order, this.invoice)
         if (this.context.error) throw new Error(t(this.context.error))
-        if (!this.context.statusRefundable) throw new Error(t('invoiceNotRefundable'))
 
-        this.amount = this.context.canRefund ? minorUnitsToInput(this.context.refundableAmount) : ''
+        if (!preserveInput) this.amount = this.context.canRefund ? minorUnitsToInput(this.context.refundableAmount) : ''
         this.loaded = true
         if (!this.context.canRefund) this.notice = t('noRefundableAmount')
+        try {
+          const response = await request.get(`${orderRefundPath(this.storeUuid, this.order.uuid)}s`)
+          this.history = response.data || []
+        } catch (cause) {
+          this.historyError = this.failureMessage(cause, 'Failed to load refund history')
+        }
       } catch (cause) {
         this.error = this.failureMessage(cause, 'Failed to load refund details')
       } finally {
@@ -231,8 +267,20 @@ export default {
 </script>
 
 <style scoped>
+:global(.easy-admin-actions:has(> .order-refund-action)) {
+  flex-wrap: wrap;
+  min-width: 0;
+  white-space: normal;
+}
+
+:global(.easy-admin-actions:has(> .order-refund-action) > .el-button--danger) {
+  order: 2;
+}
+
 .order-refund-action {
   display: inline-flex;
+  align-items: center;
+  order: 1;
 }
 
 .order-refund__body {

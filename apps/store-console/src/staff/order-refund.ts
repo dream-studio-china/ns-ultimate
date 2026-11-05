@@ -82,6 +82,12 @@ export function parseRefundPreview(value: unknown, expectedOrderUuid: string): R
 
 export type RefundResultKind = 'processing' | 'unknown' | 'succeeded' | 'failed'
 
+export function paymentStatusMessage(status: string | null | undefined) {
+  const labels = { paid: 'diningPaid', partial_refunded: 'refundPartiallyRefunded', partially_refunded: 'refundPartiallyRefunded',
+    refunded: 'diningRefunded', pending: 'diningPending', paying: 'refundProcessing', failed: 'refundResultFailed', cancelled: 'stateCancelled' } as const
+  return labels[status?.toLowerCase() as keyof typeof labels] ?? null
+}
+
 export function refundResultKind(status: string | null | undefined): RefundResultKind {
   const normalized = status?.toLowerCase() ?? ''
   if (['created', 'submitted', 'processing'].includes(normalized)) return 'processing'

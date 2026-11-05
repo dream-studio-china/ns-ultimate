@@ -491,6 +491,12 @@ export class StoreApi {
     if (result.tradeOrderUuid !== id || result.amount !== amount) throw new ApiError('invalid')
     return result
   }
+  async refundHistory(tradeOrderUuid: string): Promise<OrderRefundResult[]> {
+    const id = uuid.parse(tradeOrderUuid)
+    const rows = await this.client.data(`${this.base}/trade-orders/${id}/refunds`, z.array(orderRefundResultSchema))
+    if (rows.some((row) => row.tradeOrderUuid !== id)) throw new ApiError('invalid')
+    return rows
+  }
   async legacyCounters(): Promise<LiveCounter[]> {
     const counters: LiveCounter[] = []
     for (let page = 1; ; page += 1) {

@@ -79,3 +79,12 @@ export function orderRefundPath(storeUuid, tradeOrderUuid) {
   if (typeof tradeOrderUuid !== 'string' || !UUID_PATTERN.test(tradeOrderUuid)) throw new Error('Trade order UUID is required')
   return `/api/v1/store/${storeUuid}/trade-orders/${tradeOrderUuid}/refund`
 }
+
+export function paymentStatusLabel(status) {
+  return ({ paid: 'Paid', partial_refunded: 'Partially refunded', partially_refunded: 'Partially refunded', refunded: 'Refunded',
+    pending: 'Pending', paying: 'Processing', failed: 'Failed', cancelled: 'Cancelled' })[status] || status || 'Unknown'
+}
+
+export function refundStatusLabel(status) {
+  return ({ processing: 'Refund is processing', unknown: 'Refund result is unknown', succeeded: 'Refund completed', failed: 'Refund failed' })[status] || 'Unknown'
+}
