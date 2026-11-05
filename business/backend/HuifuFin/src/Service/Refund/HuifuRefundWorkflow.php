@@ -172,17 +172,20 @@ final class HuifuRefundWorkflow
             $this->entityManager->flush();
             throw new \RuntimeException($this->responses->message($response) ?? 'Huifu rejected the refund request.');
         }
-        $responseAmount = $responseData['refund_amt'] ?? null;
-        if (is_scalar($responseAmount) && $this->amountToCents((string) $responseAmount) !== $providerAmount) {
+        $mismatch = $this->responseMismatch($refund, $responseData);
+        if ($mismatch !== null) {
             $refund->markUnknown();
-            $refund->setProviderResponse(null, 'Huifu accepted a different refund amount; the result requires reconciliation.');
+            $refund->setProviderResponse($this->responses->code($response), $mismatch);
             $this->entityManager->flush();
-            throw new \RuntimeException('Huifu accepted a different refund amount.');
+            throw new \RuntimeException($mismatch);
         }
         if ($this->responses->transStatus($responseData) === 'S') {
             $refund->markSucceeded($providerAmount);
             $this->entityManager->flush();
             $this->applyToCore($refund);
+        } elseif ($this->responses->transStatus($responseData) === 'F') {
+            $refund->markFailed($this->responses->message($response));
+            $this->entityManager->flush();
         } else {
             $refund->markProcessing();
             $refund->setNextQueryAt(new \DateTimeImmutable());
@@ -217,11 +220,10 @@ final class HuifuRefundWorkflow
         }
         $resolved = $this->profiles->resolveForAttempt($attempt);
         $data = [
-            'req_date' => $refund->getReqDate(),
-            'req_seq_id' => $refund->getRefundNo(),
             'huifu_id' => $attempt->getHuifuId(),
-            'org_req_date' => $attempt->getReqDate(),
-            'org_req_seq_id' => $attempt->getReqSeqId(),
+            // For refundquery, "org" identifies the refund, not its payment.
+            'org_req_date' => $refund->getReqDate(),
+            'org_req_seq_id' => $refund->getRefundNo(),
         ];
         ksort($data);
         $sign = $this->signer->sign($data, $resolved['credentials']['merchant_private_key']);
@@ -231,9 +233,18 @@ final class HuifuRefundWorkflow
             'data' => $data,
             'sign' => $sign,
         ];
-        $response = $this->client->post(HuifuEndpoints::SCANPAY_REFUND_QUERY, $payload, $resolved['provider']->getEnvironment());
-        $this->responses->verify($response, $this->signer, $resolved['credentials']['huifu_public_key']);
-        $responseData = $this->responses->data($response);
+        $response = [];
+        $responseData = [];
+        $queryError = null;
+        $queryFailure = 'The Huifu refund confirmation query did not return a usable response.';
+        try {
+            $response = $this->client->post(HuifuEndpoints::SCANPAY_REFUND_QUERY, $payload, $resolved['provider']->getEnvironment());
+            $queryFailure = 'The Huifu refund confirmation response could not be verified.';
+            $this->responses->verify($response, $this->signer, $resolved['credentials']['huifu_public_key']);
+            $responseData = $this->responses->data($response);
+        } catch (\Throwable $exception) {
+            $queryError = $exception;
+        }
 
         $connection = $this->entityManager->getConnection();
         $shouldApply = false;
@@ -244,6 +255,7 @@ final class HuifuRefundWorkflow
             if (!$refund instanceof HuifuRefund) {
                 throw new \RuntimeException('The Huifu refund record was not found.');
             }
+            $this->entityManager->refresh($refund, LockMode::PESSIMISTIC_WRITE);
             if ($refund->getStatus() === HuifuRefund::STATUS_SUCCEEDED) {
                 $connection->commit();
                 $this->applyToCore($refund);
@@ -254,17 +266,21 @@ final class HuifuRefundWorkflow
                 return $refund;
             }
             $refund->markQueried();
-            $refund->setResponseSnapshot($this->snapshot($responseData));
+            if ($queryError === null) {
+                $refund->setResponseSnapshot($this->snapshot($responseData));
+                $refund->setProviderResponse($this->responses->code($response), $this->responses->message($response));
+            }
             $status = $this->responses->transStatus($responseData);
-            if ($status === 'S' && $this->responses->successful($response)) {
-                $responseAmount = $responseData['refund_amt'] ?? null;
-                if (is_scalar($responseAmount) && $this->amountToCents((string) $responseAmount) !== $refund->getProviderAmount()) {
-                    $refund->markUnknown();
-                    $refund->setProviderResponse(null, 'Huifu confirmed a different refund amount; the result requires reconciliation.');
-                } else {
-                    $refund->markSucceeded($refund->getProviderAmount());
-                    $shouldApply = true;
+            $mismatch = $this->responseMismatch($refund, $responseData);
+            if ($queryError !== null || $mismatch !== null || !$this->responses->successful($response)) {
+                $refund->markUnknown();
+                if ($queryError !== null || $mismatch !== null) {
+                    $refund->setProviderResponse($queryError !== null ? null : $this->responses->code($response), $queryError !== null ? $queryFailure : $mismatch);
                 }
+                $refund->setNextQueryAt(new \DateTimeImmutable('+5 minutes'));
+            } elseif ($status === 'S') {
+                $refund->markSucceeded($refund->getProviderAmount());
+                $shouldApply = true;
             } elseif ($status === 'F') {
                 $refund->markFailed($this->responses->message($response));
             } elseif ($status === 'P') {
@@ -272,6 +288,7 @@ final class HuifuRefundWorkflow
                 $refund->setNextQueryAt(new \DateTimeImmutable('+5 minutes'));
             } else {
                 $refund->markUnknown();
+                $refund->setProviderResponse($this->responses->code($response), 'The Huifu refund confirmation response has no recognized transaction status.');
                 $refund->setNextQueryAt(new \DateTimeImmutable('+5 minutes'));
             }
             $this->entityManager->flush();
@@ -282,6 +299,9 @@ final class HuifuRefundWorkflow
             }
             $this->refreshAfterRollback($refund, null);
             throw $exception;
+        }
+        if ($queryError !== null) {
+            throw $queryError;
         }
         if ($shouldApply) {
             $this->applyToCore($refund);
@@ -402,6 +422,22 @@ final class HuifuRefundWorkflow
         return 'HFR'.(new \DateTimeImmutable())->format('YmdHis').strtoupper(bin2hex(random_bytes(5)));
     }
 
+    /** @param array<string, mixed> $data */
+    private function responseMismatch(HuifuRefund $refund, array $data): ?string
+    {
+        // Some responses omit echoed fields. Never accept conflicting echoes.
+        foreach (['req_date' => $refund->getReqDate(), 'req_seq_id' => $refund->getRefundNo(), 'huifu_id' => $refund->getAttempt()?->getHuifuId()] as $field => $expected) {
+            if (array_key_exists($field, $data) && (!is_scalar($data[$field]) || (string) $data[$field] !== $expected)) {
+                return 'The Huifu refund response identity does not match the requested refund ('.$field.').';
+            }
+        }
+        if (array_key_exists('refund_amt', $data) && (!is_scalar($data['refund_amt']) || $this->amountToCents((string) $data['refund_amt']) !== $refund->getProviderAmount())) {
+            return 'The Huifu refund response amount does not match the requested refund.';
+        }
+
+        return null;
+    }
+
     private function amountToCents(string $amount): int
     {
         if (!preg_match('/^(\d+)(?:\.(\d{1,2}))?$/', trim($amount), $matches)) {
@@ -416,7 +452,7 @@ final class HuifuRefundWorkflow
      *  @return array<string, mixed> */
     private function snapshot(array $data): array
     {
-        $keys = ['resp_code', 'resp_desc', 'req_seq_id', 'req_date', 'huifu_id', 'trans_stat', 'refund_amt', 'out_refund_id', 'hf_seq_id'];
+        $keys = ['resp_code', 'resp_desc', 'req_seq_id', 'req_date', 'huifu_id', 'trans_stat', 'trans_status', 'refund_amt', 'out_refund_id', 'hf_seq_id'];
         $snapshot = [];
         foreach ($keys as $key) {
             if (array_key_exists($key, $data)) {

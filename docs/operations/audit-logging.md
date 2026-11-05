@@ -92,6 +92,22 @@ After correcting the cause, ask Huifu to resend the original callback. Do not
 create a new payment to retest a callback. `app:huifu:reconcile` queries pending
 attempts and refunds; it is a compensation command, not a single-callback retry.
 
+### Huifu refund recovery
+
+If Huifu reports a completed refund while the unified API reports `unknown`, do not submit another refund, change the idempotency key, clear the receipt or mark database rows successful manually. Inspect the existing `huifu_refund` row and the audited `/v2/trade/payment/scanpay/refund` and `/refundquery` requests/responses. The row's `response_code`, `response_message`, allowlisted `response_snapshot`, `query_count`, `last_queried_at` and `next_query_at` distinguish verified provider results from query transport/verification failures. Unverified query bodies are not copied into the refund snapshot; protected audit logs remain the source for raw responses.
+
+After deploying the corrected query implementation, run from the project root using the production PHP/runtime configuration:
+
+```sh
+APP_ENV=prod APP_DEBUG=0 php integration/backend/bin/console app:huifu:reconcile --refund=<huifu-refund-uuid>
+```
+
+The argument is the existing **HuifuRefund UUID**, not the unified refund receipt UUID, Trade Order UUID, StoreOrder UUID or refund request sequence. Resolve it from the existing provider record associated with the receipt before execution. This mode processes no other payments/refunds and ignores the selected row's next-query time. It only queries the original refund or reapplies an already-confirmed result through Core's idempotent workflow; it never calls the refund-submission endpoint. Created, failed, cancelled, missing or malformed selections are rejected. A repeated completed recovery does not issue another provider query or duplicate the refunded amount.
+
+The command prints the persisted status and `coreApplied` marker. Exit code 0 means Core application is complete, 1 means confirmation/application failed or remains unresolved, and 2 means an invalid selection. Do not treat a query's successful HTTP response as refund completion. Refresh the unified refund detail/history and Invoice balance after recovery. Partial refunds leave the Trade order `paid`; cumulative full refunds change it to `refunded` through the normal Core flow. If confirmation remains unknown, investigate the protected response rather than resubmitting.
+
+For unattended compensation, schedule `app:huifu:reconcile --limit=50` externally with the production runtime and monitor its logs. The repository does not start this scheduler. Targeted recovery does not recover a metadata-only reservation whose provider attempt was never persisted.
+
 ## Limits
 
 Logging does not change authorization, response bodies or HTTP status codes. It

@@ -266,7 +266,7 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             'resp_code' => '00000000',
             'resp_desc' => '退款成功',
             'trans_stat' => 'S',
-            'req_seq_id' => 'HFRTEST',
+            'req_seq_id' => 'SOR'.str_repeat('a', 32),
         ]];
         $refunds = new HuifuRefundWorkflow(
             $em,
@@ -279,7 +279,7 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             $proof,
             [self::getContainer()->get(OrderInvoiceSourcePolicy::class)],
         );
-        $refund = $refunds->request($invoice, 400, 'Test refund');
+        $refund = $refunds->request($invoice, 400, 'Test refund', ['refundNo' => 'SOR'.str_repeat('a', 32)]);
         self::assertSame(HuifuRefund::STATUS_SUCCEEDED, $refund->getStatus());
         self::assertTrue($refund->isCoreApplied());
         self::assertSame(400, $refund->getProviderAmount());
@@ -310,13 +310,13 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             'resp_code' => '00000000',
             'resp_desc' => '退款处理中',
             'trans_stat' => 'P',
-            'req_seq_id' => 'HFRPENDING',
+            'req_seq_id' => 'SOR'.str_repeat('b', 32),
         ]];
         $pendingClient->responses[] = ['data' => [
             'resp_code' => '00000000',
             'resp_desc' => '退款处理中',
             'trans_stat' => 'P',
-            'req_seq_id' => 'HFRPENDING',
+            'req_seq_id' => 'SOR'.str_repeat('b', 32),
         ]];
         $pendingRefunds = new HuifuRefundWorkflow(
             $em,
@@ -329,7 +329,7 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             $proof,
             [self::getContainer()->get(OrderInvoiceSourcePolicy::class)],
         );
-        $pending = $pendingRefunds->request($invoice, 600, 'Pending refund');
+        $pending = $pendingRefunds->request($invoice, 600, 'Pending refund', ['refundNo' => 'SOR'.str_repeat('b', 32)]);
         self::assertSame(HuifuRefund::STATUS_PROCESSING, $pending->getStatus());
         self::assertFalse($pending->isCoreApplied());
         $em->refresh($invoice);
