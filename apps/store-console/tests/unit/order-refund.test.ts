@@ -3,6 +3,7 @@ import {
   amountToMinorUnits,
   minorUnitsToInput,
   paidOrderCanRefund,
+  paymentStatusMessage,
   parseRefundPreview,
   refundReasonBytes,
   refundResultKind,
@@ -13,6 +14,13 @@ const orderUuid = '00000000-0000-4000-8000-000000000001'
 const invoiceUuid = '00000000-0000-4000-8000-000000000002'
 
 describe('cashier order refunds', () => {
+  it('labels canonical and historical partial refund states without changing order eligibility', () => {
+    expect(paymentStatusMessage('partial_refunded')).toBe('refundPartiallyRefunded')
+    expect(paymentStatusMessage('partially_refunded')).toBe('refundPartiallyRefunded')
+    expect(paymentStatusMessage('refunded')).toBe('diningRefunded')
+    expect(paymentStatusMessage(null)).toBeNull()
+    expect(paidOrderCanRefund({ status: 'paid', paymentStatus: 'partial_refunded' })).toBe(true)
+  })
   it('parses decimal refund amounts without floating point rounding', () => {
     expect(amountToMinorUnits('12.34')).toBe(1234)
     expect(amountToMinorUnits('12.3')).toBe(1230)

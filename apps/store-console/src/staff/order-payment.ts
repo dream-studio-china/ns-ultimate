@@ -28,7 +28,7 @@ export interface StaffPaymentResult {
 export function confirmedOrderCanCollect(order: PaymentOrderReference): boolean {
   const paymentStatus = order.paymentStatus?.toLowerCase() ?? ''
   return order.status.toLowerCase() === 'confirmed'
-    && !['paid', 'partially_refunded', 'refunded', 'cancelled'].includes(paymentStatus)
+    && !['paid', 'partial_refunded', 'partially_refunded', 'refunded', 'cancelled'].includes(paymentStatus)
 }
 
 /** A Huifu start still needs the exact invoice UUID; a boolean hasInvoice flag is not sufficient. */
@@ -71,7 +71,7 @@ export function invoiceReferenceUuid(value: unknown, depth = 0): string | null {
 }
 
 export function paymentStatusIsPaid(status: string | null | undefined): boolean {
-  return ['paid', 'partially_refunded'].includes(status?.toLowerCase() ?? '')
+  return ['paid', 'partial_refunded', 'partially_refunded'].includes(status?.toLowerCase() ?? '')
 }
 
 /** A pending invoice still accepts a first provider request; submitted attempts must not be duplicated. */

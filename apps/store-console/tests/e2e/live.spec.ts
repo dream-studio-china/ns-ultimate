@@ -21,7 +21,7 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; refundAccess?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; productCount?: number; soldOut?: boolean; productCover?: string; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
+async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; refundAccess?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; productCount?: number; soldOut?: boolean; productCover?: string; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null; rawBody: string }[] = []
   let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = Array.from({ length: options.productCount ?? 1 }, (_, index) => ({
     uuid: index === 0 ? productId : `00000000-0000-4000-8000-${String(index + 2).padStart(12, '0')}`,
@@ -36,7 +36,7 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = options.specifications?.map((item) => ({ ...item })) ?? []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
-  const reportingOrder = { uuid: orderId, tradeOrderUuid: tradeOrderId, status: 'paid', paymentStatus: 'paid', hasInvoice: false, totalAmount: 1590, currency: 'CNY', notes: null, createdAt: new Date().toISOString(), items: [{ specificationUuid: specId, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: false, canCancel: false }
+  const reportingOrder = { uuid: orderId, tradeOrderUuid: tradeOrderId, status: 'paid', paymentStatus: options.partialRefund ? 'partial_refunded' : 'paid', hasInvoice: !!options.partialRefund, totalAmount: 1590, currency: 'CNY', notes: null, createdAt: new Date().toISOString(), items: [{ specificationUuid: specId, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: false, canCancel: false }
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -75,7 +75,8 @@ async function mockApi(page: Page, options: { readOnly?: boolean; membership?: s
     }
     if (options.denyWrite && method !== 'GET') return route.fulfill({ status: 403, json: { code: 403, message: 'denied' } })
     if (actualPath.endsWith('/counter-operations/counters')) return respond({ items: [{ counter: { uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, enabled: true }, session: null, ordersVisible: true, orders: [reportingOrder], openAmount: 0, orderedAmount: 1590, openOrderCount: 0, currency: 'CNY', canEnd: true, version, paymentHold: false }], total: 1, page: 1, hasNext: false })
-    if (actualPath === `/api/v1/public/orders/${tradeOrderId}/payment`) return respond({ orderUuid: tradeOrderId, amount: 1590, currency: 'CNY', invoice: { uuid: specId, status: 'paid', amount: 1590, refundedAmount: 0, currency: 'CNY', payment: 'wechat' } })
+    if (actualPath === `/api/v1/public/orders/${tradeOrderId}/payment`) return respond({ orderUuid: tradeOrderId, amount: 1590, currency: 'CNY', invoice: { uuid: specId, status: options.partialRefund ? 'partial_refunded' : 'paid', amount: 1590, refundedAmount: options.partialRefund ? 500 : 0, currency: 'CNY', payment: 'wechat' } })
+    if (actualPath === `/api/v1/store/${storeId}/trade-orders/${tradeOrderId}/refunds`) return respond(options.partialRefund ? [{ uuid: counterId, tradeOrderUuid: tradeOrderId, invoiceUuid: specId, amount: 500, reason: 'Customer request', status: 'succeeded', actorUuid: storeId, createdAt: '2026-11-05T10:00:00+08:00', invoiceStatus: 'partial_refunded', refundedAmount: 500 }] : [])
     if (actualPath === `/api/v1/store/${storeId}/trade-orders/${tradeOrderId}/refund` && method === 'POST') return respond({ uuid: counterId, tradeOrderUuid: tradeOrderId, invoiceUuid: specId, amount: 500, reason: '顾客申请部分退款', status: 'processing', actorUuid: storeId, createdAt: '2026-11-05T10:00:00+08:00', invoiceStatus: 'paid', refundedAmount: 0 })
     if (path === `/api/v1/store/${storeId}/products/availability`) {
       const ids = (body!.items as { uuid: string }[]).map((item) => item.uuid)
@@ -480,6 +481,25 @@ test('order status filters hide counter orders that do not match', async ({ page
   await status.selectOption('fulfilled')
   await expect(page.getByRole('heading', { name: '没有匹配的记录', exact: true })).toBeVisible()
   await expect(page.locator('.workspace-order-list article')).toHaveCount(0)
+})
+
+test('partial refund visibility shows confirmed amounts and read-only history on the paid order', async ({ page }) => {
+  const requests = await mockApi(page, { refundAccess: true, partialRefund: true })
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
+  await expect(page.locator('.workspace-order-list article')).toContainText('部分退款')
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  const details = page.locator('.order-refund-visibility')
+  await expect(details).toContainText('部分退款')
+  await expect(details).toContainText('¥15.90')
+  await expect(details).toContainText('¥5.00')
+  await expect(details).toContainText('¥10.90')
+  await expect(details).toContainText('Customer request')
+  await expect(details).toContainText('退款完成')
+  await details.getByRole('button', { name: '刷新退款详情', exact: true }).click()
+  await expect(details).toContainText('Customer request')
+  expect(requests.filter((request) => request.path.endsWith('/refunds')).length).toBeGreaterThanOrEqual(2)
+  expect(requests.some((request) => request.method === 'POST' && request.path.endsWith('/refund'))).toBe(false)
 })
 
 test('paid orders support a partial store refund with an entered amount', async ({ page }) => {

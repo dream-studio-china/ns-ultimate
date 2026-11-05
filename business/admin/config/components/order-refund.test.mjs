@@ -7,8 +7,18 @@ import {
   orderStoreUuid,
   refundContext,
   refundReasonBytes,
+  paymentStatusLabel,
+  refundStatusLabel,
   validateRefundAmount
 } from './order-refund.mjs'
+
+test('refund visibility labels payment state separately from request completion', () => {
+  assert.equal(paymentStatusLabel('partial_refunded'), 'Partially refunded')
+  assert.equal(paymentStatusLabel('partially_refunded'), 'Partially refunded')
+  assert.equal(paymentStatusLabel('refunded'), 'Refunded')
+  assert.equal(refundStatusLabel('processing'), 'Refund is processing')
+  assert.equal(refundStatusLabel('succeeded'), 'Refund completed')
+})
 
 test('amountToMinorUnits converts decimal yuan amounts without losing precision', () => {
   assert.equal(amountToMinorUnits('10'), 1000)

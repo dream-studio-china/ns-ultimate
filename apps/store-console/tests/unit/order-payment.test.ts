@@ -40,6 +40,9 @@ describe('staff order collection', () => {
   it('recognizes only confirmed server payment states as settled', () => {
     expect(paymentStatusIsPaid('paid')).toBe(true)
     expect(paymentStatusIsPaid('PAID')).toBe(true)
+    expect(paymentStatusIsPaid('partial_refunded')).toBe(true)
+    expect(paymentStatusIsPaid('partially_refunded')).toBe(true)
+    expect(confirmedOrderCanCollect({ status: 'confirmed', paymentStatus: 'partial_refunded' })).toBe(false)
     expect(paymentStatusIsPaid('paying')).toBe(false)
     expect(paymentStatusIsPaid(null)).toBe(false)
   })
