@@ -157,6 +157,12 @@ final class OrderRefundService
         throw new HttpException(404, 'refund_not_found');
     }
 
+    /**
+     * @template TKey of array-key|null
+     * @template TResult
+     * @param Query<TKey, TResult> $query
+     * @return Query<TKey, TResult>
+     */
     private function current(Query $query): Query
     {
         // A plain SELECT can use an older MySQL REPEATABLE READ snapshot even

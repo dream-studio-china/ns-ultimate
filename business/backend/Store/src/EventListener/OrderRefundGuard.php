@@ -20,6 +20,7 @@ final readonly class OrderRefundGuard implements EventSubscriberInterface
         return ['workflow.order.guard.fulfill' => 'guard', 'workflow.store_order.guard.fulfill' => 'guard'];
     }
 
+    /** @param GuardEvent<Order|StoreOrder> $event */
     public function guard(GuardEvent $event): void
     {
         $order = $event->getSubject();
@@ -28,6 +29,7 @@ final readonly class OrderRefundGuard implements EventSubscriberInterface
             $order instanceof StoreOrder => $order->getTradeOrderUuid(),
             default => null,
         };
+        if ($uuid === null) return;
         // Store fulfillment owns its own aggregate lock. Also lock its Trade
         // source so fulfillment and the refund reservation cannot cross.
         if ($order instanceof StoreOrder) {
@@ -43,7 +45,7 @@ final readonly class OrderRefundGuard implements EventSubscriberInterface
                 return;
             }
         }
-        if ($uuid !== null && $this->refunds->hasPending($uuid)) {
+        if ($this->refunds->hasPending($uuid)) {
             $event->setBlocked(true, 'An unresolved order refund must be reconciled before fulfillment.');
         }
     }
