@@ -93,13 +93,13 @@ final class StaffOperationsTest extends KernelTestCase
 
     public function testOrderRefundCommandRequiresStoreScopedRefundPermission(): void
     {
-        $path = '/api/v1/store/'.$this->store->getUuid().'/orders/'.UUID::v4().'/refund';
+        $path = '/api/v1/store/'.$this->store->getUuid().'/trade-orders/'.UUID::v4().'/refund';
         self::assertSame(404, self::$kernel->handle(Request::create($path, 'POST', [], [], [], [
             'HTTP_AUTHORIZATION' => 'Bearer '.$this->token,
             'CONTENT_TYPE' => 'application/json',
         ], json_encode(['amount' => 100, 'reason' => 'Customer request'], JSON_THROW_ON_ERROR)))->getStatusCode());
 
-        $otherPath = '/api/v1/store/'.$this->other->getUuid().'/orders/'.UUID::v4().'/refund';
+        $otherPath = '/api/v1/store/'.$this->other->getUuid().'/trade-orders/'.UUID::v4().'/refund';
         self::assertSame(403, self::$kernel->handle(Request::create($otherPath, 'POST', [], [], [], [
             'HTTP_AUTHORIZATION' => 'Bearer '.$this->token,
             'CONTENT_TYPE' => 'application/json',
