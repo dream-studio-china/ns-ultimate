@@ -69,7 +69,11 @@ final class OrderPaymentController
         ]], headers: ['Cache-Control' => 'no-store, private', 'Vary' => 'Authorization']);
     }
 
-    /** Return only the counter already bound to this order and store. */
+    /**
+     * Return only the counter already bound to this order and store.
+     *
+     * @return array{uuid: string, name: string, code: string}|null
+     */
     private function publicCounter(Order $order, string $storeUuid): ?array
     {
         $binding = $this->em->getRepository(OrderCounter::class)
