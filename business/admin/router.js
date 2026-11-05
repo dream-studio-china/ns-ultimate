@@ -1,6 +1,11 @@
 import { r } from '@/router/generator'
 import { t } from '@/i18n'
 import Layout from '@/layout'
+import coreRoutes from '../../core/crud-admin/src/configs/routes'
+import OrderRefundRecords from './config/components/OrderRefundRecords.vue'
+
+const orderRoute = coreRoutes.find(route => route.name === 'OrderManage')
+if (!orderRoute) throw new Error('The admin core must expose the OrderManage route.')
 
 export default {
   add: [
@@ -97,6 +102,17 @@ export default {
       ]
     }
   ],
-  replace: [],
+  replace: [{
+    ...orderRoute,
+    children: [
+      ...orderRoute.children,
+      {
+        path: 'refund-records',
+        name: 'OrderRefundRecords',
+        component: OrderRefundRecords,
+        meta: { title: t('Order refund records'), icon: 'el-icon-refresh-left' }
+      }
+    ]
+  }],
   remove: []
 }

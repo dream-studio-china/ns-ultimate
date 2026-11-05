@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   amountToMinorUnits,
   minorUnitsToInput,
+  orderRefundHistoryPath,
   orderRefundPath,
   orderStoreUuid,
   refundContext,
@@ -84,6 +85,12 @@ test('refundContext fails closed for mismatched or unpaid invoices', () => {
   assert.equal(unpaid.statusRefundable, false)
 })
 
+test('orderRefundPath always targets the administrative order refund API', () => {
+  const tradeOrderUuid = '00000000-0000-4000-8000-000000000001'
+  assert.equal(orderRefundPath(tradeOrderUuid), `/api/v1/manage/orders/${tradeOrderUuid}/refunds`)
+  assert.throws(() => orderRefundPath(''), /Trade order UUID is required/)
+})
+
 test('orderStoreUuid reads only a valid Store context from the order', () => {
   const storeUuid = '00000000-0000-4000-8000-000000000002'
   assert.equal(orderStoreUuid({ metadata: { _store: { uuid: storeUuid } } }), storeUuid)
@@ -91,10 +98,13 @@ test('orderStoreUuid reads only a valid Store context from the order', () => {
   assert.equal(orderStoreUuid({ metadata: { _store: { uuid: 'not-a-uuid' } } }), '')
 })
 
-test('orderRefundPath always targets the unified Store Trade order API', () => {
+test('orderRefundHistoryPath targets the Store Trade order history API', () => {
   const storeUuid = '00000000-0000-4000-8000-000000000002'
   const tradeOrderUuid = '00000000-0000-4000-8000-000000000001'
-  assert.equal(orderRefundPath(storeUuid, tradeOrderUuid), `/api/v1/store/${storeUuid}/trade-orders/${tradeOrderUuid}/refund`)
-  assert.throws(() => orderRefundPath('', tradeOrderUuid), /Store UUID is required/)
-  assert.throws(() => orderRefundPath(storeUuid, ''), /Trade order UUID is required/)
+  assert.equal(
+    orderRefundHistoryPath(storeUuid, tradeOrderUuid),
+    `/api/v1/store/${storeUuid}/trade-orders/${tradeOrderUuid}/refunds`
+  )
+  assert.throws(() => orderRefundHistoryPath('', tradeOrderUuid), /Store UUID is required/)
+  assert.throws(() => orderRefundHistoryPath(storeUuid, ''), /Trade order UUID is required/)
 })

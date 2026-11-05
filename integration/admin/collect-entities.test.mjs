@@ -199,7 +199,14 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   const context = {
     t: key => key,
     Layout: {},
-    r: (name, title) => [{ name, meta: { title } }]
+    r: (name, title) => [{ name, meta: { title } }],
+    coreRoutes: [{
+      path: '/order',
+      name: 'OrderManage',
+      meta: { title: 'Order Management' },
+      children: [{ path: '/order', name: 'OrderList', meta: { title: 'Order' } }]
+    }],
+    OrderRefundRecords: {}
   }
   runInNewContext(source, context)
   const routes = context.routes.add
@@ -210,6 +217,10 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   assert.equal(counters.meta.icon, 'counter')
   assert.deepEqual(Array.from(counters.children, route => route.name), ['Counter', 'OrderCounter'])
   assert.equal(routes.find(route => route.name === 'WechatConfiguration').meta.icon, 'wechat')
+  const order = context.routes.replace.find(route => route.name === 'OrderManage')
+  assert.deepEqual(Array.from(order.children, route => route.name), ['OrderList', 'OrderRefundRecords'])
+  assert.equal(order.children[1].path, 'refund-records')
+  assert.equal(order.children[1].meta.title, 'Order refund records')
 })
 
 test('places Counter after Product and WeChat and Huifu menus before user management', () => {

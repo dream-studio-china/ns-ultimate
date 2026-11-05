@@ -70,7 +70,12 @@ test('appearance joins System Options without changing existing routes or role r
   const source = readFileSync(new URL('../../business/admin/router.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '')
     .replace('export default', 'routes =')
-  const context = { ...coreContext, routes: null }
+  const context = {
+    ...coreContext,
+    routes: null,
+    coreRoutes: coreContext.routes,
+    OrderRefundRecords: {}
+  }
   runInNewContext(source, context)
   const originalSystem = coreContext.routes.find(route => route.name === 'SystemOptionManage')
   const originalChildren = [...originalSystem.children]
