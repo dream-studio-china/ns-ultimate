@@ -12,7 +12,7 @@ final class FakeHuifuClient implements HuifuClientInterface
     /** @var list<array{path: string, payload: array<string, mixed>}> */
     public array $requests = [];
 
-    /** @var list<array<string, mixed>> */
+    /** @var list<array<string, mixed>|\Throwable> */
     public array $responses = [];
 
     public function __construct(
@@ -25,6 +25,9 @@ final class FakeHuifuClient implements HuifuClientInterface
     {
         $this->requests[] = ['path' => $path, 'payload' => $payload, 'environment' => $environment];
         $response = array_shift($this->responses) ?? [];
+        if ($response instanceof \Throwable) {
+            throw $response;
+        }
         if ($this->privateKey !== null && isset($response['data']) && is_array($response['data'])) {
             $response['sign'] = $this->signer->sign($response['data'], $this->privateKey);
         }
