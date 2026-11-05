@@ -26,6 +26,7 @@ final class OrderRefundController extends RestController
     {
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $scopeId]);
         if (!$store instanceof Store) throw new HttpException(404, 'order_not_found');
+        if ($this->isGranted('ROLE_ADMIN')) return;
         $this->denyAccessUnlessGranted('store:order:refund', $store);
     }
 

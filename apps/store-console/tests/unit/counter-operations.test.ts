@@ -214,4 +214,34 @@ describe('live counter session boundary', () => {
     data.mockRejectedValueOnce(new ApiError('forbidden', 403))
     await expect(api.storeOrderExists(id)).resolves.toBeNull()
   })
+
+  it('submits a store order refund through the unified Trade order API', async () => {
+    const invoiceUuid = '00000000-0000-4000-8000-000000000003'
+    const tradeOrderUuid = '00000000-0000-4000-8000-000000000004'
+    const payment = {
+      orderUuid: tradeOrderUuid,
+      amount: 2000,
+      currency: 'CNY',
+      invoice: { uuid: invoiceUuid, status: 'paid', amount: 2000, refundedAmount: 0, currency: 'CNY', payment: 'wechat' },
+    }
+    const refund = {
+      uuid: '00000000-0000-4000-8000-000000000005', tradeOrderUuid, invoiceUuid, amount: 500,
+      reason: 'Customer request', status: 'processing', actorUuid: id, createdAt: '2026-11-05T10:00:00+08:00',
+      invoiceStatus: 'paid', refundedAmount: 0,
+    }
+    const client = new ApiClient()
+    const data = vi.spyOn(client, 'data')
+      .mockResolvedValueOnce(payment)
+      .mockResolvedValueOnce(refund)
+    const api = new StoreApi(client, id)
+
+    const preview = await api.refundPreview(tradeOrderUuid)
+    await expect(api.refundOrder(tradeOrderUuid, 500, 'Customer request', 'refund-command')).resolves.toEqual(refund)
+    expect(data.mock.calls.map(([path]) => path)).toEqual([
+      `/api/v1/public/orders/${tradeOrderUuid}/payment`,
+      `/api/v1/store/${id}/trade-orders/${tradeOrderUuid}/refund`,
+    ])
+    expect(preview.payment).toBe('wechat')
+    expect(data.mock.calls[1]![3]).toEqual({ amount: 500, reason: 'Customer request', idempotencyKey: 'refund-command' })
+  })
 })

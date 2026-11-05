@@ -13,6 +13,7 @@ use App\Trade\Entity\OrderItem;
 use App\Trade\Entity\OrderStoreLifecycle;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\HuifuFin\Entity\HuifuMerchant;
 use NsUltimate\Business\HuifuFin\Entity\HuifuMerchantStoreGrant;
 use NsUltimate\Business\HuifuFin\Entity\HuifuProviderProfile;
@@ -27,6 +28,7 @@ final class PublicOrderPaymentApiTest extends KernelTestCase
 {
     private EntityManagerInterface $em;
     private Store $store;
+    private Counter $counter;
     private Order $order;
     private HuifuProviderProfile $provider;
     private HuifuMerchant $merchant;
@@ -43,10 +45,11 @@ final class PublicOrderPaymentApiTest extends KernelTestCase
         $metadata = $this->em->getMetadataFactory()->getAllMetadata();
         $tool->dropSchema($metadata); $tool->createSchema($metadata);
         $this->store = new Store('public-payment', 'Public payment store');
+        $this->counter = (new Counter())->setStoreUuid($this->store->getUuid())->setCode('A01')->setName('A01');
         $payer = (new User())->setUsername('private-customer')->setEmail('private-customer@example.test');
         $this->order = (new Order())->setUser($payer)->setStatus(Order::STATUS_CONFIRMED)
             ->setTotalAmount(2400)->setCurrency('CNY')->setNotes('Private notes')
-            ->setMetadata(['private' => 'private-order-metadata', '_store' => ['uuid' => UUID::v4()]]);
+            ->setMetadata(['private' => 'private-order-metadata', 'counterUuid' => $this->counter->getUuid(), '_store' => ['uuid' => UUID::v4()]]);
         $this->order->addItem((new OrderItem())->setSpecificationUuid(UUID::v4())->setSpecificationTitle('Regular')
             ->setProductSnapshot(['name' => 'Lunch', 'private' => 'private-product-snapshot'])
             ->setSpecSnapshot(['private' => 'private-specification-snapshot'])->setMetadata(['private' => 'private-item-metadata'])
@@ -58,9 +61,13 @@ final class PublicOrderPaymentApiTest extends KernelTestCase
         $this->setting = new StoreHuifuSetting($this->store->getUuid(), $this->merchant);
         $this->setting->setAllowedMethods(['jspay', 'native']);
         $this->grant = new HuifuMerchantStoreGrant($this->merchant, $this->store->getUuid());
-        foreach ([$this->store, $payer, $this->order, $this->provider, $this->merchant, $this->setting, $this->grant,
-            new OrderStoreLifecycle($this->order->getUuid(), $this->store->getUuid())] as $entity) $this->em->persist($entity);
+        $this->em->persist($this->store);
+        $this->em->persist($this->counter);
         $this->em->flush();
+        $this->em->wrapInTransaction(function () use ($payer): void {
+            foreach ([$payer, $this->order, $this->provider, $this->merchant, $this->setting, $this->grant,
+                new OrderStoreLifecycle($this->order->getUuid(), $this->store->getUuid())] as $entity) $this->em->persist($entity);
+        });
     }
 
     public function testAnonymousReadProjectsOnlyPublicFieldsWithoutCreatingPayment(): void
@@ -74,6 +81,7 @@ final class PublicOrderPaymentApiTest extends KernelTestCase
         self::assertSame(['code' => 0, 'message' => 'SUCCESS', 'data' => [
             'orderUuid' => $this->order->getUuid(), 'status' => 'confirmed',
             'store' => ['uuid' => $this->store->getUuid(), 'name' => 'Public payment store'],
+            'counter' => ['uuid' => $this->counter->getUuid(), 'name' => 'A01', 'code' => 'A01'],
             'currency' => 'CNY', 'amount' => 2400,
             'items' => [['name' => 'Lunch', 'specification' => 'Regular', 'quantity' => 2, 'unitPrice' => 1200, 'amount' => 2400]],
             'provider' => 'huifu', 'channels' => ['native'], 'defaultChannel' => 'native', 'invoice' => null,

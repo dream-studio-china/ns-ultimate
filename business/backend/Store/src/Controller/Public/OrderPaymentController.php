@@ -10,6 +10,8 @@ use App\Store\Entity\Store;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderStoreLifecycle;
 use Doctrine\ORM\EntityManagerInterface;
+use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuProfileResolver;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
@@ -50,10 +52,12 @@ final class OrderPaymentController
                 'quantity' => $item->getQuantity(), 'unitPrice' => $item->getUnitPrice(), 'amount' => $item->getPrice()];
         }
         $channels = $this->huifu->publicChannels($store->getUuid());
+        $counter = $this->publicCounter($order, $store->getUuid());
 
         return new JsonResponse(['code' => 0, 'message' => 'SUCCESS', 'data' => [
             'orderUuid' => $order->getUuid(), 'status' => $order->getStatus(),
             'store' => ['uuid' => $store->getUuid(), 'name' => $store->getName()],
+            'counter' => $counter,
             'currency' => $order->getCurrency(), 'amount' => $order->getTotalAmount(), 'items' => $items,
             'provider' => 'huifu', 'channels' => $channels['channels'], 'defaultChannel' => $channels['defaultChannel'],
             'invoice' => $invoice === null ? null : [
@@ -63,6 +67,35 @@ final class OrderPaymentController
                 'paidAt' => $invoice->getPaidAt()?->format(DATE_ATOM),
             ],
         ]], headers: ['Cache-Control' => 'no-store, private', 'Vary' => 'Authorization']);
+    }
+
+    /** Return only the counter already bound to this order and store. */
+    private function publicCounter(Order $order, string $storeUuid): ?array
+    {
+        $binding = $this->em->getRepository(OrderCounter::class)
+            ->findOneBy(['tradeOrderUuid' => $order->getUuid(), 'storeUuid' => $storeUuid], ['id' => 'ASC']);
+        if ($binding instanceof OrderCounter) {
+            return [
+                'uuid' => $binding->getCounter()?->getUuid() ?? '',
+                'name' => $binding->getCounterNameSnapshot(),
+                'code' => $binding->getCounterCodeSnapshot(),
+            ];
+        }
+
+        // Older orders may predate counter_order bindings; accept only a
+        // counter UUID from their own metadata and verify store ownership.
+        $metadata = $order->getMetadata() ?? [];
+        $counterUuid = $metadata['counterUuid'] ?? null;
+        if ($counterUuid === null && is_array($metadata['counterUuids'] ?? null)) {
+            $counterUuid = $metadata['counterUuids'][0] ?? null;
+        }
+        if (!is_string($counterUuid) || !UUID::is_valid($counterUuid)) return null;
+
+        $counter = $this->em->getRepository(Counter::class)
+            ->findOneBy(['uuid' => strtolower($counterUuid), 'storeUuid' => $storeUuid]);
+        if (!$counter instanceof Counter) return null;
+
+        return ['uuid' => $counter->getUuid(), 'name' => $counter->getName(), 'code' => $counter->getCode()];
     }
 
     private function error(int $status, string $message): JsonResponse

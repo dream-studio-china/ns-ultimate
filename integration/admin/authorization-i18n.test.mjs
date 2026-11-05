@@ -25,10 +25,6 @@ for (const action of ['read', 'create']) {
 }
 seededPermissions.add(`store:huifu_pos_receipt:read`)
 
-// The retired Store routes no longer seed these permissions, but existing
-// database records retain their display translations until explicitly removed.
-const historicalPermissions = ['store:huifu_refund:read', 'store:huifu_refund:create']
-
 const seededRoles = [
   'store_content_editor',
   'store_content_metadata_editor',
@@ -76,7 +72,7 @@ test('every seeded or retained historical permission and role has a translation 
   for (const locale of locales) {
     const messages = authorizationNameMessages[locale]
     assert.ok(messages, `missing locale ${locale}`)
-    for (const code of [...seededPermissions, ...historicalPermissions]) {
+    for (const code of seededPermissions) {
       assert.equal(typeof messages[`permission.${code}`], 'string', `${locale} is missing permission.${code}`)
     }
     for (const code of seededRoles) {
@@ -86,7 +82,7 @@ test('every seeded or retained historical permission and role has a translation 
 })
 
 test('translation resources contain only current and explicitly retained historical authorization keys', () => {
-  const expectedPermissions = new Set([...seededPermissions, ...historicalPermissions].map(code => `permission.${code}`))
+  const expectedPermissions = new Set([...seededPermissions].map(code => `permission.${code}`))
   const expectedRoles = new Set(seededRoles.map(code => `role.${code}`))
   const expected = new Set([...expectedPermissions, ...expectedRoles])
   for (const locale of locales) {

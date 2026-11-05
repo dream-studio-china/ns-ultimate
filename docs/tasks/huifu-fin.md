@@ -270,7 +270,7 @@ The amount is the actual gateway amount after Core adjustments, in integer
 cents. Convert to a fixed two-decimal yuan string only at the provider boundary.
 Never use float arithmetic for money.
 
-### 6.2 `HuifuRefund`
+### 6.2 Provider refund state
 
 Suggested fields:
 
@@ -431,15 +431,16 @@ Add provider query operations for both payments and refunds.
 The command should be safe to run concurrently and should use bounded batches,
 row locking where supported, and a stable next-query time.
 
-## 10. Refund flow
+## 10. Unified refund flow
 
-The Core contract currently treats the return of `PaymentRefundResult` as a
-completed refund and increments `refundedAmount`. It does not model a provider
-refund that is still processing. Therefore:
+All payment methods use one Store order refund command. The Core contract
+currently treats the return of `PaymentRefundResult` as a completed refund and
+increments `refundedAmount`; it does not model a provider refund that is still
+processing. Therefore:
 
 - A Huifu "accepted for processing" response must not be returned as a successful
   Core refund.
-- A local `HuifuRefund` record is created and committed before submission.
+- A local provider refund record is created and committed before submission.
 - The provider refund is submitted with an idempotent local refund number.
 - Only a confirmed success triggers Core refund accounting.
 - A timeout or processing response remains pending and is queried.
@@ -456,7 +457,8 @@ created -> submitted -> processing -> succeeded
 ```
 
 Because the generic Core refund route calls the gateway inside the Core
-transaction, the Huifu path must use a business-owned refund workflow:
+transaction, provider refunds that can remain pending use a business-owned
+execution path behind the unified Store refund command:
 
 1. Create the refund record and reserve the amount.
 2. Submit to Huifu in a controlled operation.
@@ -466,11 +468,11 @@ transaction, the Huifu path must use a business-owned refund workflow:
 5. The gateway recognizes the confirmed local refund and returns its stored
    result without contacting Huifu again.
 
-All refund entry points must be audited. The generic Core refund route must not
-be allowed to create an untracked Huifu refund. If a service decorator can
-intercept every entry point, use one and test the existing invoice refund guard
-chain. If the decoration chain is not safe, keep a module-owned refund endpoint
-and make the generic path reject Huifu invoices with a clear message. Do not
+All refunds must be audited through the unified command. The payment gateway must
+not create an untracked provider refund. If a service decorator can intercept
+every entry point, use one and test the existing invoice refund guard chain. If
+the decoration chain is not safe, keep the provider submission behind the
+unified refund service and make direct gateway application fail closed. Do not
 modify Core to solve this without the required authorization.
 
 The refund must use the original attempt's merchant, provider profile, credential
@@ -571,7 +573,8 @@ existing authorization seed pattern. Suggested resource split:
 - `huifu_merchant:*` for merchants and grants;
 - `store:huifu_setting:*` for Store bindings;
 - `huifu_pos_device:*` for device management;
-- `huifu_refund:*` for refund initiation and confirmation;
+- Store refunds use `store:order:refund`; there is no provider-specific refund
+  permission;
 - `huifu_transaction:read` for attempt, refund, and receipt review.
 
 Frontend menu visibility is not authorization. Every controller must enforce

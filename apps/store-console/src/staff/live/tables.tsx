@@ -1,12 +1,14 @@
-import { useCallback, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
 import JSZip from 'jszip'
-import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, QrCode, ReceiptText, UsersRound } from 'lucide-react'
+import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, QrCode, ReceiptText, RotateCcw, UsersRound } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCounter, type SessionOrder } from '../adapters/live'
+import { ApiError } from '../adapters/api-client'
+import { minorUnitsToInput, paidOrderCanRefund, refundReasonBytes, refundResultKind, validateRefundAmount } from '../order-refund'
 import { counterQrFileNames, customerOrderingUrl } from '../table-qr'
-import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, PageControls, StatusPill, usePage, LiveSheet as Sheet } from './ui'
+import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, PageControls, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
 import { LiveDining } from './dining'
 
 function CounterForm({ api, counter, done, onClose }: { api: StoreApi; counter: LiveCounter; done: () => void; onClose: () => void }) {
@@ -125,6 +127,7 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
   const { t, locale } = useI18n()
   const [status, setStatus] = useState('all')
   const canReadOrders = can(access, 'counter_order', 'read')
+  const canRefundOrders = can(access, 'order', 'refund')
   const load = useCallback(async () => {
     const tables = await api.allCounterSessions()
     const orders = new Map<string, CounterTradeOrder>()
@@ -140,14 +143,24 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
   }, [api])
   const list = usePage(load, canReadOrders)
   const [selected, setSelected] = useState<CounterTradeOrder | null>(null)
+  const [refunding, setRefunding] = useState<CounterTradeOrder | null>(null)
   const visible = status === 'all' ? list.items : list.items.filter(({ order }) => order.status === status)
+  const openRefund = (target: CounterTradeOrder) => {
+    setSelected(null)
+    setRefunding(target)
+  }
   return <>
     {!canReadOrders ? <AccessNotice /> : <>
       <label className="field order-status-filter">{t('orderStatus')}<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">{t('allStatuses')}</option>{Object.entries(statusLabels).filter(([value]) => !hiddenOrderStatuses.has(value)).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label><ListFeedback state={{ ...list, items: visible }} empty={status !== 'all' ? 'noSearchResults' : 'firstOrder'} hint={status !== 'all' ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
-      <div className="workspace-order-list">{visible.map(({ order, counter, currency }) => <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('tableNumber')} {counter.code}</span><StatusPill muted={order.status !== 'pending' && order.status !== 'confirmed'}>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill></div><div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><Button onClick={() => setSelected({ order, counter, currency })}>{t('view')}<ChevronDown size={14} /></Button></div></article>)}</div>
+      <div className="workspace-order-list">{visible.map((item) => {
+        const { order, counter, currency } = item
+        const refundable = paidOrderCanRefund(order)
+        return <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('tableNumber')} {counter.code}</span><StatusPill muted={order.status !== 'pending' && order.status !== 'confirmed'}>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill></div><div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><div className="order-card-actions">{refundable && <Button disabled={!canRefundOrders} aria-label={canRefundOrders ? t('refund') : t('refundPermissionRequired')} onClick={() => openRefund(item)}><RotateCcw size={14} />{t('refund')}</Button>}<Button onClick={() => setSelected(item)}>{t('view')}<ChevronDown size={14} /></Button></div></div></article>
+      })}</div>
       <PageControls state={list} />
     </>}
-    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} /></Sheet>}
+    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} canRefund={paidOrderCanRefund(selected.order)} refundAllowed={canRefundOrders} onRefund={() => openRefund(selected)} /></Sheet>}
+    {refunding && <OrderRefundSheet api={api} target={refunding} onClose={() => setRefunding(null)} onRefunded={list.reload} />}
   </>
 }
 function formatOrderAmount(order: SessionOrder, currency: string, locale: string) { return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(order.totalAmount / 100) }
@@ -155,11 +168,98 @@ function formatDate(value: string, locale: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
-function OrderDetail({ order, counter, currency }: CounterTradeOrder) {
+function OrderDetail({ order, counter, currency, canRefund, refundAllowed, onRefund }: CounterTradeOrder & { canRefund: boolean; refundAllowed: boolean; onRefund: () => void }) {
   const { t, locale } = useI18n()
   return <div className="workspace-order-detail">
     <div className="order-detail-hero"><span><ReceiptText size={28} strokeWidth={1.3} /></span><p>{t('amount')}</p><strong>{formatOrderAmount(order, currency, locale)}</strong><StatusPill>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill><small>{order.status}</small></div>
     <dl className="order-detail-meta"><dt>{t('tableNumber')}</dt><dd>{counter.name} · {counter.code}</dd><dt>{t('orderNo')}</dt><dd>{order.uuid}</dd><dt>{t('createdAt')}</dt><dd>{formatDate(order.createdAt, locale)}</dd><dt>{t('diningMode')}</dt><dd>{order.diningModeName ?? t('diningModeNotRecorded')}</dd><dt>{t('diningPaymentState')}</dt><dd>{order.paymentStatus ?? t('diningNoPayment')}</dd></dl>
     <h3>{t('orderItems')}</h3><div className="order-snapshot-items">{order.items.map((item, index) => <div key={`${item.specificationUuid ?? item.productName}-${index}`}><span className="snapshot-item-index">{String(index + 1).padStart(2, '0')}</span><span>{item.productName}{item.specificationName ? ` · ${item.specificationName}` : ''}</span><strong>×{item.quantity}</strong></div>)}</div>
+    {canRefund && <Button block className="order-detail-refund" disabled={!refundAllowed} onClick={onRefund}><RotateCcw size={15} />{refundAllowed ? t('refundOrder') : t('refundPermissionRequired')}</Button>}
   </div>
+}
+
+function OrderRefundSheet({ api, target, onClose, onRefunded }: { api: StoreApi; target: CounterTradeOrder; onClose: () => void; onRefunded: () => void }) {
+  const { t, locale } = useI18n()
+  const formId = useId()
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [preview, setPreview] = useState<Awaited<ReturnType<StoreApi['refundPreview']>> | null>(null)
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [touched, setTouched] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [outcome, setOutcome] = useState<MessageKey | null>(null)
+  const [error, setError] = useState('')
+  const lock = useRef(false)
+  const formatMoney = (cents: number, currency: string) => {
+    try { return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(cents / 100) }
+    catch { return `${currency} ${(cents / 100).toFixed(2)}` }
+  }
+  const failure = (cause: unknown, fallback: MessageKey) => {
+    if (!(cause instanceof ApiError)) return t(fallback)
+    if (cause.status === 403) return t('refundPermissionRequired')
+    if (cause.kind === 'network') return t('refundNetworkUnknown')
+    if (cause.serverMessage === 'refund_pending') return t('refundAlreadyProcessing')
+    if (cause.serverMessage === 'invalid_refund_amount') return t('refundAmountExceeds')
+    if (cause.serverMessage === 'order_not_refundable') return t('refundNoBalance')
+    if (cause.serverMessage === 'order_invoice_mismatch') return t('refundContextChanged')
+    if (cause.serverMessage === 'refund_idempotency_conflict') return t('refundContextChanged')
+    return cause.serverMessage || t(fallback)
+  }
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    void api.refundPreview(target.order.tradeOrderUuid).then((next) => {
+      if (!active) return
+      if (!next.canRefund) { setError(t('refundNoBalance')); return }
+      setPreview(next)
+      setAmount(minorUnitsToInput(next.refundableAmount))
+      setLoaded(true)
+    }).catch((cause: unknown) => { if (active) setError(failure(cause, 'refundLoadFailed')) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [api, target.order.tradeOrderUuid])
+  const validation = preview ? validateRefundAmount(amount, preview.refundableAmount) : { cents: null, error: 'refundAmountPositive' as const }
+  const amountError = touched && validation.error ? t(validation.error) : ''
+  const reasonTooLong = refundReasonBytes(reason.trim()) > 1000
+  const reasonError = touched && (!reason.trim() || reasonTooLong) ? t(reasonTooLong ? 'refundReasonTooLong' : 'refundReasonRequired') : ''
+  const idempotencyKey = useCommand({ tradeOrderUuid: target.order.tradeOrderUuid, amount: validation.cents, reason: reason.trim() })
+  const close = () => { if (!submitting) onClose() }
+  const submit = async () => {
+    if (lock.current || outcome || !preview || !loaded) return
+    setTouched(true)
+    if (validation.error || !validation.cents || !reason.trim() || reasonTooLong) return
+    if (!confirming) { setConfirming(true); return }
+    lock.current = true
+    setSubmitting(true)
+    setError('')
+    try {
+      const result = await api.refundOrder(target.order.tradeOrderUuid, validation.cents, reason, idempotencyKey)
+      const kind = refundResultKind(result.status)
+      setOutcome(({ processing: 'refundProcessing', unknown: 'refundNetworkUnknown', succeeded: 'refundCompleted', failed: 'refundResultFailed' } as const)[kind])
+      onRefunded()
+    } catch (cause) {
+      setError(failure(cause, 'refundFailed'))
+      setConfirming(false)
+    } finally {
+      lock.current = false
+      setSubmitting(false)
+    }
+  }
+  return <Sheet open title={t('refundOrder')} onClose={close} footer={<div className="editor-footer order-refund-footer">{outcome ? <><p><RotateCcw size={13} />{t(outcome)}</p><Button block color="primary" onClick={close}>{t('confirm')}</Button></> : <><p><RotateCcw size={13} />{confirming && preview && validation.cents ? t('refundConfirm').replace('{amount}', formatMoney(validation.cents, preview.currency)) : t('refundHint')}</p><div><Button disabled={submitting} onClick={() => confirming ? setConfirming(false) : close()}>{t(confirming ? 'refundBackToEdit' : 'cancel')}</Button><Button type="submit" form={formId} color="primary" loading={submitting} disabled={!loaded || loading}>{t(confirming ? 'confirm' : 'refundSubmit')}</Button></div></>}</div>}>
+    <form id={formId} className="order-refund-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+      <header className="order-refund-heading"><span><ReceiptText size={22} /></span><div><small>{t('orderNo')}</small><strong>#{target.order.uuid.slice(0, 8).toUpperCase()}</strong><p>{target.counter.name} · {target.counter.code}</p></div></header>
+      {loading && <div className="workspace-skeleton compact" role="status"><div><span /><i /><i /></div></div>}
+      {error && <div className="workspace-error" role="alert"><RotateCcw size={18} /><p>{error}</p></div>}
+      {preview && <>
+        <div className="order-refund-summary"><div><span>{t('refundPaidAmount')}</span><strong>{formatMoney(preview.amount, preview.currency)}</strong></div><div><span>{t('refundAlreadyAmount')}</span><strong>{formatMoney(preview.refundedAmount, preview.currency)}</strong></div><div><span>{t('refundableAmount')}</span><strong>{formatMoney(preview.refundableAmount, preview.currency)}</strong></div><div><span>{t('method')}</span><strong>{preview.payment}</strong></div></div>
+        {outcome ? <div className={`order-refund-result ${outcome === 'refundResultFailed' ? 'is-failed' : ''}`} role={outcome === 'refundResultFailed' ? 'alert' : 'status'}><RotateCcw size={22} /><div><strong>{t(outcome)}</strong><p>{t('refundHint')}</p></div></div> : <>
+          <label className="field"><span>{t('refundAmount')}</span><input required inputMode="decimal" maxLength={16} value={amount} disabled={submitting || confirming} onBlur={() => setTouched(true)} onChange={(event) => { setAmount(event.target.value); setConfirming(false) }} placeholder={t('refundAmountPlaceholder')} />{amountError ? <small className="error-text">{amountError}</small> : <small>{t('refundAmountHint').replace('{amount}', formatMoney(preview.refundableAmount, preview.currency))}</small>}</label>
+          <label className="field"><span>{t('refundReason')}</span><textarea required rows={3} maxLength={1000} value={reason} disabled={submitting || confirming} onBlur={() => setTouched(true)} onChange={(event) => { setReason(event.target.value); setConfirming(false) }} placeholder={t('refundReasonPlaceholder')} />{reasonError && <small className="error-text">{reasonError}</small>}</label>
+          {confirming && <div className="order-refund-confirm" role="alert"><strong>{t('refundConfirm').replace('{amount}', formatMoney(validation.cents ?? 0, preview.currency))}</strong><p>{t('refundHint')}</p></div>}
+        </>}
+      </>}
+    </form>
+  </Sheet>
 }
