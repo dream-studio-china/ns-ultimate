@@ -15,9 +15,12 @@ use App\Payment\Entity\InvoiceRefundAttempt;
 use App\Store\Entity\Membership;
 use App\Store\Entity\Store;
 use App\Store\Entity\StoreOrder;
+use App\Store\Service\StoreOrderServiceInterface;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderStoreLifecycle;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\PostLoadEventArgs;
+use Doctrine\ORM\Events;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\HuifuFin\Client\HuifuClientInterface;
 use NsUltimate\Business\HuifuFin\Entity\HuifuMerchant;
@@ -29,6 +32,7 @@ use NsUltimate\Business\HuifuFin\Service\Refund\HuifuRefundWorkflow;
 use NsUltimate\Business\HuifuFin\Tests\Support\FakeHuifuClient;
 use NsUltimate\Business\Store\DTO\OrderRefundReceipt;
 use NsUltimate\Business\Store\Service\OrderRefundMetadata;
+use NsUltimate\Business\Store\Service\OrderRefundService;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -114,6 +118,101 @@ final class OrderRefundApiTest extends KernelTestCase
                 server: ['HTTP_AUTHORIZATION' => 'Bearer '.$this->token]));
             self::assertSame(404, $response->getStatusCode());
         }
+    }
+
+    public function testFullRefundBlocksStoreFulfillmentEvenWithAStaleTradeEntity(): void
+    {
+        $storeOrder = $this->storeOrder();
+        self::assertSame('succeeded', $this->data($this->post(1000, 'full-before-fulfillment'))['status']);
+        // An availability check must not trust a stale in-memory source status.
+        $this->order->setStatus(Order::STATUS_PAID);
+        self::assertFalse(self::getContainer()->get('state_machine.store_order')->can($storeOrder, 'fulfill'));
+        self::assertSame(Order::STATUS_REFUNDED, $this->order->getStatus());
+        try {
+            self::getContainer()->get(StoreOrderServiceInterface::class)->fulfill($storeOrder);
+            self::fail('A fully refunded Store order must not be fulfilled.');
+        } catch (\LogicException $error) {
+            self::assertSame('accepted', $storeOrder->getOperationalStatus());
+        }
+    }
+
+    public function testPartialRefundStillAllowsStoreFulfillment(): void
+    {
+        $storeOrder = $this->storeOrder();
+        self::assertSame('succeeded', $this->data($this->post(400, 'partial-before-fulfillment'))['status']);
+        self::assertTrue(self::getContainer()->get('state_machine.store_order')->can($storeOrder, 'fulfill'));
+        self::getContainer()->get(StoreOrderServiceInterface::class)->fulfill($storeOrder);
+        self::assertSame('fulfilled', $storeOrder->getOperationalStatus());
+    }
+
+    public function testSummaryRefreshesOutcomeAndInvoiceInsideOneSourceFirstTransaction(): void
+    {
+        $data = $this->data($this->post(400, 'summary-snapshot'));
+        $service = self::getContainer()->get(OrderRefundService::class);
+        $receipt = $service->find($this->store->getUuid(), $this->order->getUuid(), $data['uuid']);
+        $this->invoice->setRefundedAmount(0)->setStatus(Invoice::STATUS_PAID);
+        $listener = new class {
+            /** @var list<array{class-string, bool}> */
+            public array $loads = [];
+            public function postLoad(PostLoadEventArgs $event): void
+            {
+                $entity = $event->getObject();
+                if ($entity instanceof Order || $entity instanceof Invoice || $entity instanceof InvoiceRefundAttempt) {
+                    $this->loads[] = [$entity::class, $event->getObjectManager()->getConnection()->isTransactionActive()];
+                }
+            }
+        };
+        $this->em->getEventManager()->addEventListener([Events::postLoad], $listener);
+        try { $summary = $service->summary($receipt); }
+        finally { $this->em->getEventManager()->removeEventListener([Events::postLoad], $listener); }
+        self::assertSame('succeeded', $summary['status']);
+        self::assertSame('partial_refunded', $summary['invoiceStatus']);
+        self::assertSame(400, $summary['refundedAmount']);
+        self::assertSame([[Order::class, true], [Invoice::class, true], [InvoiceRefundAttempt::class, true]], $listener->loads);
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
+
+        $this->em->getConnection()->beginTransaction();
+        try {
+            self::assertSame('succeeded', $service->summary($receipt)['status']);
+            self::assertSame(1, $this->em->getConnection()->getTransactionNestingLevel());
+        } finally { $this->em->getConnection()->rollBack(); }
+    }
+
+    public function testSummaryFailureRollsBackOnlyItsOwnTransaction(): void
+    {
+        $data = $this->data($this->post(400, 'summary-failure'));
+        $service = self::getContainer()->get(OrderRefundService::class);
+        $receipt = $service->find($this->store->getUuid(), $this->order->getUuid(), $data['uuid']);
+        $listener = new class {
+            public function postLoad(PostLoadEventArgs $event): void
+            {
+                if ($event->getObject() instanceof Invoice) throw new \RuntimeException('Fixture summary read failure');
+            }
+        };
+        $connection = $this->em->getConnection();
+        $this->em->getEventManager()->addEventListener([Events::postLoad], $listener);
+        try {
+            foreach ([false, true] as $outerTransaction) {
+                if ($outerTransaction) $connection->beginTransaction();
+                try {
+                    $service->summary($receipt);
+                    self::fail('The injected summary read must fail.');
+                } catch (\RuntimeException $error) {
+                    self::assertSame('Fixture summary read failure', $error->getMessage());
+                    self::assertSame($outerTransaction, $connection->isTransactionActive());
+                } finally {
+                    if ($outerTransaction && $connection->isTransactionActive()) $connection->rollBack();
+                }
+            }
+        } finally { $this->em->getEventManager()->removeEventListener([Events::postLoad], $listener); }
+    }
+
+    private function storeOrder(): StoreOrder
+    {
+        $storeOrder = new StoreOrder($this->store, $this->order->getUuid(), 'order-refunds', 'Order refunds', $this->user->getUuid(), 'CNY', 1000, []);
+        $storeOrder->setOperationalStatus('accepted');
+        $this->em->persist($storeOrder); $this->em->flush();
+        return $storeOrder;
     }
 
     public function testHuifuUnknownIsQueryableAndReplayedWithoutResubmission(): void

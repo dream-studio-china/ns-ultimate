@@ -30,8 +30,18 @@ final readonly class OrderRefundGuard implements EventSubscriberInterface
         };
         // Store fulfillment owns its own aggregate lock. Also lock its Trade
         // source so fulfillment and the refund reservation cannot cross.
-        if ($order instanceof StoreOrder && $this->em->getConnection()->isTransactionActive()) {
-            $this->em->getRepository(Order::class)->findByUuidForUpdate($uuid);
+        if ($order instanceof StoreOrder) {
+            $repository = $this->em->getRepository(Order::class);
+            if ($this->em->getConnection()->isTransactionActive()) {
+                $source = $repository->findByUuidForUpdate($uuid);
+            } else {
+                $source = $repository->findOneBy(['uuid' => $uuid]);
+                if ($source instanceof Order) $this->em->refresh($source);
+            }
+            if ($source?->getStatus() === Order::STATUS_REFUNDED) {
+                $event->setBlocked(true, 'A fully refunded order cannot be fulfilled.');
+                return;
+            }
         }
         if ($uuid !== null && $this->refunds->hasPending($uuid)) {
             $event->setBlocked(true, 'An unresolved order refund must be reconciled before fulfillment.');

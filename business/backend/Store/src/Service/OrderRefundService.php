@@ -170,11 +170,25 @@ final class OrderRefundService
     /** @return array<string, mixed> */
     public function summary(OrderRefundReceipt $refund): array
     {
-        $invoice = $this->em->getRepository(Invoice::class)->findOneBy(['uuid' => $refund->invoiceUuid]);
-        if ($invoice instanceof Invoice) $this->em->refresh($invoice);
-        return ['uuid' => $refund->uuid, 'orderUuid' => $refund->orderUuid, 'invoiceUuid' => $refund->invoiceUuid,
-            'amount' => $refund->amount, 'reason' => $refund->reason, 'status' => $this->status($refund),
-            'actorUuid' => $refund->actorUuid, 'createdAt' => $refund->createdAt->format(DATE_ATOM),
-            'invoiceStatus' => $invoice?->getStatus(), 'refundedAmount' => $invoice?->getRefundedAmount()];
+        $connection = $this->em->getConnection();
+        $ownsTransaction = !$connection->isTransactionActive();
+        if ($ownsTransaction) $connection->beginTransaction();
+        try {
+            // Use Core's source-before-Invoice order. Hold the Invoice lock while
+            // reading the attempt/provider marker so a concurrent Core commit
+            // cannot pair a successful outcome with an older Invoice balance.
+            $this->em->getRepository(Order::class)->findByUuidForUpdate($refund->orderUuid);
+            $invoice = $this->current($this->em->createQueryBuilder()->select('i')->from(Invoice::class, 'i')
+                ->where('i.uuid = :invoice')->setParameter('invoice', $refund->invoiceUuid)->getQuery())->getOneOrNullResult();
+            $summary = ['uuid' => $refund->uuid, 'orderUuid' => $refund->orderUuid, 'invoiceUuid' => $refund->invoiceUuid,
+                'amount' => $refund->amount, 'reason' => $refund->reason, 'status' => $this->status($refund),
+                'actorUuid' => $refund->actorUuid, 'createdAt' => $refund->createdAt->format(DATE_ATOM),
+                'invoiceStatus' => $invoice?->getStatus(), 'refundedAmount' => $invoice?->getRefundedAmount()];
+            if ($ownsTransaction) $connection->commit();
+            return $summary;
+        } catch (\Throwable $error) {
+            if ($ownsTransaction && $connection->isTransactionActive()) $connection->rollBack();
+            throw $error;
+        }
     }
 }
