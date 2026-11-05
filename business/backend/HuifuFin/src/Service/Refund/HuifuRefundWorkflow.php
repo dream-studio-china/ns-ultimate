@@ -46,6 +46,9 @@ final class HuifuRefundWorkflow
     public function request(Invoice $invoice, int $amount, string $reason, array $options = []): HuifuRefund
     {
         $this->assertNoOuterTransaction();
+        if (isset($options['refundNo']) && (!is_string($options['refundNo']) || !preg_match('/^SOR[0-9a-f]{32}$/D', $options['refundNo']))) {
+            throw new \InvalidArgumentException('Invalid internal order refund identity.');
+        }
         if ($amount <= 0) {
             throw new \InvalidArgumentException('Huifu refund amount must be positive.');
         }
@@ -102,7 +105,7 @@ final class HuifuRefundWorkflow
             $refund = new HuifuRefund(
                 invoice: $invoice,
                 attempt: $attempt,
-                refundNo: self::refundNumber(),
+                refundNo: $options['refundNo'] ?? self::refundNumber(),
                 reqDate: (new \DateTimeImmutable())->format('Ymd'),
                 amount: $amount,
                 providerAmount: $providerAmount,
@@ -153,7 +156,14 @@ final class HuifuRefundWorkflow
             $this->entityManager->flush();
             throw $exception;
         }
-        $this->responses->verify($response, $this->signer, $resolved['credentials']['huifu_public_key']);
+        try {
+            $this->responses->verify($response, $this->signer, $resolved['credentials']['huifu_public_key']);
+        } catch (\Throwable $exception) {
+            $refund->markUnknown();
+            $refund->setProviderResponse(null, 'The Huifu refund response could not be verified.');
+            $this->entityManager->flush();
+            throw $exception;
+        }
         $responseData = $this->responses->data($response);
         $refund->setProviderResponse($this->responses->code($response), $this->responses->message($response));
         $refund->setResponseSnapshot($this->snapshot($responseData));

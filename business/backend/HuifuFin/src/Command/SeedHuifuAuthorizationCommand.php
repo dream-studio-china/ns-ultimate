@@ -35,7 +35,6 @@ final class SeedHuifuAuthorizationCommand extends Command
         foreach ([
             'setting' => ['read', 'create', 'update', 'delete'],
             'payment' => ['read', 'create'],
-            'refund' => ['read', 'create'],
             'pos_receipt' => ['read'],
         ] as $resource => $actions) {
             foreach ($actions as $action) {

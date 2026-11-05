@@ -22,9 +22,12 @@ for (const action of ['read', 'create', 'update', 'delete']) seededPermissions.a
 for (const action of ['read', 'create', 'update', 'delete']) seededPermissions.add(`store:huifu_setting:${action}`)
 for (const action of ['read', 'create']) {
   seededPermissions.add(`store:huifu_payment:${action}`)
-  seededPermissions.add(`store:huifu_refund:${action}`)
 }
 seededPermissions.add(`store:huifu_pos_receipt:read`)
+
+// The retired Store routes no longer seed these permissions, but existing
+// database records retain their display translations until explicitly removed.
+const historicalPermissions = ['store:huifu_refund:read', 'store:huifu_refund:create']
 
 const seededRoles = [
   'store_content_editor',
@@ -34,6 +37,7 @@ const seededRoles = [
   'store_availability_operator',
   'store_order_reader',
   'store_order_operator',
+  'store_order_refund_operator',
   'store_catalog_operator',
   'store_operation_auditor',
   'store_counter_manager',
@@ -49,6 +53,8 @@ test('translates seeded permission and role names by stable code', () => {
   assert.equal(localizedAuthorizationName('permission', 'store:order:read', 'Read store orders', 'zh'), '查看门店订单')
   assert.equal(localizedAuthorizationName('permission', 'store:order:read', 'Read store orders', 'zh-Hant'), '檢視門市訂單')
   assert.equal(localizedAuthorizationName('role', 'store_counter_manager', 'Store Counter Manager', 'ja'), '店舗カウンター管理者')
+  assert.equal(translatedAuthorizationName('permission', 'store:order:refund', 'zh'), '退还门店订单款项')
+  assert.equal(translatedAuthorizationName('role', 'store_order_refund_operator', 'ja'), '店舗注文返金オペレーター')
 })
 
 test('explicit lookup distinguishes a translated code from a fallback', () => {
@@ -66,11 +72,11 @@ test('falls back to the backend name for English, custom codes and empty values'
   assert.equal(localizedAuthorizationName('permission', '', '', 'zh'), '')
 })
 
-test('every seeded permission and role has a translation in each non-English locale', () => {
+test('every seeded or retained historical permission and role has a translation in each non-English locale', () => {
   for (const locale of locales) {
     const messages = authorizationNameMessages[locale]
     assert.ok(messages, `missing locale ${locale}`)
-    for (const code of seededPermissions) {
+    for (const code of [...seededPermissions, ...historicalPermissions]) {
       assert.equal(typeof messages[`permission.${code}`], 'string', `${locale} is missing permission.${code}`)
     }
     for (const code of seededRoles) {
@@ -79,8 +85,8 @@ test('every seeded permission and role has a translation in each non-English loc
   }
 })
 
-test('translation resources contain no stale or duplicated authorization keys', () => {
-  const expectedPermissions = new Set([...seededPermissions].map(code => `permission.${code}`))
+test('translation resources contain only current and explicitly retained historical authorization keys', () => {
+  const expectedPermissions = new Set([...seededPermissions, ...historicalPermissions].map(code => `permission.${code}`))
   const expectedRoles = new Set(seededRoles.map(code => `role.${code}`))
   const expected = new Set([...expectedPermissions, ...expectedRoles])
   for (const locale of locales) {
