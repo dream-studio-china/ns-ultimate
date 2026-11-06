@@ -10,7 +10,7 @@ import { checkoutPaymentMethods, type CheckoutPaymentMethod } from '../checkout-
 import { checkoutMergeBlockers, type CheckoutMergeBlocker } from '../checkout-merge'
 import { submitCheckoutReplacement } from '../checkout-replacement'
 import { waitForStoreOrderProjection } from '../checkout-store-order'
-import { confirmedOrderCanCollect, paymentStatusIsPaid, paymentStatusIsPaying } from '../order-payment'
+import { confirmedOrderCanCollect, failedInvoiceNeedsRelease, invoiceReferenceUuid, paymentStatusIsPaid, paymentStatusIsPaying } from '../order-payment'
 import { customerPaymentUrl } from '../order-payment-url'
 import { isOccupiedDiningTable as isDining, unsettledDiningOrders as effectiveDiningOrders } from '../dining-table-state'
 import { ApiError } from '../adapters/api-client'
@@ -28,6 +28,27 @@ function effectiveDiningAmount(table: CounterSessionView): number {
 const staffProjectionTimeout = 10_000
 const staffProjectionInterval = 250
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+const paymentCloseReason = 'Payment failed; release invoice before retry or order changes.'
+const paymentCloseCommandPrefix = 'ns-store-console.payment-close.'
+const paymentCloseCommandFallback = new Map<string, string>()
+
+/** Keep the same command across manual retries, including after a page reload. */
+function paymentCloseCommandUuid(tradeOrderUuid: string, invoiceUuid: string): string {
+  const key = `${tradeOrderUuid}:${invoiceUuid}`
+  const remembered = paymentCloseCommandFallback.get(key)
+  if (remembered) return remembered
+  try {
+    const stored = sessionStorage.getItem(`${paymentCloseCommandPrefix}${key}`)
+    if (stored && invoiceReferenceUuid(stored) === stored) {
+      paymentCloseCommandFallback.set(key, stored)
+      return stored
+    }
+  } catch { /* In-memory reuse still protects retries when session storage is unavailable. */ }
+  const commandUuid = crypto.randomUUID()
+  paymentCloseCommandFallback.set(key, commandUuid)
+  try { sessionStorage.setItem(`${paymentCloseCommandPrefix}${key}`, commandUuid) } catch { /* Keep the in-memory command. */ }
+  return commandUuid
+}
 
 /** Workers project and confirm a newly created order asynchronously after the command response. */
 async function retryCheckoutConflict<T>(attempt: () => Promise<T>): Promise<T> {
@@ -309,15 +330,81 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
   const [collectOrder, setCollectOrder] = useState<{ table: CounterSessionView; order: SessionOrder } | null>(null)
   const [cancelMode, setCancelMode] = useState(false)
   const [cancelSelection, setCancelSelection] = useState<Set<string>>(() => new Set())
+  const [releaseFeedback, setReleaseFeedback] = useState<'releasing' | 'released' | 'alreadyPaid' | 'unconfirmed' | 'failed' | null>(null)
+  const [paymentAlreadyConfirmed, setPaymentAlreadyConfirmed] = useState<Set<string>>(() => new Set())
+  const attemptedInvoiceReleases = useRef(new Set<string>())
+  const releasingInvoices = useRef(false)
   const done = () => { setReplaceOrder(null); detail.reload(); changed() }
   const closeCancelSelection = () => { setCancelMode(false); setCancelSelection(new Set()) }
-  return <><ListFeedback state={detail} empty="emptyLive" hint="diningScopeHint" icon={LayoutGrid} />{detail.items.map((table) => {
+  useEffect(() => {
+    const table = detail.items[0]
+    if (!table?.ordersVisible || !can(access, 'order', 'payment_close')) return
+    const orders = effectiveDiningOrders(table).filter(failedInvoiceNeedsRelease)
+    if (!orders.length || releasingInvoices.current) return
+    let active = true
+    releasingInvoices.current = true
+    const releaseFailedInvoices = async () => {
+      let released = 0
+      let failed = 0
+      let alreadyPaid = false
+      let unconfirmed = false
+      for (const order of orders) {
+        let invoiceUuid = invoiceReferenceUuid(order)
+        try {
+          invoiceUuid ??= await api.orderInvoiceReference(order.tradeOrderUuid)
+        } catch {
+          failed += 1
+          continue
+        }
+        if (!invoiceUuid) {
+          failed += 1
+          continue
+        }
+        const key = `${order.tradeOrderUuid}:${invoiceUuid}`
+        if (attemptedInvoiceReleases.current.has(key)) continue
+        attemptedInvoiceReleases.current.add(key)
+        try {
+          const result = await api.closeFailedPayment(order.tradeOrderUuid, invoiceUuid, paymentCloseCommandUuid(order.tradeOrderUuid, invoiceUuid), paymentCloseReason)
+          if (result.released) released += 1
+          else unconfirmed = true
+        } catch (error) {
+          if (error instanceof ApiError && error.serverMessage === 'payment_already_paid') {
+            alreadyPaid = true
+            setPaymentAlreadyConfirmed((current) => new Set(current).add(order.tradeOrderUuid))
+            break
+          }
+          if (error instanceof ApiError && error.status === 409) unconfirmed = true
+          else failed += 1
+          break
+        }
+      }
+      if (active) {
+        setReleaseFeedback(alreadyPaid ? 'alreadyPaid' : unconfirmed ? 'unconfirmed' : failed ? 'failed' : released ? 'released' : null)
+      }
+      if (released || unconfirmed || alreadyPaid) {
+        detail.reload()
+        changed()
+      }
+      releasingInvoices.current = false
+    }
+    setReleaseFeedback('releasing')
+    void releaseFailedInvoices()
+    return () => { active = false }
+  }, [access, api, detail.items, id, legacy])
+  const feedbackMessage: MessageKey | null = releaseFeedback === 'releasing' ? 'paymentReleaseChecking'
+    : releaseFeedback === 'released' ? 'paymentReleaseSucceeded'
+      : releaseFeedback === 'alreadyPaid' ? 'paymentReleaseAlreadyPaid'
+        : releaseFeedback === 'unconfirmed' ? 'paymentReleaseUnconfirmed'
+          : releaseFeedback === 'failed' ? 'paymentReleaseFailed'
+            : null
+  return <><ListFeedback state={detail} empty="emptyLive" hint="diningScopeHint" icon={LayoutGrid} />{feedbackMessage && <Notice>{t(feedbackMessage)}</Notice>}{detail.items.map((table) => {
     const orders = effectiveDiningOrders(table)
     const hasOrders = orders.length > 0
     const hasPendingOrders = orders.some((order) => order.status === 'pending')
     const dining = isDining(table)
     const showTableDiningMode = hasOrders
     const canCancelOrders = permitted(access, 'cancel')
+    const paymentConfirmedLocally = table.ordersVisible && table.orders.some((order) => paymentAlreadyConfirmed.has(order.tradeOrderUuid))
     const tableDiningMode = resolveTableDiningMode(table, access.store.settings?.diningModes)
     const tableDiningModeName = resolveTableDiningModeName(table, access.store.settings?.diningModes)
     const orderDiningModeName = (order: SessionOrder) => {
@@ -339,7 +426,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
       <div className="dining-detail-fixed">
         <div className="dining-detail-hero"><div className="dining-detail-heading"><div><h3>{table.counter.name}</h3></div><StatusPill muted={!dining}>{t(dining ? 'dining' : table.counter.enabled ? 'idle' : 'tableDisabled')}</StatusPill></div>{hasOrders && table.session && <div className="dining-detail-summary"><span><UsersRound size={15} />{table.session.participantCount ?? '—'} {t('guestUnit')}</span><span><Clock3 size={15} /><time dateTime={table.session.startedAt}>{formatDiningDate(table.session.startedAt, locale)}</time></span></div>}{showTableDiningMode && <div className="dining-detail-mode"><span>{t('diningMode')}</span><strong>{tableDiningModeName ?? t('diningModeNotRecorded')}</strong></div>}{hasOrders && <div className="dining-detail-amount"><span>{t('diningOpenAmount')}</span><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: table.currency }).format(effectiveDiningAmount(table) / 100)}</strong></div>}</div>
         {hasOrders && table.session?.notes && <p className="dining-notes dining-party-notes"><strong>{t('diningPartyNotes')}</strong>{table.session.notes}</p>}
-        <div className="order-operation-actions">{orderable && <Button color="primary" disabled={!table.counter.enabled || hasPendingOrders || (table.ordersVisible && table.paymentHold)} onClick={() => onOrder(table)}>{t(hasOrders ? 'addDining' : 'placeNewDining')}</Button>}{hasOrders && <Button color="danger" fill="outline" disabled={!canCancelOrders} onClick={() => cancelMode ? closeCancelSelection() : setCancelMode(true)}>{t(cancelMode ? 'cancelSelectionExit' : 'cancelOrder')}</Button>}{hasOrders && (permitted(access, 'create') || permitted(access, 'replace')) && <Button disabled={hasPendingOrders} onClick={() => onCheckout(table)}>{t('checkoutDining')}</Button>}</div>
+        <div className="order-operation-actions">{orderable && <Button color="primary" disabled={!table.counter.enabled || hasPendingOrders || paymentConfirmedLocally || (table.ordersVisible && table.paymentHold)} onClick={() => onOrder(table)}>{t(hasOrders ? 'addDining' : 'placeNewDining')}</Button>}{hasOrders && <Button color="danger" fill="outline" disabled={!canCancelOrders} onClick={() => cancelMode ? closeCancelSelection() : setCancelMode(true)}>{t(cancelMode ? 'cancelSelectionExit' : 'cancelOrder')}</Button>}{hasOrders && (permitted(access, 'create') || permitted(access, 'replace')) && <Button disabled={hasPendingOrders || paymentConfirmedLocally} onClick={() => onCheckout(table)}>{t('checkoutDining')}</Button>}</div>
         {hasPendingOrders && <p className="helper dining-pending-confirmation" role="status">{t('confirmPendingBeforeContinue')}</p>}
         {hasOrders && !canCancelOrders && <p className="helper dining-cancel-permission" role="status">{t('cancelOrderPermissionRequired')}</p>}
         {table.ordersVisible && table.paymentHold && <Notice>{t('diningPaymentHold')}</Notice>}
@@ -355,8 +442,8 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
             <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
             {order.notes && <p className="dining-notes">{order.notes}</p>}
             {order.status === 'pending' && permitted(access, 'confirm') && <ConfirmPendingOrder api={api} table={table} order={order} onDone={() => { detail.reload(); changed() }} />}
-            {confirmedOrderCanCollect(order) && <div className="dining-round-actions">
-              {confirmedOrderCanCollect(order) && <Button className="dining-collect-payment" color="primary" fill="outline" onClick={() => setCollectOrder({ table, order })}><CreditCard size={16} />{t('collectPayment')}</Button>}
+            {confirmedOrderCanCollect(order) && !failedInvoiceNeedsRelease(order) && !paymentAlreadyConfirmed.has(order.tradeOrderUuid) && <div className="dining-round-actions">
+              <Button className="dining-collect-payment" color="primary" fill="outline" onClick={() => setCollectOrder({ table, order })}><CreditCard size={16} />{t('collectPayment')}</Button>
             </div>}
             {cancelMode && !order.canCancel && <p className="dining-cancel-unavailable">{t('cancelOrderUnavailable')}</p>}
           </article>)}
