@@ -99,6 +99,8 @@ The receipt's restricted before snapshot includes the old order's display/amount
 
 The employee path requires at least two confirmed eligible orders and fails closed if any non-closed order is ineligible, including payment, multi-counter binding, inventory-required/reserved, missing projection or progressed fulfillment states. It does not transfer inventory reservations or reverse external effects. Source orders may already have produced print requests; configure and validate printing to avoid duplicate work. Real MySQL concurrency, worker races, and actual printer behavior remain unverified. Current employee UI does not call these merge routes.
 
+An abandoned payment is not unlocked by weakening merge checks. The separate [payment closure API](order-payment-closure.md) can release the current payment reference after its channel confirms noncollection. Merge then performs its normal session, order, inventory and fulfillment checks again; closure alone is not a merge guarantee.
+
 ## Transactions, retries and limitations
 
 All writes reuse the [operations contract](store-console-operations.md)'s `StaffCommandService` store/actor/command receipts, atomic audit/outbox behavior and payload-conflict rules. `commandUuid` and the latest `version` are required. Reads/quotes do not create successful write receipts. Receipt replay still requires current route permissions. A replay result identifies the historical counter/session/order, so clients refresh rather than treating it as current state.

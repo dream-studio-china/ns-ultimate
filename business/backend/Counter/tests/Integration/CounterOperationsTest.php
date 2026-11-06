@@ -10,6 +10,7 @@ use App\Authorization\Entity\Role;
 use App\Core\Utils\UUID;
 use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
+use App\Payment\Entity\Invoice;
 use App\Store\Entity\Membership;
 use App\Store\Entity\Specification;
 use App\Store\Entity\Store;
@@ -21,10 +22,14 @@ use App\Trade\Service\OrderServiceInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Payment\Contract\PaymentCloseGatewayInterface;
+use NsUltimate\Business\Payment\DTO\PaymentCloseResult;
+use NsUltimate\Business\Payment\Service\PaymentCloseGatewayRegistry;
 use NsUltimate\Business\Store\Entity\Product;
 use NsUltimate\Business\Store\Entity\StaffOperation;
 use NsUltimate\Business\Store\Service\StaffOrderPricing;
 use NsUltimate\Business\Store\Service\StaffOrderService;
+use NsUltimate\Business\Store\Service\OrderPaymentCloseService;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -159,6 +164,33 @@ final class CounterOperationsTest extends KernelTestCase
         $sourceUuids = array_column([$first, $second], 'orderUuid');
         sort($sourceUuids);
         self::assertSame($sourceUuids, $this->orderByUuid($result['orderUuid'])['mergedSourceOrderUuids']);
+    }
+
+    public function testConfirmedPaymentClosureUnblocksMergeWithoutChangingItsGuards(): void
+    {
+        self::getContainer()->set(PaymentCloseGatewayRegistry::class, new PaymentCloseGatewayRegistry([new class implements PaymentCloseGatewayInterface {
+            public static function payment(): string { return 'close-test'; }
+            public function close(Invoice $invoice): PaymentCloseResult { return new PaymentCloseResult(closed: true); }
+        }]));
+        $this->startCustomerSession();
+        $first = $this->place(); $this->project($first['orderUuid']);
+        $second = $this->place(); $this->project($second['orderUuid']);
+        foreach ([$first, $second] as $source) $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
+        $this->em->clear();
+        $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $first['orderUuid']]);
+        $invoice = (new Invoice())->setSourceType('trade_order')->setSourceId($order->getUuid())->setScene('order')->setAmount($order->getTotalAmount())->setCurrency('CNY')->setPayment('close-test')->setStatus(Invoice::STATUS_PAYING);
+        $this->em->persist($invoice);
+        $order->setInvoiceId($invoice->getUuid())->setPaymentStatus('pending'); $this->em->flush();
+        $base = '/counters/'.$this->counter->getUuid().'/merge/';
+        self::assertTrue($this->view()['paymentHold']);
+        self::assertSame(409, $this->request('POST', $base.'preview', ['version' => $this->view()['version']])->getStatusCode());
+        $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
+        self::getContainer()->get(OrderPaymentCloseService::class)->close($store, $first['orderUuid'], $this->user->getUuid(),
+            ['commandUuid' => UUID::v4(), 'invoiceUuid' => $invoice->getUuid(), 'reason' => 'Close payment before merging']);
+        self::assertFalse($this->view()['paymentHold']);
+        $response = $this->request('POST', $base.'preview', ['version' => $this->view()['version']]);
+        self::assertSame(200, $response->getStatusCode(), $response->getContent());
+        self::assertCount(2, $this->data($response)['sourceOrderUuids']);
     }
 
     public function testAcceptedCustomerOrdersCanBeMerged(): void

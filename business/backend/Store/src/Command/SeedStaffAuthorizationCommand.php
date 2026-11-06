@@ -24,6 +24,7 @@ final class SeedStaffAuthorizationCommand extends Command
             'store_order_reader' => ['store:order:read'],
             'store_order_operator' => ['store:order:read', 'store:order:accept', 'store:order:reject', 'store:order:fulfill', 'store:order:verify'],
             'store_order_refund_operator' => ['store:order:refund'],
+            'store_order_payment_closer' => ['store:order:payment_close'],
             'store_catalog_operator' => ['store:catalog_image:create', 'store:product:availability'],
             'store_operation_auditor' => ['store:operation:read'],
         ];

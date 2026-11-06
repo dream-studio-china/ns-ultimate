@@ -109,6 +109,7 @@ final class OperationsController extends RestController
                 $action === 'catalog_image.upload' => 'store:catalog_image:create',
                 (bool) preg_match('/^product\.update\.[0-9a-fA-F-]{36}$/D', $action) => 'store:product:update',
                 (bool) preg_match('/^order\.(accept|reject|fulfill|verify)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:order:'.$matches[1],
+                (bool) preg_match('/^order\.payment_close\.[0-9a-fA-F-]{36}$/D', $action) => 'store:order:payment_close',
                 (bool) preg_match('/^counter_session\.(update|end)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:counter_session:'.$matches[1],
                 (bool) preg_match('/^counter_order\.(create|replace|cancel|merge)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:counter_order:'.$matches[1],
                 default => null,
@@ -116,7 +117,7 @@ final class OperationsController extends RestController
             if ($permission === null) throw new AccessDeniedException();
             $this->denyAccessUnlessGranted($permission, $store);
             $result = [];
-            foreach (['uuid', 'counterUuid', 'sessionUuid', 'orderUuid', 'replacedOrderUuid'] as $key) {
+            foreach (['uuid', 'counterUuid', 'sessionUuid', 'orderUuid', 'replacedOrderUuid', 'tradeOrderUuid', 'invoiceUuid'] as $key) {
                 $value = $receipt->getResult()[$key] ?? null;
                 if (is_string($value) && \App\Core\Utils\UUID::is_valid($value)) $result[$key] = $value;
             }
