@@ -10,12 +10,12 @@ const store = { uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'U
 const item = { specificationUuid: specId, productName: 'Soup', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }
 const stamp = '2026-10-31T10:00:00+00:00'
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   let session: { uuid: string; participantCount: number; notes: string; startedAt: string; revision: number } | null = options.empty ? null : { uuid: sessionId, participantCount: 3, notes: 'Birthday', startedAt: stamp, revision }
   const initialStatus = options.pendingOrder ? 'pending' : options.customerOrder ? 'confirmed' : 'completed'
-  let orders: { uuid: string; status: string; operationalStatus: string; paymentStatus: null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; diningModeUuid: string; diningModeName: string; canReplace: boolean; canCancel: boolean }[] = options.empty ? [] : [{ uuid: '10000000-0000-4000-8000-000000000009', status: initialStatus, operationalStatus: initialStatus === 'completed' ? 'fulfilled' : 'pending_validation', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: '', createdAt: stamp, items: [item], diningModeUuid: 'dining-mode-hotpot', diningModeName: '火锅', canReplace: initialStatus === 'confirmed', canCancel: initialStatus === 'pending' || initialStatus === 'confirmed' }]
+  let orders: { uuid: string; status: string; operationalStatus: string; paymentStatus: string | null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; diningModeUuid: string; diningModeName: string; canReplace: boolean; canCancel: boolean }[] = options.empty ? [] : [{ uuid: '10000000-0000-4000-8000-000000000009', status: initialStatus, operationalStatus: initialStatus === 'completed' ? 'fulfilled' : 'pending_validation', paymentStatus: options.payingOrder ? 'paying' : null, hasInvoice: false, currency: 'USD', totalAmount: 1590, notes: '', createdAt: stamp, items: [item], diningModeUuid: 'dining-mode-hotpot', diningModeName: '火锅', canReplace: initialStatus === 'confirmed', canCancel: initialStatus === 'pending' || initialStatus === 'confirmed' }]
   const receipts = new Map<string, Record<string, unknown>>()
   const version = () => revision.toString(16).padStart(64, 'a')
   const newOrderUuid = () => `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
@@ -163,7 +163,7 @@ for (const width of [320, 390, 768, 1280]) {
     await quote(page)
     await page.getByRole('button', { name: '创建订单', exact: true }).click()
     await expect(page.locator('.dining-round')).toHaveCount(3)
-    await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(3)
+    await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: '取消批次', exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: '开台', exact: true })).toHaveCount(0)
     expect(requests.some((request) => request.path.endsWith('/open'))).toBe(false)
@@ -211,21 +211,44 @@ test('payment QR opens the customer payment entry without starting Huifu directl
   expect(requests.some((request) => request.path.includes('huifu-payments') || request.path.includes('/app/orders'))).toBe(false)
 })
 
-test('an edit-only employee can modify a customer order with a reviewed quote and reason', async ({ page }) => {
-  const requests = await setup(page, { customerOrder: true, editOnly: true })
+test('checkout offers scan payment when the store returns no payment methods', async ({ page }) => {
+  const requests = await setup(page, { customerOrder: true })
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await page.getByRole('button', { name: '结账', exact: true }).click()
+  await page.getByRole('button', { name: '确认并处理订单', exact: true }).click()
+
+  const methods = page.locator('.checkout-payment-methods')
+  await expect(page.getByText('订单整理完成', { exact: true })).toBeVisible()
+  await expect(methods).toContainText('扫码支付')
+  await expect(methods).not.toContainText('门店暂未返回可用的支付方式')
+  await methods.getByRole('button', { name: '扫码支付', exact: true }).click()
+
+  await expect(page.getByRole('dialog', { name: '订单收款' })).toBeVisible()
+  await expect(page.locator('.dining-payment-qr')).toBeVisible()
+  const paymentUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/payment/index.html?orderUuid=10000000-0000-4000-8000-000000000009&storeUuid=10000000-0000-4000-8000-000000000001'
+  await expect(page.locator('.dining-payment-url')).toHaveText(paymentUrl)
+  expect(requests.some((request) => request.path.includes('huifu-payments') || request.path.includes('/app/orders'))).toBe(false)
+})
+
+test('checkout blocks item changes after payment has started', async ({ page }) => {
+  const requests = await setup(page, { customerOrder: true, payingOrder: true })
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await page.getByRole('button', { name: '结账', exact: true }).click()
+
+  await expect(page.locator('.checkout-final-review')).toBeVisible()
+  await page.getByRole('button', { name: '增加数量 Soup Regular', exact: true }).click()
+  await expect(page.getByText('订单已经发起支付，不能调整，加减产品只能另外加单或者退款方式处理', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认', exact: true }).click()
+  await page.getByRole('button', { name: '减少数量 Soup Regular', exact: true }).click()
+  await expect(page.getByText('订单已经发起支付，不能调整，加减产品只能另外加单或者退款方式处理', { exact: true })).toBeVisible()
+  expect(requests.filter((request) => request.method === 'POST' && request.path.includes('/counter-operations/'))).toHaveLength(0)
+})
+
+test('an edit-only employee does not see the batch replacement action', async ({ page }) => {
+  await setup(page, { customerOrder: true, editOnly: true })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.getByRole('button', { name: '加单', exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: '修改批次', exact: true }).click()
-  await page.getByRole('button', { name: '增加数量 Soup Regular', exact: true }).click()
-  await page.getByLabel('操作原因', { exact: true }).fill('Guest requested two')
-  await page.getByRole('button', { name: '获取服务端报价', exact: true }).click()
-  await expect(page.getByRole('dialog').last()).toContainText('$31.80')
-  await page.getByRole('button', { name: '确认下单', exact: true }).click()
-  await expect(page.locator('.dining-round')).toHaveCount(1)
-  const write = requests.find((request) => request.path.endsWith('/orders/replace'))!
-  expect(write.body).toMatchObject({ replaceOrderUuid: '10000000-0000-4000-8000-000000000009', reason: 'Guest requested two', quoteToken: 'f'.repeat(64), commandUuid: expect.any(String) })
-  expect(write.body).not.toHaveProperty('user')
-  expect(requests.filter((request) => request.path.endsWith('/orders/create'))).toHaveLength(0)
+  await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
 })
 
 test('session readers without counter-order grants see the session but no order rows or amounts', async ({ page }) => {
@@ -249,10 +272,10 @@ test('a pending order is visible and can be manually confirmed by cashier staff'
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.locator('.dining-round')).toHaveCount(1)
   await expect(page.locator('.dining-round')).toContainText('待处理 (pending)')
-  await expect(page.getByRole('button', { name: '结算', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '结账', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '确认订单', exact: true }).click()
   await expect(page.locator('.dining-round')).toContainText('已确认 (confirmed)')
-  await expect(page.getByRole('button', { name: '结算', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: '结账', exact: true })).toBeEnabled()
   const write = requests.find((request) => request.path.endsWith('/orders/confirm'))!
   expect(write.body).toMatchObject({ orderUuid: '10000000-0000-4000-8000-000000000009', commandUuid: expect.any(String), version: expect.any(String) })
 })
@@ -283,17 +306,19 @@ test('an eligible order can be cancelled and closes the order dialog', async ({ 
   expect(write.body).toMatchObject({ orderUuid: '10000000-0000-4000-8000-000000000009', reason: '收银端取消所选未结订单', commandUuid: expect.any(String), version: expect.any(String) })
 })
 
-test('cancellation and replacement use independent grants', async ({ page }) => {
+test('cancellation is disabled without its independent grant', async ({ page }) => {
   await setup(page, { customerOrder: true, editOnly: true })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
-  await expect(page.getByRole('button', { name: '修改批次', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
 })
 
 test('cancel-only staff can cancel without ordering or replacement access', async ({ page }) => {
   await setup(page, { customerOrder: true, cancelOnly: true })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeEnabled()
   await expect(page.getByRole('button', { name: '修改批次', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '加单', exact: true })).toHaveCount(0)
 })
@@ -302,7 +327,7 @@ test('read-only dining grants never expose commands or load the menu', async ({ 
   const requests = await setup(page, { readOnly: true, customerOrder: true })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await expect(page.locator('.dining-round')).toHaveCount(1)
-  for (const name of ['开台', '加单', '结算', '修改桌次', '结束桌次', '修改批次', '取消批次']) {
+  for (const name of ['开台', '加单', '结账', '修改桌次', '结束桌次', '修改批次', '取消批次']) {
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
   await expect(page.getByRole('button', { name: '取消订单', exact: true })).toBeDisabled()

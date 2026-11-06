@@ -74,6 +74,11 @@ export function paymentStatusIsPaid(status: string | null | undefined): boolean 
   return ['paid', 'partial_refunded', 'partially_refunded'].includes(status?.toLowerCase() ?? '')
 }
 
+/** A paying Trade order must not be repriced or have its item lines changed. */
+export function paymentStatusIsPaying(status: string | null | undefined): boolean {
+  return status?.trim().toLowerCase() === 'paying'
+}
+
 /** A pending invoice still accepts a first provider request; submitted attempts must not be duplicated. */
 export function paymentStatusStartsAttempt(status: string | null | undefined): boolean {
   return ['paying', 'processing', 'pending_confirmation', 'submitted', 'unknown'].includes(status?.toLowerCase() ?? '')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { confirmedOrderCanCollect, invoiceReferenceUuid, parseStaffPaymentResult, paymentStatusIsPaid, paymentStatusStartsAttempt } from '../../src/staff/order-payment'
+import { confirmedOrderCanCollect, invoiceReferenceUuid, parseStaffPaymentResult, paymentStatusIsPaid, paymentStatusIsPaying, paymentStatusStartsAttempt } from '../../src/staff/order-payment'
 
 const invoiceUuid = '10000000-0000-4000-8000-000000000001'
 
@@ -52,5 +52,12 @@ describe('staff order collection', () => {
     expect(paymentStatusStartsAttempt(null)).toBe(false)
     expect(paymentStatusStartsAttempt('paying')).toBe(true)
     expect(paymentStatusStartsAttempt('UNKNOWN')).toBe(true)
+  })
+
+  it('recognizes a payment that is already in progress', () => {
+    expect(paymentStatusIsPaying('paying')).toBe(true)
+    expect(paymentStatusIsPaying(' PAYING ')).toBe(true)
+    expect(paymentStatusIsPaying('pending')).toBe(false)
+    expect(paymentStatusIsPaying(null)).toBe(false)
   })
 })

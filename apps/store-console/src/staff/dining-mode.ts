@@ -217,6 +217,7 @@ export function resolveRecordedDiningMode(snapshot: unknown, uuid: unknown, name
   const modes = normalizeDiningModes(storeModes)
   const byUuid = recordedUuid ? modes.find((mode) => mode.uuid === recordedUuid) : null
   if (byUuid) return byUuid
+  if (recordedUuid) return null
   if (!recordedName) return null
 
   const byName = modes.filter((mode) => normalizedModeName(mode.name) === recordedName)
@@ -226,6 +227,7 @@ export function resolveRecordedDiningMode(snapshot: unknown, uuid: unknown, name
 export interface TableDiningModeOrderSnapshot {
   uuid?: string
   createdAt: string
+  status?: string
   diningModeUuid?: string | null
   diningModeName?: string | null
 }
@@ -242,30 +244,22 @@ export interface TableDiningModeDisplay {
   name: string | null
 }
 
-/** The first bound order determines the table mode. Resolve its recorded metadata
- * against the session snapshot or current store configuration, retaining a UUID/name
- * fallback when administrators later remove the mode from the store. */
+/** The first open order determines the table mode. A Counter session has no dining
+ * mode of its own, and terminal historical orders must not override the active table.
+ * Resolve the recorded metadata against current store configuration, retaining a
+ * UUID/name fallback when administrators later remove the mode from the store. */
 export function resolveTableDiningModeDisplay(table: TableDiningModeSnapshot, storeModes: unknown): TableDiningModeDisplay | null {
-  const sessionUuid = text(table.session?.diningModeUuid).trim()
-  const sessionName = text(table.session?.diningModeName).trim()
-  const sessionMode = resolveRecordedDiningMode(table.session?.diningMode, sessionUuid, sessionName, storeModes)
-  if (sessionMode) return { mode: sessionMode, uuid: sessionMode.uuid, name: sessionMode.name || sessionName || sessionMode.uuid }
-
   const orders = table.ordersVisible
-    ? [...(table.orders ?? [])].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || (left.uuid ?? '').localeCompare(right.uuid ?? ''))
+    ? (table.orders ?? [])
+        .filter((order) => order.status === 'pending' || order.status === 'confirmed')
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || (left.uuid ?? '').localeCompare(right.uuid ?? ''))
     : []
-  const recordedOrder = orders.find((order) => text(order.diningModeUuid).trim() || text(order.diningModeName).trim())
-  if (sessionUuid) {
-    const matchingOrder = orders.find((order) => text(order.diningModeUuid).trim() === sessionUuid)
-    const namedMode = resolveRecordedDiningMode(null, sessionUuid, sessionName || matchingOrder?.diningModeName, storeModes)
-    return namedMode
-      ? { mode: namedMode, uuid: namedMode.uuid, name: namedMode.name || sessionName || namedMode.uuid }
-      : { mode: null, uuid: sessionUuid, name: sessionName || text(matchingOrder?.diningModeName).trim() || null }
-  }
+  const recordedOrder = orders[0]
   if (!recordedOrder) return null
 
   const uuid = text(recordedOrder.diningModeUuid).trim() || null
   const name = text(recordedOrder.diningModeName).trim() || null
+  if (!uuid && !name) return null
   const mode = resolveRecordedDiningMode(null, uuid, name, storeModes)
   return { mode, uuid: mode?.uuid ?? uuid, name: mode?.name || name }
 }
