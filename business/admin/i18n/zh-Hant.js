@@ -344,6 +344,7 @@ export default {
   'Refund details': '退款詳情',
   'Order refund records': '退款紀錄',
   'Unified order refund records help': '透過來店退款介面彙總門市訂單的退款紀錄，並重新整理退款對帳後的目前狀態。',
+  'All stores': '全部門店',
   'All refund statuses': '全部退款狀態',
   'No order refund records': '暫無訂單退款紀錄',
   'Failed to load order refund records': '載入訂單退款紀錄失敗。',

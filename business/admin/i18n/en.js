@@ -340,6 +340,7 @@ export default {
   'Refund details': 'Refund details',
   'Order refund records': 'Order refund records',
   'Unified order refund records help': 'Aggregate refund histories from Store-backed orders through Store refund endpoints and refresh their current reconciliation status.',
+  'All stores': 'All stores',
   'All refund statuses': 'All refund statuses',
   'No order refund records': 'No order refund records',
   'Failed to load order refund records': 'Failed to load order refund records',

@@ -344,6 +344,7 @@ export default {
   'Refund details': '退款详情',
   'Order refund records': '退款记录',
   'Unified order refund records help': '通过门店退款接口汇总门店订单的退款记录，并刷新退款对账后的当前状态。',
+  'All stores': '全部门店',
   'All refund statuses': '全部退款状态',
   'No order refund records': '暂无订单退款记录',
   'Failed to load order refund records': '加载订单退款记录失败。',

@@ -338,6 +338,7 @@ export default {
   'Refund details': '返金詳細',
   'Order refund records': '返金記録',
   'Unified order refund records help': '店舗の返金 API から店舗注文の返金履歴を集約し、照合後の最新状態を更新します。',
+  'All stores': 'すべての店舗',
   'All refund statuses': 'すべての返金状態',
   'No order refund records': '注文の返金記録はありません',
   'Failed to load order refund records': '注文の返金記録を読み込めませんでした。',
