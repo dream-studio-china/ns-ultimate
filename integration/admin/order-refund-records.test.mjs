@@ -33,6 +33,14 @@ test('order detail refund history uses the Store-scoped history endpoint', () =>
   assert.match(source, /orderStoreUuid\(this\.order, this\.record\)/)
 })
 
+test('order refund submission uses the Store-scoped refund endpoint', () => {
+  const source = readFileSync(new URL('../../business/admin/config/components/OrderRefundAction.vue', import.meta.url), 'utf8')
+  assert.match(source, /orderRefundPath\(storeUuid, tradeOrderUuid\)/)
+  assert.match(source, /const storeUuid = orderStoreUuid\(this\.order, this\.record\)/)
+  assert.match(source, /this\.storeUuid = storeUuid/)
+  assert.doesNotMatch(source, /request\.post\(orderRefundPath\(tradeOrderUuid\)/)
+})
+
 test('order refund records menu is localized in every business locale', () => {
   for (const messages of [en, zh, zhHant, ja]) {
     for (const key of [

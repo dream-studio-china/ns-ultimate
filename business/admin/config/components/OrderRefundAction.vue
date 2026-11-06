@@ -131,6 +131,7 @@ export default {
       error: '',
       notice: '',
       paymentError: '',
+      storeUuid: '',
       order: {},
       invoice: {},
       context: {},
@@ -169,6 +170,7 @@ export default {
       this.error = ''
       this.notice = ''
       this.paymentError = ''
+      this.storeUuid = ''
       this.order = {}
       this.invoice = {}
       this.context = {}
@@ -179,6 +181,7 @@ export default {
         this.order = orderResponse.data || {}
         this.loaded = true
         const storeUuid = orderStoreUuid(this.order, this.record)
+        this.storeUuid = storeUuid
         if (!storeUuid) {
           this.historyError = t('storeContextMissing')
         } else {
@@ -219,20 +222,28 @@ export default {
       if (validation.error || !this.reason.trim() || refundReasonBytes(this.reason.trim()) > 1000) return
 
       const amount = validation.cents
+      const storeUuid = this.storeUuid || orderStoreUuid(this.order, this.record)
+      const tradeOrderUuid = this.order.uuid || this.order.tradeOrderUuid || this.record.uuid
+      if (!storeUuid) {
+        this.error = t('storeContextMissing')
+        return
+      }
+      if (!tradeOrderUuid) {
+        this.error = t('orderNotFound')
+        return
+      }
       const formattedAmount = formatMoney(validation.cents, this.context.currency)
       if (!window.confirm(`${t('Confirm refund')}: ${formattedAmount} · ${this.context.payment || t('Unknown')}`)) return
 
       this.submitting = true
       this.refundKey ||= `admin-order-refund:${Date.now()}:${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`
       try {
-        const tradeOrderUuid = this.order.uuid || this.record.uuid
-        if (!tradeOrderUuid) throw new Error(t('orderNotFound'))
         const body = {
           amount,
           reason: this.reason.trim(),
           idempotencyKey: this.refundKey
         }
-        const response = await request.post(orderRefundPath(tradeOrderUuid), body)
+        const response = await request.post(orderRefundPath(storeUuid, tradeOrderUuid), body)
 
         const refundStatus = response.data?.status || response.data?.invoice?.status || ''
         if (refundStatus === 'failed') {
@@ -264,6 +275,7 @@ export default {
       this.error = ''
       this.notice = ''
       this.paymentError = ''
+      this.storeUuid = ''
       this.order = {}
       this.invoice = {}
       this.context = {}
