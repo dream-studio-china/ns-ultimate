@@ -1,7 +1,7 @@
 <template>
-  <span v-if="['paid', 'refunded', 'fulfilled', 'completed'].includes(record.status)" class="order-refund-action">
+  <span v-if="record.id" class="order-refund-action">
     <el-button
-      :type="record.status === 'paid' ? 'warning' : 'info'"
+      type="info"
       size="small"
       plain
       icon="el-icon-refresh-left"
@@ -9,7 +9,7 @@
       :disabled="!record.id"
       @click="open"
     >
-      <span>{{ $t(record.status === 'paid' ? 'Refund' : 'Refund details') }}</span>
+      <span>{{ $t('Refund history') }}</span>
     </el-button>
 
     <el-dialog
@@ -26,8 +26,9 @@
         <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
         <el-alert v-if="notice" :title="notice" type="warning" :closable="false" show-icon />
 
-        <template v-if="loaded && !error">
-          <el-descriptions :column="2" border>
+        <template v-if="loaded">
+          <el-alert v-if="paymentError" :title="paymentError" type="warning" :closable="false" show-icon />
+          <el-descriptions v-if="context.amount !== undefined" :column="2" border>
             <el-descriptions-item :label="$t('Order')">#{{ order.id }}</el-descriptions-item>
             <el-descriptions-item :label="$t('Payment Method')">{{ context.payment || $t('Unknown') }}</el-descriptions-item>
             <el-descriptions-item :label="$t('Payment status')" :span="2">{{ $t(paymentStatusLabel(invoice.status)) }}</el-descriptions-item>
@@ -105,6 +106,7 @@ import request from '@/utils/request'
 import {
   formatMoney,
   minorUnitsToInput,
+  orderRefundHistoryPath,
   orderRefundPath,
   orderStoreUuid,
   refundContext,
@@ -128,9 +130,9 @@ export default {
       submitting: false,
       error: '',
       notice: '',
+      paymentError: '',
       order: {},
       invoice: {},
-      storeUuid: '',
       context: {},
       amount: '',
       reason: '',
@@ -166,33 +168,42 @@ export default {
       this.loaded = false
       this.error = ''
       this.notice = ''
+      this.paymentError = ''
       this.order = {}
       this.invoice = {}
-      this.storeUuid = ''
       this.context = {}
       this.history = []
       this.historyError = ''
       try {
         const orderResponse = await request.get(`/api/v1/manage/orders/${this.record.id || this.record.uuid}`)
         this.order = orderResponse.data || {}
-        if (!this.order.invoiceId) throw new Error(t('orderHasNoInvoice'))
-        this.storeUuid = orderStoreUuid(this.order, this.record)
-        if (!this.storeUuid) throw new Error(t('storeContextMissing'))
+        this.loaded = true
+        const storeUuid = orderStoreUuid(this.order, this.record)
+        if (!storeUuid) {
+          this.historyError = t('storeContextMissing')
+        } else {
+          try {
+            const response = await request.get(orderRefundHistoryPath(storeUuid, this.order.uuid))
+            this.history = response.data || []
+          } catch (cause) {
+            this.historyError = this.failureMessage(cause, 'Failed to load refund history')
+          }
+        }
+        if (!this.order.invoiceId) {
+          this.paymentError = t('orderHasNoInvoice')
+          return
+        }
 
         const invoiceResponse = await request.get(`/api/v1/manage/invoices/${this.order.invoiceId}`)
         this.invoice = invoiceResponse.data || {}
         this.context = refundContext(this.order, this.invoice)
-        if (this.context.error) throw new Error(t(this.context.error))
+        if (this.context.error) {
+          this.paymentError = t(this.context.error)
+          return
+        }
 
         if (!preserveInput) this.amount = this.context.canRefund ? minorUnitsToInput(this.context.refundableAmount) : ''
-        this.loaded = true
         if (!this.context.canRefund) this.notice = t('noRefundableAmount')
-        try {
-          const response = await request.get(`${orderRefundPath(this.storeUuid, this.order.uuid)}s`)
-          this.history = response.data || []
-        } catch (cause) {
-          this.historyError = this.failureMessage(cause, 'Failed to load refund history')
-        }
       } catch (cause) {
         this.error = this.failureMessage(cause, 'Failed to load refund details')
       } finally {
@@ -221,7 +232,7 @@ export default {
           reason: this.reason.trim(),
           idempotencyKey: this.refundKey
         }
-        const response = await request.post(orderRefundPath(this.storeUuid, tradeOrderUuid), body)
+        const response = await request.post(orderRefundPath(tradeOrderUuid), body)
 
         const refundStatus = response.data?.status || response.data?.invoice?.status || ''
         if (refundStatus === 'failed') {
@@ -252,9 +263,9 @@ export default {
       this.loaded = false
       this.error = ''
       this.notice = ''
+      this.paymentError = ''
       this.order = {}
       this.invoice = {}
-      this.storeUuid = ''
       this.context = {}
       this.amount = ''
       this.reason = ''
