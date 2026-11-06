@@ -85,10 +85,15 @@ test('refundContext fails closed for mismatched or unpaid invoices', () => {
   assert.equal(unpaid.statusRefundable, false)
 })
 
-test('orderRefundPath always targets the administrative order refund API', () => {
+test('orderRefundPath targets the Store Trade order refund API', () => {
+  const storeUuid = '00000000-0000-4000-8000-000000000002'
   const tradeOrderUuid = '00000000-0000-4000-8000-000000000001'
-  assert.equal(orderRefundPath(tradeOrderUuid), `/api/v1/manage/orders/${tradeOrderUuid}/refunds`)
-  assert.throws(() => orderRefundPath(''), /Trade order UUID is required/)
+  assert.equal(
+    orderRefundPath(storeUuid, tradeOrderUuid),
+    `/api/v1/store/${storeUuid}/trade-orders/${tradeOrderUuid}/refund`
+  )
+  assert.throws(() => orderRefundPath('', tradeOrderUuid), /Store UUID is required/)
+  assert.throws(() => orderRefundPath(storeUuid, ''), /Trade order UUID is required/)
 })
 
 test('orderStoreUuid reads only a valid Store context from the order', () => {

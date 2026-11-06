@@ -74,9 +74,10 @@ export function orderStoreUuid(order, record = {}) {
   return typeof storeUuid === 'string' && UUID_PATTERN.test(storeUuid) ? storeUuid : ''
 }
 
-export function orderRefundPath(tradeOrderUuid) {
+export function orderRefundPath(storeUuid, tradeOrderUuid) {
+  if (typeof storeUuid !== 'string' || !UUID_PATTERN.test(storeUuid)) throw new Error('Store UUID is required')
   if (typeof tradeOrderUuid !== 'string' || !UUID_PATTERN.test(tradeOrderUuid)) throw new Error('Trade order UUID is required')
-  return `/api/v1/manage/orders/${tradeOrderUuid}/refunds`
+  return `/api/v1/store/${storeUuid}/trade-orders/${tradeOrderUuid}/refund`
 }
 
 export function orderRefundHistoryPath(storeUuid, tradeOrderUuid) {
