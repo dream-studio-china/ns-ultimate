@@ -17,12 +17,13 @@ The operations routes below have the prefix `/api/v1/store/{storeUuid}/operation
 | Category / counter / order reads | Existing `store:product_category:read`, `store:counter:read`, `store:order:read` |
 | Accept / reject / fulfill / verify | Existing `store:order:accept`, `reject`, `fulfill`, `verify` |
 | Request an order refund | New `store:order:refund` |
+| Close an existing order payment | `store:order:payment_close` |
 | Upload a store-owned catalog image | New `store:catalog_image:create` |
 | Read operational history | New `store:operation:read` |
 
 Product update is the broader catalog-edit grant and includes availability fields; availability-only staff can use the dedicated batch endpoint without receiving general product editing. Receipt replay still requires the route's current permission.
 
-`app:store:seed-staff-authorization` idempotently registers store-scoped Store capability roles `store_catalog_operator`, `store_availability_operator`, `store_order_reader`, `store_order_operator`, `store_order_refund_operator` and `store_operation_auditor`. Counter configuration, counter-session and counter-order capability roles are registered by `app:counter:seed-authorization`; see the [counter operations contract](store-console-counter-operations.md).
+`app:store:seed-staff-authorization` idempotently registers store-scoped Store capability roles `store_catalog_operator`, `store_availability_operator`, `store_order_reader`, `store_order_operator`, `store_order_refund_operator`, `store_order_payment_closer` and `store_operation_auditor`. Counter configuration, counter-session and counter-order capability roles are registered by `app:counter:seed-authorization`; see the [counter operations contract](store-console-counter-operations.md).
 
 | Capability role | Default grants |
 | --- | --- |
@@ -30,12 +31,15 @@ Product update is the broader catalog-edit grant and includes availability field
 | `store_order_reader` | `store:order:read` |
 | `store_order_operator` | `store:order:read`, `accept`, `reject`, `fulfill`, `verify` |
 | `store_order_refund_operator` | `store:order:refund` |
+| `store_order_payment_closer` | `store:order:payment_close` |
 | `store_catalog_operator` | product/category/specification CRUD, `catalog_image:create`, `product:availability` |
 | `store_operation_auditor` | `store:operation:read` |
 
 No backend role encodes a frontend job title. The store console's "Kitchen" and "Cashier" views are combinations of these capability grants chosen per employee. No preset grants counter configuration writes, payment initiation or financial reporting. Order fulfillment is limited to `store_order_operator`, refunds require the separate `store_order_refund_operator`, and audit reads are limited to `store_operation_auditor`. Counter-session and counter-order entry capabilities come from the Counter seed described in the counter operations contract. The seed is additive: extra permissions on an existing role are not removed. An existing preset code with a non-store scope fails validation before seed writes. It does not create users, memberships or assignments and does not modify the existing catalog/counter roles. Assign roles through the existing authorization management workflow. Audit access is intentionally separate. Do not replace scoped grants with `ROLE_ADMIN`.
 
 ## Order refund command
+
+Payment closure is a separate [channel-confirmed operation](order-payment-closure.md), available through administrator and Store APIs with its own opt-in permission. It closes an unpaid payment and releases its current order reference only after channel confirmation; it does not refund a successful collection. The current Store Console UI does not call that operation.
 
 `POST /api/v1/store/{storeUuid}/trade-orders/{tradeOrderUuid}/refund` requests a refund for a **Trade Order** in `paid` state. `storeUuid` establishes the authorization/ownership scope; `tradeOrderUuid` is the Trade Order UUID, never a StoreOrder UUID. A staff account requires active membership in the Store and `store:order:refund` for that Store. A `ROLE_ADMIN` management account is globally authorized but must still target the same Store recorded by the Trade order lifecycle; administrator access does not bypass order ownership checks. Only the Trade order's currently linked, matching `trade_order` Invoice can be refunded. New requests for other order states are rejected; this endpoint does not alter Core refund eligibility or order workflow rules. Store Console lists refund actions only for paid Trade orders and obtains the amount, already-refunded total and payment channel from the public order payment projection before submission. The separate `/operations/orders/{storeOrderUuid}` routes operate on the StoreOrder fulfillment aggregate, not this financial Trade order.
 
