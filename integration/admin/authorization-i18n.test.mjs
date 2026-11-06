@@ -34,6 +34,7 @@ const seededRoles = [
   'store_order_reader',
   'store_order_operator',
   'store_order_refund_operator',
+  'store_order_payment_closer',
   'store_catalog_operator',
   'store_operation_auditor',
   'store_counter_manager',
@@ -51,6 +52,8 @@ test('translates seeded permission and role names by stable code', () => {
   assert.equal(localizedAuthorizationName('role', 'store_counter_manager', 'Store Counter Manager', 'ja'), '店舗カウンター管理者')
   assert.equal(translatedAuthorizationName('permission', 'store:order:refund', 'zh'), '退还门店订单款项')
   assert.equal(translatedAuthorizationName('role', 'store_order_refund_operator', 'ja'), '店舗注文返金オペレーター')
+  assert.equal(translatedAuthorizationName('permission', 'store:order:payment_close', 'zh'), '关闭门店订单支付')
+  assert.equal(translatedAuthorizationName('role', 'store_order_payment_closer', 'ja'), '店舗注文支払い終了オペレーター')
 })
 
 test('explicit lookup distinguishes a translated code from a fallback', () => {
