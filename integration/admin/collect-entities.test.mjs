@@ -223,7 +223,7 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   assert.equal(order.children[1].meta.title, 'Order refund records')
 })
 
-test('places Counter after Product and WeChat and Huifu menus before user management', () => {
+test('places Order directly after Product and Counter after Order', () => {
   const coreRoutes = [
     { name: 'ProductManage' },
     { name: 'OrderManage' },
@@ -238,12 +238,13 @@ test('places Counter after Product and WeChat and Huifu menus before user manage
   ] }
   let routes = mergeRoutes(coreRoutes, businessRoutes)
   routes = moveRouteAfter(routes, 'CounterManagement', 'ProductManage')
+  routes = moveRouteAfter(routes, 'OrderManage', 'ProductManage')
   routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
   routes = moveRouteAfter(routes, 'HuifuConfiguration', 'WechatConfiguration')
   routes = moveRouteAfter(routes, 'HuifuTransactions', 'HuifuConfiguration')
 
   assert.deepEqual(Array.from(routes, route => route.name), [
-    'ProductManage', 'CounterManagement', 'OrderManage', 'ContentManage',
+    'ProductManage', 'OrderManage', 'CounterManagement', 'ContentManage',
     'WechatConfiguration', 'HuifuConfiguration', 'HuifuTransactions', 'UserManage'
   ])
   assert.deepEqual(Array.from(coreRoutes, route => route.name), [
