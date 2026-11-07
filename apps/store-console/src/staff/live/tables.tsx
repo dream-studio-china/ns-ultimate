@@ -8,6 +8,7 @@ import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCoun
 import { ApiError } from '../adapters/api-client'
 import { minorUnitsToInput, paidOrderCanRefund, paymentStatusMessage, refundReasonBytes, refundResultKind, validateRefundAmount } from '../order-refund'
 import { OrderRefundDetails } from './OrderRefundDetails'
+import { DEFAULT_TRADE_ORDER_STATUSES, filterTradeOrders } from './order-filters'
 import { counterQrFileNames, customerOrderingUrl } from '../table-qr'
 import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
 import { LiveDining } from './dining'
@@ -118,6 +119,7 @@ function downloadBlob(blob: Blob, fileName: string) {
 
 const statusLabels: Record<string, MessageKey> = { draft: 'diningDraft', pending: 'diningPending', confirmed: 'diningConfirmed', paid: 'diningPaid', fulfilled: 'stateFulfilled', completed: 'diningCompleted', cancelled: 'stateCancelled', refunded: 'diningRefunded', merged: 'diningMerged' }
 const hiddenOrderStatuses = new Set(['cancelled', 'merged'])
+const selectableOrderStatuses = Object.entries(statusLabels).filter(([value]) => !hiddenOrderStatuses.has(value))
 interface CounterTradeOrder {
   order: SessionOrder
   counter: CounterSessionView['counter']
@@ -127,7 +129,9 @@ interface CounterTradeOrder {
 
 export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t, locale } = useI18n()
-  const [status, setStatus] = useState('all')
+  const [statuses, setStatuses] = useState<Set<string>>(() => new Set(DEFAULT_TRADE_ORDER_STATUSES))
+  const [tableCode, setTableCode] = useState('')
+  const [date, setDate] = useState('')
   const canReadOrders = can(access, 'counter_order', 'read')
   const canCancelOrders = can(access, 'counter_order', 'cancel')
   const canRefundOrders = can(access, 'order', 'refund')
@@ -148,14 +152,39 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
   const [selected, setSelected] = useState<CounterTradeOrder | null>(null)
   const [refunding, setRefunding] = useState<CounterTradeOrder | null>(null)
   const [cancelling, setCancelling] = useState<CounterTradeOrder | null>(null)
-  const visible = status === 'all' ? list.items : list.items.filter(({ order }) => order.status === status)
+  const counterCodes = [...new Set(list.items.map(({ counter }) => counter.code).filter(Boolean))].sort((left, right) => left.localeCompare(right))
+  const allStatusesSelected = selectableOrderStatuses.every(([value]) => statuses.has(value))
+  const visible = filterTradeOrders(list.items, { statuses, tableCode, date, timeZone: access.store.timezone })
+  const toggleStatus = (value: string) => setStatuses((current) => {
+    const next = new Set(current)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    return next
+  })
+  const resetFilters = () => {
+    setStatuses(new Set(DEFAULT_TRADE_ORDER_STATUSES))
+    setTableCode('')
+    setDate('')
+  }
   const openRefund = (target: CounterTradeOrder) => {
     setSelected(null)
     setRefunding(target)
   }
   return <>
     {!canReadOrders ? <AccessNotice /> : <>
-      <label className="field order-status-filter">{t('orderStatus')}<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">{t('allStatuses')}</option>{Object.entries(statusLabels).filter(([value]) => !hiddenOrderStatuses.has(value)).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label><ListFeedback state={{ ...list, items: visible }} empty={status !== 'all' ? 'noSearchResults' : 'firstOrder'} hint={status !== 'all' ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
+      <section className="trade-order-filters" aria-label={t('orderFilters')}>
+        <div className="trade-order-filter-grid">
+          <label className="field"><span>{t('tableNumber')}</span><select aria-label={t('tableNumber')} value={tableCode} onChange={(event) => setTableCode(event.target.value)}><option value="">{t('allTables')}</option>{counterCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select></label>
+          <label className="field"><span>{t('tradeOrderDate')}</span><input aria-label={t('tradeOrderDate')} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+        </div>
+        <div className="trade-order-statuses" role="group" aria-label={t('orderStatus')}>
+          <span>{t('orderStatus')}</span>
+          <button type="button" aria-pressed={allStatusesSelected} onClick={() => setStatuses(allStatusesSelected ? new Set() : new Set(selectableOrderStatuses.map(([value]) => value)))}>{t('allStatuses')}</button>
+          {selectableOrderStatuses.map(([value, label]) => <button type="button" key={value} aria-pressed={statuses.has(value)} onClick={() => toggleStatus(value)}>{t(label)}</button>)}
+        </div>
+        <button type="button" className="trade-order-filter-reset" onClick={resetFilters}>{t('resetFilters')}</button>
+      </section>
+      <ListFeedback state={{ ...list, items: visible }} empty={list.items.length ? 'noSearchResults' : 'firstOrder'} hint={list.items.length ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
       <div className="workspace-order-list">{visible.map((item) => {
         const { order, counter, currency } = item
         const refundable = paidOrderCanRefund(order)

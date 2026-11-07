@@ -36,7 +36,7 @@ async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = options.specifications?.map((item) => ({ ...item })) ?? []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
-  let reportingOrder = { uuid: orderId, tradeOrderUuid: tradeOrderId, status: options.confirmedOrder ? 'confirmed' : 'paid', paymentStatus: options.confirmedOrder ? null : options.partialRefund ? 'partial_refunded' : 'paid', hasInvoice: !options.confirmedOrder && !!options.partialRefund, totalAmount: 1590, currency: 'CNY', notes: null, createdAt: new Date().toISOString(), items: [{ specificationUuid: specId, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: Boolean(options.confirmedOrder), canCancel: Boolean(options.confirmedOrder) }
+  let reportingOrder = { uuid: orderId, tradeOrderUuid: tradeOrderId, status: options.confirmedOrder ? 'confirmed' : 'paid', paymentStatus: options.confirmedOrder ? null : options.partialRefund ? 'partial_refunded' : 'paid', hasInvoice: !options.confirmedOrder && !!options.partialRefund, totalAmount: 1590, currency: 'CNY', notes: null, createdAt: '2026-11-07T10:00:00+08:00', items: [{ specificationUuid: specId, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: Boolean(options.confirmedOrder), canCancel: Boolean(options.confirmedOrder) }
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -477,22 +477,48 @@ test('order details expose operational state without fulfillment or payment comm
   expect(requests.some((request) => /payment|refund|manage/.test(request.path))).toBe(false)
 })
 
-test('order status filters hide counter orders that do not match', async ({ page }) => {
+test('trade orders default to paid and refunded and filter by table and date', async ({ page }) => {
   await mockApi(page, { orderOperations: true })
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
-  const status = page.locator('.order-status-filter select')
-  await status.selectOption('paid')
+
+  const filters = page.locator('.trade-order-filters')
+  const paid = filters.getByRole('button', { name: '已付款', exact: true })
+  const refunded = filters.getByRole('button', { name: '已退款', exact: true })
+  const confirmed = filters.getByRole('button', { name: '已确认', exact: true })
+  await expect(paid).toHaveAttribute('aria-pressed', 'true')
+  await expect(refunded).toHaveAttribute('aria-pressed', 'true')
+  await expect(confirmed).toHaveAttribute('aria-pressed', 'false')
   await expect(page.locator('.workspace-order-list article')).toHaveCount(1)
-  await status.selectOption('fulfilled')
+
+  const table = filters.getByLabel('台号', { exact: true })
+  await expect(table.getByRole('option', { name: 'A01', exact: true })).toHaveCount(1)
+  await table.selectOption('A01')
+  await expect(page.locator('.workspace-order-list article')).toHaveCount(1)
+
+  const date = filters.getByLabel('交易日期', { exact: true })
+  await date.fill('2026-11-08')
   await expect(page.getByRole('heading', { name: '没有匹配的记录', exact: true })).toBeVisible()
   await expect(page.locator('.workspace-order-list article')).toHaveCount(0)
+  await date.fill('2026-11-07')
+  await expect(page.locator('.workspace-order-list article')).toHaveCount(1)
+
+  await paid.click()
+  await expect(paid).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('.workspace-order-list article')).toHaveCount(0)
+  await filters.getByRole('button', { name: '重置筛选', exact: true }).click()
+  await expect(paid).toHaveAttribute('aria-pressed', 'true')
+  await expect(refunded).toHaveAttribute('aria-pressed', 'true')
+  await expect(table).toHaveValue('')
+  await expect(date).toHaveValue('')
+  await expect(page.locator('.workspace-order-list article')).toHaveCount(1)
 })
 
 test('confirmed orders can be cancelled from the trade order list', async ({ page }) => {
   const requests = await mockApi(page, { confirmedOrder: true, cancelAccess: true })
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
+  await page.locator('.trade-order-filters').getByRole('button', { name: '已确认', exact: true }).click()
 
   const card = page.locator('.workspace-order-list article')
   await expect(card).toContainText('已确认')
@@ -516,6 +542,7 @@ test('trade order cancellation is disabled without the cancel grant', async ({ p
   await mockApi(page, { confirmedOrder: true })
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
+  await page.locator('.trade-order-filters').getByRole('button', { name: '已确认', exact: true }).click()
 
   const card = page.locator('.workspace-order-list article')
   await expect(card).toContainText('已确认')
