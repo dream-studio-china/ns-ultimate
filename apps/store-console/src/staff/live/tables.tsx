@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
 import JSZip from 'jszip'
-import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, QrCode, ReceiptText, RotateCcw, UsersRound } from 'lucide-react'
+import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, QrCode, ReceiptText, RotateCcw, UsersRound, XCircle } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCounter, type SessionOrder } from '../adapters/live'
 import { ApiError } from '../adapters/api-client'
 import { minorUnitsToInput, paidOrderCanRefund, paymentStatusMessage, refundReasonBytes, refundResultKind, validateRefundAmount } from '../order-refund'
 import { OrderRefundDetails } from './OrderRefundDetails'
+import { DEFAULT_TRADE_ORDER_STATUSES, filterTradeOrders } from './order-filters'
 import { counterQrFileNames, customerOrderingUrl } from '../table-qr'
-import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, PageControls, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
+import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
 import { LiveDining } from './dining'
 
 function CounterForm({ api, counter, done, onClose }: { api: StoreApi; counter: LiveCounter; done: () => void; onClose: () => void }) {
@@ -118,16 +119,21 @@ function downloadBlob(blob: Blob, fileName: string) {
 
 const statusLabels: Record<string, MessageKey> = { draft: 'diningDraft', pending: 'diningPending', confirmed: 'diningConfirmed', paid: 'diningPaid', fulfilled: 'stateFulfilled', completed: 'diningCompleted', cancelled: 'stateCancelled', refunded: 'diningRefunded', merged: 'diningMerged' }
 const hiddenOrderStatuses = new Set(['cancelled', 'merged'])
+const selectableOrderStatuses = Object.entries(statusLabels).filter(([value]) => !hiddenOrderStatuses.has(value))
 interface CounterTradeOrder {
   order: SessionOrder
   counter: CounterSessionView['counter']
   currency: string
+  version: string
 }
 
 export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess }) {
   const { t, locale } = useI18n()
-  const [status, setStatus] = useState('all')
+  const [statuses, setStatuses] = useState<Set<string>>(() => new Set(DEFAULT_TRADE_ORDER_STATUSES))
+  const [tableCode, setTableCode] = useState('')
+  const [date, setDate] = useState('')
   const canReadOrders = can(access, 'counter_order', 'read')
+  const canCancelOrders = can(access, 'counter_order', 'cancel')
   const canRefundOrders = can(access, 'order', 'refund')
   const load = useCallback(async () => {
     const tables = await api.allCounterSessions()
@@ -136,7 +142,7 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
       if (!table.ordersVisible) continue
       for (const order of table.orders) {
         if (hiddenOrderStatuses.has(order.status)) continue
-        orders.set(order.uuid, { order, counter: table.counter, currency: table.currency })
+        orders.set(order.uuid, { order, counter: table.counter, currency: table.currency, version: table.version })
       }
     }
     const items = [...orders.values()].sort((left, right) => right.order.createdAt.localeCompare(left.order.createdAt) || right.order.uuid.localeCompare(left.order.uuid))
@@ -145,26 +151,54 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
   const list = usePage(load, canReadOrders)
   const [selected, setSelected] = useState<CounterTradeOrder | null>(null)
   const [refunding, setRefunding] = useState<CounterTradeOrder | null>(null)
-  const visible = status === 'all' ? list.items : list.items.filter(({ order }) => order.status === status)
+  const [cancelling, setCancelling] = useState<CounterTradeOrder | null>(null)
+  const counterCodes = [...new Set(list.items.map(({ counter }) => counter.code).filter(Boolean))].sort((left, right) => left.localeCompare(right))
+  const allStatusesSelected = selectableOrderStatuses.every(([value]) => statuses.has(value))
+  const visible = filterTradeOrders(list.items, { statuses, tableCode, date, timeZone: access.store.timezone })
+  const toggleStatus = (value: string) => setStatuses((current) => {
+    const next = new Set(current)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    return next
+  })
+  const resetFilters = () => {
+    setStatuses(new Set(DEFAULT_TRADE_ORDER_STATUSES))
+    setTableCode('')
+    setDate('')
+  }
   const openRefund = (target: CounterTradeOrder) => {
     setSelected(null)
     setRefunding(target)
   }
   return <>
     {!canReadOrders ? <AccessNotice /> : <>
-      <label className="field order-status-filter">{t('orderStatus')}<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">{t('allStatuses')}</option>{Object.entries(statusLabels).filter(([value]) => !hiddenOrderStatuses.has(value)).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label><ListFeedback state={{ ...list, items: visible }} empty={status !== 'all' ? 'noSearchResults' : 'firstOrder'} hint={status !== 'all' ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
+      <section className="trade-order-filters" aria-label={t('orderFilters')}>
+        <div className="trade-order-filter-grid">
+          <label className="field"><span>{t('tableNumber')}</span><select aria-label={t('tableNumber')} value={tableCode} onChange={(event) => setTableCode(event.target.value)}><option value="">{t('allTables')}</option>{counterCodes.map((code) => <option key={code} value={code}>{code}</option>)}</select></label>
+          <label className="field"><span>{t('tradeOrderDate')}</span><input aria-label={t('tradeOrderDate')} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+        </div>
+        <div className="trade-order-statuses" role="group" aria-label={t('orderStatus')}>
+          <span>{t('orderStatus')}</span>
+          <button type="button" aria-pressed={allStatusesSelected} onClick={() => setStatuses(allStatusesSelected ? new Set() : new Set(selectableOrderStatuses.map(([value]) => value)))}>{t('allStatuses')}</button>
+          {selectableOrderStatuses.map(([value, label]) => <button type="button" key={value} aria-pressed={statuses.has(value)} onClick={() => toggleStatus(value)}>{t(label)}</button>)}
+        </div>
+        <button type="button" className="trade-order-filter-reset" onClick={resetFilters}>{t('resetFilters')}</button>
+      </section>
+      <ListFeedback state={{ ...list, items: visible }} empty={list.items.length ? 'noSearchResults' : 'firstOrder'} hint={list.items.length ? 'adjustSearch' : 'firstOrderHint'} icon={ReceiptText} />
       <div className="workspace-order-list">{visible.map((item) => {
         const { order, counter, currency } = item
         const refundable = paidOrderCanRefund(order)
         const paymentLabel = paymentStatusMessage(order.paymentStatus)
+        const confirmed = order.status === 'confirmed'
         return <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('tableNumber')} {counter.code}</span><StatusPill muted={order.status !== 'pending' && order.status !== 'confirmed'}>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill></div>
           {paymentLabel && <p>{t('diningPaymentState')} · {t(paymentLabel)}</p>}
-          <div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><div className="order-card-actions">{refundable && <Button disabled={!canRefundOrders} aria-label={canRefundOrders ? t('refund') : t('refundPermissionRequired')} onClick={() => openRefund(item)}><RotateCcw size={14} />{t('refund')}</Button>}<Button onClick={() => setSelected(item)}>{t('view')}<ChevronDown size={14} /></Button></div></div></article>
+          <div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><div className="order-card-actions">{confirmed && <Button color="danger" fill="outline" disabled={!canCancelOrders} aria-label={canCancelOrders ? t('cancelOrder') : t('cancelOrderPermissionRequired')} onClick={() => setCancelling(item)}><XCircle size={14} />{t('cancelOrder')}</Button>}{refundable && <Button disabled={!canRefundOrders} aria-label={canRefundOrders ? t('refund') : t('refundPermissionRequired')} onClick={() => openRefund(item)}><RotateCcw size={14} />{t('refund')}</Button>}<Button onClick={() => setSelected(item)}>{t('view')}<ChevronDown size={14} /></Button></div></div></article>
       })}</div>
       <PageControls state={list} />
     </>}
-    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} canRefund={paidOrderCanRefund(selected.order)} refundAllowed={canRefundOrders} onRefund={() => openRefund(selected)} />{selected.order.hasInvoice && <OrderRefundDetails api={api} tradeOrderUuid={selected.order.tradeOrderUuid} historyAllowed={canRefundOrders} />}</Sheet>}
+    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} canCancel={selected.order.status === 'confirmed'} cancelAllowed={canCancelOrders} onCancel={() => { setSelected(null); setCancelling(selected) }} canRefund={paidOrderCanRefund(selected.order)} refundAllowed={canRefundOrders} onRefund={() => openRefund(selected)} />{selected.order.hasInvoice && <OrderRefundDetails api={api} tradeOrderUuid={selected.order.tradeOrderUuid} historyAllowed={canRefundOrders} />}</Sheet>}
     {refunding && <OrderRefundSheet api={api} target={refunding} onClose={() => setRefunding(null)} onRefunded={list.reload} />}
+    {cancelling && <CancelOrderSheet api={api} target={cancelling} onClose={() => setCancelling(null)} onCancelled={() => { setCancelling(null); list.reload() }} />}
   </>
 }
 function formatOrderAmount(order: SessionOrder, currency: string, locale: string) { return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(order.totalAmount / 100) }
@@ -172,14 +206,34 @@ function formatDate(value: string, locale: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
-function OrderDetail({ order, counter, currency, canRefund, refundAllowed, onRefund }: CounterTradeOrder & { canRefund: boolean; refundAllowed: boolean; onRefund: () => void }) {
+function OrderDetail({ order, counter, currency, canCancel, cancelAllowed, onCancel, canRefund, refundAllowed, onRefund }: CounterTradeOrder & { canCancel: boolean; cancelAllowed: boolean; onCancel: () => void; canRefund: boolean; refundAllowed: boolean; onRefund: () => void }) {
   const { t, locale } = useI18n()
   return <div className="workspace-order-detail">
     <div className="order-detail-hero"><span><ReceiptText size={28} strokeWidth={1.3} /></span><p>{t('amount')}</p><strong>{formatOrderAmount(order, currency, locale)}</strong><StatusPill>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill><small>{order.status}</small></div>
     <dl className="order-detail-meta"><dt>{t('tableNumber')}</dt><dd>{counter.name} · {counter.code}</dd><dt>{t('orderNo')}</dt><dd>{order.uuid}</dd><dt>{t('createdAt')}</dt><dd>{formatDate(order.createdAt, locale)}</dd><dt>{t('diningMode')}</dt><dd>{order.diningModeName ?? t('diningModeNotRecorded')}</dd><dt>{t('diningPaymentState')}</dt><dd>{order.paymentStatus ?? t('diningNoPayment')}</dd></dl>
     <h3>{t('orderItems')}</h3><div className="order-snapshot-items">{order.items.map((item, index) => <div key={`${item.specificationUuid ?? item.productName}-${index}`}><span className="snapshot-item-index">{String(index + 1).padStart(2, '0')}</span><span>{item.productName}{item.specificationName ? ` · ${item.specificationName}` : ''}</span><strong>×{item.quantity}</strong></div>)}</div>
+    {canCancel && <Button block color="danger" fill="outline" disabled={!cancelAllowed} aria-label={cancelAllowed ? t('cancelOrder') : t('cancelOrderPermissionRequired')} onClick={onCancel}><XCircle size={15} />{t('cancelOrder')}</Button>}
     {canRefund && <Button block className="order-detail-refund" disabled={!refundAllowed} onClick={onRefund}><RotateCcw size={15} />{refundAllowed ? t('refundOrder') : t('refundPermissionRequired')}</Button>}
   </div>
+}
+
+function CancelOrderSheet({ api, target, onClose, onCancelled }: { api: StoreApi; target: CounterTradeOrder; onClose: () => void; onCancelled: () => void }) {
+  const { t } = useI18n()
+  const formId = useId()
+  const [reason, setReason] = useState(() => t('cancelConfirmedReason'))
+  const [busy, setBusy] = useState(false)
+  const commandUuid = useCommand({ version: target.version, orderUuid: target.order.uuid, reason })
+  return <Sheet open title={t('cancelConfirmedTitle')} onClose={() => { if (!busy) onClose() }} footer={<div className="editor-footer"><p><XCircle size={13} />{t('orderCancelHint')}</p><div><Button disabled={busy} onClick={onClose}>{t('cancel')}</Button><Button type="submit" form={formId} color="danger" loading={busy}><XCircle size={15} />{t('cancelPendingConfirm')}</Button></div></div>}>
+    <MutationForm id={formId} actions={false} submit={() => api.counterCommand(target.counter.uuid, 'cancel', {
+      version: target.version,
+      orderUuid: target.order.uuid,
+      reason: reason.trim(),
+      commandUuid,
+    })} onDone={onCancelled} onBusyChange={setBusy}>
+      <Notice title="cancelConfirmedTitle">{t('cancelConfirmedHint').replace('{order}', `#${target.order.uuid.slice(0, 8).toUpperCase()}`)}</Notice>
+      <label className="field"><span>{t('cancelReason')}</span><textarea required rows={3} maxLength={500} value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} /></label>
+    </MutationForm>
+  </Sheet>
 }
 
 function OrderRefundSheet({ api, target, onClose, onRefunded }: { api: StoreApi; target: CounterTradeOrder; onClose: () => void; onRefunded: () => void }) {

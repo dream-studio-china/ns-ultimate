@@ -3,6 +3,8 @@ import { orderRefundHistoryPath } from './order-refund.mjs'
 export const ORDER_REFUND_ORDERS_ENDPOINT = '/api/v1/manage/orders'
 export const ORDER_REFUND_ORDERS_PAGE_SIZE = 100
 export const ORDER_REFUND_HISTORY_CONCURRENCY = 8
+export const ORDER_REFUND_STORES_ENDPOINT = '/api/v1/manage/stores'
+export const ORDER_REFUND_STORES_PAGE_SIZE = 100
 
 const REFUND_REQUESTS_KEY = 'storeRefundRequests'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -14,6 +16,13 @@ export function orderRefundOrdersParams(page = 1, limit = ORDER_REFUND_ORDERS_PA
   }
 }
 
+export function orderRefundStoresParams(page = 1, limit = ORDER_REFUND_STORES_PAGE_SIZE) {
+  return {
+    ...orderRefundOrdersParams(page, limit),
+    '@display': 'reduce'
+  }
+}
+
 export function normalizeOrderRefundOrdersResponse(payload) {
   if (!payload || !Array.isArray(payload.data)) throw new Error('Unexpected order list response')
 
@@ -21,6 +30,23 @@ export function normalizeOrderRefundOrdersResponse(payload) {
   const pages = Number(payload.paginator?.pages ?? 1)
   if (![page, pages].every(Number.isSafeInteger) || page < 1 || pages < 1) {
     throw new Error('Invalid order list paginator')
+  }
+
+  return {
+    items: payload.data,
+    page,
+    pages,
+    hasNext: payload.paginator?.has_next === true
+  }
+}
+
+export function normalizeOrderRefundStoresResponse(payload) {
+  if (!payload || !Array.isArray(payload.data)) throw new Error('Unexpected Store list response')
+
+  const page = Number(payload.paginator?.page ?? 1)
+  const pages = Number(payload.paginator?.pages ?? 1)
+  if (![page, pages].every(Number.isSafeInteger) || page < 1 || pages < 1) {
+    throw new Error('Invalid Store list paginator')
   }
 
   return {
@@ -85,12 +111,43 @@ export function normalizeStoreOrderRefundHistoryResponse(payload, context) {
   })
 }
 
-export function pageOrderRefundRecords(records, page = 1, limit = 20, status = '') {
+export function storeFilterOptions(stores, records = []) {
+  if (!Array.isArray(stores)) throw new Error('Unexpected Store collection')
+  if (!Array.isArray(records)) throw new Error('Unexpected refund record collection')
+
+  const options = new Map()
+  for (const store of stores) {
+    if (!store || typeof store !== 'object' || typeof store.uuid !== 'string' || !UUID_PATTERN.test(store.uuid)) continue
+    const name = typeof store.name === 'string' ? store.name.trim() : ''
+    const code = typeof store.code === 'string' ? store.code.trim() : ''
+    const display = typeof store.__toString === 'string' ? store.__toString.trim() : ''
+    const label = name && code ? `${name} (${code})` : name || code || display || store.uuid
+    options.set(store.uuid.toLowerCase(), { uuid: store.uuid, label, named: Boolean(name || code || display) })
+  }
+
+  for (const record of records) {
+    const storeUuid = record?.storeUuid
+    if (typeof storeUuid !== 'string' || !UUID_PATTERN.test(storeUuid)) continue
+    if (!options.has(storeUuid.toLowerCase())) {
+      options.set(storeUuid.toLowerCase(), { uuid: storeUuid, label: storeUuid, named: false })
+    }
+  }
+
+  return [...options.values()]
+    .sort((left, right) => Number(right.named) - Number(left.named)
+      || left.label.localeCompare(right.label)
+      || left.uuid.localeCompare(right.uuid))
+    .map(({ uuid, label }) => ({ uuid, label }))
+}
+
+export function pageOrderRefundRecords(records, page = 1, limit = 20, status = '', storeUuid = '') {
   if (!Array.isArray(records)) throw new Error('Unexpected refund record collection')
 
   const pageSize = Math.min(100, Math.max(1, Number(limit) || 20))
+  const normalizedStoreUuid = typeof storeUuid === 'string' ? storeUuid.toLowerCase() : ''
   const filtered = records
-    .filter(record => !status || record.status === status)
+    .filter(record => (!status || record.status === status)
+      && (!normalizedStoreUuid || String(record.storeUuid || '').toLowerCase() === normalizedStoreUuid))
     .sort((left, right) => {
       const leftTime = Date.parse(left.createdAt)
       const rightTime = Date.parse(right.createdAt)

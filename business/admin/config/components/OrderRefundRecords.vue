@@ -12,15 +12,29 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="refund-records__alert" />
 
     <div class="refund-records__toolbar">
-      <el-select v-model="status" class="refund-records__status" :aria-label="$t('Status')" @change="changeStatus">
-        <el-option :label="$t('All refund statuses')" value="" />
-        <el-option
-          v-for="option in statusOptions"
-          :key="option"
-          :label="$t(refundStatusLabel(option))"
-          :value="option"
-        />
-      </el-select>
+      <div class="refund-records__filters">
+        <el-select
+          v-model="storeUuid"
+          class="refund-records__store"
+          filterable
+          clearable
+          :aria-label="$t('Store')"
+          :placeholder="$t('Store')"
+          @change="changeStore"
+        >
+          <el-option :label="$t('All stores')" value="" />
+          <el-option v-for="option in storeOptions" :key="option.uuid" :label="option.label" :value="option.uuid" />
+        </el-select>
+        <el-select v-model="status" class="refund-records__status" :aria-label="$t('Status')" @change="changeStatus">
+          <el-option :label="$t('All refund statuses')" value="" />
+          <el-option
+            v-for="option in statusOptions"
+            :key="option"
+            :label="$t(refundStatusLabel(option))"
+            :value="option"
+          />
+        </el-select>
+      </div>
       <span class="refund-records__count">{{ $t('Order refund records') }} · {{ total }}</span>
     </div>
 
@@ -37,8 +51,8 @@
             <span v-else>{{ row.tradeOrderUuid }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('Store UUID')" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.storeUuid || $t('Unknown') }}</template>
+        <el-table-column :label="$t('Store')" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ storeLabelFor(row.storeUuid) }}</template>
         </el-table-column>
         <el-table-column :label="$t('Payment Method')" min-width="120">
           <template #default="{ row }">{{ row.payment || $t('Unknown') }}</template>
@@ -75,13 +89,18 @@ import {
   ORDER_REFUND_HISTORY_CONCURRENCY,
   ORDER_REFUND_ORDERS_ENDPOINT,
   ORDER_REFUND_ORDERS_PAGE_SIZE,
+  ORDER_REFUND_STORES_ENDPOINT,
+  ORDER_REFUND_STORES_PAGE_SIZE,
   formatRefundRecordDate,
   normalizeOrderRefundOrdersResponse,
+  normalizeOrderRefundStoresResponse,
   normalizeStoreOrderRefundHistoryResponse,
   orderRefundContexts,
   orderRefundOrdersParams,
+  orderRefundStoresParams,
   orderDetailPath,
   pageOrderRefundRecords,
+  storeFilterOptions,
   storeOrderRefundHistoryPath,
   refundStatusTagType
 } from './order-refund-records.mjs'
@@ -96,6 +115,8 @@ export default {
       page: 1,
       limit: 20,
       status: '',
+      storeUuid: '',
+      storeOptions: [],
       loading: false,
       error: '',
       statusOptions: ['succeeded', 'processing', 'unknown', 'failed']
@@ -119,12 +140,23 @@ export default {
     changeStatus() {
       return this.applyPage(1)
     },
+    changeStore() {
+      return this.applyPage(1)
+    },
     async load(page = this.page) {
       if (this.loading) return
       this.loading = true
       this.error = ''
       try {
-        this.allRecords = await this.loadStoreRefundRecords()
+        const [records, stores] = await Promise.all([
+          this.loadStoreRefundRecords(),
+          this.loadStores().catch(() => [])
+        ])
+        this.allRecords = records
+        this.storeOptions = storeFilterOptions(stores, records)
+        if (this.storeUuid && !this.storeOptions.some(option => option.uuid.toLowerCase() === this.storeUuid.toLowerCase())) {
+          this.storeUuid = ''
+        }
         this.applyPage(page)
       } catch (cause) {
         this.error = cause?.response?.data?.message || cause?.message || this.$t('Failed to load order refund records')
@@ -133,7 +165,7 @@ export default {
       }
     },
     applyPage(page = this.page) {
-      const normalized = pageOrderRefundRecords(this.allRecords, page, this.limit, this.status)
+      const normalized = pageOrderRefundRecords(this.allRecords, page, this.limit, this.status, this.storeUuid)
       this.records = normalized.items
       this.total = normalized.total
       this.page = normalized.page
@@ -153,6 +185,28 @@ export default {
         records.push(...histories.flat())
       }
       return records
+    },
+    async loadStores() {
+      const stores = []
+      let page = 1
+      let pages = 1
+
+      do {
+        const response = await request.get(ORDER_REFUND_STORES_ENDPOINT, {
+          params: orderRefundStoresParams(page, ORDER_REFUND_STORES_PAGE_SIZE)
+        })
+        const normalized = normalizeOrderRefundStoresResponse(response)
+        stores.push(...normalized.items)
+        pages = normalized.pages
+        if (normalized.hasNext && normalized.page >= pages) throw new Error('Invalid Store list pagination')
+        page = normalized.page + 1
+      } while (page <= pages)
+
+      return stores
+    },
+    storeLabelFor(storeUuid) {
+      if (!storeUuid) return this.$t('Unknown')
+      return this.storeOptions.find(option => option.uuid.toLowerCase() === storeUuid.toLowerCase())?.label || storeUuid
     },
     async loadAllOrders() {
       const orders = []
@@ -184,6 +238,8 @@ export default {
 .refund-records p { max-width: 760px; margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.75; }
 .refund-records__alert { margin-bottom: 18px; }
 .refund-records__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.refund-records__filters { display: flex; align-items: center; gap: 12px; }
+.refund-records__store { width: 280px; }
 .refund-records__status { width: 220px; }
 .refund-records__count { color: var(--text-secondary); font-size: 12px; }
 .refund-records__table-wrap { overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
@@ -194,7 +250,8 @@ export default {
   .refund-records { padding: 20px 14px; }
   .refund-records__header { flex-direction: column; }
   .refund-records__toolbar { align-items: stretch; flex-direction: column; }
-  .refund-records__status { width: 100%; }
+  .refund-records__filters { align-items: stretch; flex-direction: column; }
+  .refund-records__store, .refund-records__status { width: 100%; }
   .refund-records__pagination { justify-content: center; }
 }
 </style>

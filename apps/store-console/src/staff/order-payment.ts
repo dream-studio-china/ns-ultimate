@@ -15,6 +15,15 @@ export interface PaymentOrderReference {
   metadata?: Record<string, unknown> | null
 }
 
+export interface PaymentCloseResult {
+  status: string
+  tradeOrderUuid: string
+  invoiceUuid: string
+  invoiceStatus?: string | null
+  released: boolean
+  requiresReview?: boolean
+}
+
 export interface StaffPaymentResult {
   status: string | null
   invoiceUuid: string | null
@@ -72,6 +81,16 @@ export function invoiceReferenceUuid(value: unknown, depth = 0): string | null {
 
 export function paymentStatusIsPaid(status: string | null | undefined): boolean {
   return ['paid', 'partial_refunded', 'partially_refunded'].includes(status?.toLowerCase() ?? '')
+}
+
+/** A paying Trade order must not be repriced or have its item lines changed. */
+export function paymentStatusIsPaying(status: string | null | undefined): boolean {
+  return status?.trim().toLowerCase() === 'paying'
+}
+
+/** A failed Invoice can be released before the order is retried or changed. */
+export function failedInvoiceNeedsRelease(order: PaymentOrderReference): boolean {
+  return order.hasInvoice === true && order.paymentStatus?.trim().toLowerCase() === 'failed'
 }
 
 /** A pending invoice still accepts a first provider request; submitted attempts must not be duplicated. */

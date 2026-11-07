@@ -101,6 +101,8 @@ The employee path requires at least two confirmed eligible orders and fails clos
 
 An abandoned payment is not unlocked by weakening merge checks. The separate [payment closure API](order-payment-closure.md) can release the current payment reference after its channel confirms noncollection. Merge then performs its normal session, order, inventory and fulfillment checks again; closure alone is not a merge guarantee.
 
+When the staff opens a table detail, Store Console automatically releases an existing Invoice whose projected payment status is `failed`. This requires `store:order:payment_close`, uses the existing Store-scoped closure endpoint, and adds no closure button. The client resolves the Invoice UUID from the session row when available or the order projection otherwise, processes multiple eligible orders sequentially, and attempts each order/Invoice pair only once during that open. It retains the same command UUID after an uncertain network result. Successful closure refreshes the session so collection or modification eligibility can be evaluated again; a discovered payment or unconfirmed closure blocks a second charge and leaves the order visible with a warning.
+
 ## Transactions, retries and limitations
 
 All writes reuse the [operations contract](store-console-operations.md)'s `StaffCommandService` store/actor/command receipts, atomic audit/outbox behavior and payload-conflict rules. `commandUuid` and the latest `version` are required. Reads/quotes do not create successful write receipts. Receipt replay still requires current route permissions. A replay result identifies the historical counter/session/order, so clients refresh rather than treating it as current state.

@@ -7,6 +7,7 @@ import { t } from '@/i18n'
 import axios from '@/utils/request'
 import SIP from '@/utils/simple-image-process'
 import { API_PREFIX, apiPath } from '@/api/prefix'
+import { CopyProductsAction } from '../../components/copy-catalog-actions'
 import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin/src/configs/collections/helpers'
 // Lazily resolve the admin UI here: this config module is eagerly pulled into
 // every FormAdmin through `@/configs/entities`, so static SFC imports would
@@ -225,6 +226,9 @@ export default {
     },
     list: {
       query: orderByIdDesc,
+      actions: [
+        { name: 'copy-products-from-store', position: 'top', component: CopyProductsAction }
+      ],
       list_filter: {
         name: t('Product Name'),
         'category.id': () => axios

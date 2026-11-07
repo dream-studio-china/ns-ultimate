@@ -189,13 +189,17 @@ final class OrderRefundService
             // Use Core's source-before-Invoice order. Hold the Invoice lock while
             // reading the attempt/provider marker so a concurrent Core commit
             // cannot pair a successful outcome with an older Invoice balance.
-            $this->em->getRepository(Order::class)->findByUuidForUpdate($refund->orderUuid);
+            $order = $this->em->getRepository(Order::class)->findByUuidForUpdate($refund->orderUuid);
             $invoice = $this->current($this->em->createQueryBuilder()->select('i')->from(Invoice::class, 'i')
                 ->where('i.uuid = :invoice')->setParameter('invoice', $refund->invoiceUuid)->getQuery())->getOneOrNullResult();
             $summary = ['uuid' => $refund->uuid, 'tradeOrderUuid' => $refund->orderUuid, 'invoiceUuid' => $refund->invoiceUuid,
                 'amount' => $refund->amount, 'reason' => $refund->reason, 'status' => $this->status($refund),
                 'actorUuid' => $refund->actorUuid, 'createdAt' => $refund->createdAt->format(DATE_ATOM),
-                'invoiceStatus' => $invoice?->getStatus(), 'refundedAmount' => $invoice?->getRefundedAmount()];
+                'invoiceStatus' => $invoice?->getStatus(), 'refundedAmount' => $invoice?->getRefundedAmount(),
+                'orderId' => $order?->getId(), 'orderStatus' => $order?->getStatus(),
+                'orderTotalAmount' => $order?->getTotalAmount(),
+                'currency' => $invoice?->getCurrency() ?? $order?->getCurrency() ?? 'CNY',
+                'payment' => $refund->payment, 'storeUuid' => $refund->storeUuid ?: null];
             if ($ownsTransaction) $connection->commit();
             return $summary;
         } catch (\Throwable $error) {

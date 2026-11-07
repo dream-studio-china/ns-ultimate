@@ -10,7 +10,7 @@ import { checkoutPaymentMethods, type CheckoutPaymentMethod } from '../checkout-
 import { checkoutMergeBlockers, type CheckoutMergeBlocker } from '../checkout-merge'
 import { submitCheckoutReplacement } from '../checkout-replacement'
 import { waitForStoreOrderProjection } from '../checkout-store-order'
-import { confirmedOrderCanCollect, paymentStatusIsPaid } from '../order-payment'
+import { confirmedOrderCanCollect, failedInvoiceNeedsRelease, invoiceReferenceUuid, paymentStatusIsPaid, paymentStatusIsPaying } from '../order-payment'
 import { customerPaymentUrl } from '../order-payment-url'
 import { isOccupiedDiningTable as isDining, unsettledDiningOrders as effectiveDiningOrders } from '../dining-table-state'
 import { ApiError } from '../adapters/api-client'
@@ -28,6 +28,27 @@ function effectiveDiningAmount(table: CounterSessionView): number {
 const staffProjectionTimeout = 10_000
 const staffProjectionInterval = 250
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+const paymentCloseReason = 'Payment failed; release invoice before retry or order changes.'
+const paymentCloseCommandPrefix = 'ns-store-console.payment-close.'
+const paymentCloseCommandFallback = new Map<string, string>()
+
+/** Keep the same command across manual retries, including after a page reload. */
+function paymentCloseCommandUuid(tradeOrderUuid: string, invoiceUuid: string): string {
+  const key = `${tradeOrderUuid}:${invoiceUuid}`
+  const remembered = paymentCloseCommandFallback.get(key)
+  if (remembered) return remembered
+  try {
+    const stored = sessionStorage.getItem(`${paymentCloseCommandPrefix}${key}`)
+    if (stored && invoiceReferenceUuid(stored) === stored) {
+      paymentCloseCommandFallback.set(key, stored)
+      return stored
+    }
+  } catch { /* In-memory reuse still protects retries when session storage is unavailable. */ }
+  const commandUuid = crypto.randomUUID()
+  paymentCloseCommandFallback.set(key, commandUuid)
+  try { sessionStorage.setItem(`${paymentCloseCommandPrefix}${key}`, commandUuid) } catch { /* Keep the in-memory command. */ }
+  return commandUuid
+}
 
 /** Workers project and confirm a newly created order asynchronously after the command response. */
 async function retryCheckoutConflict<T>(attempt: () => Promise<T>): Promise<T> {
@@ -309,15 +330,81 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
   const [collectOrder, setCollectOrder] = useState<{ table: CounterSessionView; order: SessionOrder } | null>(null)
   const [cancelMode, setCancelMode] = useState(false)
   const [cancelSelection, setCancelSelection] = useState<Set<string>>(() => new Set())
+  const [releaseFeedback, setReleaseFeedback] = useState<'releasing' | 'released' | 'alreadyPaid' | 'unconfirmed' | 'failed' | null>(null)
+  const [paymentAlreadyConfirmed, setPaymentAlreadyConfirmed] = useState<Set<string>>(() => new Set())
+  const attemptedInvoiceReleases = useRef(new Set<string>())
+  const releasingInvoices = useRef(false)
   const done = () => { setReplaceOrder(null); detail.reload(); changed() }
   const closeCancelSelection = () => { setCancelMode(false); setCancelSelection(new Set()) }
-  return <><ListFeedback state={detail} empty="emptyLive" hint="diningScopeHint" icon={LayoutGrid} />{detail.items.map((table) => {
+  useEffect(() => {
+    const table = detail.items[0]
+    if (!table?.ordersVisible || !can(access, 'order', 'payment_close')) return
+    const orders = effectiveDiningOrders(table).filter(failedInvoiceNeedsRelease)
+    if (!orders.length || releasingInvoices.current) return
+    let active = true
+    releasingInvoices.current = true
+    const releaseFailedInvoices = async () => {
+      let released = 0
+      let failed = 0
+      let alreadyPaid = false
+      let unconfirmed = false
+      for (const order of orders) {
+        let invoiceUuid = invoiceReferenceUuid(order)
+        try {
+          invoiceUuid ??= await api.orderInvoiceReference(order.tradeOrderUuid)
+        } catch {
+          failed += 1
+          continue
+        }
+        if (!invoiceUuid) {
+          failed += 1
+          continue
+        }
+        const key = `${order.tradeOrderUuid}:${invoiceUuid}`
+        if (attemptedInvoiceReleases.current.has(key)) continue
+        attemptedInvoiceReleases.current.add(key)
+        try {
+          const result = await api.closeFailedPayment(order.tradeOrderUuid, invoiceUuid, paymentCloseCommandUuid(order.tradeOrderUuid, invoiceUuid), paymentCloseReason)
+          if (result.released) released += 1
+          else unconfirmed = true
+        } catch (error) {
+          if (error instanceof ApiError && error.serverMessage === 'payment_already_paid') {
+            alreadyPaid = true
+            setPaymentAlreadyConfirmed((current) => new Set(current).add(order.tradeOrderUuid))
+            break
+          }
+          if (error instanceof ApiError && error.status === 409) unconfirmed = true
+          else failed += 1
+          break
+        }
+      }
+      if (active) {
+        setReleaseFeedback(alreadyPaid ? 'alreadyPaid' : unconfirmed ? 'unconfirmed' : failed ? 'failed' : released ? 'released' : null)
+      }
+      if (released || unconfirmed || alreadyPaid) {
+        detail.reload()
+        changed()
+      }
+      releasingInvoices.current = false
+    }
+    setReleaseFeedback('releasing')
+    void releaseFailedInvoices()
+    return () => { active = false }
+  }, [access, api, detail.items, id, legacy])
+  const feedbackMessage: MessageKey | null = releaseFeedback === 'releasing' ? 'paymentReleaseChecking'
+    : releaseFeedback === 'released' ? 'paymentReleaseSucceeded'
+      : releaseFeedback === 'alreadyPaid' ? 'paymentReleaseAlreadyPaid'
+        : releaseFeedback === 'unconfirmed' ? 'paymentReleaseUnconfirmed'
+          : releaseFeedback === 'failed' ? 'paymentReleaseFailed'
+            : null
+  return <><ListFeedback state={detail} empty="emptyLive" hint="diningScopeHint" icon={LayoutGrid} />{feedbackMessage && <Notice>{t(feedbackMessage)}</Notice>}{detail.items.map((table) => {
     const orders = effectiveDiningOrders(table)
     const hasOrders = orders.length > 0
     const hasPendingOrders = orders.some((order) => order.status === 'pending')
     const dining = isDining(table)
     const showTableDiningMode = hasOrders
     const canCancelOrders = permitted(access, 'cancel')
+    const paymentConfirmedLocally = table.ordersVisible && table.orders.some((order) => paymentAlreadyConfirmed.has(order.tradeOrderUuid))
     const tableDiningMode = resolveTableDiningMode(table, access.store.settings?.diningModes)
     const tableDiningModeName = resolveTableDiningModeName(table, access.store.settings?.diningModes)
     const orderDiningModeName = (order: SessionOrder) => {
@@ -339,7 +426,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
       <div className="dining-detail-fixed">
         <div className="dining-detail-hero"><div className="dining-detail-heading"><div><h3>{table.counter.name}</h3></div><StatusPill muted={!dining}>{t(dining ? 'dining' : table.counter.enabled ? 'idle' : 'tableDisabled')}</StatusPill></div>{hasOrders && table.session && <div className="dining-detail-summary"><span><UsersRound size={15} />{table.session.participantCount ?? '—'} {t('guestUnit')}</span><span><Clock3 size={15} /><time dateTime={table.session.startedAt}>{formatDiningDate(table.session.startedAt, locale)}</time></span></div>}{showTableDiningMode && <div className="dining-detail-mode"><span>{t('diningMode')}</span><strong>{tableDiningModeName ?? t('diningModeNotRecorded')}</strong></div>}{hasOrders && <div className="dining-detail-amount"><span>{t('diningOpenAmount')}</span><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: table.currency }).format(effectiveDiningAmount(table) / 100)}</strong></div>}</div>
         {hasOrders && table.session?.notes && <p className="dining-notes dining-party-notes"><strong>{t('diningPartyNotes')}</strong>{table.session.notes}</p>}
-        <div className="order-operation-actions">{orderable && <Button color="primary" disabled={!table.counter.enabled || hasPendingOrders || (table.ordersVisible && table.paymentHold)} onClick={() => onOrder(table)}>{t(hasOrders ? 'addDining' : 'placeNewDining')}</Button>}{hasOrders && <Button color="danger" fill="outline" disabled={!canCancelOrders} onClick={() => cancelMode ? closeCancelSelection() : setCancelMode(true)}>{t(cancelMode ? 'cancelSelectionExit' : 'cancelOrder')}</Button>}{hasOrders && (permitted(access, 'create') || permitted(access, 'replace')) && <Button disabled={hasPendingOrders} onClick={() => onCheckout(table)}>{t('checkoutDining')}</Button>}</div>
+        <div className="order-operation-actions">{orderable && <Button color="primary" disabled={!table.counter.enabled || hasPendingOrders || paymentConfirmedLocally || (table.ordersVisible && table.paymentHold)} onClick={() => onOrder(table)}>{t(hasOrders ? 'addDining' : 'placeNewDining')}</Button>}{hasOrders && <Button color="danger" fill="outline" disabled={!canCancelOrders} onClick={() => cancelMode ? closeCancelSelection() : setCancelMode(true)}>{t(cancelMode ? 'cancelSelectionExit' : 'cancelOrder')}</Button>}{hasOrders && (permitted(access, 'create') || permitted(access, 'replace')) && <Button disabled={hasPendingOrders || paymentConfirmedLocally} onClick={() => onCheckout(table)}>{t('checkoutDining')}</Button>}</div>
         {hasPendingOrders && <p className="helper dining-pending-confirmation" role="status">{t('confirmPendingBeforeContinue')}</p>}
         {hasOrders && !canCancelOrders && <p className="helper dining-cancel-permission" role="status">{t('cancelOrderPermissionRequired')}</p>}
         {table.ordersVisible && table.paymentHold && <Notice>{t('diningPaymentHold')}</Notice>}
@@ -355,9 +442,8 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
             <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
             {order.notes && <p className="dining-notes">{order.notes}</p>}
             {order.status === 'pending' && permitted(access, 'confirm') && <ConfirmPendingOrder api={api} table={table} order={order} onDone={() => { detail.reload(); changed() }} />}
-            {(confirmedOrderCanCollect(order) || permitted(access, 'replace')) && <div className="dining-round-actions">
-              {confirmedOrderCanCollect(order) && <Button className="dining-collect-payment" color="primary" fill="outline" onClick={() => setCollectOrder({ table, order })}><CreditCard size={16} />{t('collectPayment')}</Button>}
-              {permitted(access, 'replace') && <Button onClick={() => setReplaceOrder({ table, order })}>{t('replaceDining')}</Button>}
+            {confirmedOrderCanCollect(order) && !failedInvoiceNeedsRelease(order) && !paymentAlreadyConfirmed.has(order.tradeOrderUuid) && <div className="dining-round-actions">
+              <Button className="dining-collect-payment" color="primary" fill="outline" onClick={() => setCollectOrder({ table, order })}><CreditCard size={16} />{t('collectPayment')}</Button>
             </div>}
             {cancelMode && !order.canCancel && <p className="dining-cancel-unavailable">{t('cancelOrderUnavailable')}</p>}
           </article>)}
@@ -931,6 +1017,8 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   const [progress, setProgress] = useState<CheckoutProgressPhase | null>(null)
   const [error, setError] = useState<CheckoutError | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null)
+  const [scanPaymentOpen, setScanPaymentOpen] = useState(false)
+  const [paymentInProgressOpen, setPaymentInProgressOpen] = useState(false)
   const originalLines = useMemo(() => checkoutCartLines(table), [table])
   const originalDisplayLines = useMemo(() => checkoutDisplayLines(table), [table])
   const paymentMethods = useMemo(() => checkoutPaymentMethods(access.store), [access.store])
@@ -960,14 +1048,17 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   const catalogBySpecification = useMemo(() => new Map(catalog.items.map((item) => [item.uuid, item])), [catalog.items])
   const originalLineBySpecification = useMemo(() => new Map(originalLines.map((line) => [line.specificationUuid, line])), [originalLines])
   const lineQuantity = (specificationUuid: string) => lines.find((line) => line.specificationUuid === specificationUuid)?.quantity ?? 0
+  const paymentInProgress = () => effectiveDiningOrders(table).some((order) => paymentStatusIsPaying(order.paymentStatus))
+  const showPaymentInProgress = () => setPaymentInProgressOpen(true)
   const adjust = (specificationUuid: string, delta: number, fallback?: ModernCartLine) => {
+    const existing = lines.find((line) => line.specificationUuid === specificationUuid)
+    const nextQuantity = Math.max(0, Math.min(99, (existing?.quantity ?? 0) + delta))
+    if (nextQuantity === (existing?.quantity ?? 0) || (!existing && (!fallback || delta <= 0))) return
+    if (paymentInProgress()) { void showPaymentInProgress(); return }
     setLines((current) => {
-      const existing = current.find((line) => line.specificationUuid === specificationUuid)
-      const nextQuantity = Math.max(0, Math.min(99, (existing?.quantity ?? 0) + delta))
       if (nextQuantity === 0) return current.filter((line) => line.specificationUuid !== specificationUuid)
       if (existing) return current.map((line) => line.specificationUuid === specificationUuid ? { ...line, quantity: nextQuantity } : line)
-      if (!fallback || delta <= 0) return current
-      return [...current, { ...fallback, quantity: nextQuantity }]
+      return fallback ? [...current, { ...fallback, quantity: nextQuantity }] : current
     })
   }
   const lineFromCatalog = (item: LegacyCatalogItem): ModernCartLine => ({
@@ -1026,7 +1117,13 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
     setProgress('preparing')
     setError(null)
     try {
-      setResult(await processCheckout(api, access, table, lines, diningMode, participantCount, t, setProgress))
+      const current = await loadCounterSession(api, access, table.counter.uuid)
+      if (reconciliation.changed && effectiveDiningOrders(current).some((order) => paymentStatusIsPaying(order.paymentStatus))) {
+        setProgress(null)
+        await showPaymentInProgress()
+        return
+      }
+      setResult(await processCheckout(api, access, current, lines, diningMode, participantCount, t, setProgress))
       // TODO(checkout): End the corresponding counter session after the complete checkout and payment flow succeeds.
     } catch (cause) {
       logCheckoutFlow('failed', {
@@ -1059,6 +1156,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   const finalLines = result ? checkoutDisplayLines(result) : []
   const finalAmount = result ? effectiveDiningAmount(result) : 0
   const finalOrders = result ? effectiveDiningOrders(result) : []
+  const scanPaymentOrder = result && finalOrders.length === 1 ? finalOrders[0]! : null
   const checkoutError = error && <div className="checkout-footer-feedback" role="alert" aria-live="assertive">
     <Notice title={'title' in error ? error.title : undefined}>
       {'key' in error
@@ -1133,7 +1231,9 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
         <div className="dining-settlement-total"><span>{t('checkoutFinalAmount')}</span><strong>{money(finalAmount, finalCurrency)}</strong><small>{finalOrders.map((order) => `#${order.uuid.slice(0, 8).toUpperCase()}`).join(' · ')}</small></div>
       </div>
       <section className="checkout-payment-methods"><header><CreditCard size={17} /><h4>{t('checkoutPaymentMethods')}</h4></header>
-        {paymentMethods.length > 0 ? <div>{paymentMethods.map((method: CheckoutPaymentMethod) => <button type="button" key={method.code} className={paymentMethod === method.code ? 'is-active' : ''} aria-pressed={paymentMethod === method.code} onClick={() => setPaymentMethod(method.code)}>{method.name}</button>)}</div> : <Notice subtle>{t('checkoutNoPaymentMethods')}</Notice>}
+        {paymentMethods.length > 0 ? <div>{paymentMethods.map((method: CheckoutPaymentMethod) => <button type="button" key={method.code} className={paymentMethod === method.code ? 'is-active' : ''} aria-pressed={paymentMethod === method.code} onClick={() => setPaymentMethod(method.code)}>{method.name}</button>)}</div>
+          : scanPaymentOrder ? <div className="checkout-scan-payment"><button type="button" aria-label={t('checkoutScanPayment')} onClick={() => setScanPaymentOpen(true)}><QrCode size={18} /><span><strong>{t('checkoutScanPayment')}</strong><small>{t('checkoutScanPaymentHint')}</small></span></button></div>
+            : <Notice subtle>{t('checkoutNoPaymentMethods')}</Notice>}
       </section>
       <Button block className="checkout-print-button" onClick={() => window.print()}><Printer size={17} />{t('checkoutPrintReceipt')}</Button>
     </section>}
@@ -1155,6 +1255,22 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
       <small>{t('checkoutProgressHint')}</small>
     </div>}
   </CenterPopup>
+  <CenterPopup
+    visible={paymentInProgressOpen}
+    style={{ zIndex: 1150 }}
+    bodyClassName="checkout-payment-lock-popup"
+    maskStyle={{ backgroundColor: 'rgba(35, 27, 22, .46)', backdropFilter: 'blur(3px)' }}
+    disableBodyScroll
+    role="alertdialog"
+    aria-label={t('checkoutPaymentInProgressTitle')}
+  >
+    <section className="checkout-payment-lock">
+      <h3>{t('checkoutPaymentInProgressTitle')}</h3>
+      <p>{t('checkoutPaymentInProgress')}</p>
+      <Button block color="primary" onClick={() => setPaymentInProgressOpen(false)}>{t('confirm')}</Button>
+    </section>
+  </CenterPopup>
+  {scanPaymentOpen && result && scanPaymentOrder && <OrderPaymentSheet api={api} access={access} table={result} order={scanPaymentOrder} onClose={() => setScanPaymentOpen(false)} onSettled={() => { void loadCounterSession(api, access, result.counter.uuid).then(setResult).catch(() => undefined) }} />}
   </>
 }
 

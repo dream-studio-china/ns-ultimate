@@ -2,7 +2,7 @@
 
 ## Scope
 
-This business-owned capability closes the current payment of a confirmed Trade order, not the Trade order itself. After successful release, existing cancellation, merge and payment initiation flows keep their own eligibility checks. A new payment creates a new Invoice through the normal payment entry point; the old Invoice and provider attempts are retained. No Core gateway interface, workflow, schema, merge guard or generic Invoice cancellation route is changed. No UI button is added.
+This business-owned capability closes the current payment of a confirmed Trade order, not the Trade order itself. After successful release, existing cancellation, merge and payment initiation flows keep their own eligibility checks. A new payment creates a new Invoice through the normal payment entry point; the old Invoice and provider attempts are retained. No Core gateway interface, workflow, schema, merge guard or generic Invoice cancellation route is changed. The admin Invoice list and detail pages expose this capability through the manage endpoint below.
 
 `business/backend/Payment/src/Contract/PaymentCloseGatewayInterface.php` is an optional channel capability, automatically tagged as `ns.payment.close_gateway`. `PaymentCloseGatewayRegistry` dispatches by the Invoice's stored payment name. Implementations confirm that **all** provider attempts for that Invoice are terminal and unable to collect, or return an unconfirmed result/throw. They never initiate payment, refund, change the Invoice or release an order. A verified collection discovered during closure is returned as `PaymentNotifyResult` instead. Unsupported channels fail closed; there is no fallback that merely cancels the local Invoice.
 
