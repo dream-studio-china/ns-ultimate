@@ -1,0 +1,3 @@
+controllers:
+    App\Trade\Controller\App\OrderController: NsUltimate\Business\Promotion\Adapter\AppOrderController
+    App\Trade\Controller\Manage\OrderController: NsUltimate\Business\Promotion\Adapter\ManageOrderController

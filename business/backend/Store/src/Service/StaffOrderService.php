@@ -13,6 +13,7 @@ use App\Trade\DTO\StoreContext;
 use App\Trade\Entity\Order;
 use App\Trade\Service\OrderServiceInterface;
 use App\Trade\Service\Pricing\PriceCalculationResult;
+use NsUltimate\Business\Promotion\Service\OrderPromotionSnapshot;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Workflow\WorkflowInterface;
@@ -34,6 +35,11 @@ final class StaffOrderService
     {
         $settings = StoreSettings::from($store->getSettings());
         $context = new StoreContext($store->getUuid(), $store->getCode(), $store->getName(), 'staff', $store->getCurrency(), $settings->requireAcceptance, $settings->requireInventory, $settings->requireVerification);
+        // Staff pricing runs the calculators directly, so the order service never
+        // sees this quote. Record the fresh snapshot here, replacing any inherited
+        // campaign from the order being replaced.
+        $metadata = OrderPromotionSnapshot::replace($metadata, OrderPromotionSnapshot::fromPricingMeta($calculation->meta));
+
         return $this->orders->createOrder($calculation->items, $customer, $calculation->totalAmount, $store->getCurrency(), $notes, $metadata, $context);
     }
 

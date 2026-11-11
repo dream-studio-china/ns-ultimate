@@ -18,6 +18,7 @@ use NsUltimate\Business\Counter\Entity\CounterSession;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
 use NsUltimate\Business\Inventory\Service\OrderInventoryAvailability;
+use NsUltimate\Business\Promotion\Service\OrderPromotionSnapshot;
 use Symfony\Component\Workflow\WorkflowInterface;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
@@ -101,7 +102,10 @@ final class CounterOrderMergeService
             );
             $target = $this->orders->createOrder(
                 $calculation->items, $user, $calculation->totalAmount, $store->currency,
-                null, ['counterUuid' => $counter->getUuid(), 'counterSessionUuid' => $session->getUuid(), 'counterSettlement' => true], $mergeStore,
+                null, OrderPromotionSnapshot::replace(
+                    ['counterUuid' => $counter->getUuid(), 'counterSessionUuid' => $session->getUuid(), 'counterSettlement' => true],
+                    OrderPromotionSnapshot::fromPricingMeta($calculation->meta),
+                ), $mergeStore,
             );
             foreach ($orders as $source) {
                 $this->em->persist(new OrderMerge($source->getUuid(), $target->getUuid()));

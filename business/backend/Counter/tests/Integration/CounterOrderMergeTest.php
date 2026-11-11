@@ -647,6 +647,25 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertSame($result, (new CounterTradeOrderService($inner, $em, new OrderInventoryAvailability($em, false)))->createPayment($source));
     }
 
+    public function testMergedTargetExplicitlyRecordsItsOwnPromotionQuote(): void
+    {
+        $this->source();
+        $this->source();
+        $actual = self::getContainer()->get(OrderServiceInterface::class);
+        $orders = $this->createStub(OrderServiceInterface::class);
+        $orders->method('calculatePrices')->willReturnCallback(static fn (array $items): PriceCalculationResult => new PriceCalculationResult(
+            150, 'CNY', array_map(static fn (array $item): array => [
+                'specificationUuid' => $item['specificationId'], 'quantity' => $item['quantity'], 'unitPrice' => 100, 'price' => 100,
+            ], $items), ['promotion' => ['inner' => [], 'outer' => [
+                'promotionId' => 42, 'promotionName' => 'Merge quote promotion', 'type' => 'full_reduction',
+            ]]],
+        ));
+        $orders->method('createOrder')->willReturnCallback($actual->createOrder(...));
+        $target = $this->merger($orders)->merge($this->counter, $this->user);
+        self::assertSame('Merge quote promotion', $target->getMetadata()['_promotion']['applied'][0]['name']);
+        self::assertSame('outer', $target->getMetadata()['_promotion']['applied'][0]['phase']);
+    }
+
     private function source(bool $inventory = false): Order
     {
         $order = (new Order())->setUser($this->user)->setStatus(Order::STATUS_CONFIRMED)->setTotalAmount(100)
