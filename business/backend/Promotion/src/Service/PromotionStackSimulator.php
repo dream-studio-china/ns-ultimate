@@ -124,7 +124,7 @@ final class PromotionStackSimulator
 
     /**
      * @param mixed $value
-     * @return list<array{promotion: Promotion, ast: AstNode}>
+     * @return list<array{promotion: Promotion, ast: AstNode, key: string, storeCode: string, enabled: bool, templateEnabled: bool, startTime: ?\DateTimeImmutable, endTime: ?\DateTimeImmutable}>
      */
     private function drafts(mixed $value, string $storeCode): array
     {
@@ -178,7 +178,8 @@ final class PromotionStackSimulator
                 ->setEnabled(true)
                 ->setConfig($config)
                 ->setConflictMode($conflictMode);
-            $drafts[] = ['promotion' => $promotion, 'ast' => $ast];
+            $drafts[] = ['promotion' => $promotion, 'ast' => $ast, 'key' => 'draft:'.($index + 1), 'storeCode' => $storeCode,
+                'enabled' => true, 'templateEnabled' => true, 'startTime' => null, 'endTime' => null];
         }
 
         return $drafts;
@@ -187,7 +188,7 @@ final class PromotionStackSimulator
     /**
      * @param mixed $value
      * @param list<int>|null $allowedIds
-     * @param list<array{promotion: Promotion, ast: AstNode}>|null $drafts
+     * @param list<array{promotion: Promotion, ast: AstNode, key: string, storeCode: string, enabled: bool, templateEnabled: bool, startTime: ?\DateTimeImmutable, endTime: ?\DateTimeImmutable}>|null $drafts
      * @return array<string, mixed>
      */
     private function case(mixed $value, string $mode, string $storeCode, string $currency, ?array $allowedIds, ?array $drafts): array
@@ -230,7 +231,7 @@ final class PromotionStackSimulator
         }
 
         $before = $context->totalAmount;
-        $provider = new StackSimulationPromotionService($this->promotions, $allowedIds, $drafts, $context);
+        $provider = new StackSimulationPromotionService($this->promotions, $allowedIds, $drafts, $context, new \DateTimeImmutable());
         try {
             (new PromotionCalculator($provider))->calculate($context);
         } catch (\RuntimeException $error) {

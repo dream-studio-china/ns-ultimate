@@ -20,19 +20,28 @@ use App\Trade\Service\Pricing\PriceCalculationContext;
  */
 final class StackSimulationPromotionService implements PromotionServiceInterface
 {
-    /** @var list<array{promotionId: int|null, promotionName: string, templateName: string|null, type: string|null, phase: int, conflictMode: string, totalAfter: int, changedAmount: int}> */
+    /** @var list<array{promotionId: int|null, campaignKey: string|null, promotionName: string, templateName: string|null, type: string|null, phase: int, conflictMode: string, totalAfter: int, changedAmount: int}> */
     private array $trace = [];
+
+    /** @var array<int, string> */
+    private array $keys = [];
 
     /**
      * @param list<int>|null $allowedIds
-     * @param list<array{promotion: Promotion, ast: AstNode}>|null $drafts
+     * @param list<array{promotion: Promotion, ast: AstNode, key: string, storeCode: string, enabled: bool, templateEnabled: bool, startTime: ?\DateTimeImmutable, endTime: ?\DateTimeImmutable}>|null $candidates
      */
     public function __construct(
         private readonly PromotionServiceInterface $inner,
         private readonly ?array $allowedIds,
-        private readonly ?array $drafts,
+        private readonly ?array $candidates,
         private readonly PriceCalculationContext $trackedContext,
-    ) {}
+        private readonly \DateTimeImmutable $simulatedAt = new \DateTimeImmutable(),
+    ) {
+        foreach ($candidates ?? [] as $candidate) {
+            $id = $candidate['promotion']->getId();
+            if ($id !== null) $this->keys[$id] = $candidate['key'];
+        }
+    }
 
     /**
      * @param list<int> $excludedIds
@@ -40,9 +49,9 @@ final class StackSimulationPromotionService implements PromotionServiceInterface
      */
     public function getAvailable(PriceCalculationContext $context, ?int $phase = null, array $excludedIds = []): array
     {
-        $available = $this->drafts === null
+        $available = $this->candidates === null
             ? $this->inner->getAvailable($context, $phase, $excludedIds)
-            : $this->draftAvailable($context, $phase, $excludedIds);
+            : $this->candidateAvailable($context, $phase, $excludedIds);
 
         if ($this->allowedIds === null) return array_values($available);
 
@@ -69,6 +78,7 @@ final class StackSimulationPromotionService implements PromotionServiceInterface
         $template = $promotion->getTemplate();
         $this->trace[] = [
             'promotionId' => $promotion->getId(),
+            'campaignKey' => $this->keys[(int) $promotion->getId()] ?? null,
             'promotionName' => $promotion->getName(),
             'templateName' => $template?->getName(),
             'type' => $template?->getType(),
@@ -83,20 +93,24 @@ final class StackSimulationPromotionService implements PromotionServiceInterface
      * @param list<int> $excludedIds
      * @return list<Promotion>
      */
-    private function draftAvailable(PriceCalculationContext $context, ?int $phase, array $excludedIds): array
+    private function candidateAvailable(PriceCalculationContext $context, ?int $phase, array $excludedIds): array
     {
         $candidates = [];
         $evaluator = new Evaluator();
+        $storeCode = $context->storeCode ?? '';
 
-        foreach ($this->drafts ?? [] as $draft) {
-            $promotion = $draft['promotion'];
+        foreach ($this->candidates ?? [] as $candidate) {
+            $promotion = $candidate['promotion'];
             $template = $promotion->getTemplate();
-            if ($template === null || !$promotion->isEnabled() || !$template->isEnabled()) continue;
+            if ($template === null || !$candidate['enabled'] || !$candidate['templateEnabled']) continue;
+            if ($candidate['storeCode'] !== '' && $candidate['storeCode'] !== $storeCode) continue;
+            if ($candidate['startTime'] !== null && $candidate['startTime'] > $this->simulatedAt) continue;
+            if ($candidate['endTime'] !== null && $candidate['endTime'] < $this->simulatedAt) continue;
             if ($phase !== null && $template->getPhase() !== $phase) continue;
             if (in_array($promotion->getId(), $excludedIds, true)) continue;
-            if (!$this->matches($draft['ast'], $evaluator, $context, $promotion->getConfig() ?? [])) continue;
+            if (!$this->matches($candidate['ast'], $evaluator, $context, $promotion->getConfig() ?? [])) continue;
 
-            $candidates[] = ['promotion' => $promotion, 'priority' => $this->priority($draft['ast'], $promotion->getConfig() ?? [])];
+            $candidates[] = ['promotion' => $promotion, 'priority' => $this->priority($candidate['ast'], $promotion->getConfig() ?? [])];
         }
 
         usort($candidates, static fn (array $left, array $right): int => $right['priority'] <=> $left['priority']);
@@ -134,7 +148,7 @@ final class StackSimulationPromotionService implements PromotionServiceInterface
         return 0.0;
     }
 
-    /** @return list<array{promotionId: int|null, promotionName: string, templateName: string|null, type: string|null, phase: int, conflictMode: string, totalAfter: int, changedAmount: int}> */
+    /** @return list<array{promotionId: int|null, campaignKey: string|null, promotionName: string, templateName: string|null, type: string|null, phase: int, conflictMode: string, totalAfter: int, changedAmount: int}> */
     public function trace(): array
     {
         return $this->trace;
