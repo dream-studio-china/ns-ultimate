@@ -11,6 +11,7 @@
             <directory>../../business/backend/Dummy/tests/Integration</directory>
             <directory>../../business/backend/Counter/tests/Integration</directory>
             <directory>../../business/backend/Store/tests/Integration</directory>
+            <directory>../../business/backend/Promotion/tests/Integration</directory>
             <directory>../../business/backend/Wechat/tests</directory>
             <directory>../../business/backend/HuifuFin/tests</directory>
             <directory>../../business/backend/Printer/tests</directory>
