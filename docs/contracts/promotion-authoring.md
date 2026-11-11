@@ -6,6 +6,8 @@
 
 The assistant host adapter in `apps/admin-agent/adapters/ns-ultimate/admin/promotion-workbench.mjs` supplies explicitly registered build, check, existing-campaign inspection and stack-simulation tools. Generic assistant code only provides host-tool dispatch, a before-change validation hook and text-only evidence display. API documents, reference articles and model arguments cannot register tools, select HTTP destinations or submit mutations.
 
+The human verification surface for frozen worlds, order/user imports and full result diagnostics is described in the [promotion simulation workbench](promotion-simulation.md).
+
 The ordinary campaign form now uses its JSON editor instead of a fixed cross-template schema. Assistant campaign configuration is checked against the selected template's actual parameter usages, not a global key list. JSON configuration is a complete replacement, not a nested patch. Unsupported legacy parameters or template field formats fail assistant preparation; they are not silently removed, migrated or rewritten. The ordinary admin editor and CRUD behavior remain available. These authoring checks are not new universal persistence constraints.
 
 ## Parameter contracts
