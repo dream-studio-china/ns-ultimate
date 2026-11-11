@@ -8,6 +8,15 @@ const specId = '00000000-0000-4000-8000-000000000005'
 const counterId = '00000000-0000-4000-8000-000000000006'
 const tradeOrderId = '00000000-0000-4000-8000-000000000007'
 const store = { uuid: storeId, name: 'Contract store', code: 'S1', currency: 'CNY', timezone: 'Asia/Shanghai' }
+
+// The daily summary intentionally excludes earlier settled orders. Keep the
+// fixture inside the current Shanghai calendar day so this test does not start
+// failing once the date it was written on becomes historical.
+const reportingCreatedAt = (() => {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: store.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
+  return `${part('year')}-${part('month')}-${part('day')}T10:00:00+08:00`
+})()
 const version = 'a'.repeat(64)
 const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '', endSaleTime: '' }, ...item })
 const operationalOrder = (item: Record<string, unknown>) => ({ version, allowedActions: [], verificationRequired: false, rejectionReason: null, ...item })
@@ -36,7 +45,7 @@ async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?
   let specifications: { uuid: string; name: string; price: number; status: string; sort: number }[] = options.specifications?.map((item) => ({ ...item })) ?? []
   let counters: { uuid: string; name: string; code: string; capacity: number | null; sort: number; enabled: boolean }[] = [{ uuid: counterId, name: 'Real A01', code: 'A01', capacity: 4, sort: 0, enabled: true }]
   let order = { uuid: orderId, tradeOrderUuid: orderId, operationalStatus: 'pending_validation', totalAmount: 1590, currency: 'CNY', createdAt: '2026-10-30T10:00:00+08:00', orderSnapshot: { items: [{ productName: 'API product', quantity: 1 }] }, allowedActions: options.orderOperations ? ['accept', 'reject'] : [], verificationRequired: true }
-  let reportingOrder = { uuid: orderId, tradeOrderUuid: tradeOrderId, status: options.confirmedOrder ? 'confirmed' : 'paid', paymentStatus: options.confirmedOrder ? null : options.partialRefund ? 'partial_refunded' : 'paid', hasInvoice: !options.confirmedOrder && !!options.partialRefund, totalAmount: 1590, currency: 'CNY', notes: null, createdAt: '2026-11-07T10:00:00+08:00', items: [{ specificationUuid: specId, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: Boolean(options.confirmedOrder), canCancel: Boolean(options.confirmedOrder) }
+  let reportingOrder = { uuid: orderId, tradeOrderUuid: tradeOrderId, status: options.confirmedOrder ? 'confirmed' : 'paid', paymentStatus: options.confirmedOrder ? null : options.partialRefund ? 'partial_refunded' : 'paid', hasInvoice: !options.confirmedOrder && !!options.partialRefund, totalAmount: 1590, currency: 'CNY', notes: null, createdAt: reportingCreatedAt, items: [{ specificationUuid: specId, productName: 'API product', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }], canReplace: Boolean(options.confirmedOrder), canCancel: Boolean(options.confirmedOrder) }
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -496,11 +505,12 @@ test('trade orders default to paid and refunded and filter by table and date', a
   await table.selectOption('A01')
   await expect(page.locator('.workspace-order-list article')).toHaveCount(1)
 
+  const reportDate = reportingCreatedAt.slice(0, 10)
   const date = filters.getByLabel('交易日期', { exact: true })
-  await date.fill('2026-11-08')
+  await date.fill('1999-12-31')
   await expect(page.getByRole('heading', { name: '没有匹配的记录', exact: true })).toBeVisible()
   await expect(page.locator('.workspace-order-list article')).toHaveCount(0)
-  await date.fill('2026-11-07')
+  await date.fill(reportDate)
   await expect(page.locator('.workspace-order-list article')).toHaveCount(1)
 
   await paid.click()
