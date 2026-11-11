@@ -152,7 +152,18 @@ test('simulation editors display validation errors inside each modal', () => {
   assert.equal(dialogs.length, 3)
   for (const dialog of dialogs) {
     assert.match(dialog, /<el-alert v-if="error" :title="error" type="error"/)
+    assert.match(dialog, /align-center/)
   }
+})
+
+test('centered simulation dialogs keep their body scrollable within the viewport', () => {
+  const { parse, compileStyle } = require('@vue/compiler-sfc')
+  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const { descriptor } = parse(source)
+  const style = compileStyle({ source: descriptor.styles[0].content, filename: 'PromotionSimulation.vue', id: 'data-v-simulation-test', scoped: true })
+  assert.deepEqual(style.errors, [])
+  assert.match(style.code, /\.promotion-simulation__dialog\s*\{\s*display: flex; flex-direction: column; max-height: calc\(100vh - 32px\);\s*\}/)
+  assert.match(style.code, /\.promotion-simulation__dialog \.el-dialog__body\s*\{\s*overflow-y: auto;\s*\}/)
 })
 
 test('simulation dark theme bridges host tokens without changing other pages or light themes', () => {

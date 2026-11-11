@@ -185,7 +185,7 @@
       </template>
     </section>
 
-    <el-dialog v-model="campaignDialog" class="promotion-simulation__dialog" :title="campaignDraft.isNew ? $t('Add campaign') : $t('Edit campaign')" width="min(760px, 94vw)" destroy-on-close>
+    <el-dialog v-model="campaignDialog" class="promotion-simulation__dialog" align-center :title="campaignDraft.isNew ? $t('Add campaign') : $t('Edit campaign')" width="min(760px, 94vw)" destroy-on-close>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <el-form label-position="top">
         <div class="promotion-simulation__form-grid">
@@ -214,7 +214,7 @@
       <template #footer><el-button @click="campaignDialog = false">{{ $t('Cancel') }}</el-button><el-button type="primary" @click="saveCampaign">{{ $t('Save to scenario') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="caseDialog" class="promotion-simulation__dialog" :title="caseDraft.isNew ? $t('Add cart case') : $t('Edit cart case')" width="min(900px, 96vw)" destroy-on-close>
+    <el-dialog v-model="caseDialog" class="promotion-simulation__dialog" align-center :title="caseDraft.isNew ? $t('Add cart case') : $t('Edit cart case')" width="min(900px, 96vw)" destroy-on-close>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <el-form label-position="top">
         <div class="promotion-simulation__form-grid">
@@ -272,7 +272,7 @@
       <template #footer><el-button @click="caseDialog = false">{{ $t('Cancel') }}</el-button><el-button type="primary" @click="saveCase">{{ $t('Save to scenario') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="importDialog" class="promotion-simulation__dialog" :title="$t('Import scenario')" width="min(720px, 94vw)">
+    <el-dialog v-model="importDialog" class="promotion-simulation__dialog" align-center :title="$t('Import scenario')" width="min(720px, 94vw)">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <p>{{ $t('Paste a scenario JSON export. Importing replaces the current in-browser scenario, not live promotions.') }}</p>
       <el-input v-model="importText" type="textarea" :rows="14" spellcheck="false" />
@@ -634,6 +634,9 @@ export default {
 :global(.promotion-simulation__dialog .el-input-number),
 :global(.promotion-simulation__dialog .el-select),
 :global(.promotion-simulation__dialog .el-date-editor.el-input) { width: 100%; min-width: 0; }
+/* Centered dialogs must scroll their body instead of growing past the viewport. */
+:global(.promotion-simulation__dialog) { display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+:global(.promotion-simulation__dialog .el-dialog__body) { overflow-y: auto; }
 :global(.promotion-simulation__dialog .el-alert) { margin-bottom: 16px; }
 :global(.promotion-simulation__dialog .el-dialog__body) { overflow-wrap: anywhere; }
 .promotion-simulation__inline { display: flex; gap: 8px; width: 100%; }
