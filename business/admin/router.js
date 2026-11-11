@@ -123,7 +123,7 @@ export default {
         path: 'simulation',
         name: 'PromotionSimulation',
         component: () => import('./simulation/PromotionSimulation.vue'),
-        meta: { title: t('Promotion simulation') }
+        meta: { title: t('Promotion simulation'), icon: 'el-icon-caret-right' }
       }
     ]
   }],

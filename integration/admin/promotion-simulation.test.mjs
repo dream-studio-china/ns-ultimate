@@ -96,6 +96,7 @@ test('promotion simulation route is nested under the existing promotion menu', (
   assert.match(source, /name: 'PromotionSimulation'/)
   assert.match(source, /path: 'simulation'/)
   assert.match(source, /import\('\.\/simulation\/PromotionSimulation\.vue'\)/)
+  assert.match(source, /meta: \{ title: t\('Promotion simulation'\), icon: 'el-icon-caret-right' \}/)
 })
 
 test('promotion simulation Vue template and script compile', () => {
@@ -120,5 +121,69 @@ test('promotion simulation UI labels are localized in every business locale', ()
       assert.equal(typeof messages[key], 'string', key)
       assert.notEqual(messages[key], '', key)
     }
+  }
+})
+
+test('simulation controls use SVG icons instead of legacy Element UI icon names', () => {
+  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /icon="el-icon-/)
+  for (const icon of ['VideoPlay', 'Download', 'Refresh', 'Tickets', 'Upload', 'Plus', 'Remove']) {
+    assert.ok(source.includes(`:icon="icons.${icon}"`), icon)
+  }
+})
+
+test('simulation dialog sizing survives teleport and JSON fields span the form grid', () => {
+  const { parse, compileStyle } = require('@vue/compiler-sfc')
+  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const { descriptor } = parse(source)
+  const style = compileStyle({ source: descriptor.styles[0].content, filename: 'PromotionSimulation.vue', id: 'data-v-simulation-test', scoped: true })
+  assert.deepEqual(style.errors, [])
+  // ElDialog does not forward the parent's scope attribute to its teleported panel.
+  assert.match(style.code, /\.promotion-simulation__dialog \.el-input-number,\s*\.promotion-simulation__dialog \.el-select,\s*\.promotion-simulation__dialog \.el-date-editor\.el-input\s*\{\s*width: 100%; min-width: 0;/)
+  assert.match(style.code, /\.promotion-simulation__full\[data-v-simulation-test\]\s*\{\s*grid-column: 1 \/ -1;/)
+  assert.match(style.code, /@media \(max-width: 760px\)/)
+})
+
+test('simulation editors display validation errors inside each modal', () => {
+  const { parse } = require('@vue/compiler-sfc')
+  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const { descriptor } = parse(source)
+  const dialogs = descriptor.template.content.match(/<el-dialog\b[\s\S]*?<\/el-dialog>/g)
+  assert.equal(dialogs.length, 3)
+  for (const dialog of dialogs) {
+    assert.match(dialog, /<el-alert v-if="error" :title="error" type="error"/)
+  }
+})
+
+test('simulation dark theme bridges host tokens without changing other pages or light themes', () => {
+  const { compileStyle } = require('@vue/compiler-sfc')
+  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const css = readFileSync(new URL('../../business/admin/simulation/theme.css', import.meta.url), 'utf8')
+  assert.match(source, /import '\.\/theme\.css'/)
+  const style = compileStyle({ source: css, filename: 'simulation-theme.css', id: 'simulation-theme' })
+  assert.deepEqual(style.errors, [])
+  for (const rule of style.rawResult.root.nodes.filter(node => node.type === 'rule')) {
+    for (const selector of rule.selector.split(/,\s*(?=html)/)) {
+      assert.ok(selector.startsWith("html[data-theme='dark']"), selector)
+      assert.ok(selector.includes('.promotion-simulation'), selector)
+    }
+  }
+  for (const [token, host] of [
+    ['bg-color', 'surface'], ['bg-color-overlay', 'surface'], ['text-color-primary', 'text-primary'],
+    ['text-color-secondary', 'text-secondary'], ['fill-color-blank', 'surface'], ['border-color', 'border']
+  ]) {
+    assert.ok(css.includes(`--el-${token}: var(--${host});`), token)
+  }
+  for (const state of ['success', 'warning', 'danger', 'info']) {
+    assert.ok(css.includes(`--el-color-${state}-light-9: color-mix(`), state)
+  }
+})
+
+test('every simulation picker and select uses the namespaced teleported dark theme', () => {
+  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const controls = source.match(/<el-(?:select|date-picker)\b[^>]*>/g)
+  assert.ok(controls.length > 0)
+  for (const control of controls) {
+    assert.ok(control.includes('popper-class="promotion-simulation__popper"'), control)
   }
 })

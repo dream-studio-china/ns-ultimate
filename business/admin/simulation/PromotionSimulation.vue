@@ -7,8 +7,8 @@
         <p>{{ $t('Promotion simulation help') }}</p>
       </div>
       <div class="promotion-simulation__actions">
-        <el-button :loading="running" type="primary" icon="el-icon-video-play" @click="run">{{ $t('Run simulation') }}</el-button>
-        <el-button icon="el-icon-download" :disabled="!result" @click="exportResult">{{ $t('Export report') }}</el-button>
+        <el-button :loading="running" type="primary" :icon="icons.VideoPlay" @click="run">{{ $t('Run simulation') }}</el-button>
+        <el-button :icon="icons.Download" :disabled="!result" @click="exportResult">{{ $t('Export report') }}</el-button>
       </div>
     </header>
 
@@ -17,12 +17,18 @@
 
     <section class="promotion-simulation__toolbar">
       <el-input v-model="scenario.name" class="promotion-simulation__name" :aria-label="$t('Scenario name')" :placeholder="$t('Scenario name')" />
-      <el-input v-model="scenario.storeCode" class="promotion-simulation__store" :aria-label="$t('Store code')" :placeholder="$t('Store code for import')" />
-      <el-button :loading="importingCurrent" icon="el-icon-refresh" @click="importCurrent">{{ $t('Import current campaigns') }}</el-button>
-      <el-input v-model="orderId" class="promotion-simulation__short" :aria-label="$t('Order ID')" :placeholder="$t('Order ID')" />
-      <el-button :loading="importingOrder" icon="el-icon-tickets" @click="importOrder">{{ $t('Import order') }}</el-button>
-      <el-button icon="el-icon-upload2" @click="openImport">{{ $t('Import scenario') }}</el-button>
-      <el-button icon="el-icon-download" @click="exportScenarioFile">{{ $t('Export scenario') }}</el-button>
+      <div class="promotion-simulation__import-group">
+        <el-input v-model="scenario.storeCode" class="promotion-simulation__store" :aria-label="$t('Store code')" :placeholder="$t('Store code for import')" />
+        <el-button :loading="importingCurrent" :icon="icons.Refresh" @click="importCurrent">{{ $t('Import current campaigns') }}</el-button>
+      </div>
+      <div class="promotion-simulation__import-group">
+        <el-input v-model="orderId" class="promotion-simulation__short" :aria-label="$t('Order ID')" :placeholder="$t('Order ID')" />
+        <el-button :loading="importingOrder" :icon="icons.Tickets" @click="importOrder">{{ $t('Import order') }}</el-button>
+      </div>
+      <div class="promotion-simulation__actions">
+        <el-button :icon="icons.Upload" @click="openImport">{{ $t('Import scenario') }}</el-button>
+        <el-button :icon="icons.Download" @click="exportScenarioFile">{{ $t('Export scenario') }}</el-button>
+      </div>
     </section>
     <small class="promotion-simulation__note">{{ $t('Scenario data is kept in this browser only. Simulation is read-only.') }}</small>
 
@@ -34,8 +40,8 @@
       </el-tab-pane>
     </el-tabs>
     <div class="promotion-simulation__world-actions">
-      <el-button size="small" icon="el-icon-plus" @click="addWorld">{{ $t('Add experiment world') }}</el-button>
-      <el-button size="small" icon="el-icon-remove-outline" :disabled="scenario.worlds.length <= 1" @click="removeWorld">{{ $t('Remove world') }}</el-button>
+      <el-button size="small" :icon="icons.Plus" @click="addWorld">{{ $t('Add experiment world') }}</el-button>
+      <el-button size="small" :icon="icons.Remove" :disabled="scenario.worlds.length <= 1" @click="removeWorld">{{ $t('Remove world') }}</el-button>
       <span v-if="activeWorld?.source === 'import'" class="promotion-simulation__revision">
         {{ $t('Imported at {time}', { time: formatDate(activeWorld.loadedAt) }) }} · {{ activeWorld.revision?.slice(0, 12) }}
       </span>
@@ -44,7 +50,7 @@
     <section v-if="activeWorld" class="promotion-simulation__panel">
       <header class="promotion-simulation__panel-header">
         <h2>{{ $t('Campaign set') }} · {{ activeWorld.name }}</h2>
-        <el-button size="small" type="primary" icon="el-icon-plus" @click="addCampaign">{{ $t('Add campaign') }}</el-button>
+        <el-button size="small" type="primary" :icon="icons.Plus" @click="addCampaign">{{ $t('Add campaign') }}</el-button>
       </header>
       <el-table :data="activeWorld.campaigns" row-key="key" :empty-text="$t('No campaigns in this world')">
         <el-table-column prop="name" :label="$t('Campaign')" min-width="180" show-overflow-tooltip />
@@ -72,9 +78,9 @@
       <header class="promotion-simulation__panel-header">
         <h2>{{ $t('Test carts') }}</h2>
         <div class="promotion-simulation__case-actions">
-          <el-input-number v-model="boundaryThreshold" :min="0" :precision="2" :controls="false" :placeholder="$t('Threshold in yuan')" />
+          <el-input-number v-model="boundaryThreshold" :min="0" :precision="2" :controls="false" :aria-label="$t('Threshold in yuan')" :placeholder="$t('Threshold in yuan')" />
           <el-button size="small" @click="generateBoundaryCases">{{ $t('Generate boundary cases') }}</el-button>
-          <el-button size="small" type="primary" icon="el-icon-plus" @click="addCase">{{ $t('Add cart case') }}</el-button>
+          <el-button size="small" type="primary" :icon="icons.Plus" @click="addCase">{{ $t('Add cart case') }}</el-button>
         </div>
       </header>
       <el-table :data="scenario.cases" row-key="key" :empty-text="$t('No cart cases')">
@@ -179,26 +185,27 @@
       </template>
     </section>
 
-    <el-dialog v-model="campaignDialog" :title="campaignDraft.isNew ? $t('Add campaign') : $t('Edit campaign')" width="min(760px, 94vw)" destroy-on-close>
+    <el-dialog v-model="campaignDialog" class="promotion-simulation__dialog" :title="campaignDraft.isNew ? $t('Add campaign') : $t('Edit campaign')" width="min(760px, 94vw)" destroy-on-close>
+      <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <el-form label-position="top">
         <div class="promotion-simulation__form-grid">
           <el-form-item :label="$t('Campaign key')"><el-input v-model="campaignDraft.key" :disabled="!campaignDraft.isNew" /></el-form-item>
           <el-form-item :label="$t('Campaign')"><el-input v-model="campaignDraft.name" /></el-form-item>
           <el-form-item :label="$t('Store code')"><el-input v-model="campaignDraft.storeCode" :placeholder="$t('Empty means global')" /></el-form-item>
           <el-form-item :label="$t('Conflict mode')">
-            <el-select v-model="campaignDraft.conflictMode"><el-option v-for="mode in conflictModes" :key="mode" :label="$t(conflictModeLabel(mode))" :value="mode" /></el-select>
+            <el-select v-model="campaignDraft.conflictMode" popper-class="promotion-simulation__popper"><el-option v-for="mode in conflictModes" :key="mode" :label="$t(conflictModeLabel(mode))" :value="mode" /></el-select>
           </el-form-item>
-          <el-form-item :label="$t('Start time')"><el-date-picker v-model="campaignDraft.startTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" clearable /></el-form-item>
-          <el-form-item :label="$t('End time')"><el-date-picker v-model="campaignDraft.endTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" clearable /></el-form-item>
+          <el-form-item :label="$t('Start time')"><el-date-picker v-model="campaignDraft.startTime" popper-class="promotion-simulation__popper" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" clearable /></el-form-item>
+          <el-form-item :label="$t('End time')"><el-date-picker v-model="campaignDraft.endTime" popper-class="promotion-simulation__popper" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" clearable /></el-form-item>
           <el-form-item :label="$t('Campaign enabled')"><el-switch v-model="campaignDraft.enabled" /></el-form-item>
           <el-form-item :label="$t('Template enabled')"><el-switch v-model="campaignDraft.templateEnabled" /></el-form-item>
           <el-form-item :label="$t('Template type')">
-            <el-select v-model="campaignDraft.template.type">
+            <el-select v-model="campaignDraft.template.type" popper-class="promotion-simulation__popper">
               <el-option v-for="type in templateTypes" :key="type" :label="type" :value="type" />
             </el-select>
           </el-form-item>
           <el-form-item :label="$t('Promotion calculation phase')">
-            <el-select v-model="campaignDraft.template.phase"><el-option :label="$t('Inner promotion phase')" :value="0" /><el-option :label="$t('Outer promotion phase')" :value="1" /></el-select>
+            <el-select v-model="campaignDraft.template.phase" popper-class="promotion-simulation__popper"><el-option :label="$t('Inner promotion phase')" :value="0" /><el-option :label="$t('Outer promotion phase')" :value="1" /></el-select>
           </el-form-item>
         </div>
         <el-form-item :label="$t('Promotion DSL')"><el-input v-model="campaignDraft.template.dsl" type="textarea" :rows="8" /></el-form-item>
@@ -207,28 +214,29 @@
       <template #footer><el-button @click="campaignDialog = false">{{ $t('Cancel') }}</el-button><el-button type="primary" @click="saveCampaign">{{ $t('Save to scenario') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="caseDialog" :title="caseDraft.isNew ? $t('Add cart case') : $t('Edit cart case')" width="min(900px, 96vw)" destroy-on-close>
+    <el-dialog v-model="caseDialog" class="promotion-simulation__dialog" :title="caseDraft.isNew ? $t('Add cart case') : $t('Edit cart case')" width="min(900px, 96vw)" destroy-on-close>
+      <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <el-form label-position="top">
         <div class="promotion-simulation__form-grid">
           <el-form-item :label="$t('Case key')"><el-input v-model="caseDraft.key" :disabled="!caseDraft.isNew" /></el-form-item>
           <el-form-item :label="$t('Case')"><el-input v-model="caseDraft.name" /></el-form-item>
           <el-form-item :label="$t('Store code')"><el-input v-model="caseDraft.storeCode" :placeholder="$t('Empty means global')" /></el-form-item>
-          <el-form-item :label="$t('Simulated at')"><el-date-picker v-model="caseDraft.simulatedAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
+          <el-form-item :label="$t('Simulated at')"><el-date-picker v-model="caseDraft.simulatedAt" popper-class="promotion-simulation__popper" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
           <el-form-item :label="$t('Currency')"><el-input v-model="caseDraft.currency" maxlength="3" /></el-form-item>
           <el-form-item :label="$t('Pricing mode')">
-            <el-select v-model="caseDraft.pricingMode">
+            <el-select v-model="caseDraft.pricingMode" popper-class="promotion-simulation__popper">
               <el-option :label="$t('Snapshot price')" value="snapshot" />
               <el-option :label="$t('Current catalog price')" value="current_catalog" />
             </el-select>
           </el-form-item>
           <el-form-item :label="$t('User mode')">
-            <el-select v-model="caseDraft.user.mode">
+            <el-select v-model="caseDraft.user.mode" popper-class="promotion-simulation__popper">
               <el-option :label="$t('Anonymous')" value="anonymous" />
               <el-option :label="$t('Member level')" value="level" />
               <el-option :label="$t('Existing user')" value="user" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="caseDraft.user.mode === 'level'" :label="$t('Member level')"><el-select v-model="caseDraft.user.level"><el-option v-for="level in memberLevels" :key="level" :label="level" :value="level" /></el-select></el-form-item>
+          <el-form-item v-if="caseDraft.user.mode === 'level'" :label="$t('Member level')"><el-select v-model="caseDraft.user.level" popper-class="promotion-simulation__popper"><el-option v-for="level in memberLevels" :key="level" :label="level" :value="level" /></el-select></el-form-item>
           <el-form-item v-if="caseDraft.user.mode === 'user'" :label="$t('User ID')">
             <div class="promotion-simulation__inline"><el-input v-model.number="caseDraft.user.userId" /><el-button @click="loadUser">{{ $t('Load user') }}</el-button></div>
           </el-form-item>
@@ -247,7 +255,7 @@
           <el-form-item :label="$t('Expected total (minor units)')"><el-input-number v-model="caseDraft.expected.totalAmount" :min="0" :controls="false" /></el-form-item>
           <el-form-item :label="$t('Expected discount (minor units)')"><el-input-number v-model="caseDraft.expected.discountAmount" :min="0" :controls="false" /></el-form-item>
           <el-form-item :label="$t('Expected gift quantity')"><el-input-number v-model="caseDraft.expected.giftQuantity" :min="0" :controls="false" /></el-form-item>
-          <el-form-item :label="$t('Expected free shipping')"><el-select v-model="caseDraft.expected.freeShipping" clearable><el-option :label="$t('Yes')" :value="true" /><el-option :label="$t('No')" :value="false" /></el-select></el-form-item>
+          <el-form-item :label="$t('Expected free shipping')"><el-select v-model="caseDraft.expected.freeShipping" popper-class="promotion-simulation__popper" clearable><el-option :label="$t('Yes')" :value="true" /><el-option :label="$t('No')" :value="false" /></el-select></el-form-item>
           <el-form-item :label="$t('Expected applied campaign keys')"><el-input :model-value="caseDraft.expected.appliedCampaignKeys.join(', ')" @input="value => setAppliedKeys(caseDraft.expected, value)" /></el-form-item>
           <el-form-item :label="$t('Expected item amounts (JSON)')" class="promotion-simulation__full"><el-input v-model="expectedItemsText" type="textarea" :rows="2" spellcheck="false" /></el-form-item>
         </div>
@@ -257,14 +265,15 @@
           <el-table-column :label="$t('Expected total')" width="140"><template #default="{ row }"><el-input-number v-model="caseDraft.expectedByWorld[row.key].totalAmount" :min="0" :controls="false" /></template></el-table-column>
           <el-table-column :label="$t('Expected discount')" width="140"><template #default="{ row }"><el-input-number v-model="caseDraft.expectedByWorld[row.key].discountAmount" :min="0" :controls="false" /></template></el-table-column>
           <el-table-column :label="$t('Expected gift quantity')" width="140"><template #default="{ row }"><el-input-number v-model="caseDraft.expectedByWorld[row.key].giftQuantity" :min="0" :controls="false" /></template></el-table-column>
-          <el-table-column :label="$t('Expected free shipping')" width="150"><template #default="{ row }"><el-select v-model="caseDraft.expectedByWorld[row.key].freeShipping" clearable><el-option :label="$t('Yes')" :value="true" /><el-option :label="$t('No')" :value="false" /></el-select></template></el-table-column>
+          <el-table-column :label="$t('Expected free shipping')" width="150"><template #default="{ row }"><el-select v-model="caseDraft.expectedByWorld[row.key].freeShipping" popper-class="promotion-simulation__popper" clearable><el-option :label="$t('Yes')" :value="true" /><el-option :label="$t('No')" :value="false" /></el-select></template></el-table-column>
           <el-table-column :label="$t('Applied keys')" min-width="190"><template #default="{ row }"><el-input :model-value="caseDraft.expectedByWorld[row.key].appliedCampaignKeys.join(', ')" @input="value => setAppliedKeys(caseDraft.expectedByWorld[row.key], value)" /></template></el-table-column>
         </el-table>
       </el-form>
       <template #footer><el-button @click="caseDialog = false">{{ $t('Cancel') }}</el-button><el-button type="primary" @click="saveCase">{{ $t('Save to scenario') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="importDialog" :title="$t('Import scenario')" width="min(720px, 94vw)">
+    <el-dialog v-model="importDialog" class="promotion-simulation__dialog" :title="$t('Import scenario')" width="min(720px, 94vw)">
+      <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <p>{{ $t('Paste a scenario JSON export. Importing replaces the current in-browser scenario, not live promotions.') }}</p>
       <el-input v-model="importText" type="textarea" :rows="14" spellcheck="false" />
       <template #footer><el-button @click="importDialog = false">{{ $t('Cancel') }}</el-button><el-button type="primary" @click="applyImport">{{ $t('Import') }}</el-button></template>
@@ -273,6 +282,8 @@
 </template>
 
 <script>
+import './theme.css'
+import { Download, Plus, Refresh, Remove, Tickets, Upload, VideoPlay } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import {
   CONFLICT_MODES, MEMBER_LEVELS, boundaryCases, buildMatrix, buildRunRequest,
@@ -286,6 +297,9 @@ const TEMPLATE_TYPES = ['full_reduction', 'discount', 'member_discount', 'nth_di
 
 export default {
   name: 'PromotionSimulation',
+  setup() {
+    return { icons: { Download, Plus, Refresh, Remove, Tickets, Upload, VideoPlay } }
+  },
   data() {
     return {
       scenario: createScenario(),
@@ -441,6 +455,7 @@ export default {
       world.campaigns = world.campaigns.filter(campaign => campaign.key !== key)
     },
     addCampaign() {
+      this.error = ''
       const used = new Set(this.activeWorld.campaigns.map(campaign => campaign.key))
       let index = 1
       while (used.has(`campaign:${index}`)) index++
@@ -450,6 +465,7 @@ export default {
       this.campaignDialog = true
     },
     editCampaign(campaign) {
+      this.error = ''
       this.campaignDraft = { ...JSON.parse(JSON.stringify(campaign)), isNew: false }
       this.campaignConfigText = JSON.stringify(campaign.config || {}, null, 2)
       this.campaignDialog = true
@@ -478,12 +494,14 @@ export default {
       this.result = null
     },
     addCase() {
+      this.error = ''
       const key = newKey('case', this.scenario.cases.map(item => item.key))
       this.caseDraft = { ...newCase({ key, name: 'Cart case', storeCode: this.scenario.storeCode, simulatedAt: localDateTime() }), isNew: true, expectedByWorld: this.ensureWorldExpected() }
       this.expectedItemsText = ''
       this.caseDialog = true
     },
     editCase(item) {
+      this.error = ''
       this.caseDraft = { ...JSON.parse(JSON.stringify(item)), isNew: false, expectedByWorld: this.ensureWorldExpected(JSON.parse(JSON.stringify(item.expectedByWorld || {}))) }
       this.expectedItemsText = item.expected?.items?.length ? JSON.stringify(item.expected.items, null, 2) : ''
       this.caseDialog = true
@@ -555,7 +573,7 @@ export default {
     selectCell(worldKey, caseKey) {
       this.selectedResult = this.result.results.find(result => result.worldKey === worldKey && result.caseKey === caseKey) || null
     },
-    openImport() { this.importText = ''; this.importDialog = true },
+    openImport() { this.error = ''; this.importText = ''; this.importDialog = true },
     applyImport() {
       try {
         this.scenario = normalizeScenario(JSON.parse(this.importText))
@@ -579,29 +597,55 @@ export default {
 </script>
 
 <style scoped>
-.promotion-simulation { display: flex; flex-direction: column; gap: 16px; padding: 20px; }
+.promotion-simulation { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 20px; }
 .promotion-simulation__header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .promotion-simulation__eyebrow { color: var(--el-text-color-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
 .promotion-simulation h1 { margin: 4px 0 6px; font-size: 24px; }
 .promotion-simulation h2 { margin: 0; font-size: 17px; }
 .promotion-simulation h3 { margin: 18px 0 8px; font-size: 14px; }
 .promotion-simulation p { margin: 0; color: var(--el-text-color-secondary); }
-.promotion-simulation__actions, .promotion-simulation__toolbar, .promotion-simulation__world-actions, .promotion-simulation__case-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.promotion-simulation__actions, .promotion-simulation__toolbar, .promotion-simulation__world-actions, .promotion-simulation__case-actions, .promotion-simulation__import-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.promotion-simulation__header > div:first-child { min-width: 0; }
+.promotion-simulation__header > .promotion-simulation__actions { flex-shrink: 0; }
+.promotion-simulation__import-group { flex-wrap: nowrap; min-width: 0; }
+.promotion-simulation__actions > .el-button + .el-button,
+.promotion-simulation__world-actions > .el-button + .el-button,
+.promotion-simulation__case-actions > .el-button + .el-button { margin-left: 0; }
 .promotion-simulation__toolbar { padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-blank); }
 .promotion-simulation__name { width: 220px; } .promotion-simulation__store { width: 180px; } .promotion-simulation__short { width: 130px; }
 .promotion-simulation__note, .promotion-simulation__muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .promotion-simulation__worlds { margin-bottom: -10px; }
-.promotion-simulation__panel { padding: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-fill-color-blank); }
-.promotion-simulation__panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.promotion-simulation__panel { min-width: 0; padding: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-fill-color-blank); }
+.promotion-simulation__panel-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.promotion-simulation__panel-header h2 { overflow-wrap: anywhere; }
 .promotion-simulation__summary { color: var(--el-text-color-secondary); font-size: 13px; }
-.promotion-simulation__revision { color: var(--el-text-color-secondary); font-size: 12px; }
-.promotion-simulation__cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; border: 0; background: transparent; cursor: pointer; text-align: left; }
+.promotion-simulation__revision { min-width: 0; overflow-wrap: anywhere; color: var(--el-text-color-secondary); font-size: 12px; }
+.promotion-simulation__cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 8px; border: 0; border-radius: 4px; background: transparent; color: var(--el-text-color-primary); font: inherit; cursor: pointer; text-align: left; }
+.promotion-simulation__cell:hover { background: var(--el-fill-color-light); }
+.promotion-simulation__cell:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
 .promotion-simulation__cell strong { font-size: 14px; } .promotion-simulation__cell-error { color: var(--el-color-danger); }
 .promotion-simulation__totals { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
 .promotion-simulation__totals span { display: inline-flex; gap: 6px; align-items: center; color: var(--el-text-color-secondary); }
 .promotion-simulation__totals strong { color: var(--el-text-color-primary); }
 .promotion-simulation__form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.promotion-simulation__form-grid > .el-form-item { min-width: 0; }
+.promotion-simulation__full { grid-column: 1 / -1; }
+/* Dialogs are teleported without the workbench's scope attribute. */
+:global(.promotion-simulation__dialog .el-input-number),
+:global(.promotion-simulation__dialog .el-select),
+:global(.promotion-simulation__dialog .el-date-editor.el-input) { width: 100%; min-width: 0; }
+:global(.promotion-simulation__dialog .el-alert) { margin-bottom: 16px; }
+:global(.promotion-simulation__dialog .el-dialog__body) { overflow-wrap: anywhere; }
 .promotion-simulation__inline { display: flex; gap: 8px; width: 100%; }
+.promotion-simulation__inline > .el-input { flex: 1; min-width: 0; }
 .promotion-simulation__add-row { margin-top: 8px; }
-@media (max-width: 760px) { .promotion-simulation { padding: 12px; } .promotion-simulation__header { flex-direction: column; } .promotion-simulation__form-grid { grid-template-columns: 1fr; } .promotion-simulation__name, .promotion-simulation__store { width: 100%; } }
+@media (max-width: 760px) {
+  .promotion-simulation { padding: 12px; }
+  .promotion-simulation__header { flex-direction: column; }
+  .promotion-simulation__panel { padding: 12px; }
+  .promotion-simulation__form-grid { grid-template-columns: 1fr; }
+  .promotion-simulation__name, .promotion-simulation__import-group { width: 100%; }
+  .promotion-simulation__import-group > .el-input { flex: 1; min-width: 0; }
+  .promotion-simulation__case-actions { width: 100%; }
+}
 </style>

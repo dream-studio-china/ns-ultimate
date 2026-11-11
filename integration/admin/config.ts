@@ -27,6 +27,7 @@ let routes = mergeRoutes(coreConfig.routes, {
 })
 routes = moveRouteAfter(routes, 'CounterManagement', 'ProductManage')
 routes = moveRouteAfter(routes, 'OrderManage', 'ProductManage')
+routes = moveRouteAfter(routes, 'PromotionManage', 'OrderManage')
 routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
 routes = moveRouteAfter(routes, 'HuifuConfiguration', 'WechatConfiguration')
 routes = moveRouteAfter(routes, 'HuifuTransactions', 'HuifuConfiguration')
