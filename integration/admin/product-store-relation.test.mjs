@@ -15,7 +15,8 @@ function loadProductConfig() {
     ProductMetadataSchema: {},
     ProductSettingsSchema: {},
     ProductNameWithCover: {},
-    SpecificationManager: {}
+    SpecificationManager: {},
+    CopyProductsAction: {}
   }
   runInNewContext(source.slice(source.indexOf('export default')).replace('export default', 'globalThis.config ='), context)
   return context.config

@@ -7,6 +7,7 @@ import zhHant from '../../business/admin/i18n/zh-Hant.js'
 import ja from '../../business/admin/i18n/ja.js'
 import {
   ORDER_REFUND_ORDERS_ENDPOINT,
+  ORDER_REFUND_STORES_ENDPOINT,
   normalizeOrderRefundOrdersResponse
 } from '../../business/admin/config/components/order-refund-records.mjs'
 
@@ -23,8 +24,18 @@ test('order refund records discover refunds from admin order pages', () => {
 test('order refund records page uses Store-scoped refund history routes', () => {
   const source = readFileSync(new URL('../../business/admin/config/components/OrderRefundRecords.vue', import.meta.url), 'utf8')
   assert.match(source, /ORDER_REFUND_ORDERS_ENDPOINT/)
+  assert.match(source, /ORDER_REFUND_STORES_ENDPOINT/)
   assert.match(source, /storeOrderRefundHistoryPath\(context\.storeUuid, context\.tradeOrderUuid\)/)
+  assert.match(source, /pageOrderRefundRecords\(this\.allRecords, page, this\.limit, this\.status, this\.storeUuid\)/)
   assert.doesNotMatch(source, /\/api\/v1\/manage\/order-refunds/)
+})
+
+test('order refund records expose the existing Store list as a filter', () => {
+  assert.equal(ORDER_REFUND_STORES_ENDPOINT, '/api/v1/manage/stores')
+  const source = readFileSync(new URL('../../business/admin/config/components/OrderRefundRecords.vue', import.meta.url), 'utf8')
+  assert.match(source, /v-model="storeUuid"/)
+  assert.match(source, /v-for="option in storeOptions"/)
+  assert.match(source, /@change="changeStore"/)
 })
 
 test('order detail refund history uses the Store-scoped history endpoint', () => {
@@ -47,6 +58,7 @@ test('order refund records menu is localized in every business locale', () => {
       'Order refund records',
       'Unified order refund records help',
       'All refund statuses',
+      'All stores',
       'No order refund records',
       'Failed to load order refund records'
     ]) {

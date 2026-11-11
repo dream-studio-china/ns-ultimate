@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { ApiClient, ApiError } from './api-client'
 import { inDiningCatalog, normalizeDiningMode, type DiningCatalog, type DiningMode } from '../dining-mode'
-import { invoiceReferenceUuid, parseStaffPaymentResult, type StaffPaymentResult } from '../order-payment'
+import { invoiceReferenceUuid, parseStaffPaymentResult, type PaymentCloseResult, type StaffPaymentResult } from '../order-payment'
 import { parseRefundPreview, type RefundPreview } from '../order-refund'
 
 const uuid = z.string().uuid()
@@ -118,6 +118,14 @@ export const orderRefundResultSchema = z.object({
   refundedAmount: cents.nullable(),
 }).passthrough()
 export type OrderRefundResult = z.infer<typeof orderRefundResultSchema>
+const paymentCloseResultSchema = z.object({
+  status: z.string().min(1),
+  tradeOrderUuid: uuid,
+  invoiceUuid: uuid,
+  invoiceStatus: z.string().nullable().optional(),
+  released: z.boolean(),
+  requiresReview: z.boolean().optional(),
+}).passthrough()
 const reportingOrderItemSchema = z.object({ productName: z.string(), quantity: z.number().int().positive(), unitPrice: cents, amount: cents })
 export const reportingOrderSchema = z.object({
   uuid, status: z.string(), paymentStatus: z.string().nullable().optional(),
@@ -461,6 +469,20 @@ export class StoreApi {
   async orderInvoiceReference(tradeOrderUuid: string): Promise<string | null> {
     const data = await this.client.data(`/api/v1/app/orders/${uuid.parse(tradeOrderUuid)}`, z.unknown())
     return invoiceReferenceUuid(data)
+  }
+  async closeFailedPayment(tradeOrderUuid: string, invoiceUuid: string, commandUuid: string, reason: string): Promise<PaymentCloseResult> {
+    const orderId = uuid.parse(tradeOrderUuid)
+    const invoiceId = uuid.parse(invoiceUuid)
+    const commandId = uuid.parse(commandUuid)
+    const trimmedReason = reason.trim()
+    if (!trimmedReason || new TextEncoder().encode(trimmedReason).length > 1000) throw new ApiError('invalid')
+    const result = await this.client.data(`${this.base}/trade-orders/${orderId}/payment/close`, paymentCloseResultSchema, 'POST', {
+      commandUuid: commandId,
+      invoiceUuid: invoiceId,
+      reason: trimmedReason,
+    })
+    if (result.tradeOrderUuid !== orderId || result.invoiceUuid !== invoiceId) throw new ApiError('invalid')
+    return result
   }
   async startHuifuPayment(invoiceUuid: string, options: { channel?: string; tradeType?: string } = {}): Promise<StaffPaymentResult> {
     const result = await this.client.data(`${this.base}/huifu-payments`, z.unknown(), 'POST', {

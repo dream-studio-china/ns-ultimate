@@ -144,6 +144,9 @@
 .checkout-footer-feedback .workspace-notice { border-color: color-mix(in srgb, #c44932 28%, var(--ws-line)); background: color-mix(in srgb, #c44932 5%, var(--theme-paper)); }
 .checkout-footer-feedback .checkout-merge-blockers { display: grid; gap: 4px; margin: 0; padding-left: 16px; color: #8f3928; text-align: left; }
 .checkout-progress-popup { width: min(320px, calc(100vw - 48px)); padding: 27px 24px 25px; border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--ws-line)); border-radius: 22px; background: var(--theme-paper); box-shadow: 0 22px 60px color-mix(in srgb, var(--ws-ink) 24%, transparent); }
+.checkout-payment-lock-popup { width: min(360px, calc(100vw - 40px)); padding: 25px 22px 20px; border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--ws-line)); border-radius: 22px; background: var(--theme-paper); box-shadow: 0 22px 60px color-mix(in srgb, var(--ws-ink) 24%, transparent); }
+.checkout-payment-lock h3 { margin: 0 0 12px; color: var(--ws-ink); font-size: 19px; }
+.checkout-payment-lock p { margin: 0 0 20px; color: var(--ws-muted); line-height: 1.65; }
 .checkout-progress { display: grid; justify-items: center; gap: 12px; color: var(--ws-ink); text-align: center; }
 .checkout-progress strong { font-size: 16px; line-height: 1.5; }
 .checkout-progress small { max-width: 260px; color: var(--ws-muted); font-size: 12px; line-height: 1.65; }
@@ -294,6 +297,11 @@
 .checkout-payment-methods > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .checkout-payment-methods button { min-height: 46px; padding: 9px 11px; border: 1px solid var(--ws-line); border-radius: 12px; color: var(--ws-ink); background: var(--theme-paper); font-size: 12px; font-weight: 650; cursor: pointer; overflow-wrap: anywhere; }
 .checkout-payment-methods button.is-active { border-color: var(--brand); color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, white); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 8%, transparent); }
+.checkout-scan-payment > button { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 58px; padding: 11px 14px; text-align: left; }
+.checkout-scan-payment > button > svg { flex: 0 0 auto; color: var(--brand); }
+.checkout-scan-payment > button > span { display: grid; gap: 3px; min-width: 0; }
+.checkout-scan-payment strong { color: var(--ws-ink); font-size: 13px; }
+.checkout-scan-payment small { color: var(--ws-muted); font-size: 10px; font-weight: 500; line-height: 1.55; }
 
 .dining-payment-sheet .live-sheet-content { display: grid; gap: 14px; }
 .dining-payment-order { display: grid; gap: 14px; padding: 17px; border: 1px solid var(--ws-line); border-radius: 18px; background: var(--theme-soft); }
