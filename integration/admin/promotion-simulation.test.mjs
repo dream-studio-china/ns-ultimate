@@ -198,3 +198,11 @@ test('every simulation picker and select uses the namespaced teleported dark the
     assert.ok(control.includes('popper-class="promotion-simulation__popper"'), control)
   }
 })
+
+test('business simulation imports resolve core-installed dependencies during production builds', () => {
+  const config = readFileSync(new URL('./vite.config.ts', import.meta.url), 'utf8')
+  // Business files sit outside core/crud-admin, so Rollup cannot walk up to the
+  // core node_modules and every such bare import needs an explicit alias.
+  assert.match(config, /\{ find: \/\^@element-plus\\\/icons-vue\$\/, replacement: coreRequire\.resolve\('@element-plus\/icons-vue\/dist\/index\.js'\) \}/)
+  assert.match(require.resolve('@element-plus/icons-vue/dist/index.js'), /dist[\\/]index\.js$/)
+})
