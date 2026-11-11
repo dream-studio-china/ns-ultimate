@@ -1,6 +1,5 @@
 import { t } from '@/i18n'
 import Promotion from '../../../../../core/crud-admin/src/configs/collections/promotion/Promotion.js'
-import PromotionConfigSchema from './PromotionConfig.json'
 
 const config = Promotion.Promotion
 
@@ -33,7 +32,6 @@ export default {
         property: 'config',
         type: 'json',
         required: false,
-        type_options: { schema: PromotionConfigSchema },
         help: t('Promotion config help')
       },
       {

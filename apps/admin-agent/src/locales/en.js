@@ -1,4 +1,5 @@
 export default {
+  'Draft validation': 'Draft validation',
   'Chat sessions': 'Chat sessions',
   'New chat': 'New chat',
   'Delete chat': 'Delete chat',

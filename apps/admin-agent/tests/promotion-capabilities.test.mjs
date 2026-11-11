@@ -11,7 +11,6 @@ import {
 } from '../adapters/ns-ultimate/admin/write-policy.mjs'
 
 const repository = new URL('../../../', import.meta.url)
-const promotionConfigSchema = JSON.parse(readFileSync(new URL('business/admin/config/overrides/promotion/PromotionConfig.json', repository), 'utf8'))
 
 const templateOptions = [
   'full_reduction', 'discount', 'member_discount', 'nth_discount', 'gift', 'free_shipping'
@@ -29,7 +28,7 @@ function fixture() {
           { property: 'enabled', type: 'boolean', default_value: false },
           { property: 'startTime', type: 'datetime' },
           { property: 'endTime', type: 'datetime' },
-          { property: 'config', type: 'json', type_options: { schema: promotionConfigSchema } },
+          { property: 'config', type: 'json' },
           { property: 'conflictMode', type: 'select', default_value: 'stackable', type_options: { options: [
             { value: 'stackable', label: 'Stackable' },
             { value: 'exclusive', label: 'Exclusive' },
@@ -46,7 +45,8 @@ function fixture() {
           { property: 'type', type: 'select', required: true, default_value: 'full_reduction', type_options: { options: templateOptions.map(value => ({ value })) } },
           { property: 'phase', type: 'select', default_value: 0, type_options: { options: [{ value: 0 }, { value: 1 }] } },
           { property: 'enabled', type: 'boolean', default_value: false },
-          { property: 'dsl', type: 'code', required: true }
+          { property: 'dsl', type: 'code', required: true },
+          { property: 'fields', type: 'json' }
         ] },
         list: { disabled_actions: [] }
       }
@@ -82,7 +82,7 @@ test('promotion writes are configured create/update capabilities without delete'
   }
 })
 
-test('promotion capability exposes the template relation, bounded config and four conflict modes', () => {
+test('promotion capability exposes the template relation, template-defined config and four conflict modes', () => {
   const capabilities = host().getWriteCapabilities()
   const promotion = capabilities.find(item => item.entity === 'Promotion')
   assert.deepEqual(promotion.actions, ['create', 'update'])
@@ -90,7 +90,7 @@ test('promotion capability exposes the template relation, bounded config and fou
   assert.equal(create.template.requiredOnCreate, true)
   assert.match(create.template.description, /relation/)
   assert.match(create.template.description, /PromotionTemplate id/)
-  assert.match(create.config.description, /nested paths: .*rate/)
+  assert.match(create.config.description, /object/)
   assert.match(create.conflictMode.description, /\["stackable","exclusive","lock_item","best_price"\]/)
   assert.deepEqual(capabilities.find(item => item.entity === 'PromotionTemplate').actions, ['create', 'update'])
 })
@@ -124,10 +124,12 @@ test('prepares a campaign with a real template id and rejects invalid or forged 
     entity: 'Promotion', action: 'create',
     changes: { name: 'Bad mode', template: 4, conflictMode: 'priority' }
   }), /Invalid option/)
+  // Domain validation is explicitly supplied by the composed host, not a
+  // duplicated business allowlist in the generic CRUD transport.
   await assert.rejects(mutationHost.prepareRecordChange({
     entity: 'Promotion', action: 'create',
-    changes: { name: 'Bad config', template: 4, config: { unknown: true } }
-  }), /hidden or read-only nested fields/)
+    changes: { name: 'Bad config', template: 4, config: { amount: Number.NaN } }
+  }), /non-empty JSON/)
 })
 
 test('promotion template capability exposes supported types and phases only', () => {
@@ -148,11 +150,11 @@ test('the model tool description carries promotion entities and fields', () => {
   assert.match(description, /"dsl"/)
 })
 
-test('the effective admin overrides carry the promotion fields and bounded config schema', () => {
+test('the effective admin overrides carry promotion fields without a fixed parameter whitelist', () => {
   const promotion = readFileSync(new URL('business/admin/config/overrides/promotion/promotion.js', repository), 'utf8')
   assert.match(promotion, /property: 'template'/)
   assert.match(promotion, /relation: \{ entity: 'PromotionTemplate' \}/)
-  assert.match(promotion, /type_options: \{ schema: PromotionConfigSchema \}/)
+  assert.doesNotMatch(promotion, /PromotionConfigSchema/)
   assert.match(promotion, /value: 'lock_item'/)
   assert.match(promotion, /value: 'best_price'/)
 
@@ -167,6 +169,5 @@ test('the effective admin overrides carry the promotion fields and bounded confi
   assert.match(index, /import PromotionTemplate from '\.\/overrides\/promotion\/promotion-template\.js'/)
   assert.match(index, /replace: \{[^\n]*Promotion, PromotionTemplate/)
 
-  assert.equal(promotionConfigSchema.properties.specification_ids.items.type, 'integer')
-  assert.equal(promotionConfigSchema.additionalProperties, true)
+  assert.match(template, /property: 'fields', type: 'json'/)
 })

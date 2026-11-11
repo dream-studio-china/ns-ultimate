@@ -1,4 +1,5 @@
 export default {
+  'Draft validation': '草稿校验与验算',
   'Chat sessions': '会话记录',
   'New chat': '新建会话',
   'Delete chat': '删除会话',

@@ -159,7 +159,7 @@ function nestedAllowed(field, before, after, prefix = '') {
   })
 }
 
-export function createConfigMutationHost({ getProjection, request, policy, beforeDelete, specialWrite, isActionAvailable, now = Date.now, randomId = () => crypto.randomUUID() }) {
+export function createConfigMutationHost({ getProjection, request, policy, beforeDelete, beforeChange, specialWrite, isActionAvailable, now = Date.now, randomId = () => crypto.randomUUID() }) {
   const operations = new Map()
   let disposed = false
   let writing = false
@@ -252,6 +252,17 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
     }
     if (!differences.length) throw new TypeError('The proposed change has no differences.')
     if (JSON.stringify(differences).length > 200000) throw new TypeError('The preview is too large. Use the standard editor.')
+    let validation
+    if (typeof beforeChange === 'function') {
+      const result = await beforeChange({ entity: input.entity, action: input.action, record: clone(before), changes: clone(changes), signal })
+      active(signal)
+      if (projection().revision !== current.revision) throw conflict('The admin configuration changed.')
+      if (result != null) {
+        if (!plain(result) || !safeJson(result) || JSON.stringify(result).length > 60000) throw new TypeError('The host validation result is invalid or oversized.')
+        snapshot.validationDependency = result.dependency ?? null
+        validation = result.evidence
+      }
+    }
     let submission
     if (typeof specialWrite === 'function') {
       const special = specialWrite({ entity: input.entity, action: input.action,
@@ -264,12 +275,12 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
       }
     }
     return clone({ entity: input.entity, action: input.action, identifier: input.identifier == null ? null : String(input.identifier),
-      revision: current.revision, path, changes, snapshot, differences, fields: Object.keys(changes), ...(submission ? { submission } : {}) })
+      revision: current.revision, path, changes, snapshot, differences, fields: Object.keys(changes), ...(validation ? { validation } : {}), ...(submission ? { submission } : {}) })
   }
   function preview(op) {
     return { operationId: op.id, entity: op.entity, action: op.action, identifier: op.identifier,
       title: `${op.entity} ${op.action}`, affectedRecords: 1, expiresAt: op.expiresAt,
-      differences: clone(op.draft.differences), saved: false }
+      differences: clone(op.draft.differences), ...(op.draft.validation ? { validation: clone(op.draft.validation) } : {}), saved: false }
   }
   async function prepareRecordChange(input, signal) {
     const data = await draft(input, signal)
@@ -335,7 +346,7 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
   function batchPreview(op) {
     return { operationId: op.id, entity: op.entity, action: 'create', title: `${op.entity} create`,
       affectedRecords: op.rows, expiresAt: op.expiresAt, saved: false,
-      rows: op.draft.map((data, index) => ({ row: index + 1, identifier: null, title: `${op.entity} ${index + 1}`, differences: clone(data.differences) })),
+      rows: op.draft.map((data, index) => ({ row: index + 1, identifier: null, title: `${op.entity} ${index + 1}`, differences: clone(data.differences), ...(data.validation ? { validation: clone(data.validation) } : {}) })),
       warnings: ['Rows are submitted sequentially, not in one transaction. A failure may leave a partially created batch.'] }
   }
   async function commitRecordBatch(id, signal) {
@@ -348,6 +359,10 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
       for (const data of op.draft) {
         binding(data.entity, 'create')
         if (projection().revision !== data.revision) throw conflict('The admin configuration changed.')
+        if (typeof beforeChange === 'function') {
+          const fresh = await draft({ entity: data.entity, action: 'create', changes: data.changes }, signal, { normalized: true })
+          if (!same(fresh.snapshot, data.snapshot)) throw conflict('A batch dependency changed. Prepare a new preview.')
+        }
       }
       active(signal)
       op.status = 'submitting'
