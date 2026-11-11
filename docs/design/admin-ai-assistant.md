@@ -9,7 +9,7 @@ Effective admin form configuration + metadata + available navigation
                          ↓
                 Agent-specific prohibitions
                          ↓
-             Local preview → human confirmation
+       Host draft validation → local preview → human confirmation
                          ↓
               Existing authenticated CRUD API
 ```
@@ -25,6 +25,8 @@ Configuration is the ordinary entity/action/field whitelist. Agent policy contai
 - `integration/backend/legacy-migrations/admin-agent/` and `integration/backend/migrations/`: preserved migration identities and the forward table-retirement migration; no assistant backend package, entity mappings or services remain.
 
 New ordinary form fields do not require PHP capability descriptors, mutation adapters, generated manifests or a duplicated frontend whitelist. Unsupported uploads, custom actions and embedded managers need an actual host flow; they are reported as unsupported rather than silently guessed.
+
+Promotion authoring uses an explicit host adapter for deterministic recipes, template parameter contracts and non-persistent single-rule checks supplied by the Promotion business module. The generic assistant has no promotion grammar or pricing implementation. Its optional before-change hook retains validation dependencies and display-only evidence; preparation and pre-submit checks do not save drafts. This is a business authoring API, not a revival of the retired assistant operation backend. See the [authoring contract](../contracts/promotion-authoring.md).
 
 ## Deliberate tradeoff
 

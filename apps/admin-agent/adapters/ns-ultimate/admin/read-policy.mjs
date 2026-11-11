@@ -5,7 +5,8 @@
 // blobs stay outside this policy.
 export const recordReadPolicy = {
   Content: { fields: ['title', 'body', 'createdAt', 'updatedAt'] },
-  Page: { fields: ['title', 'slug', 'status', 'body', 'publishedAt'] }
+  Page: { fields: ['title', 'slug', 'status', 'body', 'publishedAt'] },
+  PromotionTemplate: { fields: ['name', 'type', 'phase', 'dsl', 'enabled'] }
 }
 
 // Additional safe list projections and filters needed for relations that are

@@ -14,6 +14,7 @@ import { specialWrite } from '../../apps/admin-agent/adapters/ns-ultimate/admin/
 import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/inspection.mjs'
 import { createRecordRead, recordReadPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/record-read.mjs'
 import { readCatalogPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/read-policy.mjs'
+import { createPromotionWorkbench } from '../../apps/admin-agent/adapters/ns-ultimate/admin/promotion-workbench.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createConfigMutationHost } from '../../apps/admin-agent/src/config-mutation-host.js'
 import { buildAdminConfigProjection } from '../../apps/admin-agent/src/admin-config-policy.js'
@@ -94,8 +95,10 @@ export function createAdminAgentHost() {
     return projection
   }
   refreshProjection()
+  const promotionWorkbench = createPromotionWorkbench({ request, path: `${defaultPrefix}/promotion-drafts/check`,
+    isAvailable: () => !disposed && isRecordPageAvailable('Promotion') && isRecordPageAvailable('PromotionTemplate') })
   const mutations = createConfigMutationHost({ request, getProjection: refreshProjection, policy: agentMutationPolicy,
-    beforeDelete: createDeleteGuard({ request, getProjection: refreshProjection }), specialWrite, isActionAvailable })
+    beforeDelete: createDeleteGuard({ request, getProjection: refreshProjection }), beforeChange: promotionWorkbench.beforeChange, specialWrite, isActionAvailable })
   async function initializeAgentCapabilities(signal, operations) {
     if (Array.isArray(operations)) apiOperations = operations
     if (!initialization) initialization = (async() => {
@@ -120,6 +123,8 @@ export function createAdminAgentHost() {
   }
   return {
     ...mutations,
+    getDraftTools: promotionWorkbench.getDraftTools,
+    runDraftTool: promotionWorkbench.runDraftTool,
     // Local partition only, not authorization. Never persist authentication tokens.
     getChatHistoryScope() { return chatScopeFromToken(getToken()) },
     initializeAgentCapabilities,
@@ -171,6 +176,6 @@ export function createAdminAgentHost() {
       if (signal?.aborted) throw new Error('The read query was cancelled.')
       return sanitizeRecordResults(response?.data, query, catalog)
     },
-    dispose() { disposed = true; structures.clear(); listeners.clear(); mutations.dispose() }
+    dispose() { disposed = true; structures.clear(); listeners.clear(); promotionWorkbench.dispose(); mutations.dispose() }
   }
 }

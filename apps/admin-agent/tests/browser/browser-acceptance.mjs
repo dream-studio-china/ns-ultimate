@@ -1747,9 +1747,11 @@ const CASES = [
         routes: [{ name: 'PageList', path: '/pages/list' }]
       }
       const requests = []
+      let validations = 0
       const mutations = createConfigMutationHost({
         policy: agentMutationPolicy,
         getProjection: () => buildAdminConfigProjection(config),
+        beforeChange: async() => { validations++; return { dependency: 'fixture-v1', evidence: { scope: 'fixture_only', result: 'Draft evidence <img src=x onerror=alert(1)>' } } },
         request: {
           get: async(path) => { requests.push(['GET', path]); return { data: { id: 7, title: 'Before', summary: 'Before summary', metadata: {} } } },
           put: async(path, changes) => { requests.push(['PUT', path, changes]); return { data: { id: 7 } } }
@@ -1773,11 +1775,14 @@ const CASES = [
       await waitForIdle(agent)
       equal(requests.filter(item => item[0] === 'PUT').length, 0, 'Preparation must not write')
       includes(agent.shadow.textContent, 'Configured field sentinel', 'The configured new field must be previewed')
+      includes(agent.shadow.textContent, 'Draft evidence <img', 'Validation evidence must be visible as text')
+      equal(agent.shadow.querySelectorAll('.message.markdown pre img').length, 0, 'Validation evidence must not render HTML')
       const confirm = findButton(agent.shadow, /^Confirm and save$/)
       ok(confirm && !confirm.disabled, 'A config-driven confirmation must be available')
       confirm.click()
       await ctx.waitFor(() => agent.shadow.textContent.includes('recorded only in this browser session'), { root: agent.shadow, label: 'acknowledged CRUD save' })
       equal(requests.filter(item => item[0] === 'PUT').length, 1, 'Explicit confirmation must write exactly once')
+      ok(validations >= 2, 'Draft validation must run again before submission')
       equal(requests.at(-1)[1], '/api/v1/manage/pages/7', 'The existing configured CRUD endpoint must be used')
       equal(requests.at(-1)[2].summary, 'Configured field sentinel', 'The exact preview payload must be submitted')
       equal(requests.some(item => item[1].includes('/agent/')), false, 'No retired Agent endpoint may be called')

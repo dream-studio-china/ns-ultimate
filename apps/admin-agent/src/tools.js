@@ -9,6 +9,11 @@ import {
   prepareBatchRequest
 } from './import-workbench.js'
 
+const BUILTIN_TOOL_NAMES = new Set([
+  'list_entities', 'list_admin_pages', 'navigate_admin_page', 'offer_admin_navigation', 'query_records',
+  'inspect_record_configuration', 'read_record', 'preview_record_update', 'prepare_record_change', 'prepare_record_batch'
+])
+
 // Preserve a bounded, display-safe server reason instead of masking every
 // preparation failure behind one generic message. Server errors already reach
 // the same authenticated browser session; never include stack traces or URLs.
@@ -55,7 +60,7 @@ function describeBatchPolicy(entities) {
   }))
 }
 
-export function createAssistantTools(catalog, navigation = [], previewPolicy = {}, writeCapabilities = [], inspectionPolicy = {}, batchCapabilities = [], manualDeletePages = [], recordReadPolicy = {}) {
+export function createAssistantTools(catalog, navigation = [], previewPolicy = {}, writeCapabilities = [], inspectionPolicy = {}, batchCapabilities = [], manualDeletePages = [], recordReadPolicy = {}, draftTools = []) {
   const readable = catalog.filter(item => item.readable)
   const inspectable = Object.keys(inspectionPolicy || {}).filter(key => readable.some(item => item.key === key))
   const recordReadable = Object.keys(recordReadPolicy || {}).filter(key => readable.some(item => item.key === key))
@@ -251,12 +256,31 @@ export function createAssistantTools(catalog, navigation = [], previewPolicy = {
       }
     }
   })
+  // Only host code supplies draft tools; documents/model arguments cannot
+  // register tools or choose endpoints. Built-in names cannot be overridden.
+  const reserved = new Set(BUILTIN_TOOL_NAMES)
+  for (const item of draftTools) {
+    if (item?.type !== 'function' || !/^[a-z][a-z0-9_]{0,63}$/.test(item.function?.name) || reserved.has(item.function.name)) continue
+    tools.push(item)
+    reserved.add(item.function.name)
+  }
   return tools
 }
 
 export async function executeAssistantTool({ call, catalog, navigation = [], manualDeletePages = [], previewPolicy = {}, recordReadPolicy = {}, snapshots = new Map(), host, operations, batchCapabilities = [], onReadAudit = () => {}, onPreparedChange = () => {}, onPreparedBatch = () => {}, onNavigationLink = () => {}, signal, assertActive = () => {} }) {
   if (!call || call.type !== 'function' || !call.function || typeof call.function.name !== 'string') {
     return { error: 'Unsupported tool call.' }
+  }
+  if (!BUILTIN_TOOL_NAMES.has(call.function.name)
+    && typeof host?.getDraftTools === 'function' && typeof host?.runDraftTool === 'function'
+    && host.getDraftTools().some(item => item.function?.name === call.function.name)) {
+    try {
+      assertActive()
+      const input = JSON.parse(call.function.arguments || '{}')
+      const result = await host.runDraftTool(call.function.name, input, signal)
+      assertActive()
+      return result
+    } catch (error) { return prepareFailure(error) }
   }
   if (call.function.name === 'prepare_record_batch') {
     assertActive()

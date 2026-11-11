@@ -307,7 +307,8 @@ export function prepareBatchRequest(input, entities) {
 
 function normalizePreviewRow(row, index, expected, fieldProperties, entity, storeUuid) {
   if (!isPlainObject(row) || hasUnsafeKeys(row)) throw new TypeError('Invalid batch preview row.')
-  if (Object.keys(row).some(key => !['row', 'title', 'identifier', 'differences'].includes(key))) throw new TypeError('Invalid batch preview row.')
+  if (Object.keys(row).some(key => !['row', 'title', 'identifier', 'differences', 'validation'].includes(key))) throw new TypeError('Invalid batch preview row.')
+  if (row.validation !== undefined && (!isPlainObject(row.validation) || !safeJson(row.validation) || JSON.stringify(row.validation).length > 60000)) throw new TypeError('Invalid batch validation evidence.')
   if (!Number.isInteger(row.row) || row.row < 1 || row.row > MAX_BATCH_ROWS) throw new TypeError('Invalid batch preview row.')
   if (row.row !== expected.row) throw new TypeError('The batch preview row order changed.')
   if (row.identifier !== null) throw new TypeError('A create preview row must not have a target identifier.')
@@ -333,7 +334,7 @@ function normalizePreviewRow(row, index, expected, fieldProperties, entity, stor
     }
   }
   if (storeUuid && values.storeUuid !== storeUuid) throw new TypeError('The Counter batch store does not match.')
-  return { row: index + 1, values }
+  return { row: index + 1, values, ...(row.validation ? { validation: row.validation } : {}) }
 }
 
 /**
@@ -488,7 +489,7 @@ export function createBatchProposal(host = {}, {
       fields: (expected?.fields || []).map(field => ({ ...field, rule: { ...field.rule } })),
       preview: preview ? {
         ...preview,
-        records: preview.records.map(record => ({ row: record.row, values: { ...record.values } })),
+        records: preview.records.map(record => ({ row: record.row, values: { ...record.values }, ...(record.validation ? { validation: record.validation } : {}) })),
         warnings: [...(preview.warnings || [])]
       } : null,
       phase,
@@ -514,7 +515,7 @@ export function createBatchProposal(host = {}, {
     preview = prepared
     expected = {
       entity: prepared.entity,
-      records: prepared.records.map(record => ({ row: record.row, values: { ...record.values } })),
+      records: prepared.records.map(record => ({ row: record.row, values: { ...record.values }, ...(record.validation ? { validation: record.validation } : {}) })),
       fields: Array.isArray(context.fields) ? context.fields : [],
       storeUuid: typeof context.storeUuid === 'string' ? context.storeUuid : prepared.storeUuid || ''
     }
