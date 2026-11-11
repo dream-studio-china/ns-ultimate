@@ -24,7 +24,9 @@ test('host knowledge retrieval covers independent modules in English and Chinese
     ['how to reprint a printer job', 'ns-printer-setup'],
     ['微信支付配置', 'ns-wechat-setup'],
     ['门店商品的厨房打印设置', 'ns-store-product'],
-    ['Counter store binding', 'ns-counter-guide']
+    ['Counter store binding', 'ns-counter-guide'],
+    ['如何创建满减优惠活动', 'ns-promotion-campaigns'],
+    ['促销模板 DSL 怎么写', 'ns-promotion-templates']
   ]
   for (const [question, expectedId] of cases) {
     const result = selectKnowledgeContext(knowledgeArticles, question)

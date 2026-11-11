@@ -6,6 +6,8 @@ import { wechatArticle } from './wechat.mjs'
 import { storeSettingsArticle } from './store-settings.mjs'
 import { storeProductArticle } from './store-product.mjs'
 import { contentArticle } from './content.mjs'
+import { promotionCampaignsArticle } from './promotion-campaigns.mjs'
+import { promotionTemplatesArticle } from './promotion-templates.mjs'
 import { supportBoundariesArticle } from './support-boundaries.mjs'
 
 export const knowledgeArticles = [
@@ -17,6 +19,8 @@ export const knowledgeArticles = [
   storeSettingsArticle,
   storeProductArticle,
   contentArticle,
+  promotionCampaignsArticle,
+  promotionTemplatesArticle,
   supportBoundariesArticle
 ]
 
