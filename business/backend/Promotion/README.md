@@ -15,3 +15,7 @@ Business controller substitutions reuse the upstream customer and administrator 
 - Per-promotion discount amounts are not recorded because the pricing meta does not itemize them. The admin UI lists campaign name, calculation phase and type only. Inner/outer are execution stages, not item/order targeting guarantees (an inner-stage campaign can reduce the whole order).
 
 No migration or Core edit is required. The integration Kernel discovers this module by convention; rebuild the application container during normal deployment. Tests cover the composed administrator API and service delegation against an isolated database. No production data is modified by the fix or its tests.
+
+## Admin assistant
+
+The generated admin configuration exposes Promotion and PromotionTemplate as ordinary create/update capabilities. Campaigns gain a required template relation, the four backend conflict modes and a bounded configuration schema. Templates expose supported type and phase selects plus the DSL editor. The assistant never gains a quote, simulation, validate/dry-run or delete tool; save-time backend validation remains authoritative. Curated guidance lives in `apps/admin-agent/adapters/ns-ultimate/admin/knowledge/promotion-campaigns.mjs` and `promotion-templates.mjs`. The current DSL parser rejects the `tiered` type header, so tiered templates are not advertised as an authorable assistant capability.

@@ -5,6 +5,8 @@ import ProductCategory from './overrides/trade/product-category.js'
 import StoreOrder from './overrides/store/store-order.js'
 import Order from './overrides/trade/order.js'
 import Invoice from './overrides/payment/invoice.js'
+import Promotion from './overrides/promotion/promotion.js'
+import PromotionTemplate from './overrides/promotion/promotion-template.js'
 import WechatUser from './overrides/wechat/wechat-user.js'
 import Permission from './overrides/authorization/permission.js'
 import Role from './overrides/authorization/role.js'
@@ -15,6 +17,6 @@ const entities = collectEntities(collections)
 
 export default {
   add: entities,
-  replace: { Store, Product, ProductCategory, Order, Invoice, StoreOrder, WechatUser, Permission, Role, Assignment },
+  replace: { Store, Product, ProductCategory, Order, Invoice, StoreOrder, Promotion, PromotionTemplate, WechatUser, Permission, Role, Assignment },
   remove: []
 }

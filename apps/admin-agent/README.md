@@ -58,6 +58,14 @@ Original contents are not stored in preferences or later conversation history; o
 
 Read queries and exact Content/Page body reads retain their separate bounded policies. Selected Store/Product configuration inspection exposes fixed scalar paths only, never arbitrary settings, credentials or private contact data. Cached configuration does not prove worker/device status. Read tools perform no writes and cannot authorize mutations.
 
+## Promotion management
+
+Promotion campaigns and templates are ordinary configured create/update CRUD. A campaign requires an existing `PromotionTemplate` (the form's template relation) and accepts `name`, optional `storeCode` (empty means global), `enabled`, `startTime`, `endTime`, `config` and a valid conflict mode (`stackable`, `exclusive`, `lock_item` or `best_price`). A campaign is eligible only when both the campaign and its template are enabled. The assistant cannot quote a cart, simulate a campaign, call a validate/dry-run endpoint or verify runtime eligibility; saving is not proof that a rule will match.
+
+Templates require `name`, `type` and `dsl`. The backend parses the DSL on save and rejects syntax errors or a `type`/`phase` that contradicts the DSL header. Supported authoring types are `full_reduction`, `discount`, `member_discount`, `nth_discount`, `gift` and `free_shipping`; the current parser rejects the `tiered` header, so do not create tiered templates through the assistant. The optional `fields` JSON is not exposed as a bounded assistant field. Campaign/template deletion is prohibited by policy. Changes affect future quotes only; existing orders keep the promotion snapshot recorded at creation.
+
+Promotion configuration is bounded to declared safe keys (`rate`, `amount`, `specification_ids`, `min_level`, `gift_spec_id`, `gift_qty`); the ordinary admin JSON editor remains authoritative for backend-specific extensions. Curated guidance lives in `adapters/ns-ultimate/admin/knowledge/promotion-campaigns.mjs` and `promotion-templates.mjs`.
+
 ## Printing rules and store operations
 
 Order print rules and printer templates are ordinary configured CRUD. Rule and template changes require the operator's explicit UI confirmation, affect future automatic printing only, and remain subject to backend validation. Printer accounts and jobs are prohibited, and device creation is prohibited because the ordinary POST registers with the provider. The assistant cannot run `app:printer:dispatch-orders`, refresh provider status, submit a print, or reprint a job, and cannot verify physical output. Template item filters and rule conditions are data, not instructions. Legacy `Store.settings.printing` is no longer read. Curated guidance lives in `adapters/ns-ultimate/admin/knowledge/printer-auto-printing.mjs`, `printer-templates.mjs`, `printer-setup.mjs` and `counter.mjs`.
