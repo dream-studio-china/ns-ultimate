@@ -22,7 +22,7 @@ const CASE_SETTLE_TIMEOUT_MS = 8000
 const CLEANUP_TIMEOUT_MS = 8000
 const WAIT_TIMEOUT_MS = 8000
 const MONITOR_LOGIN_TIMEOUT_MS = 5000
-const EXPECTED_CASE_COUNT = 28
+const EXPECTED_CASE_COUNT = 29
 const SYNTHETIC_ACTOR_A = 'synthetic-acceptance-actor-a'
 const SYNTHETIC_ACTOR_B = 'synthetic-acceptance-actor-b'
 const NEGATIVE_STORAGE_KEY = 'ns-negative-isolation-sentinel'
@@ -3168,6 +3168,51 @@ const CASES = [
       includes(JSON.stringify(provider.requests[1].body), 'Record body sentinel', 'The model must receive only the bounded tool result')
       includes(JSON.stringify(provider.requests[1].body), 'SyntheticRecords', 'The tool result should retain safe entity metadata')
       return { reads: reads.length, htmlRendered: false, bodyForwarded: true }
+    }
+  },
+  {
+    name: 'stack simulation renders ordering and totals as text and forwards the bounded result',
+    async run(ctx) {
+      const calls = []
+      const host = createSyntheticHost()
+      host.getDraftTools = () => [{
+        type: 'function',
+        function: {
+          name: 'simulate_promotion_stack',
+          description: 'Synthetic stack simulation',
+          parameters: { type: 'object', properties: {}, required: [], additionalProperties: false }
+        }
+      }]
+      host.runDraftTool = async(name, input) => {
+        calls.push({ name, input })
+        return {
+          mode: 'selected', storeCode: 'S1', currency: 'CNY', verified: true, warnings: [],
+          evaluatedAt: new Date().toISOString(),
+          cases: [{
+            name: 'Boundary', beforeAmount: 10000, afterAmount: 8500, discountAmount: 1500,
+            applied: [{ promotionName: '<img src=x onerror="window.__nsStackXss=1">10% off', totalAfter: 9000 }, { promotionName: '5 off', totalAfter: 8500 }],
+            freeShipping: false, items: [], passed: true, differences: [], notAppliedCampaignIds: []
+          }]
+        }
+      }
+      const provider = ctx.createProvider()
+      provider.enqueueToolCall('simulate_promotion_stack', {
+        mode: 'selected', storeCode: 'S1', campaignIds: [1, 2],
+        cases: [{ items: [{ specificationId: 1, quantity: 1, unitPrice: 10000 }], expected: { totalAmount: 8500 } }]
+      })
+      provider.enqueueText('The stack result is displayed above.')
+      const agent = await ctx.mount({ host, provider })
+      sendText(agent, 'Verify these two campaigns stack to 85.00.')
+      await provider.waitForRequests(2, ctx)
+      await waitForIdle(agent)
+      equal(calls.length, 1, 'The stack tool must reach the host exactly once')
+      includes(agent.shadow.textContent, '10% off (9,000) → 5 off (8,500)', 'The UI must show the application order and step totals')
+      includes(agent.shadow.textContent, '8,500', 'The UI must show the actual final total')
+      includes(agent.shadow.textContent, 'Verified', 'The case result must be displayed')
+      equal(agent.shadow.querySelectorAll('.message.result img').length, 0, 'Campaign names must not render HTML')
+      equal(window.__nsStackXss, undefined, 'Campaign names must not execute HTML')
+      includes(JSON.stringify(provider.requests[1].body), '8500', 'The model must receive the bounded tool result')
+      return { calls: calls.length, htmlRendered: false, resultForwarded: true }
     }
   },
   {

@@ -96,6 +96,7 @@ export function createAdminAgentHost() {
   }
   refreshProjection()
   const promotionWorkbench = createPromotionWorkbench({ request, path: `${defaultPrefix}/promotion-drafts/check`,
+    stackPath: `${defaultPrefix}/promotion-stacking/check`,
     isAvailable: () => !disposed && isRecordPageAvailable('Promotion') && isRecordPageAvailable('PromotionTemplate') })
   const mutations = createConfigMutationHost({ request, getProjection: refreshProjection, policy: agentMutationPolicy,
     beforeDelete: createDeleteGuard({ request, getProjection: refreshProjection }), beforeChange: promotionWorkbench.beforeChange, specialWrite, isActionAvailable })

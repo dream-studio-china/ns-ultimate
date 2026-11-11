@@ -8,8 +8,39 @@ const tool = (name, description, properties, required) => ({ type: 'function', f
   name, description, parameters: { type: 'object', properties, required, additionalProperties: false }
 } })
 
+const stackItemSchema = { type: 'object', properties: {
+  specificationId: { type: 'integer', minimum: 1 }, quantity: { type: 'integer', minimum: 1, maximum: 1000 },
+  unitPrice: { type: 'integer', minimum: 0, maximum: 100000000, description: 'Unit price in integer MINOR units.' }
+}, required: ['specificationId', 'quantity', 'unitPrice'], additionalProperties: false }
+const stackExpectedSchema = { type: 'object', properties: {
+  totalAmount: { type: 'integer', minimum: 0, description: 'Expected final total in integer MINOR units.' },
+  freeShipping: { type: 'boolean' },
+  appliedCampaignIds: { type: 'array', maxItems: 40, items: { type: 'integer', minimum: 1 }, description: 'Expected exact application order; existing campaigns only.' }
+}, additionalProperties: false }
+const stackCaseSchema = { type: 'object', properties: {
+  name: { type: 'string', maxLength: 80 },
+  items: { type: 'array', minItems: 1, maxItems: 20, items: stackItemSchema },
+  memberLevel: { type: 'string', enum: ['bronze', 'silver', 'gold', 'platinum', 'diamond'] },
+  expected: stackExpectedSchema
+}, required: ['items'], additionalProperties: false }
+const stackDraftSchema = { type: 'object', properties: {
+  name: { type: 'string', maxLength: 120 },
+  type: { type: 'string', enum: ['full_reduction', 'discount', 'member_discount', 'nth_discount', 'gift', 'free_shipping'] },
+  phase: { type: 'integer', enum: [0, 1] },
+  dsl: { type: 'string' }, config: { type: 'object' },
+  conflictMode: { type: 'string', enum: ['stackable', 'exclusive', 'lock_item', 'best_price'] }
+}, required: ['type', 'dsl', 'config'], additionalProperties: false }
+
 export const promotionDraftTools = [
   tool('read_promotion_draft', 'Inspect an exact known campaign numeric ID before editing its parameters. Returns only validated consumed config values, templateId and parameter contracts; unsupported legacy configurations fail closed. This reads current data but saves nothing. Never guess IDs.', { campaignId: { type: 'integer', minimum: 1 } }, ['campaignId']),
+  tool('simulate_promotion_stack', 'Run the REAL existing promotion calculator on sample carts and report which campaigns apply, in order, with totals after each step. Read-only: nothing is saved. Modes: environment (all currently eligible campaigns for storeCode), selected (only exact existing campaignIds), drafts (unsaved validated campaigns with synthetic negative IDs; assumes enabled, no schedule, this storeCode). Cases use integer MINOR units, exactly like the draft checker. For verification, supply expected.totalAmount from the user intent for EVERY case; include boundary and non-matching carts and expected.appliedCampaignIds when application order matters and all campaigns exist. Supply 1-4 cases (two distinct passing cases are the minimum practical evidence). This does NOT simulate base price, tax/shipping fees, payment, catalog existence, concurrent changes or the checkout pipeline; campaign time/enabled/store eligibility is a single evaluation-time snapshot. Report failures, appliedCount/appliedTruncated and notAppliedCampaignIds honestly; never infer why a runtime campaign did not match from this result.', {
+    mode: { type: 'string', enum: ['environment', 'selected', 'drafts'] },
+    storeCode: { type: 'string', maxLength: 50, description: 'Exact store code; empty string means global-only. Required for environment/selected.' },
+    currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+    campaignIds: { type: 'array', minItems: 1, maxItems: 20, items: { type: 'integer', minimum: 1 } },
+    drafts: { type: 'array', minItems: 1, maxItems: 20, items: stackDraftSchema },
+    cases: { type: 'array', minItems: 1, maxItems: 4, items: stackCaseSchema }
+  }, ['mode', 'cases']),
   tool('build_promotion_draft', 'Build a deterministic unsaved template, parameter contract and campaign config. Money inputs use major units; rates mean percent KEPT (90 = 10% off). For advanced rules author DSL then use check_promotion_draft. Never invent specification IDs. This saves nothing.', {
     kind: { type: 'string', enum: ['full_reduction', 'discount', 'item_discount', 'member_discount', 'nth_discount', 'gift', 'free_shipping'] },
     name: { type: 'string', maxLength: 120 },
@@ -70,7 +101,7 @@ export function buildPromotionDraft(input) {
 }
 
 /** Host-owned endpoints only. Evidence is bound to exact draft/config values. */
-export function createPromotionWorkbench({ request, path, isAvailable }) {
+export function createPromotionWorkbench({ request, path, stackPath, isAvailable }) {
   const evidence = new Map()
   const available = () => { if (!isAvailable()) throw new Error('Promotion authoring is not available in the current admin navigation.') }
   async function check(input, signal, remember = true) {
@@ -96,7 +127,29 @@ export function createPromotionWorkbench({ request, path, isAvailable }) {
     }
     return result
   }
+  async function simulateStack(input, signal) {
+    available()
+    if (!object(input) || !safeJson(input) || JSON.stringify(input).length > 60000
+      || Object.keys(input).some(key => !['mode', 'storeCode', 'currency', 'campaignIds', 'drafts', 'cases'].includes(key))) throw new TypeError('Unsupported stack simulation parameters.')
+    if (!['environment', 'selected', 'drafts'].includes(input.mode)) throw new TypeError('Invalid simulation mode.')
+    if (!Array.isArray(input.cases) || input.cases.length < 1 || input.cases.length > 4) throw new TypeError('Provide 1-4 sample cases.')
+    const storeCode = input.storeCode
+    if (input.mode !== 'drafts' && (typeof storeCode !== 'string' || storeCode.length > 50)) throw new TypeError('storeCode is required for existing-campaign simulation.')
+    if (storeCode !== undefined && (typeof storeCode !== 'string' || storeCode.length > 50)) throw new TypeError('Invalid storeCode.')
+    if (input.currency !== undefined && (typeof input.currency !== 'string' || !/^[A-Z]{3}$/.test(input.currency))) throw new TypeError('Invalid currency.')
+    if (input.mode === 'selected' ? !Array.isArray(input.campaignIds) || Object.hasOwn(input, 'drafts') : input.mode === 'drafts' ? !Array.isArray(input.drafts) || Object.hasOwn(input, 'campaignIds') : Object.hasOwn(input, 'campaignIds') || Object.hasOwn(input, 'drafts')) throw new TypeError('Use campaignIds only in selected mode and drafts only in drafts mode.')
+    if (input.mode === 'selected' && (input.campaignIds.length < 1 || input.campaignIds.length > 20 || input.campaignIds.some(id => !Number.isSafeInteger(id) || id < 1) || new Set(input.campaignIds).size !== input.campaignIds.length)) throw new TypeError('Invalid campaignIds.')
+    if (input.mode === 'drafts' && (input.drafts.length < 1 || input.drafts.length > 20)) throw new TypeError('Invalid drafts.')
+    if (signal?.aborted) throw new Error('Stack simulation was cancelled.')
+    const response = await request.post(stackPath, input, { signal, timeout: 60000 })
+    if (signal?.aborted) throw new Error('Stack simulation was cancelled.')
+    const result = response?.data
+    if (!object(result) || !Array.isArray(result.cases) || typeof result.verified !== 'boolean' || !Array.isArray(result.warnings)
+      || !safeJson(result) || JSON.stringify(result).length > 60000) throw new Error('The stack simulation response is unavailable or oversized.')
+    return result
+  }
   async function runDraftTool(name, input, signal) {
+    if (name === 'simulate_promotion_stack') return simulateStack(input, signal)
     if (name === 'read_promotion_draft') {
       available()
       if (!object(input) || Object.keys(input).length !== 1 || !Number.isSafeInteger(input.campaignId) || input.campaignId < 1) throw new TypeError('Provide only an exact positive campaignId.')
