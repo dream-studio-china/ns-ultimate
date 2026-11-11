@@ -6,6 +6,8 @@ import OrderRefundRecords from './config/components/OrderRefundRecords.vue'
 
 const orderRoute = coreRoutes.find(route => route.name === 'OrderManage')
 if (!orderRoute) throw new Error('The admin core must expose the OrderManage route.')
+const promotionRoute = coreRoutes.find(route => route.name === 'PromotionManage')
+if (!promotionRoute) throw new Error('The admin core must expose the PromotionManage route.')
 
 export default {
   add: [
@@ -111,6 +113,17 @@ export default {
         name: 'OrderRefundRecords',
         component: OrderRefundRecords,
         meta: { title: t('Order refund records'), icon: 'el-icon-refresh-left' }
+      }
+    ]
+  }, {
+    ...promotionRoute,
+    children: [
+      ...promotionRoute.children,
+      {
+        path: 'simulation',
+        name: 'PromotionSimulation',
+        component: () => import('./simulation/PromotionSimulation.vue'),
+        meta: { title: t('Promotion simulation') }
       }
     ]
   }],
