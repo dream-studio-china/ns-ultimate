@@ -7,6 +7,7 @@ namespace NsUltimate\Business\Printer\Controller\Admin;
 use App\Core\Controller\RestController;
 use App\Core\View\ApiView;
 use App\Core\View\CreateApiViewMixin;
+use App\Core\View\DeleteApiViewMixin;
 use App\Core\View\DetailApiViewMixin;
 use App\Core\View\ListApiViewMixin;
 use App\Core\View\UpdateApiViewMixin;
@@ -17,6 +18,8 @@ use Doctrine\DBAL\Platforms\SQLitePlatform;
 use NsUltimate\Business\Printer\Entity\PrinterOrderRule;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleValidator;
 use NsUltimate\Business\Printer\Service\PrinterOrderRuleService;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -24,20 +27,39 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('ROLE_ADMIN')]
 final class PrinterOrderRuleController extends RestController
 {
-    use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
+    use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin, DeleteApiViewMixin;
 
     /** @var list<string> */
     protected array $requiredCreateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
     /** @var list<string> */
     protected array $acceptedCreateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
     /** @var list<string> */
-    protected array $acceptedUpdateProperties = ['name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
+    protected array $acceptedUpdateProperties = ['storeUuid', 'name', 'enabled', 'events', 'match', 'conditions', 'deviceUuid', 'templateUuid', 'copies'];
 
     public function __construct(
         protected readonly PrinterOrderRuleService $service,
         private readonly OrderPrintRuleValidator $validator,
         private readonly EntityManagerInterface $entityManager,
     ) {}
+
+    #[Route('/{id}', name: 'update', methods: ['PUT'], requirements: ['id' => '\\d+|[0-9a-fA-F-]{36}'])]
+    public function updateAction(Request $request, int|string $id): Response
+    {
+        try {
+            $this->authorizeApiAction('update');
+            // Hold the target store lock until a reassigned rule has been saved.
+            $entity = $this->service->wrapInTransaction(fn () => $this->updateRecords($request, $id));
+            return $entity ? $this->success($entity) : $this->warning();
+        } catch (\Symfony\Component\Validator\Exception\ValidatorException|\InvalidArgumentException $exception) {
+            return $this->warning($exception->getMessage(), 400, '', 400);
+        } catch (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException $exception) {
+            return $this->warning($exception->getMessage(), 404, '', 404);
+        } catch (\Symfony\Component\Security\Core\Exception\AccessDeniedException $exception) {
+            return $this->warning($exception->getMessage(), 403, '', 403);
+        } catch (\Exception $exception) {
+            return $this->warning($exception->getMessage() ?: self::UNKNOWN_ERROR, 500, '', 500);
+        }
+    }
 
     /**
      * @param array<string, mixed> $content
@@ -92,13 +114,13 @@ final class PrinterOrderRuleController extends RestController
         if (!is_string($storeUuid)) { throw new \InvalidArgumentException('A valid store is required.'); }
         $store = $this->entityManager->getRepository(Store::class)->findOneBy(['uuid' => $storeUuid]);
         if (!$store instanceof Store) { throw new \InvalidArgumentException('A valid store is required.'); }
-        if ($creating) {
+        if ($creating || $storeUuid !== $entity->getStoreUuid()) {
             $connection = $this->entityManager->getConnection();
             if (!$connection->isTransactionActive()) {
-                throw new \InvalidArgumentException('Rule creation requires a transaction.');
+                throw new \InvalidArgumentException('Rule creation or store reassignment requires a transaction.');
             }
             if (!$connection->getDatabasePlatform() instanceof SQLitePlatform) {
-                // Serialize concurrent additions to this store before counting rules.
+                // Serialize concurrent additions and reassignments before counting rules.
                 $this->entityManager->lock($store, LockMode::PESSIMISTIC_WRITE);
             }
             if ($this->entityManager->getRepository(PrinterOrderRule::class)->count(['storeUuid' => $storeUuid]) >= 50) {

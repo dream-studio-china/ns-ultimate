@@ -21,6 +21,8 @@ test('print rule configuration exposes store filtering and safe defaults', async
   }
   runInNewContext(source, context)
   const config = context.config.PrinterOrderRule
+  assert.equal(config.list.disabled_actions.includes('delete'), false)
+  assert.equal(config.list.disabled_actions.includes('batch_delete'), true)
   const field = name => config.form.fields.find(item => item.property === name)
   assert.equal(field('storeUuid').component, context.PrinterRuleStoreField)
   assert.equal(field('storeUuid').relation.prefix, '/api/v1/manage')
@@ -59,6 +61,13 @@ test('print output choices follow the store and selected device kind without mut
   assert.equal(form.deviceUuid, 'd2')
   assert.equal(form.templateUuid, 't2')
   assert.deepEqual(eligiblePrintOutputs('deviceUuid', {}, devices, templates), [])
+})
+
+test('rule store selector remains editable and retains the relation form context', () => {
+  const source = read('business/admin/config/components/PrinterRuleStoreField.vue')
+  assert.match(source, /:form="form"/)
+  assert.match(source, /:field="field"/)
+  assert.doesNotMatch(source, /disabled:\s*true|isEdit|\$parent/)
 })
 
 test('printer choices load with bounded paging and fail closed past the bound', async () => {

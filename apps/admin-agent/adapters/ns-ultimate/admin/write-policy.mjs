@@ -33,6 +33,7 @@ const ACTION_FIELD_DENYLIST = Object.freeze({
   // The management API supports category store changes, but assistant writes
   // deliberately keep cross-store reassignment out of scope.
   ProductCategory: Object.freeze({ update: ['store'] }),
+  // Rule store reassignment is supported by the API but remains a manual admin operation.
   PrinterOrderRule: Object.freeze({ update: ['storeUuid'] }),
   PrinterDevice: Object.freeze({ create: ['enabled'], update: ['account', 'serialNumber', 'kind'] }),
   PrinterTemplate: Object.freeze({ update: ['kind'] }),

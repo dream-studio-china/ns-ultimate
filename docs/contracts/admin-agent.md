@@ -32,6 +32,8 @@ JSON controls accept bounded safe JSON. Schema-form patches are limited to confi
 
 ## Preview and confirmation
 
+Manual admin operations support individual order-rule deletion and store reassignment. Assistant policy continues to prohibit both; `storeUuid` remains excluded from rule updates even though the API accepts it. Neither manual operation cancels or rewrites queued print snapshots.
+
 `src/config-mutation-host.js` prepares proposals without persistence. Preparation performs GET detail reads for update/delete; an explicitly injected host validation hook may also call the non-persistent promotion draft-check POST. No preparation submits a CRUD mutation. Generic checks cover configured field membership, basic types, options, JSON safety and relation identifier format. Promotion authoring adds its domain checks; ordinary CRUD remains authoritative for persistence validation and authorization.
 
 The host retains an immutable-by-copy payload and local operation identifier. Full before/after values are displayed as text in the UI, not rendered as HTML or forwarded as tool results. The model has prepare tools only, never a record submit tool; the bounded printer preview and status-query tools are the only non-preparation calls. Preview saves nothing, and status refresh only stores the provider's reported status. Neither creates a print job. Explicit UI confirmation submits exactly the retained changes, not replacement model values. Deletion requires typing `DELETE <identifier>`. Proposals expire after five minutes. Session disposal, superseding previews and configuration changes invalidate confirmation.
