@@ -32,7 +32,7 @@ export default {
       { property: 'copies', type: 'integer', required: true, default_value: 1, type_options: { min: 1, max: 100 } }
     ] },
     list: {
-      disabled_actions: ['delete', 'batch_edit', 'batch_delete'],
+      disabled_actions: ['batch_edit', 'batch_delete'],
       list_filter: { storeUuid: uuidFilter('storeUuid', t('Store'), () => loadRelationRecords({ name: 'Store', valueKey: 'uuid' })), name: t('Name'), enabled: t('Enabled') },
       list_display: [field('uuid', 'UUID'), storeField, field('name', 'Name'), field('enabled', 'Enabled'), field('templateUuid', 'Printer template UUID')]
     },

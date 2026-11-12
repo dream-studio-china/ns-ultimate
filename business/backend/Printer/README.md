@@ -45,6 +45,17 @@ comparisons or existence checks, combined by one level of all/any. An empty all
 list is unconditional; an empty any list is invalid. A rule produces requests
 at most once per order across its events; use distinct rules for separate prints.
 
+Administrators can delete individual order print rules from the admin list or
+`DELETE /api/v1/manage/printer/order-rules/{id}` (numeric ID or UUID). Deletion
+prevents future matching; already queued request snapshots, jobs and deduplication
+claims remain unchanged. Deleting a rule does not cancel pending prints. Batch
+deletion remains disabled in the admin UI.
+
+The rule's store can also be changed in the edit form. Select a printer belonging
+to the target store and a matching template; the API rejects mismatched outputs
+and reassignment to a store already holding 50 rules. Reassignment preserves the
+rule UUID and existing deduplication claims and does not rewrite queued requests.
+
 Each template owns the output scenario:
 `ticketMode` is `single` (one ticket for the whole order) or `per_unit` (one
 ticket per purchased unit, with `item`, `item.index` and `item.total` in the

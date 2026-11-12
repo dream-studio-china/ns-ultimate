@@ -608,6 +608,93 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         self::assertSame($definition, $updatedData['definition']);
     }
 
+    public function testDeletesRuleWithoutRemovingQueuedSnapshotsOrRelatedRecords(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $created = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $created->getStatusCode(), $created->getContent());
+        $rule = json_decode($created->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $request = new PrinterOrderRequest(
+            hash('sha256', 'deleted-rule-request'), 'order-uuid', $payload['storeUuid'], $rule['uuid'], 'paid',
+            ['deviceUuid' => $payload['deviceUuid'], 'templateUuid' => $payload['templateUuid']], ['order' => ['number' => 'A-1']],
+        );
+        $em->persist($request);
+        $em->flush();
+
+        $deleted = $this->request('DELETE', '/api/v1/manage/printer/order-rules/'.$rule['uuid'], $token, []);
+        self::assertSame(204, $deleted->getStatusCode(), $deleted->getContent());
+        $em->clear();
+        self::assertNull($em->getRepository(PrinterOrderRule::class)->findOneBy(['uuid' => $rule['uuid']]));
+        $saved = $em->getRepository(PrinterOrderRequest::class)->findOneBy(['uuid' => $request->getUuid()]);
+        self::assertNotNull($saved);
+        self::assertSame(PrinterOrderRequest::STATUS_PENDING, $saved->getStatus());
+        self::assertSame($request->getConfiguration(), $saved->getConfiguration());
+        self::assertNotNull($em->getRepository(PrinterDevice::class)->findOneBy(['uuid' => $payload['deviceUuid']]));
+        self::assertNotNull($em->getRepository(PrinterTemplate::class)->findOneBy(['uuid' => $payload['templateUuid']]));
+        $missing = $this->request('DELETE', '/api/v1/manage/printer/order-rules/'.$rule['uuid'], $token, []);
+        self::assertSame(404, $missing->getStatusCode(), $missing->getContent());
+    }
+
+    public function testRuleDeletionRequiresAdminRole(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $created = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $created->getStatusCode(), $created->getContent());
+        $rule = json_decode($created->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $user = (new User())->setEmail('printer-reader@example.test')->setUsername('printer-reader')->setRoles(['ROLE_USER']);
+        $em->persist($user);
+        $em->flush();
+        $userToken = self::getContainer()->get(TokenManager::class)->createAccessToken($user);
+        $denied = $this->request('DELETE', '/api/v1/manage/printer/order-rules/'.$rule['id'], $userToken, []);
+        self::assertSame(403, $denied->getStatusCode(), $denied->getContent());
+        self::assertNotNull($em->getRepository(PrinterOrderRule::class)->findOneBy(['uuid' => $rule['uuid']]));
+        $deleted = $this->request('DELETE', '/api/v1/manage/printer/order-rules/'.$rule['id'], $token, []);
+        self::assertSame(204, $deleted->getStatusCode(), $deleted->getContent());
+    }
+
+    public function testReassignsRuleOnlyWithTargetStoreDeviceAndAvailableCapacity(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $created = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $created->getStatusCode(), $created->getContent());
+        $rule = json_decode($created->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $target = new Store('printer-rule-target', 'Target Store');
+        $sourceDevice = $em->getRepository(PrinterDevice::class)->findOneBy(['uuid' => $payload['deviceUuid']]);
+        $device = new PrinterDevice($sourceDevice->getAccount(), 'Target printer', 'target-serial', PrinterDevice::KIND_RECEIPT, $target->getUuid());
+        $em->persist($target);
+        $em->persist($device);
+        $em->flush();
+        $path = '/api/v1/manage/printer/order-rules/'.$rule['id'];
+
+        $invalid = $this->request('PUT', $path, $token, ['storeUuid' => $target->getUuid()]);
+        self::assertSame(400, $invalid->getStatusCode(), $invalid->getContent());
+        self::assertSame($payload['storeUuid'], $em->getRepository(PrinterOrderRule::class)->find($rule['id'])->getStoreUuid());
+
+        for ($i = 0; $i < 50; ++$i) {
+            $em->persist((new PrinterOrderRule())->setStoreUuid($target->getUuid())->setName('Target rule '.$i)
+                ->setEvents(['paid'])->setDeviceUuid($device->getUuid())->setTemplateUuid($payload['templateUuid']));
+        }
+        $em->flush();
+        $changes = ['storeUuid' => $target->getUuid(), 'deviceUuid' => $device->getUuid()];
+        $full = $this->request('PUT', $path, $token, $changes);
+        self::assertSame(400, $full->getStatusCode(), $full->getContent());
+        $em->remove($em->getRepository(PrinterOrderRule::class)->findOneBy(['storeUuid' => $target->getUuid()]));
+        $em->flush();
+
+        $updated = $this->request('PUT', $path, $token, $changes);
+        self::assertSame(200, $updated->getStatusCode(), $updated->getContent());
+        $data = json_decode($updated->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertSame($rule['uuid'], $data['uuid']);
+        self::assertSame($target->getUuid(), $data['storeUuid']);
+        self::assertSame($device->getUuid(), $data['deviceUuid']);
+        self::assertSame(50, $em->getRepository(PrinterOrderRule::class)->count(['storeUuid' => $target->getUuid()]));
+        $renamed = $this->request('PUT', $path, $token, ['storeUuid' => $target->getUuid(), 'name' => 'Renamed']);
+        self::assertSame(200, $renamed->getStatusCode(), $renamed->getContent());
+    }
+
     private function fixtures(): array
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
