@@ -36,6 +36,7 @@ export const scalarComponentBindings = Object.freeze({
  */
 export const printerComponentBindings = Object.freeze({
   PrinterOrderRule: Object.freeze({
+    storeUuid: Object.freeze({ componentName: 'PrinterRuleStoreField', type: 'relation', relation: true }),
     events: Object.freeze({ componentName: 'OrderPrintEvents', type: 'array' }),
     conditions: Object.freeze({ componentName: 'OrderPrintConditions', type: 'array' }),
     deviceUuid: Object.freeze({ componentName: 'OrderPrintOutputSelect', type: 'relation', relation: true }),

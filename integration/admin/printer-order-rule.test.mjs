@@ -16,12 +16,14 @@ test('print rule configuration exposes store filtering and safe defaults', async
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
   const context = {
     t: key => key, uuidFilter, OrderPrintConditions: {}, OrderPrintEvents: {}, OrderPrintOutputSelect: {},
+    PrinterRuleStoreField: { name: 'PrinterRuleStoreField' },
     loadRelationRecords: async () => [{ id: 4, uuid: 'store-uuid', name: 'Store A' }]
   }
   runInNewContext(source, context)
   const config = context.config.PrinterOrderRule
   const field = name => config.form.fields.find(item => item.property === name)
-  assert.equal(field('storeUuid').hidden, 'update')
+  assert.equal(field('storeUuid').component, context.PrinterRuleStoreField)
+  assert.equal(field('storeUuid').relation.prefix, '/api/v1/manage')
   assert.equal(field('deviceUuid').component, context.OrderPrintOutputSelect)
   assert.equal(field('templateUuid').component, context.OrderPrintOutputSelect)
   assert.equal(field('storeUuid').relation.valueKey, 'uuid')
@@ -179,6 +181,7 @@ test('agent policy exposes complete rule settings without the dynamic-hidden sto
     OrderPrintConditions: { name: 'OrderPrintConditions' },
     OrderPrintEvents: { name: 'OrderPrintEvents' },
     OrderPrintOutputSelect: { name: 'OrderPrintOutputSelect' },
+    PrinterRuleStoreField: { name: 'PrinterRuleStoreField' },
     loadRelationRecords: async () => [{ id: 4, uuid: 'store-uuid', name: 'Store A' }]
   }
   runInNewContext(source, context)
