@@ -139,6 +139,12 @@ form and API lifecycle; the backend registers the device with Xpyun before
 persisting it. Device status refresh, preview, and print submission/status use
 dedicated actions. Preview never submits a print job.
 
+Template create and edit forms initialize temporary validation data from the
+bundled printer sample. Operators can adjust it for custom template fields before
+saving. Sample data is used only for validation and is not persisted; reopening
+the form starts with the bundled sample again. Live printing uses order data,
+not this sample. No database migration is needed for sample data.
+
 Account and job dialogs use labeled forms, loading guards and separate
 error/result alerts. Job templates are filtered to match the selected device
 kind; without enabled devices, templates can still be previewed locally. The
