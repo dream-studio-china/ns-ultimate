@@ -28,7 +28,11 @@ export default {
     detail: {
       disabled_actions: ['edit'],
       detail_display: [
-        field('uuid', 'UUID'), field('device', 'Printer device'), field('storeUuid', 'Store UUID optional'),
+        field('uuid', 'UUID'), field('device', 'Printer device'),
+        {
+          ...field('storeUuid', 'Store UUID optional'),
+          relation: { target: 'Store', plural: 'stores', prefix: '/api/v1/manage', valueKey: 'uuid' }
+        },
         field('kind', 'Printer type'), field('copies', 'Copies'), field('status', 'Status'),
         field('providerOrderId', 'providerOrderId'), field('errorCode', 'errorCode'), field('createdAt', 'Created at'),
         { ...field('templateSnapshot', 'templateSnapshot'), type: 'json', full_width: true },

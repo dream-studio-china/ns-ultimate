@@ -6,6 +6,10 @@ import OrderPrintEvents from '../../components/OrderPrintEvents.vue'
 import OrderPrintOutputSelect from '../../components/OrderPrintOutputSelect.vue'
 
 const field = (property, label) => ({ property, label: t(label) })
+const storeField = {
+  ...field('storeUuid', 'Store'),
+  relation: { target: 'Store', plural: 'stores', prefix: '/api/v1/manage', valueKey: 'uuid' }
+}
 const options = values => values.map(([value, label]) => ({ value, label: t(label) }))
 
 export default {
@@ -29,8 +33,8 @@ export default {
     list: {
       disabled_actions: ['delete', 'batch_edit', 'batch_delete'],
       list_filter: { storeUuid: uuidFilter('storeUuid', t('Store'), () => loadRelationRecords({ name: 'Store', valueKey: 'uuid' })), name: t('Name'), enabled: t('Enabled') },
-      list_display: [field('uuid', 'UUID'), field('storeUuid', 'Store'), field('name', 'Name'), field('enabled', 'Enabled'), field('templateUuid', 'Printer template UUID')]
+      list_display: [field('uuid', 'UUID'), storeField, field('name', 'Name'), field('enabled', 'Enabled'), field('templateUuid', 'Printer template UUID')]
     },
-    detail: { detail_display: '__all__' }
+    detail: { detail_display: [storeField, '__all__'] }
   }
 }
