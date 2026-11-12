@@ -1,6 +1,31 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import { mergeEntities, mergeRoutes, moveRouteAfter } from './merge-config.mjs'
+
+test('positions promotion management directly after orders without nesting or changing paths', () => {
+  const source = readFileSync(new URL('./config.ts', import.meta.url), 'utf8')
+  const core = [
+    { name: 'ProductManage', path: '/product' },
+    { name: 'OrderManage', path: '/order' },
+    { name: 'CounterManagement', path: '/counter-management' },
+    { name: 'PromotionManage', path: '/promotion', children: [{ path: 'simulation' }] },
+    { name: 'ContentManage' },
+    { name: 'WechatConfiguration' },
+    { name: 'HuifuConfiguration' },
+    { name: 'HuifuTransactions' },
+    { name: 'PrinterManage' }
+  ]
+  let routes = core
+  // Exercise the actual composition order rather than duplicating it in the test.
+  for (const [, name, anchor] of source.matchAll(/routes = moveRouteAfter\(routes, '([^']+)', '([^']+)'\)/g)) {
+    routes = moveRouteAfter(routes, name, anchor)
+  }
+  assert.deepEqual(routes.slice(0, 4).map(route => route.name), ['ProductManage', 'OrderManage', 'PromotionManage', 'CounterManagement'])
+  assert.equal(routes[2], core[3])
+  assert.equal(routes[2].path, '/promotion')
+  assert.deepEqual(routes[2].children, [{ path: 'simulation' }])
+})
 
 test('positions printer management after content and before WeChat configuration', () => {
   let routes = [

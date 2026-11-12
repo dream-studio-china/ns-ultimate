@@ -205,6 +205,11 @@ test('puts counter pages in a standalone menu and hides Business management', ()
       name: 'OrderManage',
       meta: { title: 'Order Management' },
       children: [{ path: '/order', name: 'OrderList', meta: { title: 'Order' } }]
+    }, {
+      path: '/promotion',
+      name: 'PromotionManage',
+      meta: { title: 'Promotion Management' },
+      children: [{ path: '/promotion', name: 'PromotionList', meta: { title: 'Promotion' } }]
     }],
     OrderRefundRecords: {}
   }

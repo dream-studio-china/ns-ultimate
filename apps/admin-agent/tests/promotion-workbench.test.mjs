@@ -160,3 +160,44 @@ test('batch previews retain validation evidence and changed dependencies block a
   await assert.rejects(host.commitRecordBatch(preview.operationId), /dependency changed/)
   assert.equal(writes, 0)
 })
+
+test('stack simulation uses one fixed host endpoint and requires an explicit mode shape', async() => {
+  const requests = []
+  let available = true
+  const workbench = createPromotionWorkbench({
+    path: '/api/v1/manage/promotion-drafts/check', stackPath: '/api/v1/manage/promotion-stacking/check',
+    isAvailable: () => available,
+    request: { post: async(path, body) => { requests.push({ path, body }); return { data: { mode: body.mode, verified: true, warnings: [], cases: [{ passed: true }] } } } }
+  })
+  const input = { mode: 'environment', storeCode: 'S1', cases: [{ items: [{ specificationId: 1, quantity: 1, unitPrice: 10000 }], expected: { totalAmount: 9000 } }] }
+  const result = await workbench.runDraftTool('simulate_promotion_stack', input)
+  assert.equal(result.verified, true)
+  assert.equal(requests[0].path, '/api/v1/manage/promotion-stacking/check')
+  assert.deepEqual(requests[0].body, input)
+  assert.ok(promotionDraftTools.some(item => item.function.name === 'simulate_promotion_stack'))
+
+  for (const invalid of [
+    { ...input, mode: 'selected' },
+    { ...input, mode: 'selected', campaignIds: [1, 1], cases: input.cases },
+    { ...input, mode: 'drafts' },
+    { ...input, mode: 'drafts', drafts: [], cases: input.cases },
+    { ...input, cases: [] },
+    { ...input, cases: [...input.cases, ...input.cases, ...input.cases, ...input.cases, ...input.cases] },
+    { ...input, url: '/evil' }
+  ]) await assert.rejects(workbench.runDraftTool('simulate_promotion_stack', invalid))
+  const { storeCode: _storeCode, ...withoutStore } = input
+  await assert.rejects(workbench.runDraftTool('simulate_promotion_stack', withoutStore), /storeCode/)
+  available = false
+  assert.deepEqual(workbench.getDraftTools(), [])
+  await assert.rejects(workbench.runDraftTool('simulate_promotion_stack', input), /not available/)
+})
+
+test('stack simulation rejects oversized or malformed host responses', async() => {
+  for (const data of [
+    { mode: 'environment', verified: true, warnings: [] },
+    { mode: 'environment', verified: true, warnings: [], cases: [], huge: 'x'.repeat(60001) }
+  ]) {
+    const workbench = createPromotionWorkbench({ path: '/draft', stackPath: '/stack', isAvailable: () => true, request: { post: async() => ({ data }) } })
+    await assert.rejects(workbench.runDraftTool('simulate_promotion_stack', { mode: 'environment', storeCode: '', cases: [{ items: [{ specificationId: 1, quantity: 1, unitPrice: 1 }] }] }), /unavailable or oversized/)
+  }
+})

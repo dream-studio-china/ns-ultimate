@@ -865,6 +865,57 @@ export function mountAdminAgent(host = {}) {
     messagesNode.append(message)
     messagesNode.scrollTop = messagesNode.scrollHeight
   }
+  function appendStackSimulation(result) {
+    if (result?.error) {
+      appendMessage('assistant', `${t('Promotion stack simulation failed')}: ${result.error}`, 'error')
+      return
+    }
+    if (!result || !Array.isArray(result.cases)) return
+    if (empty.isConnected) empty.remove()
+    const amount = value => Number.isSafeInteger(value) ? value.toLocaleString('en-US') : String(value)
+    const message = element('div', { class: 'message result' })
+    message.append(element('strong', {}, t('Promotion stack simulation')))
+    message.append(element('small', { class: 'result-note' },
+      `${result.mode} · ${result.storeCode || t('Global')} · ${result.evaluatedAt ? new Date(result.evaluatedAt).toLocaleString() : ''} · ${result.verified === true ? t('Verified') : t('Not verified')}`))
+    const table = element('table')
+    const head = element('thead')
+    const header = element('tr')
+    for (const label of ['Case', 'Before', 'After', 'Applied', 'Result']) header.append(element('th', {}, t(label)))
+    head.append(header)
+    table.append(head)
+    const body = element('tbody')
+    for (const item of result.cases.slice(0, 8)) {
+      const row = element('tr')
+      row.append(element('td', {}, item.name || ''))
+      row.append(element('td', {}, amount(item.beforeAmount)))
+      row.append(element('td', {}, amount(item.afterAmount)))
+      const chain = Array.isArray(item.applied) ? item.applied.map(step => {
+        const name = typeof step.promotionName === 'string' ? step.promotionName : ''
+        return Number.isSafeInteger(step.totalAfter) ? `${name} (${amount(step.totalAfter)})` : name
+      }).filter(Boolean) : []
+      row.append(element('td', {}, chain.length
+        ? `${chain.slice(0, 6).join(' → ')}${chain.length > 6 ? ' …' : ''}`
+        : t('No promotion applied')))
+      const extras = []
+      if (item.freeShipping === true) extras.push(t('Free shipping'))
+      if (Number.isSafeInteger(item.itemSummary?.giftQuantity) && item.itemSummary.giftQuantity > 0) {
+        extras.push(t('Gifts: {count}', { count: item.itemSummary.giftQuantity }))
+      }
+      row.append(element('td', {}, [item.passed === true ? t('Verified')
+        : item.passed === false ? t('Failed') : t('Not verified'), ...extras].join(' · ')))
+      body.append(row)
+    }
+    table.append(body)
+    message.append(table)
+    for (const item of result.cases.slice(0, 8)) {
+      if (!Array.isArray(item.notAppliedCampaignIds) || !item.notAppliedCampaignIds.length) continue
+      message.append(element('small', { class: 'result-note' },
+        `${item.name || ''}: ${t('Not applied campaigns: {ids}', { ids: item.notAppliedCampaignIds.join(', ') })}`))
+    }
+    message.append(element('small', { class: 'result-note' }, t('Amounts are minor units. Read-only single-store promotion snapshot; base price, tax, shipping, payment, catalog data, eligibility timing and concurrent changes are not verified.')))
+    messagesNode.append(message)
+    messagesNode.scrollTop = messagesNode.scrollHeight
+  }
   function appendWritePreview(result) {
     if (!result?.previewOnly) {
       appendMessage('assistant', `${t('Update preview failed')}: ${result?.error || t('Request failed.')}`, 'error')
@@ -1744,6 +1795,7 @@ export function mountAdminAgent(host = {}) {
             appendReadResult(result)
           }
           if (call.function.name === 'read_record') appendRecordRead(result)
+          if (call.function.name === 'simulate_promotion_stack') appendStackSimulation(result)
           if (call.function.name === 'preview_record_update') appendWritePreview(result)
           if (call.function.name === 'prepare_record_batch' && result?.error && result.failureType !== 'cancelled') {
             appendMessage('assistant', t('Batch preview failed: {reason}', { reason: batchFailureText(result.failureType) }), 'error')
