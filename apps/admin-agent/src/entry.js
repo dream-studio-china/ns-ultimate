@@ -547,8 +547,10 @@ export function mountAdminAgent(host = {}) {
     const next = providerSelect.value
     const previousDefault = PROVIDER_PRESETS[previous]?.defaultModel
     const nextPreset = PROVIDER_PRESETS[next] || PROVIDER_PRESETS.custom
-    if (next !== 'custom') baseUrlInput.value = nextPreset.baseUrl
-    else if (baseUrlInput.value === PROVIDER_PRESETS[previous]?.baseUrl) baseUrlInput.value = nextPreset.baseUrl
+    // Only replace the endpoint when it is still the previous preset default.
+    // A custom gateway or local proxy must survive a provider reselect.
+    const currentBaseUrl = baseUrlInput.value.trim()
+    if (!currentBaseUrl || currentBaseUrl === PROVIDER_PRESETS[previous]?.baseUrl) baseUrlInput.value = nextPreset.baseUrl
     if (!modelInput.value || modelInput.value === previousDefault) modelInput.value = nextPreset.defaultModel
     modelInput.placeholder = t(nextPreset.modelPlaceholder)
     apiKeyWrapper.classList.toggle('hidden', !providerUsesApiKey(next))
