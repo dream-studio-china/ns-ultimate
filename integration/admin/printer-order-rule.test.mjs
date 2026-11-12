@@ -4,6 +4,10 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { uuidFilter } from '../../business/admin/config/uuid-filter.mjs'
 import { eligiblePrintOutputs, loadAllPrintOutputs, PRINT_OUTPUT_MAX_PAGES, PRINT_OUTPUT_PAGE_LIMIT } from '../../business/admin/config/components/order-print-output.mjs'
+import { buildAdminConfigProjection } from '../../apps/admin-agent/src/admin-config-policy.js'
+import { configuredCapabilities } from '../../apps/admin-agent/src/config-mutation-host.js'
+import { componentBindings } from '../../apps/admin-agent/adapters/ns-ultimate/admin/config-bindings.mjs'
+import { agentMutationPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/write-policy.mjs'
 
 const read = path => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
@@ -17,8 +21,7 @@ test('print rule configuration exposes store filtering and safe defaults', async
   runInNewContext(source, context)
   const config = context.config.PrinterOrderRule
   const field = name => config.form.fields.find(item => item.property === name)
-  assert.equal(field('storeUuid').hidden({}, 42), true)
-  assert.equal(field('storeUuid').hidden({}, null), false)
+  assert.equal(field('storeUuid').hidden, 'update')
   assert.equal(field('deviceUuid').component, context.OrderPrintOutputSelect)
   assert.equal(field('templateUuid').component, context.OrderPrintOutputSelect)
   assert.equal(field('storeUuid').relation.valueKey, 'uuid')
@@ -161,4 +164,31 @@ test('condition editor warns about empty match modes and bounds field length', (
   assert.match(source, /form\.match === 'any' \? 'Print rule any conditions help' : 'Print rule all conditions help'/)
   assert.match(source, /maxlength="128"/)
   assert.match(source, /conditions\.length >= 20/)
+})
+
+test('agent policy exposes complete rule settings without the dynamic-hidden store field on update', () => {
+  const source = read('business/admin/config/collections/printer/PrinterOrderRule.js')
+    .replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+  const context = {
+    t: key => key, uuidFilter,
+    OrderPrintConditions: { name: 'OrderPrintConditions' },
+    OrderPrintEvents: { name: 'OrderPrintEvents' },
+    OrderPrintOutputSelect: { name: 'OrderPrintOutputSelect' },
+    loadRelationRecords: async () => [{ id: 4, uuid: 'store-uuid', name: 'Store A' }]
+  }
+  runInNewContext(source, context)
+  const ruleConfig = JSON.parse(JSON.stringify(context.config.PrinterOrderRule))
+  const projection = buildAdminConfigProjection({
+    entities: { PrinterOrderRule: ruleConfig },
+    routes: [{ path: '/printer-order-rules/list', name: 'PrinterOrderRuleList' }]
+  }, { componentBindings })
+  const capability = configuredCapabilities(projection, agentMutationPolicy).find(item => item.entity === 'PrinterOrderRule')
+  assert.deepEqual([...capability.actions].sort(), ['create', 'update'])
+  assert.deepEqual(Object.keys(capability.actionFields.create).sort(), [
+    'conditions', 'copies', 'deviceUuid', 'enabled', 'events', 'match', 'name', 'storeUuid', 'templateUuid'
+  ])
+  assert.equal(Object.hasOwn(capability.actionFields.update, 'storeUuid'), false)
+  for (const field of ['events', 'conditions', 'deviceUuid', 'templateUuid']) {
+    assert.equal(Object.hasOwn(capability.actionFields.create, field), true, field)
+  }
 })

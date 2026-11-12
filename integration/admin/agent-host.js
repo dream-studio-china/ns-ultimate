@@ -7,7 +7,7 @@ import { chatScopeFromToken } from './agent-chat-scope.mjs'
 import CrudSkeletonAdapter from '@/easyadmin/adapters/crudskeleton/CrudSkeletonAdapter'
 import { resolveRelation } from '@/utils/relation'
 import { createSchemaForm } from '@/utils/json-schema-form'
-import { scalarComponentBindings } from '../../apps/admin-agent/adapters/ns-ultimate/admin/config-bindings.mjs'
+import { componentBindings } from '../../apps/admin-agent/adapters/ns-ultimate/admin/config-bindings.mjs'
 import { resolveFormConfiguration } from '../../apps/admin-agent/adapters/ns-ultimate/admin/form-fields.mjs'
 import { createDeleteGuard } from '../../apps/admin-agent/adapters/ns-ultimate/admin/delete-guard.mjs'
 import { specialWrite } from '../../apps/admin-agent/adapters/ns-ultimate/admin/special-writes.mjs'
@@ -15,6 +15,7 @@ import { createRecordInspection, recordInspectionPolicy } from '../../apps/admin
 import { createRecordRead, recordReadPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/record-read.mjs'
 import { readCatalogPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/read-policy.mjs'
 import { createPromotionWorkbench } from '../../apps/admin-agent/adapters/ns-ultimate/admin/promotion-workbench.mjs'
+import { createPrinterWorkbench } from '../../apps/admin-agent/adapters/ns-ultimate/admin/printer-workbench.mjs'
 import { knowledgeArticles } from '../../apps/admin-agent/adapters/ns-ultimate/admin/knowledge/index.mjs'
 import { createConfigMutationHost } from '../../apps/admin-agent/src/config-mutation-host.js'
 import { buildAdminConfigProjection } from '../../apps/admin-agent/src/admin-config-policy.js'
@@ -79,7 +80,7 @@ export function createAdminAgentHost() {
       key, resolveFormConfiguration(config, structures.get(key), { resolveRelation, entities: Object.fromEntries(configuredEntities) })
     ]))
     return buildAdminConfigProjection({ ...adminConfig, entities }, {
-      defaultPrefix, parameterize, componentBindings: scalarComponentBindings,
+      defaultPrefix, parameterize, componentBindings,
       schemaFormResolver: createSchemaForm, routeAvailability: registeredRoutes()
     })
   }
@@ -98,8 +99,13 @@ export function createAdminAgentHost() {
   const promotionWorkbench = createPromotionWorkbench({ request, path: `${defaultPrefix}/promotion-drafts/check`,
     stackPath: `${defaultPrefix}/promotion-stacking/check`,
     isAvailable: () => !disposed && isRecordPageAvailable('Promotion') && isRecordPageAvailable('PromotionTemplate') })
+  const printerWorkbench = createPrinterWorkbench({ request, path: `${defaultPrefix}/printer`,
+    isAvailable: () => !disposed && ['PrinterAccount', 'PrinterDevice', 'PrinterTemplate', 'PrinterOrderRule', 'PrinterJob'].some(name => isRecordPageAvailable(name)) })
+  const workbenches = [promotionWorkbench, printerWorkbench]
+  const hostTools = () => workbenches.flatMap(workbench => workbench.getDraftTools())
+  const beforeChange = async input => (await promotionWorkbench.beforeChange(input)) ?? printerWorkbench.beforeChange(input)
   const mutations = createConfigMutationHost({ request, getProjection: refreshProjection, policy: agentMutationPolicy,
-    beforeDelete: createDeleteGuard({ request, getProjection: refreshProjection }), beforeChange: promotionWorkbench.beforeChange, specialWrite, isActionAvailable })
+    beforeDelete: createDeleteGuard({ request, getProjection: refreshProjection }), beforeChange, specialWrite, isActionAvailable })
   async function initializeAgentCapabilities(signal, operations) {
     if (Array.isArray(operations)) apiOperations = operations
     if (!initialization) initialization = (async() => {
@@ -124,8 +130,12 @@ export function createAdminAgentHost() {
   }
   return {
     ...mutations,
-    getDraftTools: promotionWorkbench.getDraftTools,
-    runDraftTool: promotionWorkbench.runDraftTool,
+    getDraftTools: hostTools,
+    runDraftTool(name, input, signal) {
+      const owner = workbenches.find(workbench => workbench.getDraftTools().some(item => item.function?.name === name))
+      if (!owner) throw new Error('Unknown host tool.')
+      return owner.runDraftTool(name, input, signal)
+    },
     // Local partition only, not authorization. Never persist authentication tokens.
     getChatHistoryScope() { return chatScopeFromToken(getToken()) },
     initializeAgentCapabilities,
@@ -177,6 +187,6 @@ export function createAdminAgentHost() {
       if (signal?.aborted) throw new Error('The read query was cancelled.')
       return sanitizeRecordResults(response?.data, query, catalog)
     },
-    dispose() { disposed = true; structures.clear(); listeners.clear(); promotionWorkbench.dispose(); mutations.dispose() }
+    dispose() { disposed = true; structures.clear(); listeners.clear(); workbenches.forEach(workbench => workbench.dispose()); mutations.dispose() }
   }
 }

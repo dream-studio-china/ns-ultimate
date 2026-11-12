@@ -27,3 +27,24 @@ export const scalarComponentBindings = Object.freeze({
     name: Object.freeze({ componentName: 'ProductCategoryNameField', type: 'string' })
   })
 })
+
+/**
+ * Printer order rules use custom editors but store plain rule data. The
+ * binding documents the stored value type for each control; shape rules live
+ * in the printer workbench validator, because they are domain semantics rather
+ * than generic form metadata.
+ */
+export const printerComponentBindings = Object.freeze({
+  PrinterOrderRule: Object.freeze({
+    events: Object.freeze({ componentName: 'OrderPrintEvents', type: 'array' }),
+    conditions: Object.freeze({ componentName: 'OrderPrintConditions', type: 'array' }),
+    deviceUuid: Object.freeze({ componentName: 'OrderPrintOutputSelect', type: 'relation', relation: true }),
+    templateUuid: Object.freeze({ componentName: 'OrderPrintOutputSelect', type: 'relation', relation: true })
+  })
+})
+
+/** Component bindings passed to the shared configuration projection. */
+export const componentBindings = Object.freeze({
+  ...scalarComponentBindings,
+  ...printerComponentBindings
+})
