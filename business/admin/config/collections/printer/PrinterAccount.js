@@ -15,7 +15,7 @@ export default {
       { property: 'userKey', label: t('Developer key'), type: 'password', required: true, help: t('Printer developer key is encrypted at rest.') }
     ] },
     list: {
-      disabled_actions: ['edit', 'delete', 'batch_edit', 'batch_delete'],
+      disabled_actions: ['edit', 'batch_edit', 'batch_delete'],
       list_filter: {
         name: t('Name'), developerId: t('Developer ID'),
         provider: { __label: t('Printer provider'), xpyun: t('Xpyun'), delicloud: t('DeliCloud') }

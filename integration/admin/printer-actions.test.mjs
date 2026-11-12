@@ -88,6 +88,8 @@ test('printer account admin shows provider identity but only enables configured 
   assert.deepEqual(JSON.parse(JSON.stringify(providerField.type_options.options)), [{ value: 'xpyun', label: 'Xpyun' }])
   assert.ok(config.list.list_display.some(field => field.property === 'provider'))
   assert.ok(config.detail.detail_display.some(field => field.property === 'provider'))
+  assert.equal(config.list.disabled_actions.includes('delete'), false)
+  assert.equal(config.list.disabled_actions.includes('edit'), true)
 })
 
 test('cancelling print confirmation never submits a job', async() => {
