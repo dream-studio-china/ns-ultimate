@@ -581,6 +581,33 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         self::assertSame('entity.getQuantity() > 1', $data['itemFilter']);
     }
 
+    public function testTemplateSampleDataIsValidationOnlyAndCanBeResubmittedOnEdit(): void
+    {
+        [$token] = $this->fixtures();
+        $definition = ['kind' => 'receipt', 'nodes' => [['type' => 'field', 'path' => 'order.number']]];
+        $sampleData = ['order' => ['number' => 'A-100']];
+        $created = $this->request('POST', '/api/v1/manage/printer/templates', $token, [
+            'name' => 'Editable receipt', 'kind' => 'receipt', 'definition' => $definition, 'sampleData' => $sampleData,
+        ]);
+        self::assertSame(201, $created->getStatusCode(), $created->getContent());
+        $data = json_decode($created->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertArrayNotHasKey('sampleData', $data);
+
+        $detail = $this->request('GET', '/api/v1/manage/printer/templates/'.$data['id'], $token, []);
+        self::assertSame(200, $detail->getStatusCode(), $detail->getContent());
+        $detailData = json_decode($detail->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertArrayNotHasKey('sampleData', $detailData);
+
+        $updatedSampleData = ['order' => ['number' => 'B-200']];
+        $updated = $this->request('PUT', '/api/v1/manage/printer/templates/'.$data['id'], $token, [
+            'definition' => $detailData['definition'], 'sampleData' => $updatedSampleData,
+        ]);
+        self::assertSame(200, $updated->getStatusCode(), $updated->getContent());
+        $updatedData = json_decode($updated->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertArrayNotHasKey('sampleData', $updatedData);
+        self::assertSame($definition, $updatedData['definition']);
+    }
+
     private function fixtures(): array
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
