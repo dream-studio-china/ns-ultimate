@@ -19,7 +19,8 @@ client uses the platform's fixed HTTPS API host and JSON requests. No credential
 are returned to the frontend.
 
 Provider identity is stored on each printer account and is immutable after
-creation. Device registration/status and print-job submit/status go through the
+creation. An account can be deleted only while no devices reference it; deleting
+an account removes only the local record and encrypted credentials. Device registration/status and print-job submit/status go through the
 `PrinterProviderInterface` registry; provider implementations translate their
 protocol into the shared registration, status, and job result shapes. Xpyun is
 the only registered live adapter currently. The existing DeliCloud protocol

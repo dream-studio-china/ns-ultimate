@@ -7,13 +7,17 @@ namespace NsUltimate\Business\Printer\Controller\Admin;
 use App\Core\Controller\RestController;
 use App\Core\View\ApiView;
 use App\Core\View\CreateApiViewMixin;
+use App\Core\View\DeleteApiViewMixin;
 use App\Core\View\DetailApiViewMixin;
 use App\Core\View\ListApiViewMixin;
 use App\Core\View\UpdateApiViewMixin;
+use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Printer\Entity\PrinterAccount;
+use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Service\PrinterAccountService;
 use NsUltimate\Business\Printer\Service\PrinterCredentialCipher;
 use NsUltimate\Business\Printer\Service\PrinterProviderRegistry;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -21,7 +25,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('ROLE_ADMIN')]
 final class PrinterAccountController extends RestController
 {
-    use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
+    use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin, DeleteApiViewMixin;
 
     /** @var list<string> */
     protected array $requiredCreateProperties = ['name', 'developerId', 'userKey'];
@@ -34,6 +38,7 @@ final class PrinterAccountController extends RestController
         protected readonly PrinterAccountService $service,
         private readonly PrinterCredentialCipher $cipher,
         private readonly PrinterProviderRegistry $providers,
+        private readonly EntityManagerInterface $entityManager,
     ) {}
 
     /**
@@ -69,5 +74,16 @@ final class PrinterAccountController extends RestController
         }
         if (isset($content['name'])) { $content['name'] = trim($content['name']); }
         return $content;
+    }
+
+    protected function processDeletion(object $entity): ?Response
+    {
+        if (!$entity instanceof PrinterAccount) {
+            return $this->warning('Printer account not found.', 404, '', 404);
+        }
+        if ($this->entityManager->getRepository(PrinterDevice::class)->count(['account' => $entity]) > 0) {
+            return $this->warning('A printer account with devices cannot be deleted.', 409, '', 409);
+        }
+        return null;
     }
 }
