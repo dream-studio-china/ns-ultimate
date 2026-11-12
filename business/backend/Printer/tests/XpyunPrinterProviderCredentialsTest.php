@@ -37,4 +37,63 @@ final class XpyunPrinterProviderCredentialsTest extends TestCase
         }
         self::assertSame(0, $requests);
     }
+
+    public function testRegistrationFailureReportsBoundedProviderReason(): void
+    {
+        $cipher = new PrinterCredentialCipher('test-only-key');
+        $account = new PrinterAccount('Account', 'developer@example.test', $cipher->encrypt('private-key'));
+        $device = new PrinterDevice($account, 'Receipt', '74NTC9HBWZFF44A', PrinterDevice::KIND_RECEIPT);
+        $http = new MockHttpClient(new \Symfony\Component\HttpClient\Response\MockResponse(
+            '{"code":0,"data":{"success":[],"fail":["74NTC9HBWZFF44A"],"failMsg":["74NTC9HBWZFF44A:1010"]}}'
+        ));
+        $provider = new XpyunPrinterProvider($cipher, new XpyunClient($http));
+
+        try {
+            $provider->registerDevice($account, $device);
+            self::fail('Registration failure was accepted.');
+        } catch (PrinterProviderException $exception) {
+            self::assertSame('registration_unconfirmed', $exception->providerCode);
+            self::assertStringContainsString('printer number is invalid', $exception->getMessage());
+            self::assertStringNotContainsString('private-key', $exception->getMessage());
+        }
+    }
+
+    public function testAlreadyRegisteredPrinterIsAcceptedAfterStatusConfirmation(): void
+    {
+        $cipher = new PrinterCredentialCipher('test-only-key');
+        $account = new PrinterAccount('Account', 'developer@example.test', $cipher->encrypt('private-key'));
+        $device = new PrinterDevice($account, 'Label', '32Z7NQJ70YC7549', PrinterDevice::KIND_LABEL, null, null, 40, 30);
+        $http = new MockHttpClient(static function (string $method, string $url): \Symfony\Component\HttpClient\Response\MockResponse {
+            return str_contains($url, 'addPrinters')
+                ? new \Symfony\Component\HttpClient\Response\MockResponse('{"code":0,"data":{"success":[],"fail":["32Z7NQJ70YC7549"],"failMsg":["32Z7NQJ70YC7549:1011"]}}')
+                : new \Symfony\Component\HttpClient\Response\MockResponse('{"code":0,"data":0}');
+        });
+        $provider = new XpyunPrinterProvider($cipher, new XpyunClient($http));
+
+        self::assertSame(
+            ['registeredSerialNumbers' => ['32Z7NQJ70YC7549']],
+            $provider->registerDevice($account, $device),
+        );
+    }
+
+    public function testAlreadyRegisteredPrinterOutsideTheAccountIsRejected(): void
+    {
+        $cipher = new PrinterCredentialCipher('test-only-key');
+        $account = new PrinterAccount('Account', 'developer@example.test', $cipher->encrypt('private-key'));
+        $device = new PrinterDevice($account, 'Label', '32Z7NQJ70YC7549', PrinterDevice::KIND_LABEL, null, null, 40, 30);
+        $http = new MockHttpClient(static function (string $method, string $url): \Symfony\Component\HttpClient\Response\MockResponse {
+            return str_contains($url, 'addPrinters')
+                ? new \Symfony\Component\HttpClient\Response\MockResponse('{"code":0,"data":{"success":[],"fail":["32Z7NQJ70YC7549"],"failMsg":["32Z7NQJ70YC7549:1011"]}}')
+                : new \Symfony\Component\HttpClient\Response\MockResponse('{"code":1002,"msg":"PRINTER_NOT_REGISTERED","data":null}');
+        });
+        $provider = new XpyunPrinterProvider($cipher, new XpyunClient($http));
+
+        try {
+            $provider->registerDevice($account, $device);
+            self::fail('Inaccessible existing registration was accepted.');
+        } catch (PrinterProviderException $exception) {
+            self::assertSame('registration_unconfirmed', $exception->providerCode);
+            self::assertStringContainsString('not accessible from this account', $exception->getMessage());
+        }
+    }
 }

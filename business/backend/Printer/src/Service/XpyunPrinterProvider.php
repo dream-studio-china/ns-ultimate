@@ -22,11 +22,48 @@ final class XpyunPrinterProvider implements PrinterProviderInterface
     {
         $credentials = $this->credentials($account);
         $response = $this->client->register($account->getDeveloperId(), $credentials['userKey'], $device->getSerialNumber(), $device->getName());
-        $success = $response['data']['success'] ?? [];
-        if (!is_array($success) || !in_array($device->getSerialNumber(), $success, true)) {
-            throw new PrinterProviderException('registration_unconfirmed', 'Xpyun did not confirm device registration.');
+        $data = is_array($response['data'] ?? null) ? $response['data'] : [];
+        $success = is_array($data['success'] ?? null) ? $data['success'] : [];
+        if (!in_array($device->getSerialNumber(), $success, true)) {
+            $code = $this->registrationFailureCode($device->getSerialNumber(), $data);
+            // Xpyun returns 1011 when the serial is already bound to this
+            // account. Confirm access with a status query before treating the
+            // existing binding as a successful registration.
+            if ($code === '1011') {
+                try {
+                    $this->queryDeviceStatus($device);
+                    return ['registeredSerialNumbers' => [$device->getSerialNumber()]];
+                } catch (PrinterProviderException) {
+                    throw new PrinterProviderException('registration_unconfirmed', 'Xpyun reports the printer already registered, but it is not accessible from this account.');
+                }
+            }
+            throw new PrinterProviderException('registration_unconfirmed', $this->registrationMessage($code));
         }
         return ['registeredSerialNumbers' => array_values(array_filter($success, 'is_string'))];
+    }
+
+    /** @param array<string, mixed> $data */
+    private function registrationFailureCode(string $serialNumber, array $data): ?string
+    {
+        foreach (is_array($data['failMsg'] ?? null) ? $data['failMsg'] : [] as $message) {
+            if (is_string($message) && preg_match('/^'.preg_quote($serialNumber, '/').':(\d{1,4})$/', $message, $matches) === 1) {
+                return $matches[1];
+            }
+        }
+        return null;
+    }
+
+    private function registrationMessage(?string $code): string
+    {
+        $reason = match ($code) {
+            '1009' => 'the printer number or name is empty',
+            '1010' => 'the printer number is invalid',
+            '1011' => 'the printer is already registered',
+            '1012' => 'the provider could not add the device',
+            null => 'the provider did not confirm registration',
+            default => 'the provider rejected registration with code '.$code,
+        };
+        return sprintf('Xpyun did not confirm device registration: %s.', $reason);
     }
 
     public function queryDeviceStatus(PrinterDevice $device): array

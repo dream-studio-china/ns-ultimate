@@ -89,7 +89,8 @@ final class PrinterDeviceController extends RestController
         try {
             $response = $this->providers->get($account->getProvider())->registerDevice($account, $device);
         } catch (PrinterProviderException $exception) {
-            throw new \InvalidArgumentException(sprintf('Printer provider registration failed (%s).', $exception->providerCode));
+            $detail = trim($exception->getMessage());
+            throw new \InvalidArgumentException($detail !== '' ? $detail : sprintf('Printer provider registration failed (%s).', $exception->providerCode));
         } catch (\DomainException $exception) {
             throw new \InvalidArgumentException($exception->getMessage());
         }
