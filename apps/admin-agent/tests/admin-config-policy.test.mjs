@@ -1251,3 +1251,30 @@ test('printer order-rule custom editors bind stored rule data instead of acting 
   assert.equal(metadataField.type, 'array')
   assert.equal(configuredCapabilities(metadataProjection, permissive).find(item => item.entity === 'PrinterOrderRule').actions.includes('create'), true)
 })
+
+test('component identity falls back to the compiled SFC filename', () => {
+  const config = {
+    entities: {
+      PrinterOrderRule: {
+        entity: { name: 'PrinterOrderRule', plural: 'order-rules', prefix: '/api/v1/manage/printer' },
+        form: {
+          fields: [
+            { property: 'name', required: true },
+            {
+              property: 'events', required: true,
+              component: { __file: '/workspace/business/admin/config/components/OrderPrintEvents.vue', props: ['form'] }
+            }
+          ]
+        },
+        list: { disabled_actions: [] }
+      }
+    },
+    routes: [route('PrinterOrderRule')]
+  }
+  const projection = buildAdminConfigProjection(config, { componentBindings })
+  const events = findEntity(projection, 'PrinterOrderRule').actions.create.fields.find(field => field.property === 'events')
+  assert.equal(events.type, 'array')
+  assert.equal(events.componentName, 'OrderPrintEvents')
+  assert.equal(configuredCapabilities(projection, { isActionAllowed: () => true, isFieldAllowed: () => true })
+    .find(item => item.entity === 'PrinterOrderRule').actions.includes('create'), true)
+})

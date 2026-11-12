@@ -333,11 +333,22 @@ function fieldLabel(field, property) {
  * components must declare `relation: true`; every other binding is a value
  * control whose configured type comes from the effective form metadata.
  */
+function componentIdentity(component) {
+  if (typeof component?.name === 'string' && component.name) return component.name
+  if (typeof component?.__name === 'string' && component.__name) return component.__name
+  if (typeof component?.__file === 'string') {
+    const file = component.__file.split(/[\\/]/).pop() || ''
+    const base = file.replace(/\.[^.]+$/, '')
+    return base || null
+  }
+  return null
+}
+
 function boundComponent(raw, entityLabel, property, componentBindings) {
   if (!Object.hasOwn(raw, 'component') || raw.component === undefined || raw.component === null) {
     return { present: false, ok: true }
   }
-  const componentName = raw.component && typeof raw.component.name === 'string' ? raw.component.name : null
+  const componentName = componentIdentity(raw.component)
   if (!componentName || !isPlainRecord(componentBindings) || hasUnsafeKeys(componentBindings)) {
     return { present: true, ok: false }
   }
