@@ -92,6 +92,20 @@ test('printer account admin shows provider identity but only enables configured 
   assert.equal(config.list.disabled_actions.includes('edit'), true)
 })
 
+test('printer job detail resolves the store through the management prefix', () => {
+  const source = readFileSync(new URL('../../business/admin/config/collections/printer/PrinterJob.js', import.meta.url), 'utf8')
+  const context = {
+    t: key => key,
+    PrinterJobAction: 'create', PrinterPaperAction: 'preview', PrinterJobReprintAction: 'reprint',
+    globalThis: {}
+  }
+  runInNewContext(source.replace(/^import .*$/gm, '').replace('export default', 'globalThis.config ='), context)
+  const store = context.globalThis.config.PrinterJob.detail.detail_display.find(item => item.property === 'storeUuid')
+  assert.equal(store.relation.target, 'Store')
+  assert.equal(store.relation.prefix, '/api/v1/manage')
+  assert.equal(store.relation.valueKey, 'uuid')
+})
+
 test('cancelling print confirmation never submits a job', async() => {
   let posted = false
   const ui = mount('PrinterJobAction', {
