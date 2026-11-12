@@ -2,7 +2,7 @@
 
 ## Status and ownership
 
-Implemented by `business/backend/Store/src/Controller/Staff/OperationsController.php` and consumed by `apps/store-console/`. Existing Core employee CRUD routes remain available and unchanged. Employee counter sessions and order entry have a separate [counter operations contract](store-console-counter-operations.md). A store-scoped order refund command and its Trade Orders UI are documented below. No employee checkout, financial report or print-command contract is enabled.
+Implemented by `business/backend/Store/src/Controller/Staff/OperationsController.php` and consumed by `apps/store-console/`. Existing Core employee CRUD routes remain available and unchanged. Employee counter sessions and order entry have a separate [counter operations contract](store-console-counter-operations.md). A store-scoped order refund command and its Trade Orders UI are documented below. Employee manual order printing is available through the API described below; the Store Console print UI is not connected yet. No employee checkout or financial report contract is enabled.
 
 Business code owns operational validation, DTOs, availability policy, command receipts and permissions. The app owns presentation and its authenticated adapter. Integration discovers the module normally; there is no Core controller replacement or generic CRUD allowlist expansion.
 
@@ -18,6 +18,7 @@ The operations routes below have the prefix `/api/v1/store/{storeUuid}/operation
 | Accept / reject / fulfill / verify | Existing `store:order:accept`, `reject`, `fulfill`, `verify` |
 | Request an order refund | New `store:order:refund` |
 | Close an existing order payment | `store:order:payment_close` |
+| List print options / manually print an order | New `store:order:print` |
 | Upload a store-owned catalog image | New `store:catalog_image:create` |
 | Read operational history | New `store:operation:read` |
 
@@ -32,6 +33,7 @@ Product update is the broader catalog-edit grant and includes availability field
 | `store_order_operator` | `store:order:read`, `accept`, `reject`, `fulfill`, `verify` |
 | `store_order_refund_operator` | `store:order:refund` |
 | `store_order_payment_closer` | `store:order:payment_close` |
+| `store_order_printer` | `store:order:print` |
 | `store_catalog_operator` | product/category/specification CRUD, `catalog_image:create`, `product:availability` |
 | `store_operation_auditor` | `store:operation:read` |
 
@@ -80,6 +82,59 @@ The initially introduced `/store/{storeUuid}/orders/{orderUuid}/refund` and `/re
 A process crash after receipt commit but before a provider attempt is persisted leaves a conservative pending reservation. Replays never automatically resubmit it. Operators must inspect the receipt's Invoice and provider/Core attempt records before resolving an abandoned reservation; never clear one solely because the caller timed out. A pre-submission rejection caught by the service is recorded as `failed` and releases the guard. This change does not add a background worker for abandoned unified reservations.
 
 The live UI derives Kitchen visibility from product or category read grants, Cashier visibility from counter-session or counter-configuration read grants, and Orders visibility from order read grants. Individual controls retain their own per-action checks. Counter-session readers default to Cashier; otherwise the first accessible module is used, falling back to Account with a no-business-access notice. `?view=kitchen|cashier` only selects an accessible preferred page. Store reconnection refreshes the permission snapshot and reevaluates that preference; it cannot preserve an unauthorized page from a prior store. These labels do not change API authorization or enable financial commands. The customer payment build remains isolated and demo-only; no employee payment role or live payment link is introduced.
+
+## Manual order printing
+
+Both endpoints use `/api/v1/store/{storeUuid}/operations` and require active
+membership plus `store:order:print` in that Store, not administrator CRUD access.
+Run `app:store:seed-staff-authorization` and explicitly assign the additive
+`store_order_printer` capability role to the desired employees. Existing cashier
+or order-operator grants do not silently acquire printing authority. No schema
+migration is required.
+
+- `GET /print-options` returns `data.items` with at most 50 enabled store-owned
+  rules whose device, account and matching template are enabled. Each option
+  exposes only `ruleUuid`, `name`, `deviceName`, `kind`, `copies` and `ticketMode`.
+  Credentials, raw templates and arbitrary provider settings are not returned.
+- `POST /trade-orders/{tradeOrderUuid}/print` accepts exactly:
+
+  ```json
+  {"commandUuid":"a UUID","ruleUuid":"an option rule UUID","reason":"Customer receipt"}
+  ```
+
+`tradeOrderUuid` is a Trade Order UUID, not a StoreOrder UUID. Its lifecycle must
+belong to the path Store; inaccessible orders/rules return 404 after Store
+authorization. Only `confirmed`, `paid` and `completed` orders accept a new
+command. The server builds data from the persisted order and freezes the rule,
+template, item filter, ticket mode and device label dimensions. It applies the
+template's item filter and per-unit behavior, but deliberately does not evaluate
+automatic rule event/condition matching: this is an explicit employee print.
+The rule's configured copies apply; employees cannot override the device,
+template, copies, item data, amounts or print content. Reason is required,
+trimmed, non-empty and at most 500 bytes. Unknown fields are rejected with 422.
+No matching items returns 409; more than 500 rendered physical pages/copies per
+command returns 422 and rolls back the whole enqueue. Disabled or incompatible
+outputs return 409 and are rechecked at submission, not trusted from options.
+
+The HTTP 202 response is `{"code":0,"data":{"commandUuid":"...",
+"tradeOrderUuid":"...","status":"queued","requestUuids":["..."]}}`.
+It means durable acceptance, **not** provider submission, successful printing or
+payment completion. Requests and the actor/command audit receipt commit together;
+the API never contacts the printer provider. Keep `app:printer:dispatch-orders`
+running through the existing scheduler. Its normal snapshot/unknown-outcome rules
+apply. Neither this API nor a one-second scheduler guarantees physical output
+within five seconds.
+
+Unchanged retries by the same actor/store/command return the original receipt
+without more requests, even after dispatch or output reconfiguration. Changed
+payload/order with the same command returns 409. `GET /commands/{commandUuid}`
+recovers the employee's acceptance result, including `tradeOrderUuid` and
+`requestUuids`, under the current print grant. Its `succeeded` means command
+acceptance, not paper output; a missing receipt remains `unknown`. Reusing a new
+command UUID is an explicit new print, built from current order/configuration,
+not an immutable old-job reprint. It can duplicate an automatic print or an
+unresolved previous print; never issue a new command simply because a request
+timed out. Automatic rule deduplication claims are not consumed or cleared.
 
 ## Explicit reads and pagination
 

@@ -144,6 +144,17 @@ Disable the demo account and device after the check.
 
 ## Admin integration
 
+Store employees can manually queue an order through the scoped
+`GET /api/v1/store/{storeUuid}/operations/print-options` and
+`POST /api/v1/store/{storeUuid}/operations/trade-orders/{tradeOrderUuid}/print`
+APIs with active membership and the separately assigned `store:order:print`
+grant. They select a configured rule; the backend builds trusted order data and
+queues immutable requests under a durable command UUID. The existing dispatcher
+submits them; acceptance never proves physical output. See the
+[manual printing contract](../../../docs/contracts/store-console-operations.md#manual-order-printing)
+for payloads, limits, retry semantics and permission setup. This does not connect
+the Store Console UI or expose administrator/provider APIs to staff.
+
 The admin menu uses the project's EasyAdmin entity configuration for accounts,
 devices, templates, and jobs. Device creation uses the standard CRUD create
 form and API lifecycle; the backend registers the device with Xpyun before
