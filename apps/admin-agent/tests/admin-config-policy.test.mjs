@@ -10,9 +10,11 @@ import {
   intersectCapabilityCatalog
 } from '../src/admin-config-policy.js'
 import { createCapabilityCatalogRuntime } from '../src/capability-catalog.js'
+import { configuredCapabilities, createConfigMutationHost } from '../src/config-mutation-host.js'
 import { createMutationHost } from '../src/mutation-host.js'
 import { compileMutationCapabilities } from '../adapters/ns-ultimate/admin/mutation-capabilities.mjs'
 import {
+  componentBindings,
   scalarComponentBindings,
   semanticCapabilityBindings
 } from '../adapters/ns-ultimate/admin/config-bindings.mjs'
@@ -1159,4 +1161,120 @@ test('commit preflight re-reads configuration after the awaited catalog refresh 
     onRefreshed: () => { refreshed += 1 }
   })
   assert.equal(refreshed, 1)
+})
+
+test('printer order-rule custom editors bind stored rule data instead of acting as opaque components', () => {
+  const components = {
+    events: { name: 'OrderPrintEvents' },
+    conditions: { name: 'OrderPrintConditions' },
+    output: { name: 'OrderPrintOutputSelect' }
+  }
+  const config = {
+    entities: {
+      PrinterOrderRule: {
+        entity: { name: 'PrinterOrderRule', plural: 'order-rules', prefix: '/api/v1/manage/printer' },
+        form: {
+          fields: [
+            {
+              property: 'storeUuid', required: true, hidden: 'update',
+              relation: { target: 'Store', plural: 'stores', prefix: '/api/v1/manage', valueKey: 'uuid' }
+            },
+            { property: 'name', required: true },
+            { property: 'events', required: true, component: components.events },
+            { property: 'conditions', component: components.conditions },
+            {
+              property: 'deviceUuid', required: true, component: components.output,
+              relation: { target: 'PrinterDevice', plural: 'devices', prefix: '/api/v1/manage/printer', valueKey: 'uuid' }
+            }
+          ]
+        },
+        list: { disabled_actions: [] }
+      }
+    },
+    routes: [route('PrinterOrderRule')]
+  }
+  const projection = buildAdminConfigProjection(config, { componentBindings })
+  const fields = findEntity(projection, 'PrinterOrderRule').actions.create.fields
+  const byName = new Map(fields.map(field => [field.property, field]))
+  assert.equal(byName.get('events').type, 'array')
+  assert.equal(byName.get('events').componentName, 'OrderPrintEvents')
+  assert.equal(byName.get('conditions').type, 'array')
+  assert.equal(byName.get('conditions').componentName, 'OrderPrintConditions')
+  assert.equal(byName.get('deviceUuid').type, 'relation')
+  assert.equal(byName.get('deviceUuid').relation.target, 'PrinterDevice')
+  assert.equal(byName.get('deviceUuid').relation.valueKey, 'uuid')
+  assert.equal(findEntity(projection, 'PrinterOrderRule').actions.update.fields.some(field => field.property === 'storeUuid'), false)
+
+  const unbound = buildAdminConfigProjection(config)
+  assert.ok(unbound.unsupported.some(item => item.property === 'events' && item.reason === 'custom_component' && item.required))
+  const permissive = { isActionAllowed: () => true, isFieldAllowed: () => true }
+  assert.equal(configuredCapabilities(unbound, permissive).find(item => item.entity === 'PrinterOrderRule')?.actions.includes('create'), false)
+  assert.equal(configuredCapabilities(projection, permissive).find(item => item.entity === 'PrinterOrderRule').actions.includes('create'), true)
+
+  const invalidRelationBinding = buildAdminConfigProjection(config, {
+    componentBindings: {
+      PrinterOrderRule: {
+        ...componentBindings.PrinterOrderRule,
+        deviceUuid: { componentName: 'OrderPrintOutputSelect', type: 'relation' }
+      }
+    }
+  })
+  assert.equal(findEntity(invalidRelationBinding, 'PrinterOrderRule').actions.create.fields.some(field => field.property === 'deviceUuid'), false)
+
+  const configuredTypeBinding = buildAdminConfigProjection(config, {
+    componentBindings: {
+      PrinterOrderRule: {
+        ...componentBindings.PrinterOrderRule,
+        events: { componentName: 'OrderPrintEvents', type: 'string' }
+      }
+    }
+  })
+  assert.equal(findEntity(configuredTypeBinding, 'PrinterOrderRule').actions.create.fields
+    .find(field => field.property === 'events').type, 'string')
+
+  // Metadata reports the backing column as JSON before the binding narrows it.
+  const metadataConfig = {
+    ...config,
+    entities: {
+      PrinterOrderRule: {
+        ...config.entities.PrinterOrderRule,
+        form: {
+          fields: config.entities.PrinterOrderRule.form.fields.map(field =>
+            ['events', 'conditions'].includes(field.property) ? { ...field, type: 'json' } : field)
+        }
+      }
+    }
+  }
+  const metadataProjection = buildAdminConfigProjection(metadataConfig, { componentBindings })
+  const metadataField = findEntity(metadataProjection, 'PrinterOrderRule').actions.create.fields
+    .find(field => field.property === 'events')
+  assert.equal(metadataField.type, 'array')
+  assert.equal(configuredCapabilities(metadataProjection, permissive).find(item => item.entity === 'PrinterOrderRule').actions.includes('create'), true)
+})
+
+test('component identity falls back to the compiled SFC filename', () => {
+  const config = {
+    entities: {
+      PrinterOrderRule: {
+        entity: { name: 'PrinterOrderRule', plural: 'order-rules', prefix: '/api/v1/manage/printer' },
+        form: {
+          fields: [
+            { property: 'name', required: true },
+            {
+              property: 'events', required: true,
+              component: { __file: '/workspace/business/admin/config/components/OrderPrintEvents.vue', props: ['form'] }
+            }
+          ]
+        },
+        list: { disabled_actions: [] }
+      }
+    },
+    routes: [route('PrinterOrderRule')]
+  }
+  const projection = buildAdminConfigProjection(config, { componentBindings })
+  const events = findEntity(projection, 'PrinterOrderRule').actions.create.fields.find(field => field.property === 'events')
+  assert.equal(events.type, 'array')
+  assert.equal(events.componentName, 'OrderPrintEvents')
+  assert.equal(configuredCapabilities(projection, { isActionAllowed: () => true, isFieldAllowed: () => true })
+    .find(item => item.entity === 'PrinterOrderRule').actions.includes('create'), true)
 })

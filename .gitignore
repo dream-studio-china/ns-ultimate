@@ -19,6 +19,9 @@ var/docker-dev/
 var/admin-agent/
 /integration/backend/public/admin
 
+# Local tool artifacts
+.playwright-mcp/
+
 # Editors / OS
 .DS_Store
 .idea/

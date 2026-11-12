@@ -5,7 +5,7 @@ import { normalizeProvider, PROVIDER_PRESETS, providerUsesApiKey } from '../src/
 test('provides DeepSeek, OpenCode Go, Ollama and Custom presets', () => {
   assert.deepEqual(Object.keys(PROVIDER_PRESETS), ['deepseek', 'opencodeGo', 'ollama', 'custom'])
   assert.equal(PROVIDER_PRESETS.deepseek.baseUrl, 'https://api.deepseek.com/v1')
-  assert.equal(PROVIDER_PRESETS.opencodeGo.baseUrl, 'https://opencode.ai/zen/go/v1')
+  assert.equal(PROVIDER_PRESETS.opencodeGo.baseUrl, 'https://opencode.ai/inference/go/openai/v1')
   assert.equal(PROVIDER_PRESETS.opencodeGo.defaultModel, 'deepseek-v4.1-flash')
   assert.equal(PROVIDER_PRESETS.ollama.baseUrl, 'http://localhost:11434/v1')
   assert.equal(normalizeProvider(undefined, 'http://localhost:11434/v1'), 'ollama')

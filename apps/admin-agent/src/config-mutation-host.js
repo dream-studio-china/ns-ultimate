@@ -385,7 +385,8 @@ export function createConfigMutationHost({ getProjection, request, policy, befor
     operationHistoryScope: 'session',
     getUnsupportedFormControls: () => projection().unsupported.filter(item => ['field', 'form'].includes(item.feature)),
     getWriteCapabilities: capabilities,
-    getBatchCreateCapabilities: () => capabilities().filter(item => item.actions.includes('create')),
+    getBatchCreateCapabilities: () => capabilities().filter(item => item.actions.includes('create')
+      && (typeof policy.isBatchAllowed !== 'function' || policy.isBatchAllowed(item.entity, 'create'))),
     prepareRecordChange, commitRecordChange, prepareRecordBatch, commitRecordBatch,
     async restoreRecordChange(id, signal) { const op = lookup(id); await check(op, signal); return preview(op) },
     async restoreRecordBatch(id, signal) {

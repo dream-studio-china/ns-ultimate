@@ -327,15 +327,28 @@ function fieldLabel(field, property) {
 }
 
 /**
- * Resolve an explicit host binding for a scalar UI component. The binding must
- * match the exact configured component name and field property. Matching never
- * executes a component callback; it only permits a configured scalar value.
+ * Resolve an explicit host binding for a UI component. The binding must match
+ * the exact configured component name and field property. Matching never
+ * executes a component callback; it only permits a configured value. Relation
+ * components must declare `relation: true`; every other binding is a value
+ * control whose configured type comes from the effective form metadata.
  */
+function componentIdentity(component) {
+  if (typeof component?.name === 'string' && component.name) return component.name
+  if (typeof component?.__name === 'string' && component.__name) return component.__name
+  if (typeof component?.__file === 'string') {
+    const file = component.__file.split(/[\\/]/).pop() || ''
+    const base = file.replace(/\.[^.]+$/, '')
+    return base || null
+  }
+  return null
+}
+
 function boundComponent(raw, entityLabel, property, componentBindings) {
   if (!Object.hasOwn(raw, 'component') || raw.component === undefined || raw.component === null) {
     return { present: false, ok: true }
   }
-  const componentName = raw.component && typeof raw.component.name === 'string' ? raw.component.name : null
+  const componentName = componentIdentity(raw.component)
   if (!componentName || !isPlainRecord(componentBindings) || hasUnsafeKeys(componentBindings)) {
     return { present: true, ok: false }
   }
@@ -345,13 +358,28 @@ function boundComponent(raw, entityLabel, property, componentBindings) {
   if (!isPlainRecord(entityBinding) || hasUnsafeKeys(entityBinding)) return { present: true, ok: false }
   const fieldBinding = Object.hasOwn(entityBinding, property) ? entityBinding[property] : null
   if (!isPlainRecord(fieldBinding) || hasUnsafeKeys(fieldBinding)) return { present: true, ok: false }
-  if (Object.keys(fieldBinding).some(key => !['componentName', 'type'].includes(key))) {
+  if (Object.keys(fieldBinding).some(key => !['componentName', 'type', 'relation'].includes(key))) {
     return { present: true, ok: false }
   }
   if (fieldBinding.componentName !== componentName) return { present: true, ok: false }
+  if (fieldBinding.relation !== undefined && typeof fieldBinding.relation !== 'boolean') {
+    return { present: true, ok: false }
+  }
   const type = normalizeFieldType(fieldBinding.type, false)
-  if (!type || type === 'relation') return { present: true, ok: false }
-  if (raw.type !== undefined && normalizeFieldType(raw.type, false) !== type) return { present: true, ok: false }
+  if (!type) return { present: true, ok: false }
+  // Relation components must opt in explicitly; scalar components must not.
+  if (type === 'relation' ? fieldBinding.relation !== true : fieldBinding.relation === true) {
+    return { present: true, ok: false }
+  }
+  if (raw.type !== undefined && normalizeFieldType(raw.type, false) !== type) {
+    // Metadata often reports a plain JSON column as "json" for a custom editor
+    // that stores an array. A trusted host binding may narrow that JSON value,
+    // but it must never widen a scalar field.
+    const metadataType = normalizeFieldType(raw.type, false)
+    if (!(metadataType === 'object' && (type === 'array' || type === 'object'))) {
+      return { present: true, ok: false }
+    }
+  }
   return { present: true, ok: true, componentName, type }
 }
 

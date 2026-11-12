@@ -8,8 +8,8 @@ export const AGENT_DELETE_ALLOWLIST = Object.freeze([
 
 export function isAgentActionAllowed(entity, action) {
   if (/^(?:.*Wallet.*|PaymentDeduction|Permission|Role|RoleFieldGrant|Assignment|UserRole|UserPermission|Setting|SystemSetting|PaymentSetting|StoreWechatSetting|PrinterAccount|PrinterJob|WechatApplication|WechatMerchant)$/i.test(entity)) return false
-  // The ordinary device POST registers with a provider, unlike a database-only form save.
-  if (entity === 'PrinterDevice' && action === 'create') return false
+  // Device creation calls the configured provider before saving. The host
+  // offers it as a normal preview with an explicit external-registration note.
   if (['User', 'Profile', 'WechatUser'].includes(entity) && action !== 'create') return false
   if (action !== 'delete') return true
   return AGENT_DELETE_ALLOWLIST.includes(entity)
@@ -33,7 +33,7 @@ const ACTION_FIELD_DENYLIST = Object.freeze({
   // The management API supports category store changes, but assistant writes
   // deliberately keep cross-store reassignment out of scope.
   ProductCategory: Object.freeze({ update: ['store'] }),
-  PrinterDevice: Object.freeze({ update: ['account', 'serialNumber', 'kind'] }),
+  PrinterDevice: Object.freeze({ create: ['enabled'], update: ['account', 'serialNumber', 'kind'] }),
   PrinterTemplate: Object.freeze({ update: ['kind'] }),
   // Recipe creation always starts active; only status updates are accepted.
   SpecificationRecipe: Object.freeze({ create: ['status'], update: ['specificationUuid', 'lines'] }),
@@ -42,6 +42,7 @@ const ACTION_FIELD_DENYLIST = Object.freeze({
 
 /** Exceptions only: ordinary fields are supplied by the effective form. */
 export function isAgentFieldAllowed(entity, property, action) {
+  if (entity === 'PrinterAccount' && /(?:userKey|developerKey|credential)/i.test(property)) return false
   if (/(?:password|secret|token|credential|privateKey|apiKey)/i.test(property)
     && !(entity === 'User' && property === 'plainPassword')) return false
   if (entity === 'User' && ['roles', 'permissions', 'permission', 'groups'].includes(property)) return false
@@ -50,5 +51,8 @@ export function isAgentFieldAllowed(entity, property, action) {
 
 export const agentMutationPolicy = Object.freeze({
   isActionAllowed: isAgentActionAllowed,
-  isFieldAllowed: isAgentFieldAllowed
+  isFieldAllowed: isAgentFieldAllowed,
+  // External provider registration must stay a one-device, one-confirmation
+  // action even though ordinary create batches exist for other entities.
+  isBatchAllowed: (entity, action) => !(entity === 'PrinterDevice' && action === 'create')
 })

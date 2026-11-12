@@ -12,7 +12,7 @@ export default {
   PrinterOrderRule: {
     entity: { name: 'PrinterOrderRule', prefix: '/api/v1/manage/printer', plural: 'order-rules' },
     form: { fields: [
-      { property: 'storeUuid', type: 'RelationToOne', required: true, hidden: (_form, id) => !!id, relation: { target: 'Store', plural: 'stores', prefix: '/api/v1/manage', valueKey: 'uuid' } },
+      { property: 'storeUuid', type: 'RelationToOne', required: true, hidden: 'update', relation: { target: 'Store', plural: 'stores', prefix: '/api/v1/manage', valueKey: 'uuid' } },
       { property: 'name', required: true, type_options: { maxlength: 120 } },
       { property: 'enabled', type: 'boolean', default_value: false, help: t('Print rule enable help') },
       { property: 'events', component: OrderPrintEvents, required: true, default_value: [] },
