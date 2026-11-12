@@ -7,7 +7,7 @@ export const PROVIDER_PRESETS = Object.freeze({
   }),
   opencodeGo: Object.freeze({
     label: 'OpenCode Go',
-    baseUrl: 'https://opencode.ai/zen/go/v1',
+    baseUrl: 'https://opencode.ai/inference/go/openai/v1',
     defaultModel: 'deepseek-v4.1-flash',
     modelPlaceholder: 'deepseek-v4.1-flash'
   }),
