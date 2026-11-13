@@ -184,7 +184,7 @@ export default {
   'Print rule output help': '請選擇屬於此門市的設備及印表機類型相同的範本。',
   'Print rule all conditions help': '沒有條件時，所選事件的所有訂單均符合。',
   'Print rule any conditions help': '符合任一條件時，請至少新增一個條件。',
-  'Select print events': '選擇列印時機', 'Order confirmed': '訂單確認後', 'Payment succeeded': '付款成功後', 'Store accepted': '門市接單後',
+  'Select print events': '選擇列印時機', 'Order confirmed': '訂單確認後', 'Payment succeeded': '付款成功後', 'Store accepted': '門市接單後', 'Manual print': '手動列印',
   'All conditions': '全部條件符合', 'Any condition': '任一條件符合',
   'Ticket mode': '出票方式', 'One ticket per order': '每單一張', 'One ticket per item': '每件一張',
   'Ticket mode help': '由範本決定一次列印一張總單，還是依商品數量逐件出票。',

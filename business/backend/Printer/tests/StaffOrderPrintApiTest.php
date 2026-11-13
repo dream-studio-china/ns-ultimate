@@ -70,7 +70,7 @@ final class StaffOrderPrintApiTest extends KernelTestCase
             ['type' => 'each', 'path' => 'order.items', 'children' => [['type' => 'field', 'path' => 'item.name']]],
         ]]);
         $this->rule = (new PrinterOrderRule())->setStoreUuid($this->store->getUuid())->setName('Receipt')->setEnabled(true)
-            ->setEvents(['paid'])->setDeviceUuid($this->device->getUuid())->setTemplateUuid($this->template->getUuid());
+            ->setEvents(['paid', 'manual'])->setDeviceUuid($this->device->getUuid())->setTemplateUuid($this->template->getUuid());
         $this->order = (new Order())->setStatus(Order::STATUS_CONFIRMED)
             ->addItem((new OrderItem())->setProductSnapshot(['name' => 'Tea'])->setQuantity(2));
         foreach ([$this->store, $this->other, $this->user, $permission, $role, $account, $this->device, $this->template, $this->rule, $this->order,
@@ -133,6 +133,33 @@ final class StaffOrderPrintApiTest extends KernelTestCase
         self::assertSame(1, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
         self::assertSame(202, $this->request('POST', $this->path(), [...$payload, 'commandUuid' => UUID::v4()])->getStatusCode());
         self::assertSame(2, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
+    }
+
+    public function testRulesWithoutManualEventAreNotOfferedOrPrintable(): void
+    {
+        $automaticOnly = (new PrinterOrderRule())->setStoreUuid($this->store->getUuid())->setName('Automatic only')->setEnabled(true)
+            ->setEvents(['paid'])->setDeviceUuid($this->device->getUuid())->setTemplateUuid($this->template->getUuid());
+        $this->em->persist($automaticOnly);
+        $this->em->flush();
+        $items = $this->data($this->request('GET', '/print-options'))['items'];
+        self::assertCount(1, $items);
+        self::assertSame($this->rule->getUuid(), $items[0]['ruleUuid']);
+        self::assertSame(409, $this->request('POST', $this->path(), [...$this->payload(), 'ruleUuid' => $automaticOnly->getUuid()])->getStatusCode());
+        self::assertSame(0, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
+    }
+
+    public function testManualEventIgnoresAutomaticConditionsButStillRequiresManualOptIn(): void
+    {
+        $this->rule->setConditions([['field' => 'status', 'operator' => 'equals', 'value' => 'paid']]);
+        $this->em->flush();
+        // The order is confirmed, so an automatic paid rule would not match; an
+        // explicit manual print still proceeds because the employee chose it.
+        self::assertSame(202, $this->request('POST', $this->path(), $this->payload())->getStatusCode());
+        self::assertSame(1, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
+        $this->rule->setEvents(['paid']);
+        $this->em->flush();
+        self::assertSame([], $this->data($this->request('GET', '/print-options'))['items']);
+        self::assertSame(409, $this->request('POST', $this->path(), $this->payload())->getStatusCode());
     }
 
     public function testPermissionMembershipAndOrderOwnershipAreRequired(): void

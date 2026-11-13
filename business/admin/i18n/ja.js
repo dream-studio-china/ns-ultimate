@@ -184,7 +184,7 @@ export default {
   'Print rule output help': 'この店舗に属する端末と、同じプリンター種別のテンプレートを選択してください。',
   'Print rule all conditions help': '条件がない場合、選択したイベントのすべての注文に一致します。',
   'Print rule any conditions help': 'いずれかの条件に一致する場合は、条件を1件以上追加してください。',
-  'Select print events': '印刷タイミングを選択', 'Order confirmed': '注文確定後', 'Payment succeeded': '支払い成功後', 'Store accepted': '店舗受付後',
+  'Select print events': '印刷タイミングを選択', 'Order confirmed': '注文確定後', 'Payment succeeded': '支払い成功後', 'Store accepted': '店舗受付後', 'Manual print': '手動印刷',
   'All conditions': 'すべての条件', 'Any condition': 'いずれかの条件',
   'Ticket mode': '発行単位', 'One ticket per order': '注文ごとに1枚', 'One ticket per item': '商品ごとに1枚',
   'Ticket mode help': 'テンプレートが、注文全体を1枚で印刷するか、数量ごとに1枚ずつ印刷するかを決めます。',

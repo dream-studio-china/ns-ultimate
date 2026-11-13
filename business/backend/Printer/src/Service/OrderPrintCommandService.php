@@ -27,6 +27,7 @@ final class OrderPrintCommandService
         private readonly OrderPrintRequestWriter $writer,
         private readonly TradeOrderPrintAdapter $snapshots,
         private readonly PrintDocumentRenderer $renderer,
+        private readonly OrderPrintRuleMatcher $matcher,
     ) {}
 
     /** @return list<array<string, mixed>> */
@@ -34,6 +35,7 @@ final class OrderPrintCommandService
     {
         $options = [];
         foreach ($this->em->getRepository(PrinterOrderRule::class)->findBy(['storeUuid' => $store->getUuid(), 'enabled' => true], ['id' => 'ASC'], 50) as $rule) {
+            if (!in_array('manual', $rule->getEvents(), true) || !$this->matcher->isValid($rule->toRule())) continue;
             try { [$device, $template] = $this->output($rule, $store); }
             catch (HttpException) { continue; }
             $options[] = ['ruleUuid' => $rule->getUuid(), 'name' => $rule->getName(), 'deviceName' => $device->getName(),
@@ -64,6 +66,9 @@ final class OrderPrintCommandService
             if (!$rule instanceof PrinterOrderRule) throw new HttpException(404, 'print_rule_not_found');
             $this->em->refresh($rule, LockMode::PESSIMISTIC_WRITE);
             if (!$rule->isEnabled() || $rule->getStoreUuid() !== $store->getUuid()) throw new HttpException(409, 'print_rule_unavailable');
+            if (!in_array('manual', $rule->getEvents(), true) || !$this->matcher->isValid($rule->toRule())) {
+                throw new HttpException(409, 'print_rule_not_manual');
+            }
             [$device, $template] = $this->output($rule, $store);
             $definition = $template->getDefinition();
             if ($device->getKind() === PrinterDevice::KIND_LABEL) {

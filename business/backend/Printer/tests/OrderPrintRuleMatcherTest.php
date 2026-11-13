@@ -60,6 +60,17 @@ final class OrderPrintRuleMatcherTest extends TestCase
         self::assertFalse($matcher->matches($rule, 'paid', $order));
     }
 
+    public function testManualEventIsValidButNeverTriggersAutomaticEvents(): void
+    {
+        $matcher = new OrderPrintRuleMatcher();
+        $rule = ['enabled' => true, 'events' => ['manual'], 'match' => 'all', 'conditions' => []];
+        self::assertTrue($matcher->isValid($rule));
+        self::assertFalse($matcher->matches($rule, 'confirmed', new Order()));
+        self::assertFalse($matcher->matches($rule, 'paid', new Order()));
+        self::assertFalse($matcher->matches($rule, 'accepted', new Order()));
+        self::assertFalse($matcher->matches($rule, 'manual', new Order()));
+    }
+
     public function testNonScalarMetadataDoesNotMatchScalarComparisons(): void
     {
         $matcher = new OrderPrintRuleMatcher();

@@ -184,7 +184,7 @@ export default {
   'Print rule output help': '请选择属于此门店的设备及打印机类型相同的模板。',
   'Print rule all conditions help': '没有条件时，所选事件的所有订单均匹配。',
   'Print rule any conditions help': '匹配任一条件时，请至少添加一个条件。',
-  'Select print events': '选择打印时机', 'Order confirmed': '订单确认后', 'Payment succeeded': '付款成功后', 'Store accepted': '门店接单后',
+  'Select print events': '选择打印时机', 'Order confirmed': '订单确认后', 'Payment succeeded': '付款成功后', 'Store accepted': '门店接单后', 'Manual print': '手动打印',
   'All conditions': '全部条件满足', 'Any condition': '任一条件满足',
   'Ticket mode': '出票方式', 'One ticket per order': '每单一张票', 'One ticket per item': '每件一张票',
   'Ticket mode help': '由模板决定一次打印一张总单，还是按商品数量逐件出票。',

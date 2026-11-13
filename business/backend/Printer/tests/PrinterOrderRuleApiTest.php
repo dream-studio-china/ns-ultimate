@@ -563,6 +563,21 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         self::assertCount(1, $requests[0]->getPrintData()['order']['items']);
     }
 
+    public function testManualEventCanBeSavedWithoutTriggeringAutomaticEvents(): void
+    {
+        [$token, $payload] = $this->fixtures();
+        $payload['events'] = ['manual'];
+        $response = $this->request('POST', '/api/v1/manage/printer/order-rules', $token, $payload);
+        self::assertSame(201, $response->getStatusCode(), $response->getContent());
+        $data = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertSame(['manual'], $data['events']);
+        $order = (new Order())->setStatus(Order::STATUS_PAID);
+        $matcher = new OrderPrintRuleMatcher();
+        self::assertFalse($matcher->matches($data, 'confirmed', $order));
+        self::assertFalse($matcher->matches($data, 'paid', $order));
+        self::assertFalse($matcher->matches($data, 'accepted', $order));
+    }
+
     public function testTemplateItemFilterSyntaxIsValidatedOnSave(): void
     {
         [$token] = $this->fixtures();

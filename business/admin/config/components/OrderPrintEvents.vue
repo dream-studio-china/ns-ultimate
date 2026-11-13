@@ -3,6 +3,7 @@
     <el-option value="confirmed" :label="$t('Order confirmed')" />
     <el-option value="paid" :label="$t('Payment succeeded')" />
     <el-option value="accepted" :label="$t('Store accepted')" />
+    <el-option value="manual" :label="$t('Manual print')" />
   </el-select>
 </template>
 
