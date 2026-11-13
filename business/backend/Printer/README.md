@@ -94,10 +94,10 @@ Items expose `product`, `spec`, `subTitle`, `quantityLabel`, and `price` aliases
 the core Trade item snapshot) and falls back to the specification name when it is
 missing. Both whole-order and per-unit tickets include these fields.
 `totalPrice` is the recorded line subtotal, `amountDue` is the stored order
-`totalAmount`, and `discount` is `totalPrice - amountDue` clamped at zero; all three
-are display strings with the currency symbol, the currency's fraction digits and
-thousands separators. `unitPrice`, `amount`, `price`, and `totalAmount` remain
-integer minor units. `paymentUrl` is built from the backend public origin
+`totalAmount`, and `discount` is `totalPrice - amountDue` clamped at zero. All
+monetary snapshot fields, including `totalPrice`, `discount`, `amountDue`,
+`unitPrice`, `amount`, `price`, and `totalAmount`, are integer minor units; format
+them in the template (for example `{order.amountDue|money}`) when needed. `paymentUrl` is built from the backend public origin
 (`DEFAULT_URI`) as `<origin>/h5/payment/index.html?orderUuid=<order
 uuid>&storeUuid=<store uuid>` using snapshot identities only; it is empty when
 `DEFAULT_URI` is missing or not http(s), and order metadata can never supply it. Demo-only staff/booking/waiter

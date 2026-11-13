@@ -13,7 +13,6 @@ use NsUltimate\Business\Printer\Service\OrderItemFilter;
 use NsUltimate\Business\Printer\Value\PrintCategoryContext;
 use NsUltimate\Business\Printer\Value\PrintItemContext;
 use NsUltimate\Business\Printer\Value\PrintProductContext;
-use Symfony\Component\Intl\Currencies;
 
 /** Builds durable Trade order snapshots for print rules. */
 final class TradeOrderPrintAdapter
@@ -123,9 +122,9 @@ final class TradeOrderPrintAdapter
                 'paidAt' => $order->getPaidAt()?->format(DATE_ATOM),
                 'currency' => $currency,
                 'totalAmount' => $order->getTotalAmount(),
-                'totalPrice' => $this->money($subtotal, $currency),
-                'discount' => $this->money(max(0, $subtotal - $order->getTotalAmount()), $currency),
-                'amountDue' => $this->money($order->getTotalAmount(), $currency),
+                'totalPrice' => $subtotal,
+                'discount' => max(0, $subtotal - $order->getTotalAmount()),
+                'amountDue' => $order->getTotalAmount(),
                 'paymentUrl' => $this->paymentUrl($order, $store),
                 'items' => $items,
             ],
@@ -149,15 +148,6 @@ final class TradeOrderPrintAdapter
             }
         }
         return $tickets;
-    }
-
-    /** Render a minor-unit amount the way receipt templates display it. */
-    private function money(int $amount, string $currency): string
-    {
-        $code = strtoupper($currency);
-        $digits = Currencies::exists($code) ? Currencies::getFractionDigits($code) : 2;
-        $symbol = Currencies::exists($code) ? Currencies::getSymbol($code, 'zh_CN') : $code.' ';
-        return $symbol.number_format($amount / 10 ** $digits, $digits, '.', ',');
     }
 
     /** Build the customer H5 payment link from the configured origin and snapshot identities. */

@@ -86,9 +86,9 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame('', $snapshots[0]['order']['counterName']);
         self::assertSame('', $snapshots[0]['order']['counterLabel']);
         self::assertSame('', $snapshots[0]['order']['labelHeader']);
-        self::assertSame('¥0.00', $snapshots[0]['order']['totalPrice']);
-        self::assertSame('¥0.00', $snapshots[0]['order']['discount']);
-        self::assertSame('¥0.00', $snapshots[0]['order']['amountDue']);
+        self::assertSame(0, $snapshots[0]['order']['totalPrice']);
+        self::assertSame(0, $snapshots[0]['order']['discount']);
+        self::assertSame(0, $snapshots[0]['order']['amountDue']);
         self::assertSame('', $snapshots[0]['order']['paymentUrl']);
         self::assertSame([], $adapter->buildPrintData($order, $store, false, 'entity.getQuantity() > 0'));
     }
@@ -112,9 +112,9 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame('Table A', $data['labelHeader']);
         self::assertSame($order->getCreatedAt()->format('Y/m/d H:i:s'), $data['createdTime']);
         self::assertSame(3000, $data['totalAmount']);
-        self::assertSame('¥30.00', $data['totalPrice']);
-        self::assertSame('¥0.00', $data['discount']);
-        self::assertSame('¥30.00', $data['amountDue']);
+        self::assertSame(3000, $data['totalPrice']);
+        self::assertSame(0, $data['discount']);
+        self::assertSame(3000, $data['amountDue']);
         $item = $data['items'][0];
         self::assertSame('Jasmine tea', $item['product']);
         self::assertSame('Large', $item['spec']);
@@ -135,7 +135,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         }
     }
 
-    public function testSnapshotFormatsTotalsAndBuildsPaymentUrlFromSnapshotIdentities(): void
+    public function testSnapshotExposesRawTotalsAndBuildsPaymentUrlFromSnapshotIdentities(): void
     {
         $order = (new Order())->setTotalAmount(4300)->addItem((new OrderItem())
             ->setSpecSnapshot(['name' => 'Large'])->setQuantity(2)->setUnitPrice(1500)->setPrice(3000))
@@ -145,9 +145,9 @@ final class TradeOrderPrintAdapterTest extends TestCase
         $adapter = $this->snapshotAdapter($order, $store, [], 'https://shop.example/');
         $data = $adapter->buildPrintData($order, $store)[0]['order'];
 
-        self::assertSame('¥48.00', $data['totalPrice']);
-        self::assertSame('¥5.00', $data['discount']);
-        self::assertSame('¥43.00', $data['amountDue']);
+        self::assertSame(4800, $data['totalPrice']);
+        self::assertSame(500, $data['discount']);
+        self::assertSame(4300, $data['amountDue']);
         self::assertSame(
             'https://shop.example/h5/payment/index.html?orderUuid='.$order->getUuid().'&storeUuid='.$store->getUuid(),
             $data['paymentUrl'],
@@ -167,7 +167,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         foreach (['staffName', 'bookingName', 'waiterName', 'isAdd', 'laterPay'] as $field) {
             self::assertArrayNotHasKey($field, $data);
         }
-        self::assertSame('¥0.00', $data['totalPrice']);
+        self::assertSame(0, $data['totalPrice']);
     }
 
     public function testMultipleCountersUseStableBindingOrderAndCodeFallback(): void
