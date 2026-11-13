@@ -6,11 +6,14 @@ namespace NsUltimate\Business\Printer\Tests;
 
 use App\Store\Entity\Store;
 use App\Trade\Entity\Order;
+use App\Trade\Entity\OrderItem;
 use App\Trade\Entity\OrderStoreLifecycle;
 use App\Trade\Message\StoreOrderAcceptedMessage;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
+use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Printer\Adapter\OrderPrintRuleEventAdapter;
 use NsUltimate\Business\Printer\Adapter\StoreOrderAcceptedPrintHandler;
 use NsUltimate\Business\Printer\Adapter\TradeOrderPrintAdapter;
@@ -71,14 +74,91 @@ final class TradeOrderPrintAdapterTest extends TestCase
 
     public function testSnapshotBuilderRetainsSingleAndFilteredBehavior(): void
     {
-        $adapter = new TradeOrderPrintAdapter($this->createStub(EntityManagerInterface::class));
         $order = new Order();
         $store = new Store('shop-a', 'Shop A');
+        $adapter = $this->snapshotAdapter($order, $store, []);
         $snapshots = $adapter->buildPrintData($order, $store);
         self::assertCount(1, $snapshots);
         self::assertSame($order->getUuid(), $snapshots[0]['order']['uuid']);
         self::assertSame([], $snapshots[0]['order']['items']);
+        self::assertNull($snapshots[0]['order']['id']);
+        self::assertSame('', $snapshots[0]['order']['counterName']);
+        self::assertSame('', $snapshots[0]['order']['counterLabel']);
+        self::assertSame('', $snapshots[0]['order']['labelHeader']);
         self::assertSame([], $adapter->buildPrintData($order, $store, false, 'entity.getQuantity() > 0'));
+    }
+
+    public function testSnapshotUsesBoundCounterNamesAndAddsItemAliasesWithoutChangingMoneyTypes(): void
+    {
+        $order = (new Order())->setTotalAmount(3000)->addItem((new OrderItem())
+            ->setProductSnapshot(['name' => 'Jasmine tea'])
+            ->setSpecSnapshot(['name' => 'Large'])
+            ->setQuantity(2)->setUnitPrice(1500)->setPrice(3000));
+        $store = new Store('shop-a', 'Shop A');
+        $counter = (new Counter())->setCode('A01')->setName('Table A');
+        (new \ReflectionProperty($counter, 'id'))->setValue($counter, 9);
+        $binding = (new OrderCounter())->setCounter($counter);
+        $counter->setName('Renamed table')->setCode('NEW');
+        $adapter = $this->snapshotAdapter($order, $store, [$binding]);
+        $data = $adapter->buildPrintData($order, $store)[0]['order'];
+
+        self::assertSame('Table A', $data['counterName']);
+        self::assertSame('Table A(#9)', $data['counterLabel']);
+        self::assertSame('Table A', $data['labelHeader']);
+        self::assertSame($order->getCreatedAt()->format('Y/m/d H:i:s'), $data['createdTime']);
+        self::assertSame(3000, $data['totalAmount']);
+        $item = $data['items'][0];
+        self::assertSame('Jasmine tea', $item['product']);
+        self::assertSame('Large', $item['spec']);
+        self::assertSame('x2', $item['quantityLabel']);
+        self::assertSame(1500, $item['unitPrice']);
+        self::assertSame(3000, $item['price']);
+        self::assertSame($item['amount'], $item['price']);
+
+        $tickets = $adapter->buildPrintData($order, $store, true);
+        self::assertCount(2, $tickets);
+        foreach ($tickets as $index => $ticket) {
+            self::assertSame($data, $ticket['order']);
+            self::assertSame($item['product'], $ticket['item']['product']);
+            self::assertSame($item['price'], $ticket['item']['price']);
+            self::assertSame($index + 1, $ticket['item']['index']);
+        }
+    }
+
+    public function testMultipleCountersUseStableBindingOrderAndCodeFallback(): void
+    {
+        $order = new Order();
+        $store = new Store('shop-a', 'Shop A');
+        $bindings = [
+            (new OrderCounter())->setCounter((new Counter())->setName('Table A')->setCode('A01')),
+            (new OrderCounter())->setCounter((new Counter())->setCode('B01')),
+        ];
+        $data = $this->snapshotAdapter($order, $store, $bindings)->buildPrintData($order, $store)[0]['order'];
+        self::assertSame('Table A, B01', $data['counterName']);
+        self::assertSame('Table A, B01', $data['counterLabel']);
+        self::assertSame('Table A, B01', $data['labelHeader']);
+    }
+
+    public function testSnapshotDoesNotInventUnsupportedDemoFieldsFromMetadata(): void
+    {
+        $order = (new Order())->setMetadata(['staffName' => 'Untrusted', 'paymentUrl' => 'https://example.invalid']);
+        $store = new Store('shop-a', 'Shop A');
+        $data = $this->snapshotAdapter($order, $store, [])->buildPrintData($order, $store)[0]['order'];
+        foreach (['staffName', 'bookingName', 'waiterName', 'isAdd', 'laterPay', 'totalPrice', 'discount', 'amountDue', 'paymentUrl'] as $field) {
+            self::assertArrayNotHasKey($field, $data);
+        }
+    }
+
+    /** @param list<OrderCounter> $bindings */
+    private function snapshotAdapter(Order $order, Store $store, array $bindings): TradeOrderPrintAdapter
+    {
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->method('findBy')->with([
+            'tradeOrderUuid' => $order->getUuid(), 'storeUuid' => $store->getUuid(),
+        ], ['id' => 'ASC'])->willReturn($bindings);
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('getRepository')->with(OrderCounter::class)->willReturn($repository);
+        return new TradeOrderPrintAdapter($em);
     }
 
     private function entityManager(Order $order, Store $store, int $selections): EntityManagerInterface
