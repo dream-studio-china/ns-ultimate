@@ -58,6 +58,16 @@ This projection neither decrypts nor validates stored credentials, contacts Huif
 
 GET never creates/replaces an Invoice, generates an attempt/request sequence, recalculates prices, confirms an order, or initiates/retries payment. It does not return a QR code, JSAPI `payInfo`, or signing material. `outTradeNo` is an identifier, not a launch credential. Signed-in customers can use the separate [Huifu customer payment endpoint](huifu-customer-payments.md). Anonymous initiation and multiple-Invoice exception handling remain [proposed follow-ups](../design/architecture.md#payment-evolution-multiple-invoices-and-public-checkout).
 
+## Public order store lookup
+
+`GET /api/v1/public/orders/{orderUuid}/store` is implemented by [OrderStoreController](../../business/backend/Store/src/Controller/Public/OrderStoreController.php). It exposes only `orderUuid` and `storeUuid`:
+
+```json
+{ "orderUuid": "<order-uuid>", "storeUuid": "<store-uuid>" }
+```
+
+Store ownership comes from the trusted `OrderStoreLifecycle`, never from `metadata._store` or caller input. Malformed/unknown UUIDs, orders without a lifecycle, and missing or inactive Stores return `404 order_not_found`; the response uses `Cache-Control: no-store`. The lookup does not return items, amounts, payment data or arbitrary metadata, and it provides no list/search or numeric-ID access. [PublicOrderStoreApiTest](../../business/backend/Store/tests/Integration/PublicOrderStoreApiTest.php) covers the exact projection, UUID case handling, missing lifecycle and inactive Store behavior.
+
 ## Validation
 
 [PublicOrderPaymentApiTest](../../business/backend/Store/tests/Integration/PublicOrderPaymentApiTest.php) exercises anonymous access, the exact public projection, existing/no Invoice, current versus historical Invoice selection, stored status reads, rejected numeric/unknown IDs, lifecycle visibility, inactive Stores, conflicting Invoice ownership/amounts, channel intersection/default fallback, disabled/revoked configuration, no credential decryption, and repeated GET/POST rejection without payment creation. Tests run through the composed Kernel with an isolated SQLite schema. Real provider launch behavior, production rate limiting, browser identity and MySQL concurrency are not established by these tests.
