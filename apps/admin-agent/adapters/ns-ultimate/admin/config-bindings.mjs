@@ -35,9 +35,6 @@ export const scalarComponentBindings = Object.freeze({
  * than generic form metadata.
  */
 export const printerComponentBindings = Object.freeze({
-  PrinterTemplate: Object.freeze({
-    sampleData: Object.freeze({ componentName: 'PrinterSampleDataField', type: 'json' })
-  }),
   PrinterOrderRule: Object.freeze({
     storeUuid: Object.freeze({ componentName: 'PrinterRuleStoreField', type: 'relation', relation: true }),
     events: Object.freeze({ componentName: 'OrderPrintEvents', type: 'array' }),

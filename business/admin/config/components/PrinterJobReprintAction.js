@@ -27,7 +27,7 @@ export default defineComponent({
       } finally { busy.value = false }
     }
     return () => h('span', { style: 'display:inline-flex;align-items:center;gap:8px;' }, [
-      h(ElButton, { link: true, type: 'warning', loading: busy.value, disabled: !props.record.uuid, onClick: submit }, () => t('Reprint')),
+      h(ElButton, { size: 'small', type: 'warning', plain: true, icon: 'el-icon-printer', loading: busy.value, disabled: !props.record.uuid, onClick: submit }, () => t('Reprint')),
       ...(error.value ? [h(ElAlert, { title: error.value, type: 'error', closable: false })] : [])
     ])
   }

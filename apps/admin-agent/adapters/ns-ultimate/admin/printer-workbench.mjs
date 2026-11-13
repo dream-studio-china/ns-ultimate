@@ -117,12 +117,9 @@ function validateTemplateChange(action, record, changes) {
     if (!plain(changes.definition)) throw new TypeError('A printer template definition must be a JSON object.')
     const kind = action === 'update' ? record.kind : changes.kind
     if (changes.definition.kind !== kind) throw new TypeError('Template kind must match the definition kind.')
-    if (!plain(changes.sampleData)) {
-      throw new TypeError('Template definition changes require sampleData in the same change.')
-    }
   }
-  if (action === 'create' && (!plain(changes.definition) || !plain(changes.sampleData))) {
-    throw new TypeError('Creating a printer template requires definition and sampleData objects.')
+  if (action === 'create' && !plain(changes.definition)) {
+    throw new TypeError('Creating a printer template requires a definition object.')
   }
   if (changes.itemFilter !== undefined && changes.itemFilter !== null
     && (typeof changes.itemFilter !== 'string' || changes.itemFilter.length > 2000)) {

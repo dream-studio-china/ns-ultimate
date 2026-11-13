@@ -98,19 +98,13 @@ test('printer change annotations cover rule impact, provider registration and te
     entity: 'PrinterTemplate',
     action: 'update',
     record: { kind: 'receipt', ticketMode: 'single', itemFilter: null },
-    changes: { definition: { kind: 'receipt', nodes: [] }, sampleData: { order: {} } }
+    changes: { definition: { kind: 'receipt', nodes: [] } }
   }))
   assert.throws(() => validatePrinterChange({
     entity: 'PrinterTemplate',
     action: 'update',
     record: { kind: 'receipt' },
-    changes: { definition: { kind: 'receipt', nodes: [] } }
-  }), /sampleData/)
-  assert.throws(() => validatePrinterChange({
-    entity: 'PrinterTemplate',
-    action: 'update',
-    record: { kind: 'receipt' },
-    changes: { definition: { kind: 'label', nodes: [] }, sampleData: {} }
+    changes: { definition: { kind: 'label', nodes: [] } }
   }), /kind/)
   assert.throws(() => validatePrinterChange({
     entity: 'PrinterTemplate',

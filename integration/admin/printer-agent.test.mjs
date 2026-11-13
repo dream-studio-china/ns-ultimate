@@ -43,16 +43,15 @@ test('device settings expose create and update without provider-controlled creat
 
 test('template settings expose every editable field and keep kind immutable on update', () => {
   const config = load('business/admin/config/collections/printer/PrinterTemplate.js', {
-    PrinterPaperAction: { name: 'PrinterPaperAction' },
-    PrinterSampleDataField: { name: 'PrinterSampleDataField' }
+    PrinterPaperAction: { name: 'PrinterPaperAction' }
   })
   const template = capability(config.PrinterTemplate, 'PrinterTemplate', 'templates')
   assert.deepEqual([...template.actions].sort(), ['create', 'update'])
   assert.deepEqual(Object.keys(template.actionFields.create).sort(), [
-    'definition', 'itemFilter', 'kind', 'name', 'sampleData', 'ticketMode'
+    'definition', 'itemFilter', 'kind', 'name', 'ticketMode'
   ])
   assert.deepEqual(Object.keys(template.actionFields.update).sort(), [
-    'definition', 'itemFilter', 'name', 'sampleData', 'ticketMode'
+    'definition', 'itemFilter', 'name', 'ticketMode'
   ])
   assert.equal(Object.hasOwn(template.actionFields.update, 'kind'), false)
 })

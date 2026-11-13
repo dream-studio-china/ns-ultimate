@@ -212,6 +212,7 @@ export default {
   'Printer type': 'プリンターの種類', Receipt: 'レシート', Label: 'ラベル', Sample: 'サンプル',
   'Order with multiple items': '複数明細の注文', 'Batch product labels': '商品ラベルの一括印刷',
   'Update preview': 'プレビューを更新', 'Template JSON': 'テンプレート JSON', 'Sample data JSON': 'サンプルデータ JSON',
+  'Restore default sample': 'サンプルデータを初期値に戻す', 'Sample data is saved in this browser': 'サンプルデータはこのブラウザに保存されます',
   'Print simulation': '印刷プレビュー', Pages: 'ページ', 'Label page': 'ラベル',
   'Simulation disclaimer': 'プレビューは目安です。実際の印刷結果を確認してください。', 'Xpyun commands': 'Xpyun 印刷コマンド', Example: 'サンプル',
   'Printer accounts and devices': 'プリンターアカウントと端末', 'Add Xpyun account': 'Xpyun アカウントを追加', 'Account name': 'アカウント名',

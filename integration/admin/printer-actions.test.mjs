@@ -5,14 +5,15 @@ import test from 'node:test'
 
 const printerSampleData = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer-sample-data.json', import.meta.url), 'utf8'))
 
-function mount(name, request, confirm = () => true, record = {}) {
+function mount(name, request, confirm = () => true, record = {}, storage = null) {
   const source = readFileSync(new URL(`../../business/admin/config/components/${name}.js`, import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.component =')
   const context = {
     defineComponent: value => value, ref: value => ({ value }), resolveComponent: name => name,
     h: (type, props, children) => Array.isArray(props) || typeof props === 'string'
       ? ({ type, props: {}, children: props }) : ({ type, props: props || {}, children }),
-    t: key => key, request, printerSampleData, PrinterPaper: 'PrinterPaper', window: { confirm }, globalThis: { crypto: { randomUUID: () => 'test-key' } }
+    t: key => key, request, printerSampleData, PrinterPaper: 'PrinterPaper', window: { confirm },
+    globalThis: { crypto: { randomUUID: () => 'test-key' }, ...(storage ? { localStorage: storage } : {}) }
   }
   runInNewContext(source, context)
   const render = context.globalThis.component.setup({ refresh() {}, record })
@@ -136,6 +137,10 @@ test('reprint requires confirmation and posts the source job UUID as a new print
   }, () => true, { uuid: 'original-job' })
   const button = ui.nodes().find(node => node.type === 'ElButton' && node.children() === 'Reprint')
   assert.equal(button.props.type, 'warning')
+  assert.equal(button.props.plain, true)
+  assert.equal(button.props.size, 'small')
+  assert.equal(button.props.icon, 'el-icon-printer')
+  assert.equal(button.props.link, undefined)
   await button.props.onClick()
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['/api/v1/manage/printer/jobs/original-job/reprint', {}]])
 })
@@ -166,15 +171,46 @@ test('each template previews its definition with editable sample data', async() 
   const ui = mount('PrinterPaperAction', {
     post: async(url, data) => { posts.push([url, data]); return { data: { document: { kind: 'label', pages: ['Label'] } } } }
   }, () => true, { id: 3, definition: { kind: 'label', nodes: [] } })
-  await ui.button('Paper preview').props.onClick()
+  const previewButton = ui.nodes().find(node => node.type === 'ElButton' && node.children() === 'Paper preview')
+  assert.equal(previewButton.props.plain, true)
+  assert.equal(previewButton.props.size, 'small')
+  assert.equal(previewButton.props.icon, 'el-icon-view')
+  assert.equal(previewButton.props.link, undefined)
+  await previewButton.props.onClick()
   assert.equal(posts[0][0], '/api/v1/manage/printer/preview')
   assert.equal(posts[0][1].template.kind, 'label')
   assert.deepEqual(JSON.parse(JSON.stringify(posts[0][1].data)), printerSampleData)
-  assert.equal(posts[0][1].data.store.name, 'Demo tea shop')
-  assert.equal(posts[0][1].data.order.items[0].product, 'Jasmine tea')
-  assert.equal(posts[0][1].data.order.amountDue, '\uffe543.00')
-  assert.equal(new URL(posts[0][1].data.order.paymentUrl).hostname, 'example.invalid')
+  assert.equal(posts[0][1].data.store.name, 'Niushun Taishan Taicheng Store')
+  assert.equal(posts[0][1].data.order.items[0].product, 'Beef oyster blade')
+  assert.equal(posts[0][1].data.order.amountDue, 21100)
+  assert.equal(posts[0][1].data.order.uuid, 'b49d86b6-4b9e-4b8a-9527-4a34a4a1ed34')
   assert.ok(ui.nodes().some(node => node.type === 'PrinterPaper'))
+})
+
+test('paper preview keeps the edited sample in browser storage and restores the default', async() => {
+  const entries = new Map()
+  const storage = {
+    getItem: key => entries.get(key) ?? null,
+    setItem: (key, value) => entries.set(key, value),
+    removeItem: key => entries.delete(key)
+  }
+  const posts = []
+  const ui = mount('PrinterPaperAction', {
+    post: async(url, data) => { posts.push(data); return { data: { document: { kind: 'label', pages: ['Label'] } } } }
+  }, () => true, { id: 3, definition: { kind: 'label', nodes: [] } }, storage)
+  const input = () => ui.nodes().find(node => node.type === 'ElInput')
+
+  await ui.button('Paper preview').props.onClick()
+  assert.deepEqual(JSON.parse(JSON.stringify(posts[0].data)), printerSampleData)
+
+  input().props['onUpdate:modelValue'](JSON.stringify({ order: { number: 'CUSTOM' } }))
+  assert.equal(JSON.parse(entries.get('ns-ultimate:printer-sample-data')).order.number, 'CUSTOM')
+  await ui.button('Update preview').props.onClick()
+  assert.deepEqual(JSON.parse(JSON.stringify(posts[1].data)), { order: { number: 'CUSTOM' } })
+
+  await ui.button('Restore default sample').props.onClick()
+  assert.equal(entries.has('ns-ultimate:printer-sample-data'), false)
+  assert.equal(JSON.parse(input().props.modelValue).order.number, '75')
 })
 
 test('editing template demo data sends the edited values rather than replacing them with defaults', async() => {
@@ -189,5 +225,5 @@ test('editing template demo data sends the edited values rather than replacing t
   input.props['onUpdate:modelValue'](JSON.stringify(edited))
   await ui.button('Update preview').props.onClick()
   assert.equal(posts[1].data.store.name, 'Edited store')
-  assert.equal(printerSampleData.store.name, 'Demo tea shop')
+  assert.equal(printerSampleData.store.name, 'Niushun Taishan Taicheng Store')
 })

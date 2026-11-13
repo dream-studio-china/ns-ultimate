@@ -212,6 +212,7 @@ export default {
   'Printer type': '印表機類型', Receipt: '收據', Label: '標籤', Sample: '範例',
   'Order with multiple items': '含多筆明細的訂單', 'Batch product labels': '批次商品標籤',
   'Update preview': '更新預覽', 'Template JSON': '範本 JSON', 'Sample data JSON': '範例資料 JSON',
+  'Restore default sample': '還原預設範例資料', 'Sample data is saved in this browser': '範例資料會保存在此瀏覽器',
   'Print simulation': '列印模擬', Pages: '頁', 'Label page': '標籤',
   'Simulation disclaimer': '模擬效果僅供參考，請以實機列印結果為準。', 'Xpyun commands': '芯燁雲列印指令', Example: '範例',
   'Printer accounts and devices': '列印帳號與裝置', 'Add Xpyun account': '新增芯燁雲帳號', 'Account name': '帳號名稱',

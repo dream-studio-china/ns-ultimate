@@ -232,6 +232,7 @@ export default {
   'Printer type': '打印机类型', Receipt: '收据', Label: '标签', Sample: '示例',
   'Order with multiple items': '含多条明细的订单', 'Batch product labels': '批量商品标签',
   'Update preview': '更新预览', 'Template JSON': '模板 JSON', 'Sample data JSON': '示例数据 JSON',
+  'Restore default sample': '恢复默认示例数据', 'Sample data is saved in this browser': '示例数据会保存在此浏览器',
   'Print simulation': '打印模拟', Pages: '页', 'Label page': '标签',
   'Simulation disclaimer': '模拟效果仅供参考，请以实机打印结果为准。', 'Xpyun commands': '芯烨云打印指令', Example: '示例',
   'Printer accounts and devices': '打印账号与设备', 'Add Xpyun account': '添加芯烨云账号', 'Account name': '账号名称',

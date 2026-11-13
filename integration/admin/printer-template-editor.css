@@ -1,0 +1,19 @@
+/*
+ * Printer template definitions and sample data are large. The core JSON editor
+ * caps itself at 220-520px, so double the default height and allow the operator
+ * to drag the container taller. The marker class comes from the field options in
+ * business/admin/config/collections/printer/PrinterTemplate.js.
+ */
+.form-admin .printer-json-editor .jsoneditor-container {
+  height: 440px;
+  min-height: 440px;
+  max-height: none;
+  resize: vertical;
+  overflow: auto;
+}
+
+.form-admin .printer-json-editor .jsoneditor-outer,
+.form-admin .printer-json-editor .ace_editor {
+  min-height: 440px;
+  max-height: none;
+}
