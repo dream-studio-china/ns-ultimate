@@ -19,11 +19,8 @@ final class TradeOrderPrintAdapter
 {
     private readonly OrderItemFilter $filter;
 
-    public function __construct(
-        private readonly EntityManagerInterface $entityManager,
-        ?OrderItemFilter $filter = null,
-        private readonly string $paymentBaseUrl = '',
-    ) {
+    public function __construct(private readonly EntityManagerInterface $entityManager, ?OrderItemFilter $filter = null)
+    {
         $this->filter = $filter ?? new OrderItemFilter();
     }
 
@@ -125,7 +122,6 @@ final class TradeOrderPrintAdapter
                 'totalPrice' => $subtotal,
                 'discount' => max(0, $subtotal - $order->getTotalAmount()),
                 'amountDue' => $order->getTotalAmount(),
-                'paymentUrl' => $this->paymentUrl($order, $store),
                 'items' => $items,
             ],
             'store' => ['uuid' => $store->getUuid(), 'name' => $store->getName(), 'code' => $store->getCode()],
@@ -148,17 +144,5 @@ final class TradeOrderPrintAdapter
             }
         }
         return $tickets;
-    }
-
-    /** Build the customer H5 payment link from the configured origin and snapshot identities. */
-    private function paymentUrl(Order $order, Store $store): string
-    {
-        $base = rtrim(trim($this->paymentBaseUrl), '/');
-        $scheme = strtolower((string) parse_url($base, PHP_URL_SCHEME));
-        if ($base === '' || !in_array($scheme, ['http', 'https'], true)) {
-            return '';
-        }
-        return $base.'/h5/payment/index.html?orderUuid='.rawurlencode($order->getUuid())
-            .'&storeUuid='.rawurlencode($store->getUuid());
     }
 }

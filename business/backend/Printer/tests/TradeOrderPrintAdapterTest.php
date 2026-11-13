@@ -89,7 +89,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame(0, $snapshots[0]['order']['totalPrice']);
         self::assertSame(0, $snapshots[0]['order']['discount']);
         self::assertSame(0, $snapshots[0]['order']['amountDue']);
-        self::assertSame('', $snapshots[0]['order']['paymentUrl']);
+        self::assertArrayNotHasKey('paymentUrl', $snapshots[0]['order']);
         self::assertSame([], $adapter->buildPrintData($order, $store, false, 'entity.getQuantity() > 0'));
     }
 
@@ -135,36 +135,28 @@ final class TradeOrderPrintAdapterTest extends TestCase
         }
     }
 
-    public function testSnapshotExposesRawTotalsAndBuildsPaymentUrlFromSnapshotIdentities(): void
+    public function testSnapshotExposesRawOrderTotals(): void
     {
         $order = (new Order())->setTotalAmount(4300)->addItem((new OrderItem())
             ->setSpecSnapshot(['name' => 'Large'])->setQuantity(2)->setUnitPrice(1500)->setPrice(3000))
             ->addItem((new OrderItem())
                 ->setSpecSnapshot(['name' => 'Slice'])->setQuantity(1)->setUnitPrice(1800)->setPrice(1800));
         $store = new Store('shop-a', 'Shop A');
-        $adapter = $this->snapshotAdapter($order, $store, [], 'https://shop.example/');
-        $data = $adapter->buildPrintData($order, $store)[0]['order'];
+        $data = $this->snapshotAdapter($order, $store, [])->buildPrintData($order, $store)[0]['order'];
 
         self::assertSame(4800, $data['totalPrice']);
         self::assertSame(500, $data['discount']);
         self::assertSame(4300, $data['amountDue']);
-        self::assertSame(
-            'https://shop.example/h5/payment/index.html?orderUuid='.$order->getUuid().'&storeUuid='.$store->getUuid(),
-            $data['paymentUrl'],
-        );
         self::assertSame('Large', $data['items'][0]['subTitle']);
+        self::assertArrayNotHasKey('paymentUrl', $data);
     }
 
-    public function testSnapshotIgnoresInvalidPaymentBaseAndUntrustedDemoMetadata(): void
+    public function testSnapshotDoesNotInventDemoMetadata(): void
     {
         $order = (new Order())->setMetadata(['staffName' => 'Untrusted', 'paymentUrl' => 'https://evil.example']);
         $store = new Store('shop-a', 'Shop A');
-        foreach (['', 'ftp://shop.example', 'not-a-url'] as $base) {
-            $data = $this->snapshotAdapter($order, $store, [], $base)->buildPrintData($order, $store)[0]['order'];
-            self::assertSame('', $data['paymentUrl'], $base);
-        }
         $data = $this->snapshotAdapter($order, $store, [])->buildPrintData($order, $store)[0]['order'];
-        foreach (['staffName', 'bookingName', 'waiterName', 'isAdd', 'laterPay'] as $field) {
+        foreach (['staffName', 'bookingName', 'waiterName', 'isAdd', 'laterPay', 'paymentUrl'] as $field) {
             self::assertArrayNotHasKey($field, $data);
         }
         self::assertSame(0, $data['totalPrice']);
@@ -194,14 +186,14 @@ final class TradeOrderPrintAdapterTest extends TestCase
                 ->setProductSnapshot(['uuid' => 'missing-product', 'name' => 'Cake'])
                 ->setSpecSnapshot(['name' => 'Slice'])->setQuantity(1)->setUnitPrice(1800)->setPrice(1800));
         $store = new Store('shop-a', 'Shop A');
-        $data = $this->snapshotAdapter($order, $store, [], '', $product)->buildPrintData($order, $store)[0]['order'];
+        $data = $this->snapshotAdapter($order, $store, [], $product)->buildPrintData($order, $store)[0]['order'];
 
         self::assertSame('Less ice', $data['items'][0]['subTitle']);
         self::assertSame('Slice', $data['items'][1]['subTitle']);
     }
 
     /** @param list<OrderCounter> $bindings */
-    private function snapshotAdapter(Order $order, Store $store, array $bindings, string $paymentBaseUrl = '', ?Product $product = null): TradeOrderPrintAdapter
+    private function snapshotAdapter(Order $order, Store $store, array $bindings, ?Product $product = null): TradeOrderPrintAdapter
     {
         $repository = $this->createStub(EntityRepository::class);
         $repository->method('findBy')->willReturnCallback(
@@ -221,7 +213,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
             Product::class => $products,
             default => throw new \LogicException('Unexpected repository '.$class),
         });
-        return new TradeOrderPrintAdapter($em, null, $paymentBaseUrl);
+        return new TradeOrderPrintAdapter($em);
     }
 
     private function entityManager(Order $order, Store $store, int $selections): EntityManagerInterface

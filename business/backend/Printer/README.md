@@ -82,8 +82,8 @@ requests without template snapshots fail closed and require operator investigati
 
 Order snapshots also expose demo-compatible `order.id` (nullable numeric database
 ID), `createdTime` (`Y/m/d H:i:s`, using the stored creation timestamp's timezone),
-`counterName`, `counterLabel`, `labelHeader`, `totalPrice`, `discount`, `amountDue`,
-and `paymentUrl`. Counter fields use the order's store-scoped Counter bindings,
+`counterName`, `counterLabel`, `labelHeader`, `totalPrice`, `discount`, and
+`amountDue`. Counter fields use the order's store-scoped Counter bindings,
 ordered by binding ID, and freeze the binding's name snapshot (falling back to its
 code snapshot). Multiple counters are joined with `, `; no bindings produce empty
 strings. `counterLabel` adds `(#id)` for each counter's database ID, and
@@ -97,13 +97,13 @@ missing. Both whole-order and per-unit tickets include these fields.
 `totalAmount`, and `discount` is `totalPrice - amountDue` clamped at zero. All
 monetary snapshot fields, including `totalPrice`, `discount`, `amountDue`,
 `unitPrice`, `amount`, `price`, and `totalAmount`, are integer minor units; format
-them in the template (for example `{order.amountDue|money}`) when needed. `paymentUrl` is built from the backend public origin
-(`DEFAULT_URI`) as `<origin>/h5/payment/index.html?orderUuid=<order
-uuid>&storeUuid=<store uuid>` using snapshot identities only; it is empty when
-`DEFAULT_URI` is missing or not http(s), and order metadata can never supply it. Demo-only staff/booking/waiter
-names and labels, `isAdd`, `laterPay`, and item `tags` have no validated equivalent
-in this adapter and are not fabricated from arbitrary order metadata. Existing
-queued requests and job reprints retain their saved snapshots without enrichment.
+them in the template (for example `{order.amountDue|money}`) when needed. Payment
+links are not snapshotted: compose them in the template from `order.uuid` and
+`store.uuid` with a `string` or `qr` `template` property. Demo-only
+staff/booking/waiter names and labels, `isAdd`, `laterPay`, and item `tags` have no
+validated equivalent in this adapter and are not fabricated from arbitrary order
+metadata. Existing queued requests and job reprints retain their saved snapshots
+without enrichment.
 
 Events never call printer providers. Run
 `app:printer:dispatch-orders` periodically (or as a supervised worker command)
