@@ -1,5 +1,6 @@
 import { printerSetupArticle } from './printer-setup.mjs'
 import { printerTemplatesArticle } from './printer-templates.mjs'
+import { printerTemplateFieldsArticle } from './printer-template-fields.mjs'
 import { printerAutoPrintingArticle } from './printer-auto-printing.mjs'
 import { counterArticle } from './counter.mjs'
 import { wechatArticle } from './wechat.mjs'
@@ -13,6 +14,7 @@ import { supportBoundariesArticle } from './support-boundaries.mjs'
 export const knowledgeArticles = [
   printerSetupArticle,
   printerTemplatesArticle,
+  printerTemplateFieldsArticle,
   printerAutoPrintingArticle,
   counterArticle,
   wechatArticle,
