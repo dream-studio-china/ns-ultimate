@@ -17,6 +17,7 @@ use App\Storage\Service\MediaStorageRegistry;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Entity\Counter;
+use NsUltimate\Business\Printer\Service\OrderPrintCommandService;
 use NsUltimate\Business\Store\Entity\CatalogImage;
 use NsUltimate\Business\Store\Entity\Product;
 use NsUltimate\Business\Store\Entity\StaffOperation;
@@ -41,6 +42,7 @@ final class OperationsController extends RestController
         private readonly EntityManagerInterface $em,
         private readonly StaffCatalogService $catalog,
         private readonly StaffCommandService $commands,
+        private readonly OrderPrintCommandService $printing,
         private readonly StoreOrderServiceInterface $orders,
         private readonly MediaServiceInterface $media,
         private readonly MediaStorageRegistry $storage,
@@ -110,6 +112,7 @@ final class OperationsController extends RestController
                 (bool) preg_match('/^product\.update\.[0-9a-fA-F-]{36}$/D', $action) => 'store:product:update',
                 (bool) preg_match('/^order\.(accept|reject|fulfill|verify)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:order:'.$matches[1],
                 (bool) preg_match('/^order\.payment_close\.[0-9a-fA-F-]{36}$/D', $action) => 'store:order:payment_close',
+                (bool) preg_match('/^order\.print\.[0-9a-fA-F-]{36}$/D', $action) => 'store:order:print',
                 (bool) preg_match('/^counter_session\.(update|end)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:counter_session:'.$matches[1],
                 (bool) preg_match('/^counter_order\.(create|replace|cancel|merge)\.[0-9a-fA-F-]{36}$/D', $action, $matches) => 'store:counter_order:'.$matches[1],
                 default => null,
@@ -121,8 +124,27 @@ final class OperationsController extends RestController
                 $value = $receipt->getResult()[$key] ?? null;
                 if (is_string($value) && \App\Core\Utils\UUID::is_valid($value)) $result[$key] = $value;
             }
+            if (str_starts_with($action, 'order.print.')) {
+                $result['requestUuids'] = array_values(array_filter($receipt->getResult()['requestUuids'] ?? [],
+                    static fn (mixed $value): bool => is_string($value) && \App\Core\Utils\UUID::is_valid($value)));
+            }
             return ['status' => 'succeeded', 'result' => $result];
         });
+    }
+
+    #[Route('/print-options', name: 'print-options', methods: ['GET'])]
+    public function printOptions(string $scopeId): JsonResponse
+    {
+        $store = $this->store($scopeId, 'store:order:print');
+        return $this->respond(fn () => ['items' => $this->printing->options($store)]);
+    }
+
+    #[Route('/trade-orders/{tradeOrderUuid}/print', name: 'order-print', methods: ['POST'], requirements: ['tradeOrderUuid' => '[0-9a-fA-F-]{36}'])]
+    public function printOrder(Request $request, string $scopeId, string $tradeOrderUuid): JsonResponse
+    {
+        $store = $this->store($scopeId, 'store:order:print');
+        $actor = $this->actor();
+        return $this->respond(fn () => $this->printing->enqueue($store, $actor, $tradeOrderUuid, $this->body($request)), 202);
     }
 
     #[Route('/{resource}', name: 'list', methods: ['GET'], requirements: ['resource' => 'products|product-categories|counters|orders|history'])]

@@ -35,6 +35,7 @@ const seededRoles = [
   'store_order_operator',
   'store_order_refund_operator',
   'store_order_payment_closer',
+  'store_order_printer',
   'store_catalog_operator',
   'store_operation_auditor',
   'store_counter_manager',

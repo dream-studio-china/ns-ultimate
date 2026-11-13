@@ -9,13 +9,15 @@ use App\Trade\Entity\Order;
 /** Pure, bounded matching only; this class does not schedule or send print jobs. */
 final class OrderPrintRuleMatcher
 {
-    private const EVENTS = ['confirmed', 'paid', 'accepted'];
+    /** Rule event options, including the explicit staff-triggered manual option. */
+    private const EVENTS = ['confirmed', 'paid', 'accepted', 'manual'];
+    private const AUTOMATIC_EVENTS = ['confirmed', 'paid', 'accepted'];
     private const OPERATORS = ['equals', 'not_equals', 'exists', 'not_exists'];
 
     /** @param array<string, mixed> $rule */
     public function matches(array $rule, string $event, Order $order): bool
     {
-        if (($rule['enabled'] ?? null) !== true || !in_array($event, self::EVENTS, true) || !$this->isValid($rule)) {
+        if (($rule['enabled'] ?? null) !== true || !in_array($event, self::AUTOMATIC_EVENTS, true) || !$this->isValid($rule)) {
             return false;
         }
         $events = $rule['events'];

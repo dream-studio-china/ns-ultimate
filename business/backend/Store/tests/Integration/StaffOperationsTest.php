@@ -225,6 +225,12 @@ final class StaffOperationsTest extends KernelTestCase
         self::assertSame(Role::SCOPE_STORE, $closer->getScopeType());
         self::assertTrue($closer->hasPermission('store:order:payment_close'));
         self::assertFalse($closer->hasPermission('store:order:refund'));
+        $printer = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_order_printer']);
+        self::assertInstanceOf(Role::class, $printer);
+        self::assertSame(Role::SCOPE_STORE, $printer->getScopeType());
+        self::assertTrue($printer->hasPermission('store:order:print'));
+        self::assertFalse($printer->hasPermission('store:order:refund'));
+        self::assertFalse($role->hasPermission('store:order:print'));
         $reader = $this->em->getRepository(Role::class)->findOneBy(['code' => 'store_order_reader']);
         self::assertInstanceOf(Role::class, $reader);
         self::assertSame(Role::SCOPE_STORE, $reader->getScopeType());

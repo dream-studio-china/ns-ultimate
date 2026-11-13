@@ -10,6 +10,7 @@ export default {
     entity: { name: 'PrinterJob', prefix: '/api/v1/manage/printer', plural: 'jobs' },
     form: { fields: [] },
     list: {
+      query: { '@order': 'entity.createdAt|DESC, entity.id|DESC' },
       disabled_actions: ['new', 'edit', 'batch_edit', 'batch_delete'],
       actions: [
         { name: 'printer-job-create', position: 'top', component: PrinterJobAction },

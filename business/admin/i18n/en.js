@@ -184,7 +184,7 @@ export default {
   'Print rule output help': 'Choose a device belonging to this store and a template with the same printer type.',
   'Print rule all conditions help': 'No conditions: every order for the selected events matches.',
   'Print rule any conditions help': 'Add at least one condition when matching any condition.',
-  'Select print events': 'Select print events', 'Order confirmed': 'Order confirmed', 'Payment succeeded': 'Payment succeeded', 'Store accepted': 'Store accepted',
+  'Select print events': 'Select print events', 'Order confirmed': 'Order confirmed', 'Payment succeeded': 'Payment succeeded', 'Store accepted': 'Store accepted', 'Manual print': 'Manual print',
   'All conditions': 'All conditions', 'Any condition': 'Any condition',
   'Ticket mode': 'Ticket mode', 'One ticket per order': 'One ticket per order', 'One ticket per item': 'One ticket per item',
   'Ticket mode help': 'The template decides whether one print covers the whole order or one ticket is printed per item quantity.',

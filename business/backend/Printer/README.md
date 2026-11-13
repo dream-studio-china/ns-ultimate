@@ -39,7 +39,10 @@ snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 
 The Printer module enqueues requests for enabled store-owned order print rules.
 Use the order print rules page to select one or more events (order confirmed,
-payment completed, Store acceptance), a device, template and copies.
+payment completed, Store acceptance) and optionally **Manual print**, a device,
+template and copies. A rule with the manual event is also available to the
+store-scoped staff print API; manual is an explicit opt-in and never fires
+automatically. Manual printing ignores the rule's automatic conditions.
 Conditions match order status or bounded metadata paths using strict scalar
 comparisons or existence checks, combined by one level of all/any. An empty all
 list is unconditional; an empty any list is invalid. A rule produces requests
@@ -143,6 +146,18 @@ without contacting a printer:
 Disable the demo account and device after the check.
 
 ## Admin integration
+
+Store employees can manually queue an order through the scoped
+`GET /api/v1/store/{storeUuid}/operations/print-options` and
+`POST /api/v1/store/{storeUuid}/operations/trade-orders/{tradeOrderUuid}/print`
+APIs with active membership and the separately assigned `store:order:print`
+grant. They select a configured rule that includes the `manual` event; the
+backend builds trusted order data and queues immutable requests under a durable
+command UUID. The existing dispatcher
+submits them; acceptance never proves physical output. See the
+[manual printing contract](../../../docs/contracts/store-console-operations.md#manual-order-printing)
+for payloads, limits, retry semantics and permission setup. This does not connect
+the Store Console UI or expose administrator/provider APIs to staff.
 
 The admin menu uses the project's EasyAdmin entity configuration for accounts,
 devices, templates, and jobs. Device creation uses the standard CRUD create

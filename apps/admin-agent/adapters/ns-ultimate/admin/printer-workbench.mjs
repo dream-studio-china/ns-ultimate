@@ -12,7 +12,7 @@
 
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
 const UUID = new RegExp(UUID_PATTERN, 'i')
-const EVENTS = Object.freeze(['confirmed', 'paid', 'accepted'])
+const EVENTS = Object.freeze(['confirmed', 'paid', 'accepted', 'manual'])
 const OPERATORS = Object.freeze(['equals', 'not_equals', 'exists', 'not_exists'])
 const CONDITION_FIELD = /^(?:status|metadata(?:\.[A-Za-z_][A-Za-z0-9_-]{0,63}){1,4})$/
 const MAX_DOCUMENT_CHARACTERS = 9000
@@ -141,7 +141,8 @@ export function validatePrinterChange({ entity, action, record = {}, changes = {
     return {
       evidence: {
         scope: 'future_automatic_printing',
-        automaticPrintingEnabled: rule.enabled === true,
+        automaticPrintingEnabled: rule.enabled === true && rule.events.some(event => event !== 'manual'),
+        manualPrintingEnabled: rule.enabled === true && rule.events.includes('manual'),
         events: rule.events,
         match: rule.match,
         conditionCount: rule.conditions.length,

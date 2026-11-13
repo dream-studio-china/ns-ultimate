@@ -153,7 +153,7 @@ test('print rule translations cover every supported locale', () => {
       'Print rule output store help', 'Print rule outputs failed to load',
       'Print rule output unavailable help', 'Order print rules',
       'Ticket mode', 'One ticket per order', 'One ticket per item',
-      'Item filter', 'Item filter help'
+      'Item filter', 'Item filter help', 'Manual print'
     ]) {
       assert.ok(source.includes(`'${key}'`), `${locale} is missing ${key}`)
     }
@@ -173,6 +173,11 @@ test('rules no longer carry a print scene; templates own ticket granularity and 
   assert.match(template, /language: 'javascript'/)
   const display = template.match(/list_display: \[([^\]]*)\]/)?.[1] ?? ''
   assert.doesNotMatch(display, /itemFilter/)
+})
+
+test('manual print is an explicit rule event option', () => {
+  const source = read('business/admin/config/components/OrderPrintEvents.vue')
+  assert.match(source, /<el-option value="manual" :label="\$t\('Manual print'\)" \/>/)
 })
 
 test('condition editor warns about empty match modes and bounds field length', () => {
