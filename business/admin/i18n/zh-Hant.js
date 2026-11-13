@@ -264,7 +264,7 @@ export default {
   'Payment rate help': '支付費率，小數表示，如 0.006 = 0.6%',
   'Payment channels help': '各支付渠道開關與密鑰，密鑰由後端加密保存',
   'Payment setting help': '該門店綁定的支付設置方案',
-  'Product category help': '產品所屬分類',
+  'Product category help': '僅顯示所選門店的分類和全域分類。',
   'Product metadata help': '商品專屬展示資訊以頂層欄位形式儲存在 metadata 中。',
   'Product cover help': '商品封面圖上傳至七牛，並儲存在 metadata.cover 中。',
   Cover: '封面圖',
@@ -614,5 +614,8 @@ export default {
   'Expected item amounts (JSON)': '預期商品金額（JSON）',
   'Expected item amounts must be a JSON array.': '預期商品金額必須是 JSON 陣列。',
   'Item prices reflect item-level actions. Order-level reductions affect only the order total.': '商品金額只反映商品級動作；訂單級優惠只影響訂單總額。',
-  'Some campaign snapshots were excluded from execution: {errors}': '部分活動快照未參與模擬：{errors}'
+  'Some campaign snapshots were excluded from execution: {errors}': '部分活動快照未參與模擬：{errors}',
+  'Failed to load product categories': '載入商品分類失敗。',
+  'No categories are available for this store or global scope': '目前門店和全域範圍暫無可選分類。',
+  'No global product categories are available': '暫無全域商品分類。'
 }

@@ -262,6 +262,7 @@ export default {
   'Product metadata help': '商品固有の表示情報は metadata のトップレベル項目として保存されます。',
   'Product cover help': '商品カバー画像は Qiniu にアップロードされ、metadata.cover に保存されます。',
   'Product store help': '所属店舗。全体商品にする場合は空欄にしてください。',
+  'Product category help': '選択した店舗のカテゴリとグローバルカテゴリのみを表示します。',
   Cover: 'カバー',
   'Sold out': '売り切れ',
   'Recommendation level': 'おすすめレベル',
@@ -608,5 +609,8 @@ export default {
   'Expected item amounts (JSON)': '期待商品金額（JSON）',
   'Expected item amounts must be a JSON array.': '期待商品金額は JSON 配列で指定してください。',
   'Item prices reflect item-level actions. Order-level reductions affect only the order total.': '商品金額は商品単位の動作のみを反映します。注文単位の割引は注文合計にのみ影響します。',
-  'Some campaign snapshots were excluded from execution: {errors}': '一部のキャンペーンスナップショットは実行から除外されました：{errors}'
+  'Some campaign snapshots were excluded from execution: {errors}': '一部のキャンペーンスナップショットは実行から除外されました：{errors}',
+  'Failed to load product categories': '商品カテゴリを読み込めませんでした。',
+  'No categories are available for this store or global scope': 'この店舗およびグローバル範囲で選択できるカテゴリはありません。',
+  'No global product categories are available': 'グローバル商品カテゴリはありません。'
 }

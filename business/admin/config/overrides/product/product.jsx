@@ -21,6 +21,7 @@ import specificationConfig from '../../../../../core/crud-admin/src/configs/coll
 import ProductMetadataSchema from './ProductMetadata.json'
 import ProductSettingsSchema from './ProductSettings.json'
 import ProductListControl from '../../components/ProductListControl.vue'
+import ProductCategorySelect from '../../components/ProductCategorySelect.vue'
 
 const listControlField = (property, options) => ({
   property,
@@ -235,7 +236,7 @@ export default {
       fields: [
         'name',
         { property: 'description', type: 'text', required: false },
-        { property: 'category', required: false, help: t('Product category help') },
+        { property: 'category', required: false, component: ProductCategorySelect, help: t('Product category help') },
         { property: 'store', relation: { entity: 'Store', valueKey: 'uuid' }, required: false, help: t('Product store help') },
         { property: 'sortOrder', type: 'integer', required: false, default_value: 0 },
         { property: 'recommendationLevel', type: 'integer', required: false, default_value: 0 },

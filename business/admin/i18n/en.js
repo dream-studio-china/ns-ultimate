@@ -610,5 +610,9 @@ export default {
   'Expected item amounts (JSON)': 'Expected item amounts (JSON)',
   'Expected item amounts must be a JSON array.': 'Expected item amounts must be a JSON array.',
   'Item prices reflect item-level actions. Order-level reductions affect only the order total.': 'Item prices reflect item-level actions. Order-level reductions affect only the order total.',
-  'Some campaign snapshots were excluded from execution: {errors}': 'Some campaign snapshots were excluded from execution: {errors}'
+  'Some campaign snapshots were excluded from execution: {errors}': 'Some campaign snapshots were excluded from execution: {errors}',
+  'Product category help': 'Only categories belonging to the selected store and global categories are shown.',
+  'Failed to load product categories': 'Failed to load product categories.',
+  'No categories are available for this store or global scope': 'No categories are available for this store or global scope.',
+  'No global product categories are available': 'No global product categories are available.'
 }

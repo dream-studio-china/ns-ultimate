@@ -218,7 +218,7 @@ export default {
   'Payment rate help': '支付费率，小数表示，如 0.006 = 0.6%',
   'Payment channels help': '各支付渠道开关与密钥，密钥由后端加密保存',
   'Payment setting help': '该门店绑定的支付设置方案',
-  'Product category help': '产品所属分类',
+  'Product category help': '仅显示所选门店的分类和全局分类。',
   'Product metadata help': '商品专属展示信息以顶层字段形式存储在 metadata 中。',
   'Product cover help': '商品封面图上传至七牛，并存储在 metadata.cover 中。',
   Cover: '封面图',
@@ -614,5 +614,8 @@ export default {
   'Expected item amounts (JSON)': '预期商品金额（JSON）',
   'Expected item amounts must be a JSON array.': '预期商品金额必须是 JSON 数组。',
   'Item prices reflect item-level actions. Order-level reductions affect only the order total.': '商品金额只反映商品级动作；订单级优惠只影响订单总额。',
-  'Some campaign snapshots were excluded from execution: {errors}': '部分活动快照未参与模拟：{errors}'
+  'Some campaign snapshots were excluded from execution: {errors}': '部分活动快照未参与模拟：{errors}',
+  'Failed to load product categories': '加载商品分类失败。',
+  'No categories are available for this store or global scope': '当前门店和全局范围暂无可选分类。',
+  'No global product categories are available': '暂无全局商品分类。'
 }
