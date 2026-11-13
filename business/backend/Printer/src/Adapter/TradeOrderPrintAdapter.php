@@ -13,14 +13,18 @@ use NsUltimate\Business\Printer\Service\OrderItemFilter;
 use NsUltimate\Business\Printer\Value\PrintCategoryContext;
 use NsUltimate\Business\Printer\Value\PrintItemContext;
 use NsUltimate\Business\Printer\Value\PrintProductContext;
+use Symfony\Component\Intl\Currencies;
 
 /** Builds durable Trade order snapshots for print rules. */
 final class TradeOrderPrintAdapter
 {
     private readonly OrderItemFilter $filter;
 
-    public function __construct(private readonly EntityManagerInterface $entityManager, ?OrderItemFilter $filter = null)
-    {
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+        ?OrderItemFilter $filter = null,
+        private readonly string $paymentBaseUrl = '',
+    ) {
         $this->filter = $filter ?? new OrderItemFilter();
     }
 
@@ -59,6 +63,13 @@ final class TradeOrderPrintAdapter
             ];
             $data['product'] = $data['name'];
             $data['spec'] = $data['specification'];
+            // Display subtitle lives in the current product metadata, which the core
+            // Trade item snapshot does not carry; fall back to the specification name.
+            $productMetadata = $currentProduct?->getMetadata();
+            $subtitle = is_array($productMetadata) && is_string($productMetadata['subtitle'] ?? null)
+                ? trim($productMetadata['subtitle'])
+                : '';
+            $data['subTitle'] = $subtitle !== '' ? $subtitle : $data['specification'];
             $data['quantityLabel'] = 'x'.$item->getQuantity();
             $data['price'] = $data['amount'];
             if ($filtered) {
@@ -93,6 +104,11 @@ final class TradeOrderPrintAdapter
             $counterLabels[] = $counterId === null ? $name : $name.'(#'.$counterId.')';
         }
         $counterName = implode(', ', $counterNames);
+        $subtotal = 0;
+        foreach ($order->getItems() as $item) {
+            $subtotal += $item->getPrice();
+        }
+        $currency = $order->getCurrency();
         $base = [
             'order' => [
                 'id' => $order->getId(),
@@ -105,8 +121,12 @@ final class TradeOrderPrintAdapter
                 'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
                 'createdTime' => $order->getCreatedAt()->format('Y/m/d H:i:s'),
                 'paidAt' => $order->getPaidAt()?->format(DATE_ATOM),
-                'currency' => $order->getCurrency(),
+                'currency' => $currency,
                 'totalAmount' => $order->getTotalAmount(),
+                'totalPrice' => $this->money($subtotal, $currency),
+                'discount' => $this->money(max(0, $subtotal - $order->getTotalAmount()), $currency),
+                'amountDue' => $this->money($order->getTotalAmount(), $currency),
+                'paymentUrl' => $this->paymentUrl($order, $store),
                 'items' => $items,
             ],
             'store' => ['uuid' => $store->getUuid(), 'name' => $store->getName(), 'code' => $store->getCode()],
@@ -129,5 +149,26 @@ final class TradeOrderPrintAdapter
             }
         }
         return $tickets;
+    }
+
+    /** Render a minor-unit amount the way receipt templates display it. */
+    private function money(int $amount, string $currency): string
+    {
+        $code = strtoupper($currency);
+        $digits = Currencies::exists($code) ? Currencies::getFractionDigits($code) : 2;
+        $symbol = Currencies::exists($code) ? Currencies::getSymbol($code, 'zh_CN') : $code.' ';
+        return $symbol.number_format($amount / 10 ** $digits, $digits, '.', ',');
+    }
+
+    /** Build the customer H5 payment link from the configured origin and snapshot identities. */
+    private function paymentUrl(Order $order, Store $store): string
+    {
+        $base = rtrim(trim($this->paymentBaseUrl), '/');
+        $scheme = strtolower((string) parse_url($base, PHP_URL_SCHEME));
+        if ($base === '' || !in_array($scheme, ['http', 'https'], true)) {
+            return '';
+        }
+        return $base.'/h5/payment/index.html?orderUuid='.rawurlencode($order->getUuid())
+            .'&storeUuid='.rawurlencode($store->getUuid());
     }
 }

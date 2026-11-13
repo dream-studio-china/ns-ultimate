@@ -82,21 +82,28 @@ requests without template snapshots fail closed and require operator investigati
 
 Order snapshots also expose demo-compatible `order.id` (nullable numeric database
 ID), `createdTime` (`Y/m/d H:i:s`, using the stored creation timestamp's timezone),
-`counterName`, `counterLabel`, and `labelHeader`. Counter fields use the order's
-store-scoped Counter bindings, ordered by binding ID, and freeze the binding's
-name snapshot (falling back to its code snapshot). Multiple counters are joined
-with `, `; no bindings produce empty strings. `counterLabel` adds `(#id)` for each
-counter's database ID, and `labelHeader` matches `counterName`.
-Items expose `product`, `spec`, `quantityLabel`, and `price` aliases for `name`,
-`specification`, `x{quantity}`, and `amount`. Both whole-order and per-unit tickets
-include these fields. Monetary fields, including `unitPrice` and `price`, remain
-integer minor units, not the formatted currency strings in the offline demo.
-Demo-only staff/booking/waiter names and labels, `isAdd`, `laterPay`, `totalPrice`,
-`discount`, `amountDue`, `paymentUrl`, item `subTitle`, and item `tags` have no
-validated equivalent in this adapter and are not fabricated from arbitrary order
-metadata. Use `order.totalAmount` for the recorded order total; it is not an
-outstanding balance. Existing queued requests and job reprints retain their saved
-snapshots without enrichment.
+`counterName`, `counterLabel`, `labelHeader`, `totalPrice`, `discount`, `amountDue`,
+and `paymentUrl`. Counter fields use the order's store-scoped Counter bindings,
+ordered by binding ID, and freeze the binding's name snapshot (falling back to its
+code snapshot). Multiple counters are joined with `, `; no bindings produce empty
+strings. `counterLabel` adds `(#id)` for each counter's database ID, and
+`labelHeader` matches `counterName`.
+Items expose `product`, `spec`, `subTitle`, `quantityLabel`, and `price` aliases for
+`name`, `specification`, the product display subtitle, `x{quantity}`, and `amount`.
+`subTitle` reads the current product metadata `subtitle` (display-only, not part of
+the core Trade item snapshot) and falls back to the specification name when it is
+missing. Both whole-order and per-unit tickets include these fields.
+`totalPrice` is the recorded line subtotal, `amountDue` is the stored order
+`totalAmount`, and `discount` is `totalPrice - amountDue` clamped at zero; all three
+are display strings with the currency symbol, the currency's fraction digits and
+thousands separators. `unitPrice`, `amount`, `price`, and `totalAmount` remain
+integer minor units. `paymentUrl` is built from the backend public origin
+(`DEFAULT_URI`) as `<origin>/h5/payment/index.html?orderUuid=<order
+uuid>&storeUuid=<store uuid>` using snapshot identities only; it is empty when
+`DEFAULT_URI` is missing or not http(s), and order metadata can never supply it. Demo-only staff/booking/waiter
+names and labels, `isAdd`, `laterPay`, and item `tags` have no validated equivalent
+in this adapter and are not fabricated from arbitrary order metadata. Existing
+queued requests and job reprints retain their saved snapshots without enrichment.
 
 Events never call printer providers. Run
 `app:printer:dispatch-orders` periodically (or as a supervised worker command)
