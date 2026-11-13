@@ -15,8 +15,8 @@ export default {
         { value: 'single', label: t('One ticket per order') }, { value: 'per_unit', label: t('One ticket per item') }
       ] } },
       { property: 'itemFilter', label: t('Item filter'), type: 'code', required: false, default_value: '', help: t('Item filter help'), type_options: { language: 'javascript', height: 120 } },
-      { property: 'definition', label: t('Template JSON'), type: 'json', required: true },
-      { property: 'sampleData', label: t('Sample data JSON'), type: 'json', component: PrinterSampleDataField, required: true, help: t('Template validation data help') }
+      { property: 'definition', label: t('Template JSON'), type: 'json', field_options: { class: 'printer-json-editor' }, required: true },
+      { property: 'sampleData', label: t('Sample data JSON'), type: 'json', component: PrinterSampleDataField, field_options: { class: 'printer-json-editor' }, required: true, help: t('Template validation data help') }
     ] },
     list: {
       actions: [{ name: 'printer-template-preview', position: 'list', component: PrinterPaperAction }],
