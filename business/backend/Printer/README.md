@@ -79,6 +79,25 @@ is per order, so previously printed source orders can still produce repeated tic
 New requests freeze rule configuration, template definition, and order/product
 data before dispatch. Drain pending legacy requests before upgrading: old queued
 requests without template snapshots fail closed and require operator investigation.
+
+Order snapshots also expose demo-compatible `order.id` (nullable numeric database
+ID), `createdTime` (`Y/m/d H:i:s`, using the stored creation timestamp's timezone),
+`counterName`, `counterLabel`, and `labelHeader`. Counter fields use the order's
+store-scoped Counter bindings, ordered by binding ID, and freeze the binding's
+name snapshot (falling back to its code snapshot). Multiple counters are joined
+with `, `; no bindings produce empty strings. `counterLabel` adds `(#id)` for each
+counter's database ID, and `labelHeader` matches `counterName`.
+Items expose `product`, `spec`, `quantityLabel`, and `price` aliases for `name`,
+`specification`, `x{quantity}`, and `amount`. Both whole-order and per-unit tickets
+include these fields. Monetary fields, including `unitPrice` and `price`, remain
+integer minor units, not the formatted currency strings in the offline demo.
+Demo-only staff/booking/waiter names and labels, `isAdd`, `laterPay`, `totalPrice`,
+`discount`, `amountDue`, `paymentUrl`, item `subTitle`, and item `tags` have no
+validated equivalent in this adapter and are not fabricated from arbitrary order
+metadata. Use `order.totalAmount` for the recorded order total; it is not an
+outstanding balance. Existing queued requests and job reprints retain their saved
+snapshots without enrichment.
+
 Events never call printer providers. Run
 `app:printer:dispatch-orders` periodically (or as a supervised worker command)
 to submit pending requests. Dispatch atomically claims requests and prunes

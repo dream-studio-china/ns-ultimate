@@ -12,6 +12,7 @@ use App\Trade\Entity\OrderStoreLifecycle;
 use App\Trade\Message\StoreOrderAcceptedMessage;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Printer\Adapter\StoreOrderAcceptedPrintHandler;
 use NsUltimate\Business\Printer\Command\DispatchOrderPrintRequestsCommand;
 use NsUltimate\Business\Printer\Entity\PrinterAccount;
@@ -49,17 +50,21 @@ final class PrinterRuleLifecycleIntegrationTest extends KernelTestCase
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $store = new Store('printer-lifecycle', 'Printer lifecycle');
+        $counter = (new Counter())->setStoreUuid($store->getUuid())->setCode('A01')->setName('Table A');
+        $em->persist($store);
+        $em->persist($counter);
+        $em->flush();
         $account = new PrinterAccount('Test account', 'test', '');
         $device = new PrinterDevice($account, 'Test printer', 'lifecycle-serial', PrinterDevice::KIND_RECEIPT, $store->getUuid());
         $template = new PrinterTemplate('Test receipt', PrinterDevice::KIND_RECEIPT, [
             'kind' => 'receipt', 'nodes' => [['type' => 'text', 'value' => 'Offline receipt']],
         ]);
-        $order = (new Order())->setStatus(Order::STATUS_PENDING)->setMetadata(['counterSettlement' => true]);
+        $order = (new Order())->setStatus(Order::STATUS_PENDING)->setMetadata(['counterSettlement' => true, 'counterUuid' => $counter->getUuid()]);
         $admin = (new User())->setEmail('printer-lifecycle@example.test')->setUsername('printer-lifecycle')->setRoles(['ROLE_ADMIN']);
-        foreach ([$store, $account, $device, $template, $order, $admin, new OrderStoreLifecycle($order->getUuid(), $store->getUuid())] as $entity) {
+        foreach ([$account, $device, $template, $order, $admin, new OrderStoreLifecycle($order->getUuid(), $store->getUuid())] as $entity) {
             $em->persist($entity);
         }
-        $em->flush();
+        $em->wrapInTransaction(static fn () => $em->flush());
         $token = self::getContainer()->get(TokenManager::class)->createAccessToken($admin);
         $body = ['storeUuid' => $store->getUuid(), 'name' => 'Offline test', 'enabled' => true,
             'events' => ['confirmed', 'paid', 'accepted'], 'match' => 'all',
@@ -82,6 +87,10 @@ final class PrinterRuleLifecycleIntegrationTest extends KernelTestCase
         self::assertCount(1, $requests);
         self::assertSame('confirmed', $requests[0]->getTrigger());
         self::assertSame($ruleUuid, $requests[0]->getCaseKey());
+        self::assertSame('Table A', $requests[0]->getPrintData()['order']['counterName']);
+        self::assertSame('Table A(#'.$counter->getId().')', $requests[0]->getPrintData()['order']['counterLabel']);
+        self::assertSame($order->getId(), $requests[0]->getPrintData()['order']['id']);
+        $counter->setName('Renamed after enqueue');
         $template->setDefinition(['kind' => 'receipt', 'nodes' => [['type' => 'text', 'value' => 'Changed later']]]);
         $em->flush();
 
@@ -95,6 +104,7 @@ final class PrinterRuleLifecycleIntegrationTest extends KernelTestCase
         self::assertCount(1, $allJobs);
         self::assertSame(PrinterJob::STATUS_FAILED, $allJobs[0]->getStatus());
         self::assertSame('offline_test', $allJobs[0]->getErrorCode());
+        self::assertSame('Table A', $allJobs[0]->getDataSnapshot()['order']['counterName']);
         self::assertStringContainsString('Offline receipt', $allJobs[0]->getRenderedContent());
         self::assertStringNotContainsString('Changed later', $allJobs[0]->getRenderedContent());
         self::assertSame(0, $command->execute([]));

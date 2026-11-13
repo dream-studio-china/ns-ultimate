@@ -8,6 +8,7 @@ use App\Store\Entity\Store;
 use App\Store\Entity\Product;
 use App\Trade\Entity\Order;
 use Doctrine\ORM\EntityManagerInterface;
+use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Printer\Service\OrderItemFilter;
 use NsUltimate\Business\Printer\Value\PrintCategoryContext;
 use NsUltimate\Business\Printer\Value\PrintItemContext;
@@ -56,6 +57,10 @@ final class TradeOrderPrintAdapter
                 'productUuid' => $product['uuid'] ?? null,
                 'productSettings' => $productSettings,
             ];
+            $data['product'] = $data['name'];
+            $data['spec'] = $data['specification'];
+            $data['quantityLabel'] = 'x'.$item->getQuantity();
+            $data['price'] = $data['amount'];
             if ($filtered) {
                 $category = $currentProduct?->getCategory();
                 $productContext = $currentProduct instanceof Product
@@ -75,12 +80,30 @@ final class TradeOrderPrintAdapter
         if ($filtered && $items === []) {
             return [];
         }
+        $counterNames = [];
+        $counterLabels = [];
+        $bindings = $this->entityManager->getRepository(OrderCounter::class)->findBy([
+            'tradeOrderUuid' => $order->getUuid(),
+            'storeUuid' => $store->getUuid(),
+        ], ['id' => 'ASC']);
+        foreach ($bindings as $binding) {
+            $name = (string) $binding;
+            $counterNames[] = $name;
+            $counterId = $binding->getCounter()?->getId();
+            $counterLabels[] = $counterId === null ? $name : $name.'(#'.$counterId.')';
+        }
+        $counterName = implode(', ', $counterNames);
         $base = [
             'order' => [
+                'id' => $order->getId(),
                 'uuid' => $order->getUuid(),
                 'number' => $order->getId() === null ? $order->getUuid() : (string) $order->getId(),
+                'counterName' => $counterName,
+                'counterLabel' => implode(', ', $counterLabels),
+                'labelHeader' => $counterName,
                 'status' => $order->getStatus(),
                 'createdAt' => $order->getCreatedAt()->format(DATE_ATOM),
+                'createdTime' => $order->getCreatedAt()->format('Y/m/d H:i:s'),
                 'paidAt' => $order->getPaidAt()?->format(DATE_ATOM),
                 'currency' => $order->getCurrency(),
                 'totalAmount' => $order->getTotalAmount(),
