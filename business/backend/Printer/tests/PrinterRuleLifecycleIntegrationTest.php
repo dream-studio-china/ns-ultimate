@@ -92,7 +92,7 @@ final class PrinterRuleLifecycleIntegrationTest extends KernelTestCase
         self::assertSame($order->getId(), $requests[0]->getPrintData()['order']['id']);
         self::assertSame('¥0.00', $requests[0]->getPrintData()['order']['amountDue']);
         self::assertStringEndsWith(
-            '/h5/p.html?uuid='.$order->getUuid(),
+            '/h5/payment/p.html?o='.$order->getUuid(),
             $requests[0]->getPrintData()['order']['paymentUrl'],
         );
         $counter->setName('Renamed after enqueue');

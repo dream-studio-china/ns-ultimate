@@ -32,7 +32,7 @@ the on-screen version.
 The existing Store console builds this URL:
 
 ```text
-https://<payment-host>/h5/p.html?uuid=<orderUuid>
+https://<payment-host>/h5/payment/p.html?o=<orderUuid>
 ```
 
 `orderUuid` selects the order. Before login the H5 resolves the trusted Store
@@ -40,7 +40,7 @@ context with `GET /api/v1/public/orders/{orderUuid}/store`; the Store UUID is
 never placed in the entry URL. The H5 never supplies the amount, currency,
 payer, invoice status, gateway credentials, or merchant identity to the server.
 
-The `/h5/p.html` entry reads the Store scope and order from the public checkout
+The `/h5/payment/p.html` entry reads the Store scope and order from the public checkout
 projections. Payment state comes from the server, not browser storage.
 
 The order UUID is an identifier, not proof that the scanner may see every order
@@ -113,7 +113,7 @@ authorization or choose a trusted payment amount.
 
 For WeChat, the H5 is an Official Account page, not a Mini Program. It must use
 the Store's configured Official Account OAuth flow. The callback preserves the
-order UUID and returns to `/h5/p.html?uuid=<orderUuid>`; the trusted Store scope
+order UUID and returns to `/h5/payment/p.html?o=<orderUuid>`; the trusted Store scope
 is resolved again from the public order/store endpoint. The server must
 validate the callback host and return path before using them; an arbitrary
 user-supplied `redirect_uri` is an open-redirect risk.

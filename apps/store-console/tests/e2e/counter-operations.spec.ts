@@ -222,7 +222,7 @@ test('payment QR and receipt printing use the customer entry and manual print co
   await page.getByRole('button', { name: '收款', exact: true }).click()
   const paymentDialog = page.getByRole('dialog', { name: '订单收款' })
   await expect(page.locator('.dining-payment-qr')).toBeVisible()
-  const paymentUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/p.html?uuid=10000000-0000-4000-8000-000000000009'
+  const paymentUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/payment/p.html?o=10000000-0000-4000-8000-000000000009'
   await expect(page.locator('.dining-payment-url')).toHaveText(paymentUrl)
   await expect(page.getByRole('link', { name: paymentUrl, exact: true })).toHaveAttribute('href', paymentUrl)
   await expect(page.getByRole('button', { name: '生成收款码', exact: true })).toHaveCount(0)
@@ -329,7 +329,7 @@ test('checkout offers scan payment when the store returns no payment methods', a
 
   await expect(page.getByRole('dialog', { name: '订单收款' })).toBeVisible()
   await expect(page.locator('.dining-payment-qr')).toBeVisible()
-  const paymentUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/p.html?uuid=10000000-0000-4000-8000-000000000009'
+  const paymentUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/payment/p.html?o=10000000-0000-4000-8000-000000000009'
   await expect(page.locator('.dining-payment-url')).toHaveText(paymentUrl)
   expect(requests.some((request) => request.path.includes('huifu-payments') || request.path.includes('/app/orders'))).toBe(false)
 })

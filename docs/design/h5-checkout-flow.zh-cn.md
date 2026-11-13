@@ -23,12 +23,12 @@
 现有门店控制台生成的入口为：
 
 ```text
-https://<payment-host>/h5/p.html?uuid=<orderUuid>
+https://<payment-host>/h5/payment/p.html?o=<orderUuid>
 ```
 
 `orderUuid` 用于定位订单。登录前，H5 通过 `GET /api/v1/public/orders/{orderUuid}/store` 获取可信的门店上下文，入口 URL 不再携带 `storeUuid`。H5 不得向服务端提交可信的金额、币种、付款人、invoice 状态、支付凭证或商户身份。
 
-当前 `/h5/p.html` 入口从公开的订单门店接口和结账订单投影读取门店与账单信息，支付状态以服务端返回为准，不使用浏览器本地演示数据。
+当前 `/h5/payment/p.html` 入口从公开的订单门店接口和结账订单投影读取门店与账单信息，支付状态以服务端返回为准，不使用浏览器本地演示数据。
 
 订单 UUID 只是标识，不是查看任意订单字段的授权凭证。结账页应使用独立的受限订单投影，不直接复用面向订单所有者的通用订单接口。投影不得返回客户身份、配送信息、员工信息、内部 metadata、成本、利润或任意订单 metadata。
 
@@ -89,7 +89,7 @@ sequenceDiagram
 | 支付宝 | User-Agent 包含 `AlipayClient` | `/api/v1/app/users/me` 成功后继续 | 调用固定游客账号自动登录接口 |
 | 其他 | 两者都不包含 | 已认证且支付受支持时继续 | 提示请使用微信或支付宝扫码 |
 
-微信扫码进入的是公众号 H5，不是小程序。登录必须使用当前门店配置的公众号 OAuth。回调只保留订单 UUID 并返回 `/h5/p.html?uuid=<orderUuid>`，登录后再次通过公开的订单门店接口解析可信 `storeUuid`。服务端必须校验回调域名和返回路径，不能直接使用任意用户提交的 `redirect_uri`，否则会形成开放重定向风险。
+微信扫码进入的是公众号 H5，不是小程序。登录必须使用当前门店配置的公众号 OAuth。回调只保留订单 UUID 并返回 `/h5/payment/p.html?o=<orderUuid>`，登录后再次通过公开的订单门店接口解析可信 `storeUuid`。服务端必须校验回调域名和返回路径，不能直接使用任意用户提交的 `redirect_uri`，否则会形成开放重定向风险。
 
 支付宝终端不向 H5 暴露账号密码。H5 调用服务端自动登录接口，由服务端使用固定游客账号完成登录。建议契约为：
 

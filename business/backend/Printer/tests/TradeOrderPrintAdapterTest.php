@@ -150,7 +150,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame('¥5.00', $data['discount']);
         self::assertSame('¥43.00', $data['amountDue']);
         self::assertSame(
-            'https://shop.example/h5/p.html?uuid='.$order->getUuid(),
+            'https://shop.example/h5/payment/p.html?o='.$order->getUuid(),
             $data['paymentUrl'],
         );
         self::assertSame('Large', $data['items'][0]['subTitle']);

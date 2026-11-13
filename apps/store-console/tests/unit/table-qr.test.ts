@@ -24,6 +24,6 @@ describe('table ordering QR helpers', () => {
 
   it('builds the customer payment entry URL with only the Trade order UUID', () => {
     const url = customerPaymentUrl('order-uuid', DEFAULT_CUSTOMER_PAYMENT_BASE_URL)
-    expect(url).toBe('https://ns-ultimate.wscoffee.com.cn/h5/p.html?uuid=order-uuid')
+    expect(url).toBe('https://ns-ultimate.wscoffee.com.cn/h5/payment/p.html?o=order-uuid')
   })
 })

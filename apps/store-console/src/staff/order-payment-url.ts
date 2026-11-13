@@ -11,7 +11,7 @@ export function customerPaymentUrl(orderUuid: string, baseUrl = configuredPaymen
   if (!orderId) throw new Error('orderUuid is required')
   const base = new URL(`${baseUrl.replace(/\/+$/, '')}/`)
   if (base.protocol !== 'https:' && base.protocol !== 'http:') throw new Error('invalid payment base URL')
-  const url = new URL('h5/p.html', base)
-  url.searchParams.set('uuid', orderId)
+  const url = new URL('h5/payment/p.html', base)
+  url.searchParams.set('o', orderId)
   return url.toString()
 }

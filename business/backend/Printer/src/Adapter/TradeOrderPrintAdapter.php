@@ -168,6 +168,6 @@ final class TradeOrderPrintAdapter
         if ($base === '' || !in_array($scheme, ['http', 'https'], true)) {
             return '';
         }
-        return $base.'/h5/p.html?uuid='.rawurlencode($order->getUuid());
+        return $base.'/h5/payment/p.html?o='.rawurlencode($order->getUuid());
     }
 }
