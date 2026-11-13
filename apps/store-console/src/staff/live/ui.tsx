@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button, Dialog, PullToRefresh } from 'antd-mobile'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, Hash, LockKeyhole, RefreshCw, Search, X, type LucideIcon } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, Hash, LockKeyhole, RefreshCw, Search, ThumbsUp, X, type LucideIcon } from 'lucide-react'
 import { ApiError } from '../adapters/api-client'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { Sheet } from '../../shared/ui'
@@ -99,6 +99,16 @@ export function ListFeedback({ state, empty, hint, icon: Icon }: { state: { load
 }
 export function StatusPill({ children, muted = false, tone }: { children: ReactNode; muted?: boolean; tone?: 'positive' | 'negative' }) {
   return <span className={`workspace-status ${muted ? 'muted' : ''} ${tone ? `is-${tone}` : ''}`}><i />{children}</span>
+}
+export function RecommendationThumbs({ value, onChange, className = '' }: { value: number; onChange?: (value: number) => void; className?: string }) {
+  const { t } = useI18n()
+  const level = Math.min(5, Math.max(0, Math.floor(value)))
+  if (onChange) return <div className={`recommendation-thumbs-control ${className}`} role="group" aria-label={t('recommendationLevel')}>
+    {[1, 2, 3, 4, 5].map((rating) => <button key={rating} type="button" className={rating <= level ? 'is-active' : ''} aria-label={`${t('recommendationLevel')} ${rating}/5`} aria-pressed={rating <= level} title={`${t('recommendationLevel')} ${rating}/5`} onClick={() => onChange(rating === level ? 0 : rating)}><ThumbsUp size={22} aria-hidden="true" /></button>)}
+  </div>
+  return <span className={`recommendation-thumbs ${className}`} role="img" aria-label={`${t('recommendationLevel')} ${level}/5`}>
+    {[1, 2, 3, 4, 5].map((rating) => <ThumbsUp key={rating} size={16} className={rating <= level ? 'is-active' : ''} aria-hidden="true" />)}
+  </span>
 }
 export function RecordIdentity({ id, children }: { id: string; children?: ReactNode }) {
   const { t } = useI18n()

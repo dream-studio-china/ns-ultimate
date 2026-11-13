@@ -15,7 +15,7 @@ import { customerPaymentUrl } from '../order-payment-url'
 import { isOccupiedDiningTable as isDining, unsettledDiningOrders as effectiveDiningOrders } from '../dining-table-state'
 import { ApiError } from '../adapters/api-client'
 import { reportingOrdersFromCounterSessions, summarizeReport } from '../reporting'
-import { errorKey, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, usePageRefresh } from './ui'
+import { errorKey, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, RecommendationThumbs, StatusPill, useCommand, usePage, usePageRefresh } from './ui'
 import { canManuallyPrintOrderStatus, ManualPrintButton, ManualPrintSheet } from './ManualPrintSheet'
 import './dining.css'
 
@@ -780,10 +780,10 @@ function DiningProductQuantity({ item, quantity, disabled, canDecrease, onIncrea
 }
 
 function DiningMenuRow({ item, quantity, currency, disabled, canDecrease, onIncrease, onDecrease }: {
-  item: { productName: string; specificationName: string; price: number; categoryName?: string | null }; quantity: number; currency: string; disabled: boolean; canDecrease: boolean; onIncrease: () => void; onDecrease: () => void
+  item: { productName: string; specificationName: string; price: number; categoryName?: string | null; recommendationLevel?: number }; quantity: number; currency: string; disabled: boolean; canDecrease: boolean; onIncrease: () => void; onDecrease: () => void
 }) {
   const { locale } = useI18n()
-  return <li><span><strong>{item.productName}</strong><small>{item.specificationName} · {new Intl.NumberFormat(locale, { style: 'currency', currency }).format(item.price / 100)}{item.categoryName ? ` · ${item.categoryName}` : ''}</small></span><DiningProductQuantity item={item} quantity={quantity} disabled={disabled} canDecrease={canDecrease} onIncrease={onIncrease} onDecrease={onDecrease} /></li>
+  return <li><span><span className="dining-product-heading"><strong>{item.productName}</strong><RecommendationThumbs value={item.recommendationLevel ?? 0} className="dining-menu-thumbs" /></span><small>{item.specificationName} · {new Intl.NumberFormat(locale, { style: 'currency', currency }).format(item.price / 100)}{item.categoryName ? ` · ${item.categoryName}` : ''}</small></span><DiningProductQuantity item={item} quantity={quantity} disabled={disabled} canDecrease={canDecrease} onIncrease={onIncrease} onDecrease={onDecrease} /></li>
 }
 
 function mergeModernLines(lines: ModernCartLine[]): ModernCartLine[] {
@@ -1419,7 +1419,7 @@ function DiningEditor({ api, access, table, order, mode = order ? 'replace' : 'a
       <ul className="dining-menu">{visibleMenu.items.map((item) => {
         const legacy = item as LegacyCatalogItem
         const quantity = itemQuantity(item.uuid)
-        return <DiningMenuRow key={item.uuid} item={{ productName: item.productName, specificationName: item.name, price: item.price, categoryName: legacy.categoryName }} quantity={quantity} currency={table.currency} disabled={!item.available || orderLines.length >= 30 && !quantity || quantity >= 99 || choiceBlocked({ specificationUuid: item.uuid, productUuid: legacy.productUuid, categoryUuid: legacy.categoryUuid })} canDecrease={canDecreaseItem(item.uuid)} onIncrease={() => addItem({ specificationUuid: item.uuid, productName: item.productName, specificationName: item.name, productUuid: legacy.productUuid, categoryUuid: legacy.categoryUuid, price: item.price, available: item.available })} onDecrease={() => decreaseItem(item.uuid)} />
+        return <DiningMenuRow key={item.uuid} item={{ productName: item.productName, specificationName: item.name, price: item.price, categoryName: legacy.categoryName, recommendationLevel: legacy.recommendationLevel }} quantity={quantity} currency={table.currency} disabled={!item.available || orderLines.length >= 30 && !quantity || quantity >= 99 || choiceBlocked({ specificationUuid: item.uuid, productUuid: legacy.productUuid, categoryUuid: legacy.categoryUuid })} canDecrease={canDecreaseItem(item.uuid)} onIncrease={() => addItem({ specificationUuid: item.uuid, productName: item.productName, specificationName: item.name, productUuid: legacy.productUuid, categoryUuid: legacy.categoryUuid, price: item.price, available: item.available })} onDecrease={() => decreaseItem(item.uuid)} />
       })}</ul><PageControls state={menu} />
         {ruleCatalog.loading && <p className="helper" role="status">{t('diningRulesLoading')}</p>}
         <label className="field">{t('orderNote')}<textarea maxLength={1000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
@@ -1544,7 +1544,7 @@ function LegacyDiningEditor({ api, access, table, mode, onClose, done }: { api: 
     {ruleCatalog.error && <Notice>{t(ruleCatalog.error)}</Notice>}
     <div className="form-stack">
       <ListFeedback state={visibleMenu} empty="noProducts" hint="noProductsHint" icon={ReceiptText} />
-      <ul className="dining-menu">{visibleMenu.items.map((item) => <DiningMenuRow key={item.uuid} item={{ productName: item.productName, specificationName: item.name, price: item.price, categoryName: item.categoryName }} quantity={itemQuantity(item)} currency={table.currency} disabled={!item.available || orderLines.length >= 30 && !itemQuantity(item) || itemQuantity(item) >= 99 || choiceBlocked(item)} canDecrease={canDecreaseItem(item.uuid)} onIncrease={() => addItem(item)} onDecrease={() => decreaseItem(item.uuid)} />)}</ul>
+      <ul className="dining-menu">{visibleMenu.items.map((item) => <DiningMenuRow key={item.uuid} item={{ productName: item.productName, specificationName: item.name, price: item.price, categoryName: item.categoryName, recommendationLevel: item.recommendationLevel }} quantity={itemQuantity(item)} currency={table.currency} disabled={!item.available || orderLines.length >= 30 && !itemQuantity(item) || itemQuantity(item) >= 99 || choiceBlocked(item)} canDecrease={canDecreaseItem(item.uuid)} onIncrease={() => addItem(item)} onDecrease={() => decreaseItem(item.uuid)} />)}</ul>
       <PageControls state={menu} />
       {ruleCatalog.loading && <p className="helper" role="status">{t('diningRulesLoading')}</p>}
       <label className="field">{t('orderNote')}<textarea maxLength={1000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>

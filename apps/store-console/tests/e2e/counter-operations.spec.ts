@@ -13,7 +13,7 @@ const store = { uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'U
 const item = { specificationUuid: specId, productName: 'Soup', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }
 const stamp = '2026-10-31T10:00:00+00:00'
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; failedInvoice?: boolean; paymentClose?: 'success' | 'already-paid' | 'network'; paymentCloseAccess?: boolean; printAccess?: boolean; printOptions?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; failedInvoice?: boolean; paymentClose?: 'success' | 'already-paid' | 'network'; paymentCloseAccess?: boolean; printAccess?: boolean; printOptions?: boolean; recommended?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   let session: { uuid: string; participantCount: number; notes: string; startedAt: string; revision: number } | null = options.empty ? null : { uuid: sessionId, participantCount: 3, notes: 'Birthday', startedAt: stamp, revision }
@@ -59,8 +59,8 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     }
     if (path.endsWith('/counter-operations/counters')) return list([view()])
     if (path.endsWith(`/counter-operations/counters/${counterId}`)) return respond(view())
-    if (path.endsWith('/counter-operations/catalog')) return list([{ uuid: specId, productName: 'Soup', name: 'Regular', price: 1590, available: true }])
-    if (path === '/api/v1/app/products') return route.fulfill({ json: { code: 0, data: [{ id: 1, uuid: productId, name: 'Soup', status: 'active', metadata: null, category: { id: 1, uuid: categoryId, name: 'Menu', enabled: true }, specifications: [{ id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', sort: 0 }] }], paginator: { page: 1, has_next: false } } })
+    if (path.endsWith('/counter-operations/catalog')) return list([{ uuid: specId, productName: 'Soup', name: 'Regular', price: 1590, available: true, recommendationLevel: options.recommended ? 2 : 0 }])
+    if (path === '/api/v1/app/products') return route.fulfill({ json: { code: 0, data: [{ id: 1, uuid: productId, name: 'Soup', status: 'active', recommendationLevel: options.recommended ? 2 : 0, metadata: null, category: { id: 1, uuid: categoryId, name: 'Menu', enabled: true }, specifications: [{ id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', sort: 0 }] }], paginator: { page: 1, has_next: false } } })
     if (method === 'GET' && path === `/api/v1/app/orders/${orderId}`) return respond({ uuid: orderId, invoiceUuid: invoiceId, paymentStatus: 'failed' })
     if (method === 'GET' && path === `/api/v1/store/${storeId}/operations/print-options`) return respond({ items: options.printOptions === false ? [] : [{ ruleUuid: printRuleId, name: '手打结账小票', deviceName: '前台打印机', kind: 'receipt', copies: 1, ticketMode: 'single' }] })
     const manualPrint = path.match(new RegExp(`^/api/v1/store/${storeId}/operations/trade-orders/([0-9a-f-]{36})/print$`))
@@ -240,6 +240,16 @@ test('payment QR and receipt printing use the customer entry and manual print co
   expect(requests.some((request) => request.path.includes('huifu-payments') || request.path.includes('/app/orders'))).toBe(false)
   const print = requests.find((request) => request.method === 'POST' && request.path.endsWith(`/trade-orders/${orderId}/print`))
   expect(print?.body).toMatchObject({ ruleUuid: printRuleId, commandUuid: expect.any(String), reason: '收银台手动打印' })
+})
+
+test('cashier product rows show a thumbs-up for recommended products', async ({ page }) => {
+  await setup(page, { customerOrder: true, recommended: true })
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await page.getByRole('button', { name: '加单', exact: true }).click()
+  const row = page.locator('.dining-menu li').filter({ hasText: 'Soup' }).first()
+  await expect(row.locator('.dining-menu-thumbs')).toHaveAttribute('aria-label', '推荐度 2/5')
+  await expect(row.locator('.dining-menu-thumbs svg')).toHaveCount(5)
+  await expect(row.locator('.dining-menu-thumbs svg.is-active')).toHaveCount(2)
 })
 
 test('manual print controls are hidden without the order print grant', async ({ page }) => {

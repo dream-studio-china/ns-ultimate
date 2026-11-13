@@ -97,6 +97,9 @@
 .dining-lines li > span, .dining-menu li > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .dining-lines small, .dining-menu small { display: block; margin-top: 4px; }
 .dining-lines strong, .dining-menu strong { white-space: normal; font-size: 16px; line-height: 1.45; }
+.dining-product-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; min-width: 0; }
+.dining-product-heading > strong { min-width: 0; overflow-wrap: anywhere; }
+.dining-menu-thumbs { flex: 0 0 auto; }
 .dining-lines small, .dining-menu small { font-size: 14px; line-height: 1.5; }
 .dining-order-review { display: grid; gap: 4px; padding: 15px 16px; border: 1px solid var(--ws-line); border-radius: 16px; background: var(--theme-paper); }
 .dining-order-review > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
