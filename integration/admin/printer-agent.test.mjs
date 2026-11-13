@@ -65,5 +65,6 @@ test('account and job configurations never become assistant writes', () => {
     PrinterPaperAction: { name: 'PrinterPaperAction' },
     PrinterJobReprintAction: { name: 'PrinterJobReprintAction' }
   })
+  assert.equal(job.PrinterJob.list.query['@order'], 'entity.createdAt|DESC, entity.id|DESC')
   assert.equal(capability(job.PrinterJob, 'PrinterJob', 'jobs'), undefined)
 })
