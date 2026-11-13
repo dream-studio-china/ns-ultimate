@@ -98,8 +98,8 @@ missing. Both whole-order and per-unit tickets include these fields.
 are display strings with the currency symbol, the currency's fraction digits and
 thousands separators. `unitPrice`, `amount`, `price`, and `totalAmount` remain
 integer minor units. `paymentUrl` is built from the backend public origin
-(`DEFAULT_URI`) as `<origin>/h5/payment/index.html?orderUuid=<order
-uuid>&storeUuid=<store uuid>` using snapshot identities only; it is empty when
+(`DEFAULT_URI`) as `<origin>/h5/p.html?uuid=<order uuid>` using the order UUID
+only; it is empty when
 `DEFAULT_URI` is missing or not http(s), and order metadata can never supply it. Demo-only staff/booking/waiter
 names and labels, `isAdd`, `laterPay`, and item `tags` have no validated equivalent
 in this adapter and are not fabricated from arbitrary order metadata. Existing

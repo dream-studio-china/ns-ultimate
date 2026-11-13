@@ -32,15 +32,16 @@ the on-screen version.
 The existing Store console builds this URL:
 
 ```text
-https://<payment-host>/h5/payment/index.html?orderUuid=<orderUuid>&storeUuid=<storeUuid>
+https://<payment-host>/h5/p.html?uuid=<orderUuid>
 ```
 
-`orderUuid` selects the order. `storeUuid` binds the request to the Store whose
-payment settings must be used. The H5 never supplies the amount, currency,
+`orderUuid` selects the order. Before login the H5 resolves the trusted Store
+context with `GET /api/v1/public/orders/{orderUuid}/store`; the Store UUID is
+never placed in the entry URL. The H5 never supplies the amount, currency,
 payer, invoice status, gateway credentials, or merchant identity to the server.
 
-The current demo page is not this flow. It reads demo payment state from browser
-storage. A production page must replace that state with authenticated API calls.
+The `/h5/p.html` entry reads the Store scope and order from the public checkout
+projections. Payment state comes from the server, not browser storage.
 
 The order UUID is an identifier, not proof that the scanner may see every order
 field. The checkout read endpoint returns a separate, restricted projection and
@@ -64,7 +65,9 @@ sequenceDiagram
     participant P as Payment provider
 
     C->>C: Display or print checkout QR
-    H->>H: Read orderUuid and storeUuid; detect WeChat/Alipay
+    H->>H: Read orderUuid; detect WeChat/Alipay
+    H->>A: GET /api/v1/public/orders/{orderUuid}/store
+    A-->>H: orderUuid and trusted storeUuid
     alt Valid bearer token
         H->>I: GET /api/v1/app/users/me
     else WeChat without valid token
@@ -109,8 +112,9 @@ authorization or choose a trusted payment amount.
 | Other | Neither hint | Continue if authenticated and payment is supported | Show an unsupported-container message |
 
 For WeChat, the H5 is an Official Account page, not a Mini Program. It must use
-the Store's configured Official Account OAuth flow. The callback must preserve
-`orderUuid` and `storeUuid` and return to the same payment page. The server must
+the Store's configured Official Account OAuth flow. The callback preserves the
+order UUID and returns to `/h5/p.html?uuid=<orderUuid>`; the trusted Store scope
+is resolved again from the public order/store endpoint. The server must
 validate the callback host and return path before using them; an arbitrary
 user-supplied `redirect_uri` is an open-redirect risk.
 
@@ -155,6 +159,15 @@ JWTs never go in the checkout URL, QR, logs, or analytics events. Expiry returns
 the same order rather than starting a new checkout.
 
 ## 5. Checkout order read
+
+Before loading the payment projection, the H5 resolves the order's Store scope:
+
+```http
+GET /api/v1/public/orders/{orderUuid}/store
+```
+
+The response contains only `orderUuid` and `storeUuid`. This route is public and
+read-only, and the returned identities must match the requested order.
 
 The payment page uses the public read-only order projection rather than the
 owner-scoped `GET /api/v1/app/orders/{id}` route. Store-counter orders may be

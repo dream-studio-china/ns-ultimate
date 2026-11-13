@@ -2,9 +2,10 @@
 // business/admin/config/index.js `replace`). Adds category binding and
 // Product display fields, settings, and metadata-backed cover/subtitle.
 // List and specifications behavior mirror the core configuration.
-import { defineAsyncComponent } from 'vue'
+import { defineAsyncComponent, h } from 'vue'
 import { t } from '@/i18n'
 import axios from '@/utils/request'
+import { loadRelationRecords } from '@/utils/relation'
 import SIP from '@/utils/simple-image-process'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import { CopyProductsAction } from '../../components/copy-catalog-actions'
@@ -19,6 +20,56 @@ const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmi
 import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
 import ProductMetadataSchema from './ProductMetadata.json'
 import ProductSettingsSchema from './ProductSettings.json'
+import ProductListControl from '../../components/ProductListControl.vue'
+
+const listControlField = (property, options) => ({
+  property,
+  label: options.label,
+  component: {
+    props: ['data', 'scope', 'record', 'refresh'],
+    render() {
+      return h(ProductListControl, {
+        record: this.record,
+        mode: options.mode,
+        settingKey: options.settingKey || '',
+        label: options.label
+      })
+    }
+  },
+  field_options: options.fieldOptions
+})
+
+const kitchenPrinterField = listControlField('settings.kitchenPrinterEnable', {
+  label: t('Print ticket'),
+  mode: 'setting',
+  settingKey: 'kitchenPrinterEnable',
+  fieldOptions: { width: 120, align: 'center', sortable: false }
+})
+
+const kitchenTicketDisabledField = listControlField('settings.kitchenTicketDisabled', {
+  label: t('Kitchen ticket disabled'),
+  mode: 'setting',
+  settingKey: 'kitchenTicketDisabled',
+  fieldOptions: { width: 150, align: 'center', sortable: false }
+})
+
+const recommendationLevelField = listControlField('recommendationLevel', {
+  label: t('Recommendation level'),
+  mode: 'recommendation',
+  fieldOptions: { width: 190, align: 'center' }
+})
+
+const soldoutField = listControlField('isSoldout', {
+  label: t('Sold out'),
+  mode: 'soldout',
+  fieldOptions: { width: 110, align: 'center' }
+})
+
+const sortOrderField = listControlField('sortOrder', {
+  label: t('Sort order'),
+  mode: 'sort',
+  fieldOptions: { width: 110, align: 'center' }
+})
 
 const ProductNameWithCover = {
   props: ['data', 'record'],
@@ -231,6 +282,16 @@ export default {
       ],
       list_filter: {
         name: t('Product Name'),
+        'store.uuid': () => loadRelationRecords({ name: 'Store', valueKey: 'uuid' }).then(stores => ({
+          label: t('Store'),
+          type: 'select',
+          default: null,
+          expression: "entity.getStore().getUuid() == ':value'",
+          data: stores.filter(store => typeof store.uuid === 'string' && store.uuid).map(store => ({
+            value: store.uuid,
+            label: store.__toString || store.name || store.code || store.uuid
+          }))
+        })),
         'category.id': () => axios
           .get(apiPath(API_PREFIX, 'manage/product-categories'))
           .then(res => Object.assign({ __label: t('Category') }, ...res.data.map(category => ({ [category.id]: category.name })))),
@@ -244,7 +305,8 @@ export default {
       list_display: [
         'id',
         { property: 'name', component: ProductNameWithCover },
-        'category', 'store', 'status', 'sortOrder', 'recommendationLevel', 'isSoldout', 'isDeleted', 'createdAt', 'updatedAt'
+        'category', 'store', 'status', kitchenPrinterField, kitchenTicketDisabledField, sortOrderField,
+        recommendationLevelField, soldoutField, 'isDeleted', 'createdAt', 'updatedAt'
       ]
     },
     detail: {

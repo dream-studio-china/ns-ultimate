@@ -80,6 +80,7 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
             'metadata' => ['subtitle' => 'Limited offer', 'cover' => 'https://cdn.example.test/product.webp'],
             'settings' => [
                 'kitchenPrinterEnable' => true,
+                'kitchenTicketDisabled' => true,
                 'startSaleTime' => '09:30',
                 'endSaleTime' => '21:45',
             ],
@@ -91,9 +92,14 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
         self::assertSame('Limited offer', $created['metadata']['subtitle']);
         self::assertSame('https://cdn.example.test/product.webp', $created['metadata']['cover']);
         self::assertSame(true, $created['settings']['kitchenPrinterEnable']);
+        self::assertSame(true, $created['settings']['kitchenTicketDisabled']);
         self::assertSame('09:30', $created['settings']['startSaleTime']);
         self::assertArrayNotHasKey('sort', $created);
         $second = $request('POST', '/api/v1/manage/products', ['name' => 'Earlier item', 'sortOrder' => 3]);
+        $storeProducts = $request('GET', '/api/v1/manage/products?'.http_build_query([
+            '@filter' => "entity.getStore().getUuid() == '".$store->getUuid()."'",
+        ]));
+        self::assertSame([$created['id']], array_column($storeProducts, 'id'));
 
         $entityManager->clear();
         $loadedByCoreRepository = $entityManager->getRepository(CoreProduct::class)->find($created['id']);
@@ -101,7 +107,25 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
         self::assertSame(25, $loadedByCoreRepository->getSortOrder());
         self::assertSame(3, $loadedByCoreRepository->getRecommendationLevel());
         self::assertTrue($loadedByCoreRepository->isSoldout());
-        self::assertSame(['kitchenPrinterEnable' => true, 'startSaleTime' => '09:30', 'endSaleTime' => '21:45'], $loadedByCoreRepository->getSettings());
+        self::assertSame(['kitchenPrinterEnable' => true, 'kitchenTicketDisabled' => true, 'startSaleTime' => '09:30', 'endSaleTime' => '21:45'], $loadedByCoreRepository->getSettings());
+
+        $updatedSettings = $request('PUT', '/api/v1/manage/products/'.$created['id'], [
+            'settings' => array_replace($created['settings'], ['kitchenPrinterEnable' => false]),
+        ]);
+        self::assertFalse($updatedSettings['settings']['kitchenPrinterEnable']);
+        self::assertSame('09:30', $updatedSettings['settings']['startSaleTime']);
+        self::assertSame('21:45', $updatedSettings['settings']['endSaleTime']);
+        $updatedSettings = $request('PUT', '/api/v1/manage/products/'.$created['id'], [
+            'settings' => array_replace($updatedSettings['settings'], ['kitchenTicketDisabled' => false]),
+        ]);
+        self::assertFalse($updatedSettings['settings']['kitchenTicketDisabled']);
+        self::assertFalse($updatedSettings['settings']['kitchenPrinterEnable']);
+        $updatedSettings = $request('PUT', '/api/v1/manage/products/'.$created['id'], [
+            'recommendationLevel' => 5,
+            'isSoldout' => false,
+        ]);
+        self::assertSame(5, $updatedSettings['recommendationLevel']);
+        self::assertFalse($updatedSettings['isSoldout']);
 
         $detail = $request('GET', '/api/v1/manage/products/'.$created['id']);
         self::assertSame($store->getId(), $detail['store']['id']);
@@ -200,6 +224,7 @@ final class ProductSortOrderExtensionTest extends IntegrationWebTestCase
         };
 
         self::assertSame(400, $post(['name' => 'Invalid printer', 'settings' => ['kitchenPrinterEnable' => 'yes']]));
+        self::assertSame(400, $post(['name' => 'Invalid ticket exclusion', 'settings' => ['kitchenTicketDisabled' => 'yes']]));
         self::assertSame(400, $post(['name' => 'Invalid time', 'settings' => ['startSaleTime' => '25:90']]));
         self::assertSame(400, $post(['name' => 'Invalid cover', 'metadata' => ['cover' => 'javascript:alert(1)']]));
         self::assertSame(201, $post(['name' => 'Cleared optional values', 'settings' => ['startSaleTime' => '', 'endSaleTime' => ''], 'metadata' => ['cover' => '']]));

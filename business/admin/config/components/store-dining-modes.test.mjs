@@ -7,6 +7,7 @@ import {
   createDiningMode,
   createDiningModesConfig,
   createDiningRule,
+  copyDiningModesSettings,
   normalizeDiningModesConfig,
   validateDiningModesConfig
 } from './dining-modes.mjs'
@@ -105,6 +106,41 @@ test('adds a dedicated Store list action while keeping settings editing safe', (
   const settings = config.form.fields.find(field => field.property === 'settings')
   assert.equal(settings.type, 'json_schema')
   assert.deepEqual(plain(settings.type_options.fields), [{ property: 'diningModes', hidden: true }])
+})
+
+test('copies only dining modes while preserving target store settings', () => {
+  const sourceSettings = {
+    paymentRate: 0.5,
+    diningModes: createDiningModesConfig()
+  }
+  sourceSettings.diningModes.modes.push(createDiningMode({ name: 'Breakfast' }))
+  const targetSettings = {
+    paymentRate: 0.01,
+    order: { requireAcceptance: true },
+    fulfillment: { requireVerification: true },
+    diningModes: createDiningModesConfig()
+  }
+  targetSettings.diningModes.modes.push(createDiningMode({ name: 'Old target mode' }))
+
+  const copied = copyDiningModesSettings(
+    JSON.stringify(targetSettings),
+    JSON.stringify(sourceSettings)
+  )
+
+  assert.equal(copied.modeCount, 1)
+  assert.equal(copied.settings.paymentRate, 0.01)
+  assert.deepEqual(copied.settings.order, { requireAcceptance: true })
+  assert.deepEqual(copied.settings.fulfillment, { requireVerification: true })
+  assert.deepEqual(copied.settings.diningModes.modes.map(mode => mode.name), ['Breakfast'])
+  assert.deepEqual(targetSettings.diningModes.modes.map(mode => mode.name), ['Old target mode'])
+})
+
+test('reports an empty source dining mode configuration without changing the target payload', () => {
+  const target = { paymentRate: 0.01, diningModes: createDiningModesConfig() }
+  const copied = copyDiningModesSettings(target, { diningModes: createDiningModesConfig() })
+  assert.equal(copied.modeCount, 0)
+  assert.equal(copied.settings.paymentRate, 0.01)
+  assert.deepEqual(copied.settings.diningModes.modes, [])
 })
 
 test('all dining mode UI labels exist in every business locale', () => {

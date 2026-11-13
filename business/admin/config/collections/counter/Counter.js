@@ -2,6 +2,7 @@ import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import { uuidFilter } from '../../uuid-filter.mjs'
 import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collections/helpers'
+import CounterQrExportAction from '../../components/CounterQrExportAction.vue'
 
 export default {
   Counter: {
@@ -19,6 +20,9 @@ export default {
     },
     list: {
       query: orderByIdDesc,
+      actions: [
+        { name: 'counter-qr-export', position: 'top', component: CounterQrExportAction }
+      ],
       list_filter: {
         storeUuid: uuidFilter('storeUuid', t('Store'), () => loadRelationRecords({ name: 'Store', valueKey: 'uuid' })),
         code: t('Counter code'),

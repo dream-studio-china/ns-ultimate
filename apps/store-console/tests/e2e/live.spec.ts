@@ -18,7 +18,7 @@ const reportingCreatedAt = (() => {
   return `${part('year')}-${part('month')}-${part('day')}T10:00:00+08:00`
 })()
 const version = 'a'.repeat(64)
-const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '', endSaleTime: '' }, ...item })
+const operationalProduct = (item: Record<string, unknown>) => ({ version, isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, kitchenTicketDisabled: false, startSaleTime: '', endSaleTime: '' }, ...item })
 const operationalOrder = (item: Record<string, unknown>) => ({ version, allowedActions: [], verificationRequired: false, rejectionReason: null, ...item })
 function operationalList(route: Route, records: Record<string, unknown>[], hasNext = false) {
   const url = new URL(route.request().url())
@@ -30,7 +30,7 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; refundAccess?: boolean; cancelAccess?: boolean; confirmedOrder?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; productCount?: number; soldOut?: boolean; productCover?: string; extensionEditable?: boolean; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
+async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; refundAccess?: boolean; cancelAccess?: boolean; confirmedOrder?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; kitchenTicketDisabled?: boolean; kitchenTicketDisabledSupported?: boolean; productCount?: number; soldOut?: boolean; productCover?: string; extensionEditable?: boolean; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null; rawBody: string }[] = []
   let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = Array.from({ length: options.productCount ?? 1 }, (_, index) => ({
     uuid: index === 0 ? productId : `00000000-0000-4000-8000-${String(index + 2).padStart(12, '0')}`,
@@ -39,7 +39,7 @@ async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?
     status: 'active',
     isSoldout: Boolean(options.soldOut),
     extensionEditable: options.extensionEditable ?? true,
-    settings: { kitchenPrinterEnable: Boolean(options.kitchenPrint), startSaleTime: '', endSaleTime: '' },
+    settings: { kitchenPrinterEnable: Boolean(options.kitchenPrint), ...(options.kitchenTicketDisabledSupported === false ? {} : { kitchenTicketDisabled: Boolean(options.kitchenTicketDisabled) }), startSaleTime: '', endSaleTime: '' },
     metadata: options.productCover ? { subtitle: null, cover: options.productCover } : undefined,
   }))
   let categories = [{ uuid: categoryId, name: 'API category', slug: 'api-category', sortOrder: 0, enabled: true }]
@@ -115,8 +115,9 @@ async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?
         if (Object.hasOwn(body!, 'subtitle') || Object.hasOwn(body!, 'coverImageUuid')) {
           updated.metadata = { subtitle: body!.subtitle ?? null, cover: body!.coverImageUuid ? '/uploads/test-image.png' : null }
         }
-        if (['kitchenPrinterEnable', 'startSaleTime', 'endSaleTime'].some((key) => Object.hasOwn(body!, key))) {
-          updated.settings = { kitchenPrinterEnable: body!.kitchenPrinterEnable ?? false, startSaleTime: body!.startSaleTime ?? '', endSaleTime: body!.endSaleTime ?? '' }
+        const settingUpdates = body!.settings && typeof body!.settings === 'object' && !Array.isArray(body!.settings) ? body!.settings as Record<string, unknown> : {}
+        if (['kitchenPrinterEnable', 'kitchenTicketDisabled', 'startSaleTime', 'endSaleTime'].some((key) => Object.hasOwn(body!, key) || Object.hasOwn(settingUpdates, key))) {
+          updated.settings = { ...(existing.settings as Record<string, unknown>), ...settingUpdates, kitchenPrinterEnable: body!.kitchenPrinterEnable ?? settingUpdates.kitchenPrinterEnable ?? false, startSaleTime: body!.startSaleTime ?? settingUpdates.startSaleTime ?? '', endSaleTime: body!.endSaleTime ?? settingUpdates.endSaleTime ?? '' }
         }
         products[index] = updated
         return respond(updated)
@@ -289,7 +290,7 @@ test('kitchen-only staff toggle sold-out products with product edit permission',
   await expect(nav.getByRole('button', { name: '厨房', exact: true })).toHaveAttribute('aria-current', 'page')
   for (const name of ['新增商品', '删除', '管理规格', '分类管理', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
-  await expect(page.locator('.catalog-print-flag')).toHaveText('不打印小票')
+  await expect(page.locator('.catalog-print-flag')).toHaveText('打印厨房联')
   await page.getByRole('button', { name: '售罄', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '恢复', exact: true })).toBeVisible()
@@ -339,7 +340,7 @@ test('kitchen product card toggles availability directly and shows every specifi
   await expect(card.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
   await expect(card.locator('.catalog-product-actions > button')).toHaveText(['编辑', '管理规格', '售罄'])
-  await expect(card.locator('.catalog-print-flag')).toHaveText('打印小票')
+  await expect(card.locator('.catalog-print-flag')).toHaveText('打印厨房联')
   await expect(card.locator('.catalog-product-price')).toHaveText([/大份\s*¥16\.90/, /小份\s*¥12\.90/])
   await expect(card.getByText('在售', { exact: true })).toHaveClass(/is-positive/)
   await card.getByRole('button', { name: '售罄', exact: true }).click()
@@ -431,13 +432,15 @@ test('catalog operating fields and raster image uploads save through one version
   await expect(page.getByLabel('商品描述', { exact: true })).toHaveCount(0)
   await page.getByRole('group', { name: '推荐度', exact: true }).getByRole('button', { name: '推荐度 2/5', exact: true }).click()
   await page.locator('.resource-editor input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64') })
-  await page.getByRole('switch', { name: '后厨打印标记', exact: true }).click()
+  await page.getByRole('switch', { name: '打印小票', exact: true }).click()
+  await page.getByRole('switch', { name: '不打印厨房联', exact: true }).click()
   await page.locator('.editor-advanced summary').click()
   await page.getByLabel('排序值', { exact: true }).fill('5')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   const save = requests.find((request) => request.method === 'PUT')!
-  expect(save.body).toMatchObject({ subtitle: 'Lunch special', sortOrder: 5, recommendationLevel: 2, kitchenPrinterEnable: true, startSaleTime: '', endSaleTime: '', coverImageUuid: counterId, version, commandUuid: expect.any(String) })
+  expect(save.body).toMatchObject({ subtitle: 'Lunch special', sortOrder: 5, recommendationLevel: 2, kitchenPrinterEnable: true, settings: { kitchenTicketDisabled: true }, startSaleTime: '', endSaleTime: '', coverImageUuid: counterId, version, commandUuid: expect.any(String) })
+  expect(save.body).not.toHaveProperty('kitchenTicketDisabled')
   expect(save.body).not.toHaveProperty('description')
   const imageUpload = requests.find((request) => request.path.endsWith('/operations/images'))
   expect(imageUpload).toBeDefined()
@@ -445,6 +448,18 @@ test('catalog operating fields and raster image uploads save through one version
   await expect(page.locator('.catalog-product-info')).toContainText('Lunch special')
   await expect(page.locator('.catalog-product-card .recommendation-thumbs')).toHaveAttribute('aria-label', '推荐度 2/5')
   await expect(page.locator('.catalog-product-card .recommendation-thumbs svg.is-active')).toHaveCount(2)
+})
+
+test('product editing remains compatible with a backend that omits the kitchen ticket setting', async ({ page }) => {
+  const requests = await mockApi(page, { kitchenTicketDisabledSupported: false })
+  await login(page)
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await expect(page.getByRole('switch', { name: '不打印厨房联', exact: true })).toHaveCount(0)
+  await page.getByLabel('商品名称', { exact: true }).fill('Older backend edit')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Older backend edit', exact: true })).toBeVisible()
+  const save = requests.find((request) => request.method === 'PUT')!
+  expect(save.body).not.toHaveProperty('settings')
 })
 
 test('product editor previews the existing cover image', async ({ page }) => {
@@ -741,7 +756,7 @@ test('shared editor validates collapsed advanced fields and traps and restores k
   expect(requests.filter((request) => request.method === 'PUT')).toHaveLength(0)
   await page.getByLabel('所属分类 UUID', { exact: true }).fill(categoryId)
   await advanced.click()
-  await dialog.getByRole('switch', { name: '后厨打印标记', exact: true }).focus()
+  await dialog.getByRole('switch', { name: '不打印厨房联', exact: true }).focus()
   await page.keyboard.press('Tab')
   await expect(advanced).toBeFocused()
   await page.keyboard.press('Escape')

@@ -126,7 +126,7 @@ final class TradeOrderPrintAdapter
                 'totalPrice' => $this->money($subtotal, $currency),
                 'discount' => $this->money(max(0, $subtotal - $order->getTotalAmount()), $currency),
                 'amountDue' => $this->money($order->getTotalAmount(), $currency),
-                'paymentUrl' => $this->paymentUrl($order, $store),
+                'paymentUrl' => $this->paymentUrl($order),
                 'items' => $items,
             ],
             'store' => ['uuid' => $store->getUuid(), 'name' => $store->getName(), 'code' => $store->getCode()],
@@ -161,14 +161,13 @@ final class TradeOrderPrintAdapter
     }
 
     /** Build the customer H5 payment link from the configured origin and snapshot identities. */
-    private function paymentUrl(Order $order, Store $store): string
+    private function paymentUrl(Order $order): string
     {
         $base = rtrim(trim($this->paymentBaseUrl), '/');
         $scheme = strtolower((string) parse_url($base, PHP_URL_SCHEME));
         if ($base === '' || !in_array($scheme, ['http', 'https'], true)) {
             return '';
         }
-        return $base.'/h5/payment/index.html?orderUuid='.rawurlencode($order->getUuid())
-            .'&storeUuid='.rawurlencode($store->getUuid());
+        return $base.'/h5/p.html?uuid='.rawurlencode($order->getUuid());
     }
 }

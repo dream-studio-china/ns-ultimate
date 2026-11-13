@@ -22,8 +22,8 @@ describe('table ordering QR helpers', () => {
     expect(names).toEqual(['A_01.png', '大厅桌-B02.png', '大厅桌-C03.png'])
   })
 
-  it('builds the customer payment entry URL with Trade order and store UUIDs', () => {
-    const url = customerPaymentUrl('order-uuid', 'store-uuid', DEFAULT_CUSTOMER_PAYMENT_BASE_URL)
-    expect(url).toBe('https://ns-ultimate.wscoffee.com.cn/h5/payment/index.html?orderUuid=order-uuid&storeUuid=store-uuid')
+  it('builds the customer payment entry URL with only the Trade order UUID', () => {
+    const url = customerPaymentUrl('order-uuid', DEFAULT_CUSTOMER_PAYMENT_BASE_URL)
+    expect(url).toBe('https://ns-ultimate.wscoffee.com.cn/h5/p.html?uuid=order-uuid')
   })
 })

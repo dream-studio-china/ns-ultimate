@@ -23,12 +23,12 @@
 现有门店控制台生成的入口为：
 
 ```text
-https://<payment-host>/h5/payment/index.html?orderUuid=<orderUuid>&storeUuid=<storeUuid>
+https://<payment-host>/h5/p.html?uuid=<orderUuid>
 ```
 
-`orderUuid` 用于定位订单，`storeUuid` 用于绑定必须使用哪个门店的支付配置。H5 不得向服务端提交可信的金额、币种、付款人、invoice 状态、支付凭证或商户身份。
+`orderUuid` 用于定位订单。登录前，H5 通过 `GET /api/v1/public/orders/{orderUuid}/store` 获取可信的门店上下文，入口 URL 不再携带 `storeUuid`。H5 不得向服务端提交可信的金额、币种、付款人、invoice 状态、支付凭证或商户身份。
 
-当前 `payment.html` 是浏览器本地存储驱动的演示页，不是生产结账流程。生产页必须改为认证后的 API 调用，不能用演示数据替代真实状态。
+当前 `/h5/p.html` 入口从公开的订单门店接口和结账订单投影读取门店与账单信息，支付状态以服务端返回为准，不使用浏览器本地演示数据。
 
 订单 UUID 只是标识，不是查看任意订单字段的授权凭证。结账页应使用独立的受限订单投影，不直接复用面向订单所有者的通用订单接口。投影不得返回客户身份、配送信息、员工信息、内部 metadata、成本、利润或任意订单 metadata。
 
@@ -45,7 +45,9 @@ sequenceDiagram
     participant P as 支付渠道
 
     C->>C: 展示或打印结账二维码
-    H->>H: 读取 orderUuid/storeUuid，识别微信或支付宝
+    H->>H: 读取 orderUuid，识别微信或支付宝
+    H->>A: GET /api/v1/public/orders/{orderUuid}/store
+    A-->>H: orderUuid 和可信的 storeUuid
     alt 已有有效 token
         H->>I: GET /api/v1/app/users/me
     else 微信且没有有效 token
@@ -87,7 +89,7 @@ sequenceDiagram
 | 支付宝 | User-Agent 包含 `AlipayClient` | `/api/v1/app/users/me` 成功后继续 | 调用固定游客账号自动登录接口 |
 | 其他 | 两者都不包含 | 已认证且支付受支持时继续 | 提示请使用微信或支付宝扫码 |
 
-微信扫码进入的是公众号 H5，不是小程序。登录必须使用当前门店配置的公众号 OAuth。回调需要保留 `orderUuid` 和 `storeUuid` 并返回同一个结账页。服务端必须校验回调域名和返回路径，不能直接使用任意用户提交的 `redirect_uri`，否则会形成开放重定向风险。
+微信扫码进入的是公众号 H5，不是小程序。登录必须使用当前门店配置的公众号 OAuth。回调只保留订单 UUID 并返回 `/h5/p.html?uuid=<orderUuid>`，登录后再次通过公开的订单门店接口解析可信 `storeUuid`。服务端必须校验回调域名和返回路径，不能直接使用任意用户提交的 `redirect_uri`，否则会形成开放重定向风险。
 
 支付宝终端不向 H5 暴露账号密码。H5 调用服务端自动登录接口，由服务端使用固定游客账号完成登录。建议契约为：
 
@@ -107,6 +109,14 @@ Content-Type: application/json
 JWT 不得出现在结账 URL、二维码、日志或统计事件中。token 过期返回 `401` 时，H5 清除旧 token，重新执行当前终端的登录，再加载同一个订单，不能把它当成新的结账。
 
 ## 5. 获取结账订单
+
+加载支付投影前，H5 先解析订单所属门店：
+
+```http
+GET /api/v1/public/orders/{orderUuid}/store
+```
+
+响应只包含 `orderUuid` 和 `storeUuid`。该接口公开、只读，返回的订单和门店身份必须与请求的订单一致。
 
 结账页使用公开的只读订单投影接口，不复用按订单所有者限制的 `GET /api/v1/app/orders/{id}`。门店收银台创建的订单可能是匿名订单，扫码后才登录的客户不一定是 Trade 订单的 `user`；公开接口按订单 UUID 定位订单，并只返回支付页所需的受限字段。
 

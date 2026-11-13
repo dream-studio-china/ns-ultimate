@@ -475,7 +475,7 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
   const [checking, setChecking] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   const [error, setError] = useState<MessageKey | null>(null)
-  const paymentUrl = useMemo(() => customerPaymentUrl(order.tradeOrderUuid, access.store.uuid), [access.store.uuid, order.tradeOrderUuid])
+  const paymentUrl = useMemo(() => customerPaymentUrl(order.tradeOrderUuid), [order.tradeOrderUuid])
   const amount = new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)
 
   const refreshPayment = async () => {

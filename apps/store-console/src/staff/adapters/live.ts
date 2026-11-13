@@ -90,7 +90,9 @@ export const authorizationSchema = z.object({
 export const productSchema = z.object({
   uuid, name: z.string(), status: z.enum(['active', 'inactive']), category: z.object({ uuid }).nullable(),
   version, isSoldout: z.boolean(), description: z.string().nullable(), sortOrder: z.number().int().nonnegative(), recommendationLevel: z.number().int().nonnegative(), extensionEditable: z.boolean(),
-  settings: z.object({ kitchenPrinterEnable: z.boolean(), startSaleTime: z.string(), endSaleTime: z.string() }),
+  // Older Store backends omit this setting. Preserve that distinction so the
+  // editor only submits a field supported by the connected backend.
+  settings: z.object({ kitchenPrinterEnable: z.boolean(), kitchenTicketDisabled: z.boolean().optional(), startSaleTime: z.string(), endSaleTime: z.string() }).passthrough(),
   metadata: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? null : value,
     z.object({ cover: z.string().nullable().optional(), subtitle: z.string().nullable().optional() }).nullable().optional()),
 })
