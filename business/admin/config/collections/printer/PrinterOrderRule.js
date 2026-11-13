@@ -24,7 +24,7 @@ export default {
       { property: 'match', type: 'select', required: true, default_value: 'all', type_options: { options: options([
         ['all', 'All conditions'], ['any', 'Any condition']
       ]) } },
-      { property: 'conditions', component: OrderPrintConditions, default_value: [] },
+      { property: 'conditions', component: OrderPrintConditions, required: false, default_value: [] },
       { property: 'deviceUuid', component: OrderPrintOutputSelect, required: true, help: t('Print rule output help'),
         relation: { target: 'PrinterDevice', plural: 'devices', prefix: '/api/v1/manage/printer', valueKey: 'uuid' } },
       { property: 'templateUuid', component: OrderPrintOutputSelect, required: true,

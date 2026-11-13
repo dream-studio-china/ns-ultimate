@@ -34,6 +34,7 @@ test('print rule configuration exposes store filtering and safe defaults', async
   assert.equal(listStore.relation.valueKey, 'uuid')
   const detailStore = config.detail.detail_display.find(item => typeof item === 'object' && item.property === 'storeUuid')
   assert.equal(detailStore.relation.prefix, '/api/v1/manage')
+  assert.equal(field('conditions').required, false)
   assert.equal(field('enabled').default_value, false)
   assert.equal(field('copies').type_options.min, 1)
   assert.equal(field('copies').type_options.max, 100)
