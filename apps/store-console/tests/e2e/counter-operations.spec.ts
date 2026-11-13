@@ -8,11 +8,12 @@ const productId = '10000000-0000-4000-8000-000000000005'
 const categoryId = '10000000-0000-4000-8000-000000000006'
 const invoiceId = '10000000-0000-4000-8000-000000000007'
 const orderId = '10000000-0000-4000-8000-000000000009'
+const printRuleId = '10000000-0000-4000-8000-000000000010'
 const store = { uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'USD', timezone: 'UTC' }
 const item = { specificationUuid: specId, productName: 'Soup', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }
 const stamp = '2026-10-31T10:00:00+00:00'
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; failedInvoice?: boolean; paymentClose?: 'success' | 'already-paid' | 'network'; paymentCloseAccess?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; failedInvoice?: boolean; paymentClose?: 'success' | 'already-paid' | 'network'; paymentCloseAccess?: boolean; printAccess?: boolean; printOptions?: boolean; recommended?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   let session: { uuid: string; participantCount: number; notes: string; startedAt: string; revision: number } | null = options.empty ? null : { uuid: sessionId, participantCount: 3, notes: 'Birthday', startedAt: stamp, revision }
@@ -52,14 +53,22 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
         ...Object.fromEntries(sessionActions.map((action) => [`store:counter_session:${action}`, [storeId]])),
         ...Object.fromEntries(orderActions.map((action) => [`store:counter_order:${action}`, [storeId]])),
         ...(options.failedInvoice && options.paymentCloseAccess !== false ? { 'store:order:payment_close': [storeId] } : {}),
+        ...(options.printAccess !== false ? { 'store:order:print': [storeId] } : {}),
       }
       return respond({ permissions: Object.keys(storeScopes), storeScopes })
     }
     if (path.endsWith('/counter-operations/counters')) return list([view()])
     if (path.endsWith(`/counter-operations/counters/${counterId}`)) return respond(view())
-    if (path.endsWith('/counter-operations/catalog')) return list([{ uuid: specId, productName: 'Soup', name: 'Regular', price: 1590, available: true }])
-    if (path === '/api/v1/app/products') return route.fulfill({ json: { code: 0, data: [{ id: 1, uuid: productId, name: 'Soup', status: 'active', metadata: null, category: { id: 1, uuid: categoryId, name: 'Menu', enabled: true }, specifications: [{ id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', sort: 0 }] }], paginator: { page: 1, has_next: false } } })
+    if (path.endsWith('/counter-operations/catalog')) return list([{ uuid: specId, productName: 'Soup', name: 'Regular', price: 1590, available: true, recommendationLevel: options.recommended ? 2 : 0 }])
+    if (path === '/api/v1/app/products') return route.fulfill({ json: { code: 0, data: [{ id: 1, uuid: productId, name: 'Soup', status: 'active', recommendationLevel: options.recommended ? 2 : 0, metadata: null, category: { id: 1, uuid: categoryId, name: 'Menu', enabled: true }, specifications: [{ id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', sort: 0 }] }], paginator: { page: 1, has_next: false } } })
     if (method === 'GET' && path === `/api/v1/app/orders/${orderId}`) return respond({ uuid: orderId, invoiceUuid: invoiceId, paymentStatus: 'failed' })
+    if (method === 'GET' && path === `/api/v1/store/${storeId}/operations/print-options`) return respond({ items: options.printOptions === false ? [] : [{ ruleUuid: printRuleId, name: '手打结账小票', deviceName: '前台打印机', kind: 'receipt', copies: 1, ticketMode: 'single' }] })
+    const manualPrint = path.match(new RegExp(`^/api/v1/store/${storeId}/operations/trade-orders/([0-9a-f-]{36})/print$`))
+    if (method === 'POST' && manualPrint) {
+      const tradeOrderUuid = manualPrint[1]!
+      expect(body).toMatchObject({ ruleUuid: printRuleId, commandUuid: expect.stringMatching(/^[0-9a-f-]{36}$/), reason: '收银台手动打印' })
+      return respond({ commandUuid: body!.commandUuid, tradeOrderUuid, status: 'queued', requestUuids: [invoiceId] })
+    }
     if (path === '/api/v1/app/orders' && method === 'POST') {
       if (options.conflict) return route.fulfill({ status: 409, json: { code: 409, message: 'order_changed' } })
       if (options.uncertain && !failed) { failed = true; return route.abort('failed') }
@@ -207,7 +216,7 @@ test('table details hide party and end-session actions', async ({ page }) => {
   expect(requests.some((request) => request.path.endsWith('/session/end'))).toBe(false)
 })
 
-test('payment QR opens the customer payment entry without starting Huifu directly', async ({ page }) => {
+test('payment QR and receipt printing use the customer entry and manual print command', async ({ page }) => {
   const requests = await setup(page, { customerOrder: true })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await page.getByRole('button', { name: '收款', exact: true }).click()
@@ -220,12 +229,42 @@ test('payment QR opens the customer payment entry without starting Huifu directl
   await expect(page.getByRole('link', { name: '打开用户端收款页', exact: true })).toHaveCount(0)
   const printReceipt = page.getByRole('button', { name: '打印结账小票', exact: true })
   await expect(printReceipt).toBeVisible()
-  await expect(printReceipt.locator('svg')).toHaveCount(0)
   await printReceipt.click()
-  await expect(paymentDialog).toContainText('打印接口尚未接入')
+  const printDialog = page.getByRole('dialog', { name: '手动打印订单', exact: true })
+  await expect(printDialog).toContainText('手打结账小票')
+  await expect(printDialog).toContainText('前台打印机')
+  await printDialog.getByRole('button', { name: '发送打印任务', exact: true }).click()
+  await expect(printDialog).toContainText('打印任务已入队')
   expect(await paymentDialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   await expect(page.getByRole('button', { name: '刷新支付状态', exact: true })).toBeVisible()
   expect(requests.some((request) => request.path.includes('huifu-payments') || request.path.includes('/app/orders'))).toBe(false)
+  const print = requests.find((request) => request.method === 'POST' && request.path.endsWith(`/trade-orders/${orderId}/print`))
+  expect(print?.body).toMatchObject({ ruleUuid: printRuleId, commandUuid: expect.any(String), reason: '收银台手动打印' })
+})
+
+test('cashier product rows show a thumbs-up for recommended products', async ({ page }) => {
+  await setup(page, { customerOrder: true, recommended: true })
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await page.getByRole('button', { name: '加单', exact: true }).click()
+  const row = page.locator('.dining-menu li').filter({ hasText: 'Soup' }).first()
+  await expect(row.locator('.dining-menu-thumbs')).toHaveAttribute('aria-label', '推荐度 2/5')
+  await expect(row.locator('.dining-menu-thumbs svg')).toHaveCount(5)
+  await expect(row.locator('.dining-menu-thumbs svg.is-active')).toHaveCount(2)
+})
+
+test('manual print controls are hidden without the order print grant', async ({ page }) => {
+  await setup(page, { customerOrder: true, printAccess: false })
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await expect(page.getByRole('button', { name: '手动打印', exact: true })).toHaveCount(0)
+})
+
+test('manual print explains when no rule opts into staff printing', async ({ page }) => {
+  await setup(page, { customerOrder: true, printOptions: false })
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await page.getByRole('button', { name: '手动打印', exact: true }).click()
+  const printDialog = page.getByRole('dialog', { name: '手动打印订单', exact: true })
+  await expect(printDialog).toContainText('门店未配置手动打印规则')
+  await expect(printDialog.getByRole('button', { name: '发送打印任务', exact: true })).toBeDisabled()
 })
 
 test('opening a table releases a failed payment invoice before offering collection', async ({ page }) => {

@@ -95,6 +95,19 @@
 .catalog-print-flag.is-enabled { background: #edf4e7; color: #587245; }
 .catalog-print-flag.is-disabled { background: var(--theme-paper); color: var(--theme-muted); }
 .catalog-product-info h2 { font-size: 16px; font-weight: 600; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }
+.catalog-product-recommendation { margin-top: 5px; }
+.recommendation-thumbs { display: inline-flex; align-items: center; gap: 1px; color: var(--theme-faint); line-height: 0; }
+.recommendation-thumbs svg { flex: 0 0 auto; fill: transparent; stroke-width: 1.8; }
+.recommendation-thumbs svg.is-active { color: var(--brand); fill: currentColor; }
+.recommendation-rating { display: grid; gap: 7px; color: var(--theme-muted); font-size: 11px; }
+.recommendation-rating > small { color: var(--theme-muted); font-size: 10px; line-height: 1.65; }
+.recommendation-thumbs-control { display: flex; align-items: center; gap: 5px; }
+.recommendation-thumbs-control button { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--theme-line); border-radius: 12px; color: var(--theme-faint); background: var(--theme-paper); transition: color .15s, border-color .15s, background .15s, transform .15s; }
+.recommendation-thumbs-control button:hover, .recommendation-thumbs-control button:focus-visible { border-color: color-mix(in srgb, var(--brand) 45%, var(--theme-line)); color: var(--brand); outline: 0; }
+.recommendation-thumbs-control button:active { transform: scale(.94); }
+.recommendation-thumbs-control button.is-active { border-color: color-mix(in srgb, var(--brand) 28%, var(--theme-line)); color: var(--brand); background: color-mix(in srgb, var(--brand) 9%, var(--theme-paper)); }
+.recommendation-thumbs-control svg { fill: transparent; stroke-width: 1.8; }
+.recommendation-thumbs-control button.is-active svg { fill: currentColor; }
 .catalog-product-info p { color: var(--theme-muted); font-size: 11px; line-height: 1.6; margin-top: 5px; overflow-wrap: anywhere; }
 .catalog-product-prices { display: grid; gap: 4px; margin-top: 7px; }
 .catalog-product-price { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; color: var(--theme-muted); font-size: 12px; line-height: 1.55; }

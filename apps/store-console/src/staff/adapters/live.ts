@@ -118,6 +118,22 @@ export const orderRefundResultSchema = z.object({
   refundedAmount: cents.nullable(),
 }).passthrough()
 export type OrderRefundResult = z.infer<typeof orderRefundResultSchema>
+export const printOptionSchema = z.object({
+  ruleUuid: uuid,
+  name: z.string().trim().min(1).max(255),
+  deviceName: z.string().trim().min(1).max(255),
+  kind: z.enum(['receipt', 'label']),
+  copies: z.number().int().min(1).max(100),
+  ticketMode: z.enum(['single', 'per_unit']),
+})
+export type PrintOption = z.infer<typeof printOptionSchema>
+export const manualPrintResultSchema = z.object({
+  commandUuid: uuid,
+  tradeOrderUuid: uuid,
+  status: z.literal('queued'),
+  requestUuids: z.array(uuid).min(1).max(500),
+})
+export type ManualPrintResult = z.infer<typeof manualPrintResultSchema>
 const paymentCloseResultSchema = z.object({
   status: z.string().min(1),
   tradeOrderUuid: uuid,
@@ -208,6 +224,7 @@ const legacyProductSchema = z.object({
   uuid,
   name: z.string(),
   status: z.string(),
+  recommendationLevel: z.number().int().nonnegative().optional(),
   metadata: z.unknown().nullable().optional(),
   category: z.preprocess((value) => {
     if (value == null) return null
@@ -244,7 +261,7 @@ const legacySpecificationSchema = z.object({
   status: z.string(),
   product: z.object({ uuid, __toString: z.string().optional() }).passthrough(),
 }).passthrough()
-export interface LegacyCatalogItem { uuid: string; specificationId: number; productUuid: string; categoryUuid: string | null; categoryName: string | null; productName: string; name: string; price: number; available: boolean }
+export interface LegacyCatalogItem { uuid: string; specificationId: number; productUuid: string; categoryUuid: string | null; categoryName: string | null; productName: string; name: string; price: number; available: boolean; recommendationLevel: number }
 export type LegacyCounterOrder = z.infer<typeof legacyCounterOrderSchema>
 export const orderQuoteSchema = z.object({ items: z.array(orderableItemSchema).min(1).max(30), totalAmount: cents, currency, quoteToken: version })
 export const counterMergeQuoteSchema = z.object({
@@ -277,7 +294,7 @@ export const counterCommandResultSchema = z.preprocess((value) => {
   replacedOrderUuid: commandResultId,
   status: z.unknown().optional(),
 }).passthrough())
-export const orderableCatalogSchema = z.object({ uuid, productName: z.string(), name: z.string(), price: cents, available: z.boolean() })
+export const orderableCatalogSchema = z.object({ uuid, productName: z.string(), name: z.string(), price: cents, available: z.boolean(), recommendationLevel: z.number().int().nonnegative().optional().default(0) })
 export type CounterSessionView = z.infer<typeof counterSessionSchema>
 export type SessionOrder = z.infer<typeof sessionOrderSchema>
 export type OrderQuote = z.infer<typeof orderQuoteSchema>
@@ -519,6 +536,24 @@ export class StoreApi {
     if (rows.some((row) => row.tradeOrderUuid !== id)) throw new ApiError('invalid')
     return rows
   }
+  async printOptions(): Promise<PrintOption[]> {
+    const result = await this.client.data(`${this.base}/operations/print-options`, z.object({ items: z.array(printOptionSchema).max(50) }))
+    return result.items
+  }
+  async manualPrintOrder(tradeOrderUuid: string, ruleUuid: string, commandUuid: string, reason: string): Promise<ManualPrintResult> {
+    const orderId = uuid.parse(tradeOrderUuid)
+    const ruleId = uuid.parse(ruleUuid)
+    const commandId = uuid.parse(commandUuid)
+    const trimmedReason = reason.trim()
+    if (!trimmedReason || new TextEncoder().encode(trimmedReason).length > 500) throw new ApiError('invalid')
+    const result = await this.client.data(`${this.base}/operations/trade-orders/${orderId}/print`, manualPrintResultSchema, 'POST', {
+      commandUuid: commandId,
+      ruleUuid: ruleId,
+      reason: trimmedReason,
+    })
+    if (result.commandUuid !== commandId || result.tradeOrderUuid !== orderId) throw new ApiError('invalid')
+    return result
+  }
   async legacyCounters(): Promise<LiveCounter[]> {
     const counters: LiveCounter[] = []
     for (let page = 1; ; page += 1) {
@@ -563,7 +598,7 @@ export class StoreApi {
       return product.specifications.flatMap((specification) => {
         const specificationMetadata = record(specification.metadata ?? specification.__metadata)
         if (specification.status !== 'active' || specificationMetadata.isDeleted === true) return []
-        return [{ uuid: specification.uuid, specificationId: specification.id, productUuid: product.uuid, categoryUuid: product.category?.uuid ?? null, categoryName, productName: product.name, name: specification.name, price: specification.price, available: true }]
+        return [{ uuid: specification.uuid, specificationId: specification.id, productUuid: product.uuid, categoryUuid: product.category?.uuid ?? null, categoryName, productName: product.name, name: specification.name, price: specification.price, available: true, recommendationLevel: product.recommendationLevel ?? 0 }]
       })
     })
   }
@@ -591,6 +626,7 @@ export class StoreApi {
       name: specification.name,
       price: specification.price,
       available: true,
+      recommendationLevel: 0,
     }
   }
   async legacyCreateOrder(storeCode: string, counterUuid: string, currency: string, items: { specificationId: number; quantity: number }[], notes: string, diningMode?: Pick<DiningMode, 'uuid' | 'name'>, participantCount = 0) {

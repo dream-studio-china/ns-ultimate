@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
 import JSZip from 'jszip'
-import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, QrCode, ReceiptText, RotateCcw, UsersRound, XCircle } from 'lucide-react'
+import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, Printer, QrCode, ReceiptText, RotateCcw, UsersRound, XCircle } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCounter, type SessionOrder } from '../adapters/live'
@@ -12,6 +12,7 @@ import { DEFAULT_TRADE_ORDER_STATUSES, filterTradeOrders } from './order-filters
 import { counterQrFileNames, customerOrderingUrl } from '../table-qr'
 import { AccessNotice, EditorAdvanced, EditorSection, EditorSheet, EditorToggle, ListFeedback, MutationForm, Notice, PageControls, StatusPill, useCommand, usePage, LiveSheet as Sheet } from './ui'
 import { LiveDining } from './dining'
+import { canManuallyPrintOrderStatus, ManualPrintSheet } from './ManualPrintSheet'
 
 function CounterForm({ api, counter, done, onClose }: { api: StoreApi; counter: LiveCounter; done: () => void; onClose: () => void }) {
   const { t } = useI18n()
@@ -135,6 +136,7 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
   const canReadOrders = can(access, 'counter_order', 'read')
   const canCancelOrders = can(access, 'counter_order', 'cancel')
   const canRefundOrders = can(access, 'order', 'refund')
+  const canPrintOrders = can(access, 'order', 'print')
   const load = useCallback(async () => {
     const tables = await api.allCounterSessions()
     const orders = new Map<string, CounterTradeOrder>()
@@ -152,6 +154,7 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
   const [selected, setSelected] = useState<CounterTradeOrder | null>(null)
   const [refunding, setRefunding] = useState<CounterTradeOrder | null>(null)
   const [cancelling, setCancelling] = useState<CounterTradeOrder | null>(null)
+  const [printing, setPrinting] = useState<CounterTradeOrder | null>(null)
   const counterCodes = [...new Set(list.items.map(({ counter }) => counter.code).filter(Boolean))].sort((left, right) => left.localeCompare(right))
   const allStatusesSelected = selectableOrderStatuses.every(([value]) => statuses.has(value))
   const visible = filterTradeOrders(list.items, { statuses, tableCode, date, timeZone: access.store.timezone })
@@ -192,13 +195,14 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
         const confirmed = order.status === 'confirmed'
         return <article key={order.uuid}><div className="order-card-heading"><span><ReceiptText size={19} />{t('tableNumber')} {counter.code}</span><StatusPill muted={order.status !== 'pending' && order.status !== 'confirmed'}>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill></div>
           {paymentLabel && <p>{t('diningPaymentState')} · {t(paymentLabel)}</p>}
-          <div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><div className="order-card-actions">{confirmed && <Button color="danger" fill="outline" disabled={!canCancelOrders} aria-label={canCancelOrders ? t('cancelOrder') : t('cancelOrderPermissionRequired')} onClick={() => setCancelling(item)}><XCircle size={14} />{t('cancelOrder')}</Button>}{refundable && <Button disabled={!canRefundOrders} aria-label={canRefundOrders ? t('refund') : t('refundPermissionRequired')} onClick={() => openRefund(item)}><RotateCcw size={14} />{t('refund')}</Button>}<Button onClick={() => setSelected(item)}>{t('view')}<ChevronDown size={14} /></Button></div></div></article>
+          <div className="order-card-body"><div><h2 title={order.uuid}>#{order.uuid.slice(0, 8).toUpperCase()}</h2><p><Clock3 size={12} /><time dateTime={order.createdAt}>{formatDate(order.createdAt, locale)}</time></p></div><strong>{formatOrderAmount(order, currency, locale)}</strong></div><div className="order-card-footer"><span>{t('diningMode')} · {order.diningModeName ?? t('diningModeNotRecorded')}</span><div className="order-card-actions">{canPrintOrders && canManuallyPrintOrderStatus(order.status) && <Button className="order-card-print" onClick={() => setPrinting(item)}><Printer size={14} />{t('manualPrintAction')}</Button>}{confirmed && <Button color="danger" fill="outline" disabled={!canCancelOrders} aria-label={canCancelOrders ? t('cancelOrder') : t('cancelOrderPermissionRequired')} onClick={() => setCancelling(item)}><XCircle size={14} />{t('cancelOrder')}</Button>}{refundable && <Button disabled={!canRefundOrders} aria-label={canRefundOrders ? t('refund') : t('refundPermissionRequired')} onClick={() => openRefund(item)}><RotateCcw size={14} />{t('refund')}</Button>}<Button onClick={() => setSelected(item)}>{t('view')}<ChevronDown size={14} /></Button></div></div></article>
       })}</div>
       <PageControls state={list} />
     </>}
-    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} canCancel={selected.order.status === 'confirmed'} cancelAllowed={canCancelOrders} onCancel={() => { setSelected(null); setCancelling(selected) }} canRefund={paidOrderCanRefund(selected.order)} refundAllowed={canRefundOrders} onRefund={() => openRefund(selected)} />{selected.order.hasInvoice && <OrderRefundDetails api={api} tradeOrderUuid={selected.order.tradeOrderUuid} historyAllowed={canRefundOrders} />}</Sheet>}
+    {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} canCancel={selected.order.status === 'confirmed'} cancelAllowed={canCancelOrders} onCancel={() => { setSelected(null); setCancelling(selected) }} canRefund={paidOrderCanRefund(selected.order)} refundAllowed={canRefundOrders} onRefund={() => openRefund(selected)} canPrint={canPrintOrders && canManuallyPrintOrderStatus(selected.order.status)} onPrint={() => { setPrinting(selected); setSelected(null) }} />{selected.order.hasInvoice && <OrderRefundDetails api={api} tradeOrderUuid={selected.order.tradeOrderUuid} historyAllowed={canRefundOrders} />}</Sheet>}
     {refunding && <OrderRefundSheet api={api} target={refunding} onClose={() => setRefunding(null)} onRefunded={list.reload} />}
     {cancelling && <CancelOrderSheet api={api} target={cancelling} onClose={() => setCancelling(null)} onCancelled={() => { setCancelling(null); list.reload() }} />}
+    {printing && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printing.order.tradeOrderUuid} orderLabel={`#${printing.order.uuid.slice(0, 8).toUpperCase()}`} onClose={() => setPrinting(null)} />}
   </>
 }
 function formatOrderAmount(order: SessionOrder, currency: string, locale: string) { return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(order.totalAmount / 100) }
@@ -206,7 +210,7 @@ function formatDate(value: string, locale: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
-function OrderDetail({ order, counter, currency, canCancel, cancelAllowed, onCancel, canRefund, refundAllowed, onRefund }: CounterTradeOrder & { canCancel: boolean; cancelAllowed: boolean; onCancel: () => void; canRefund: boolean; refundAllowed: boolean; onRefund: () => void }) {
+function OrderDetail({ order, counter, currency, canCancel, cancelAllowed, onCancel, canRefund, refundAllowed, onRefund, canPrint, onPrint }: CounterTradeOrder & { canCancel: boolean; cancelAllowed: boolean; onCancel: () => void; canRefund: boolean; refundAllowed: boolean; onRefund: () => void; canPrint: boolean; onPrint: () => void }) {
   const { t, locale } = useI18n()
   return <div className="workspace-order-detail">
     <div className="order-detail-hero"><span><ReceiptText size={28} strokeWidth={1.3} /></span><p>{t('amount')}</p><strong>{formatOrderAmount(order, currency, locale)}</strong><StatusPill>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill><small>{order.status}</small></div>
@@ -214,6 +218,7 @@ function OrderDetail({ order, counter, currency, canCancel, cancelAllowed, onCan
     <h3>{t('orderItems')}</h3><div className="order-snapshot-items">{order.items.map((item, index) => <div key={`${item.specificationUuid ?? item.productName}-${index}`}><span className="snapshot-item-index">{String(index + 1).padStart(2, '0')}</span><span>{item.productName}{item.specificationName ? ` · ${item.specificationName}` : ''}</span><strong>×{item.quantity}</strong></div>)}</div>
     {canCancel && <Button block color="danger" fill="outline" disabled={!cancelAllowed} aria-label={cancelAllowed ? t('cancelOrder') : t('cancelOrderPermissionRequired')} onClick={onCancel}><XCircle size={15} />{t('cancelOrder')}</Button>}
     {canRefund && <Button block className="order-detail-refund" disabled={!refundAllowed} onClick={onRefund}><RotateCcw size={15} />{refundAllowed ? t('refundOrder') : t('refundPermissionRequired')}</Button>}
+    {canPrint && <Button block className="order-detail-print" onClick={onPrint}><Printer size={15} />{t('manualPrintAction')}</Button>}
   </div>
 }
 
