@@ -66,7 +66,7 @@ export default defineComponent({
     }
     const open = () => { visible.value = true; return preview() }
     return () => h('span', [
-      h(ElButton, { link: true, type: 'primary', onClick: open }, () => t('Paper preview')),
+      h(ElButton, { size: 'small', type: 'primary', plain: true, icon: 'el-icon-view', onClick: open }, () => t('Paper preview')),
       h(ElDialog, { modelValue: visible.value, 'onUpdate:modelValue': value => { visible.value = value }, title: t('Paper preview'), width: 'min(820px, 94vw)', alignCenter: true, appendToBody: true, closeOnClickModal: false }, {
         default: () => h('div', { style: 'max-height:75vh;overflow:auto;' }, [
           ...(!isJob() ? [
