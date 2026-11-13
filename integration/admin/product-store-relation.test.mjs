@@ -15,6 +15,7 @@ function loadProductConfig() {
     ProductMetadataSchema: {},
     ProductSettingsSchema: {},
     ProductNameWithCover: {},
+    ProductCategorySelect: { __testCategorySelector: true },
     SpecificationManager: {},
     CopyProductsAction: {},
     kitchenPrinterField: {},
@@ -54,6 +55,13 @@ test('Product store options and edit values use UUIDs even with numeric associat
   // The select and FormAdmin's edit hydration share this value resolver.
   assert.equal(relationValue(store, relation), store.uuid)
   assert.notEqual(relationValue(store, relation), store.id)
+})
+
+test('Product category field uses the store-aware category selector', () => {
+  const category = loadProductConfig().form.fields.find(field => field.property === 'category')
+
+  assert.equal(category.component.__testCategorySelector, true)
+  assert.equal(category.required, false)
 })
 
 test('Product management filters by the selected store UUID through the existing list endpoint', async () => {
