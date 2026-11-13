@@ -90,6 +90,11 @@ final class PrinterRuleLifecycleIntegrationTest extends KernelTestCase
         self::assertSame('Table A', $requests[0]->getPrintData()['order']['counterName']);
         self::assertSame('Table A(#'.$counter->getId().')', $requests[0]->getPrintData()['order']['counterLabel']);
         self::assertSame($order->getId(), $requests[0]->getPrintData()['order']['id']);
+        self::assertSame('¥0.00', $requests[0]->getPrintData()['order']['amountDue']);
+        self::assertStringEndsWith(
+            '/h5/payment/index.html?orderUuid='.$order->getUuid().'&storeUuid='.$store->getUuid(),
+            $requests[0]->getPrintData()['order']['paymentUrl'],
+        );
         $counter->setName('Renamed after enqueue');
         $template->setDefinition(['kind' => 'receipt', 'nodes' => [['type' => 'text', 'value' => 'Changed later']]]);
         $em->flush();
