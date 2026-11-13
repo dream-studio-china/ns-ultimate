@@ -153,4 +153,24 @@ describe('store-scoped permissions and adapters', () => {
     expect(fetcher.mock.calls[1]![0]).toBe(`/api/v1/store/${store}/operations/products?page=2&limit=30&q=special+%25&status=soldout`)
     await expect(api.products(1)).rejects.toMatchObject({ kind: 'invalid' })
   })
+  it('uses the manual print options and Trade order command contract', async () => {
+    const client = new ApiClient()
+    const tradeOrderUuid = '00000000-0000-4000-8000-000000000003'
+    const commandUuid = '00000000-0000-4000-8000-000000000004'
+    const requestUuid = '00000000-0000-4000-8000-000000000005'
+    const data = vi.spyOn(client, 'data')
+      .mockResolvedValueOnce({ items: [{ ruleUuid: store, name: 'Checkout receipt', deviceName: 'Counter printer', kind: 'receipt', copies: 1, ticketMode: 'single' }] })
+      .mockResolvedValueOnce({ commandUuid, tradeOrderUuid, status: 'queued', requestUuids: [requestUuid] })
+    const api = new StoreApi(client, store)
+    expect(await api.printOptions()).toMatchObject([{ ruleUuid: store, kind: 'receipt' }])
+    expect(await api.manualPrintOrder(tradeOrderUuid, store, commandUuid, '  Customer receipt  ')).toMatchObject({ status: 'queued', requestUuids: [requestUuid] })
+    expect(data.mock.calls[0]![0]).toBe(`/api/v1/store/${store}/operations/print-options`)
+    expect(data.mock.calls[1]).toEqual([
+      `/api/v1/store/${store}/operations/trade-orders/${tradeOrderUuid}/print`,
+      expect.anything(),
+      'POST',
+      { commandUuid, ruleUuid: store, reason: 'Customer receipt' },
+    ])
+    await expect(api.manualPrintOrder(tradeOrderUuid, store, commandUuid, '   ')).rejects.toMatchObject({ kind: 'invalid' })
+  })
 })

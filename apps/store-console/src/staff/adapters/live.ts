@@ -118,6 +118,22 @@ export const orderRefundResultSchema = z.object({
   refundedAmount: cents.nullable(),
 }).passthrough()
 export type OrderRefundResult = z.infer<typeof orderRefundResultSchema>
+export const printOptionSchema = z.object({
+  ruleUuid: uuid,
+  name: z.string().trim().min(1).max(255),
+  deviceName: z.string().trim().min(1).max(255),
+  kind: z.enum(['receipt', 'label']),
+  copies: z.number().int().min(1).max(100),
+  ticketMode: z.enum(['single', 'per_unit']),
+})
+export type PrintOption = z.infer<typeof printOptionSchema>
+export const manualPrintResultSchema = z.object({
+  commandUuid: uuid,
+  tradeOrderUuid: uuid,
+  status: z.literal('queued'),
+  requestUuids: z.array(uuid).min(1).max(500),
+})
+export type ManualPrintResult = z.infer<typeof manualPrintResultSchema>
 const paymentCloseResultSchema = z.object({
   status: z.string().min(1),
   tradeOrderUuid: uuid,
@@ -518,6 +534,24 @@ export class StoreApi {
     const rows = await this.client.data(`${this.base}/trade-orders/${id}/refunds`, z.array(orderRefundResultSchema))
     if (rows.some((row) => row.tradeOrderUuid !== id)) throw new ApiError('invalid')
     return rows
+  }
+  async printOptions(): Promise<PrintOption[]> {
+    const result = await this.client.data(`${this.base}/operations/print-options`, z.object({ items: z.array(printOptionSchema).max(50) }))
+    return result.items
+  }
+  async manualPrintOrder(tradeOrderUuid: string, ruleUuid: string, commandUuid: string, reason: string): Promise<ManualPrintResult> {
+    const orderId = uuid.parse(tradeOrderUuid)
+    const ruleId = uuid.parse(ruleUuid)
+    const commandId = uuid.parse(commandUuid)
+    const trimmedReason = reason.trim()
+    if (!trimmedReason || new TextEncoder().encode(trimmedReason).length > 500) throw new ApiError('invalid')
+    const result = await this.client.data(`${this.base}/operations/trade-orders/${orderId}/print`, manualPrintResultSchema, 'POST', {
+      commandUuid: commandId,
+      ruleUuid: ruleId,
+      reason: trimmedReason,
+    })
+    if (result.commandUuid !== commandId || result.tradeOrderUuid !== orderId) throw new ApiError('invalid')
+    return result
   }
   async legacyCounters(): Promise<LiveCounter[]> {
     const counters: LiveCounter[] = []

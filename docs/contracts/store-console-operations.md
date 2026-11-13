@@ -2,7 +2,7 @@
 
 ## Status and ownership
 
-Implemented by `business/backend/Store/src/Controller/Staff/OperationsController.php` and consumed by `apps/store-console/`. Existing Core employee CRUD routes remain available and unchanged. Employee counter sessions and order entry have a separate [counter operations contract](store-console-counter-operations.md). A store-scoped order refund command and its Trade Orders UI are documented below. Employee manual order printing is available through the API described below; the Store Console print UI is not connected yet. No employee checkout or financial report contract is enabled.
+Implemented by `business/backend/Store/src/Controller/Staff/OperationsController.php` and consumed by `apps/store-console/`. Existing Core employee CRUD routes remain available and unchanged. Employee counter sessions and order entry have a separate [counter operations contract](store-console-counter-operations.md). A store-scoped order refund command and its Trade Orders UI are documented below. Employee manual order printing is connected through the rule-based API described below. No employee financial report contract is enabled.
 
 Business code owns operational validation, DTOs, availability policy, command receipts and permissions. The app owns presentation and its authenticated adapter. Integration discovers the module normally; there is no Core controller replacement or generic CRUD allowlist expansion.
 
@@ -130,6 +130,16 @@ the API never contacts the printer provider. Keep `app:printer:dispatch-orders`
 running through the existing scheduler. Its normal snapshot/unknown-outcome rules
 apply. Neither this API nor a one-second scheduler guarantees physical output
 within five seconds.
+
+The Store Console loads the same rule options for order cards, order details,
+checkout receipts and payment receipts. Receipt-only entry points filter to
+`kind: "receipt"`; a multi-order checkout result exposes one explicit action per
+printable order rather than silently printing every order. The UI identifies a
+202 response as queued, retains the same command for an unchanged retry after an
+uncertain network result, and generates a new command only after a successful
+command or a deliberate new print. Employees without `store:order:print` do not
+see print controls. No manual rule configured for the store produces a visible
+configuration guidance state instead of a synthetic template or print job.
 
 Unchanged retries by the same actor/store/command return the original receipt
 without more requests, even after dispatch or output reconfiguration. Changed

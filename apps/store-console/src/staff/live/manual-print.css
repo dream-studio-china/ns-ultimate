@@ -1,0 +1,16 @@
+.manual-print-sheet .live-sheet-content { display: grid; gap: 14px; }
+.manual-print-order { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--ws-line); border-radius: 13px; background: var(--theme-paper); }
+.manual-print-order span { color: var(--ws-muted); font-size: 10px; }
+.manual-print-order strong { color: var(--ws-ink); font-size: 14px; overflow-wrap: anywhere; }
+.manual-print-loading { margin: 8px 0; color: var(--ws-muted); font-size: 12px; text-align: center; }
+.manual-print-options { display: grid; gap: 9px; }
+.manual-print-options h3 { padding: 0 2px; color: var(--ws-ink); font-size: 13px; font-weight: 650; }
+.manual-print-options > button { display: grid; gap: 7px; width: 100%; padding: 12px 13px; border: 1px solid var(--ws-line); border-radius: 13px; color: var(--ws-ink); background: var(--theme-paper); text-align: left; cursor: pointer; }
+.manual-print-options > button.is-active { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 6%, var(--theme-paper)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 7%, transparent); }
+.manual-print-options > button:disabled { cursor: not-allowed; opacity: .62; }
+.manual-print-options > button > span { display: grid; gap: 3px; min-width: 0; }
+.manual-print-options strong { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.manual-print-options small, .manual-print-options em { color: var(--ws-muted); font-size: 10px; font-style: normal; line-height: 1.55; overflow-wrap: anywhere; }
+.checkout-print-actions { display: grid; gap: 8px; }
+.order-card-actions .adm-button.order-card-print:first-child:not(:last-child) { color: var(--brand); }
+.order-detail-print.adm-button { margin-top: 4px; color: var(--brand); border-color: color-mix(in srgb, var(--brand) 26%, var(--ws-line)); background: color-mix(in srgb, var(--brand) 5%, var(--theme-paper)); }
