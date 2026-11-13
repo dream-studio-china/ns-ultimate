@@ -621,6 +621,16 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $updatedData = json_decode($updated->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
         self::assertArrayNotHasKey('sampleData', $updatedData);
         self::assertSame($definition, $updatedData['definition']);
+
+        $withoutSample = $this->request('POST', '/api/v1/manage/printer/templates', $token, [
+            'name' => 'No sample receipt', 'kind' => 'receipt', 'definition' => $definition,
+        ]);
+        self::assertSame(201, $withoutSample->getStatusCode(), $withoutSample->getContent());
+        $withoutSampleData = json_decode($withoutSample->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        $updatedWithoutSample = $this->request('PUT', '/api/v1/manage/printer/templates/'.$withoutSampleData['id'], $token, [
+            'definition' => $definition,
+        ]);
+        self::assertSame(200, $updatedWithoutSample->getStatusCode(), $updatedWithoutSample->getContent());
     }
 
     public function testDeletesRuleWithoutRemovingQueuedSnapshotsOrRelatedRecords(): void

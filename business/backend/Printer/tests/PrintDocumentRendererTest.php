@@ -133,9 +133,9 @@ final class PrintDocumentRendererTest extends TestCase
                 ['type' => 'field', 'path' => 'item.unitPrice'], ['type' => 'line'],
             ]],
             ['type' => 'field', 'path' => 'order.amountDue'],
-            ['type' => 'qr', 'path' => 'order.paymentUrl'],
+            ['type' => 'qr', 'template' => 'https://example.invalid/payment?order={order.uuid}'],
         ]], $data);
-        foreach (['Demo tea shop', 'A01', 'Jasmine tea (large)', 'Original cake (slice)', "\u{FFE5}15.00", "\u{FFE5}43.00", 'https://example.invalid/payment?order=1001'] as $value) {
+        foreach (['Niushun Taishan Taicheng Store', 'Outdoor 2 (Small)', 'Beef oyster blade', 'Tofu skin', '2900', '1500', '21100', 'https://example.invalid/payment?order=b49d86b6-4b9e-4b8a-9527-4a34a4a1ed34'] as $value) {
             self::assertStringContainsString($value, $receipt['content']);
         }
         $labels = $renderer->render(['kind' => 'label', 'nodes' => [
@@ -147,10 +147,10 @@ final class PrintDocumentRendererTest extends TestCase
                 ]],
             ]],
         ]], $data);
-        self::assertCount(3, $labels['pages']);
-        self::assertStringContainsString('Jasmine tea', $labels['pages'][0]);
-        self::assertStringContainsString('Less ice', $labels['pages'][0]);
-        self::assertStringContainsString('Original cake', $labels['pages'][2]);
+        self::assertCount(12, $labels['pages']);
+        self::assertStringContainsString('Beef oyster blade', $labels['pages'][0]);
+        self::assertStringContainsString('Blanch for 20 seconds', $labels['pages'][0]);
+        self::assertStringContainsString('Tofu skin', $labels['pages'][1]);
     }
 
     public function testLegacyCommandsPreserveUnpairedTagsAndLiteralLineBreaks(): void

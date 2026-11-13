@@ -212,6 +212,7 @@ export default {
   'Printer type': 'Printer type', Receipt: 'Receipt', Label: 'Label', Sample: 'Sample',
   'Order with multiple items': 'Order with multiple items', 'Batch product labels': 'Batch product labels',
   'Update preview': 'Update preview', 'Template JSON': 'Template JSON', 'Sample data JSON': 'Sample data JSON',
+  'Restore default sample': 'Restore default sample', 'Sample data is saved in this browser': 'Sample data is saved in this browser',
   'Print simulation': 'Print simulation', Pages: 'pages', 'Label page': 'Label',
   'Simulation disclaimer': 'Preview is approximate; verify output on the physical printer.',
   'Xpyun commands': 'Xpyun commands', Example: 'Example', 'Printer accounts and devices': 'Printer accounts and devices',
