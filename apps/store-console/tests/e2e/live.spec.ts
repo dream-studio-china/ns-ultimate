@@ -30,7 +30,7 @@ function operationalList(route: Route, records: Record<string, unknown>[], hasNe
   return route.fulfill({ json: { code: 0, data: { items, total: items.length, page: Number(url.searchParams.get('page') ?? 1), hasNext } } })
 }
 
-async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; refundAccess?: boolean; cancelAccess?: boolean; confirmedOrder?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; productCount?: number; soldOut?: boolean; productCover?: string; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
+async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?: boolean; membership?: string; malformed?: boolean; denyWrite?: boolean; orderOperations?: boolean; refundAccess?: boolean; cancelAccess?: boolean; confirmedOrder?: boolean; auditor?: boolean; grants?: string[]; kitchenPrint?: boolean; productCount?: number; soldOut?: boolean; productCover?: string; extensionEditable?: boolean; specifications?: { uuid: string; name: string; price: number; status: string; sort: number }[] } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null; rawBody: string }[] = []
   let products: { uuid: string; name: string; category: { uuid: string } | null; status: string; [key: string]: unknown }[] = Array.from({ length: options.productCount ?? 1 }, (_, index) => ({
     uuid: index === 0 ? productId : `00000000-0000-4000-8000-${String(index + 2).padStart(12, '0')}`,
@@ -38,6 +38,7 @@ async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?
     category: { uuid: categoryId },
     status: 'active',
     isSoldout: Boolean(options.soldOut),
+    extensionEditable: options.extensionEditable ?? true,
     settings: { kitchenPrinterEnable: Boolean(options.kitchenPrint), startSaleTime: '', endSaleTime: '' },
     metadata: options.productCover ? { subtitle: null, cover: options.productCover } : undefined,
   }))
@@ -298,6 +299,16 @@ test('kitchen-only staff toggle sold-out products with product edit permission',
   }
   expect(requests.some((request) => request.path.endsWith('/operations/products/availability'))).toBe(false)
   expect(requests.filter((request) => request.path.startsWith('/api/v1/store/')).every((request) => /\/operations\/products(?:[/?]|$)/.test(request.path))).toBe(true)
+})
+
+test('kitchen edit stays available for core products without extension fields', async ({ page }) => {
+  await mockApi(page, { grants: ['store:product:read', 'store:product:update'], extensionEditable: false })
+  await login(page, '/?view=kitchen')
+  const edit = page.getByRole('button', { name: '编辑', exact: true })
+  await expect(edit).toBeVisible()
+  await edit.click()
+  await expect(page.getByRole('dialog')).toContainText('API product')
+  await expect(page.getByRole('button', { name: '售罄', exact: true })).toHaveCount(0)
 })
 
 test('catalog operators always see restore all beside add product', async ({ page }) => {
