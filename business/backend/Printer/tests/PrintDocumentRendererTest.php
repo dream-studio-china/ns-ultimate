@@ -269,6 +269,105 @@ final class PrintDocumentRendererTest extends TestCase
         self::assertStringContainsString('<QRC x="0" y="0" s="2" e="L" c="1">hello</QRC>', $label['content']);
     }
 
+    public function testStringNodeConcatenatesFieldsLiteralsAndEscapedBraces(): void
+    {
+        $document = (new PrintDocumentRenderer())->render(['kind' => 'receipt', 'nodes' => [
+            ['type' => 'string', 'value' => '桌台：{{ {order.counterName} }} 单号：{order.number}'],
+            ['type' => 'line'],
+        ]], ['order' => ['counterName' => 'A01', 'number' => 64]]);
+        self::assertSame("桌台：{ A01 } 单号：64<BR>", $document['content']);
+
+        $missing = (new PrintDocumentRenderer())->render(['kind' => 'receipt', 'nodes' => [
+            ['type' => 'string', 'value' => 'A{order.missing}B'],
+        ]], ['order' => []]);
+        self::assertSame('AB', $missing['content']);
+    }
+
+    public function testStringFiltersFormatMoneyDatesAndText(): void
+    {
+        $document = (new PrintDocumentRenderer())->render(['kind' => 'receipt', 'nodes' => [
+            ['type' => 'string', 'value' => '{item.price|money} / {item.price|money:0} / {item.price|money:3}'],
+            ['type' => 'line'],
+            ['type' => 'string', 'value' => '{order.createdAt|date:Y/m/d H:i}'],
+            ['type' => 'line'],
+            ['type' => 'string', 'value' => '{item.name|trim|upper}|{item.name|lower}|{item.name|trim|truncate:2}|{item.missing|default:none}'],
+            ['type' => 'line'],
+            ['type' => 'string', 'value' => '{item.missing|money}|{item.missing|date}'],
+        ]], [
+            'item' => ['price' => 2900, 'name' => ' Tea '],
+            'order' => ['createdAt' => '2026-11-12T23:12:23+08:00'],
+        ]);
+        self::assertSame("29.00 / 2,900 / 2.900<BR>2026/11/12 23:12<BR>TEA| tea |Te|none<BR>|", $document['content']);
+    }
+
+    public function testColumnsAndLabelTextAcceptStringTemplates(): void
+    {
+        $receipt = (new PrintDocumentRenderer())->render(['kind' => 'receipt', 'nodes' => [
+            ['type' => 'columns', 'columns' => [
+                ['template' => '{item.name}', 'width' => 8],
+                ['template' => '{item.price|money}', 'width' => 8, 'align' => 'right'],
+            ]],
+        ]], ['item' => ['name' => 'Tea', 'price' => 2900]]);
+        self::assertSame('Tea'.str_repeat(' ', 8).'29.00', $receipt['content']);
+
+        $label = (new PrintDocumentRenderer())->render(['kind' => 'label', 'widthMm' => 40, 'nodes' => [
+            ['type' => 'labelText', 'template' => '{order.counterName}-{item.index}', 'align' => 'center', 'y' => 24],
+            ['type' => 'labelText', 'template' => '<{order.counterName}>', 'x' => 8, 'y' => 8],
+        ]], ['order' => ['counterName' => 'A01'], 'item' => ['index' => 1]]);
+        self::assertStringContainsString('A01-1', $label['content']);
+        self::assertStringContainsString('&ltA01&gt', $label['content']);
+    }
+
+    public function testStringTemplateRejectsInvalidPlaceholdersAndFilters(): void
+    {
+        $cases = [
+            ['{name'],
+            ['name}'],
+            ['{}'],
+            ['{bad path}'],
+            ['{name|unknown}'],
+            ['{name|money:9}'],
+            ['{name|money:abc}'],
+            ['{name|money:1}'],
+            ['{name|truncate:0}'],
+            ['{name|truncate:501}'],
+            ['{name|date:Y-m-d}'],
+            ['{name|date:' . str_repeat('Y', 41) . '}'],
+            [str_repeat('a', 1001)],
+        ];
+        foreach ($cases as [$value]) {
+            try {
+                (new PrintDocumentRenderer())->render(['kind' => 'receipt', 'nodes' => [
+                    ['type' => 'string', 'value' => $value],
+                ]], ['name' => 'not-a-date', 'bad' => ['array']]);
+                self::fail('Expected invalid string template to be rejected: '.$value);
+            } catch (\InvalidArgumentException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
+    public function testStringTemplateEscapesMarkup(): void
+    {
+        $document = (new PrintDocumentRenderer())->render(['kind' => 'receipt', 'nodes' => [
+            ['type' => 'string', 'value' => '<{name}>'],
+        ]], ['name' => '<CUT>']);
+        self::assertSame('&lt&ltCUT&gt&gt', $document['content']);
+    }
+
+    public function testQrAndBarcodeAcceptStringTemplates(): void
+    {
+        $receipt = (new PrintDocumentRenderer())->render(['kind' => 'receipt', 'nodes' => [
+            ['type' => 'qr', 'template' => 'https://example.invalid/h5/payment/index.html?orderUuid={order.uuid}&storeUuid={store.uuid}', 'size' => 8],
+        ]], ['order' => ['uuid' => 'o-1'], 'store' => ['uuid' => 's-1']]);
+        self::assertSame('<QRCODE s=8 e=L l=center>https://example.invalid/h5/payment/index.html?orderUuid=o-1&storeUuid=s-1</QRCODE>', $receipt['content']);
+
+        $label = (new PrintDocumentRenderer())->render(['kind' => 'label', 'nodes' => [
+            ['type' => 'barcode', 'template' => 'P-{item.code}', 'height' => 40],
+        ]], ['item' => ['code' => 7]]);
+        self::assertStringContainsString('<BC128 x="0" y="0" h="40">P-7</BC128>', $label['content']);
+    }
+
     public function testRejectsInvalidLayoutOptions(): void
     {
         $cases = [

@@ -105,6 +105,7 @@ final class PrintDocumentRenderer
             }
             $piece = match ($node['type']) {
                 'text' => $this->escape($this->literal($node['value'] ?? '')),
+                'string' => $this->escape($this->interpolate($scope, $node['value'] ?? '')),
                 'field' => $this->escape($this->stringValue($scope, $node['path'] ?? '')),
                 'line' => '<BR>',
                 'separator' => '--------------------------------<BR>',
@@ -162,6 +163,90 @@ final class PrintDocumentRenderer
         throw new \InvalidArgumentException('Text template values must be scalar.');
     }
 
+    /**
+     * Expand a bounded {path|filter:argument} string; it never evaluates code.
+     *
+     * @param array<string, mixed> $scope
+     */
+    private function interpolate(array $scope, mixed $value): string
+    {
+        if (!is_string($value) || $value === '' || mb_strlen($value) > 1000) {
+            throw new \InvalidArgumentException('String templates must be text between 1 and 1000 characters.');
+        }
+        // Protect escaped braces before scanning so {{ and }} stay literal.
+        $protected = strtr($value, ['{{' => "\x01", '}}' => "\x02"]);
+        $rendered = preg_replace_callback('/\{([^{}]+)\}/u', function (array $match) use ($scope): string {
+            return $this->placeholder($scope, $match[1]);
+        }, $protected);
+        if ($rendered === null || strpbrk($rendered, '{}') !== false) {
+            throw new \InvalidArgumentException('String template braces must be balanced; use {{ or }} for a literal brace.');
+        }
+        return strtr($rendered, ["\x01" => '{', "\x02" => '}']);
+    }
+
+    /** @param array<string, mixed> $scope */
+    private function placeholder(array $scope, string $expression): string
+    {
+        $segments = explode('|', trim($expression));
+        $path = array_shift($segments);
+        $value = $this->stringValue($scope, $path ?? '');
+        foreach ($segments as $segment) {
+            $parts = explode(':', trim($segment), 2);
+            $value = $this->stringFilter(trim($parts[0]), $parts[1] ?? null, $value);
+        }
+        return $value;
+    }
+
+    private function stringFilter(string $name, ?string $argument, string $value): string
+    {
+        return match ($name) {
+            'upper' => mb_strtoupper($value, 'UTF-8'),
+            'lower' => mb_strtolower($value, 'UTF-8'),
+            'trim' => trim($value),
+            'truncate' => $this->truncateFilter($value, $argument),
+            'default' => $value === '' ? (string) $argument : $value,
+            'money' => $this->moneyFilter($value, $argument),
+            'date' => $this->dateFilter($value, $argument),
+            default => throw new \InvalidArgumentException('Unsupported string template filter: '.$name.'.'),
+        };
+    }
+
+    private function truncateFilter(string $value, ?string $argument): string
+    {
+        $length = filter_var($argument, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 500]]);
+        if (!is_int($length)) {
+            throw new \InvalidArgumentException('The truncate filter requires an integer length between 1 and 500.');
+        }
+        return mb_substr($value, 0, $length, 'UTF-8');
+    }
+
+    private function moneyFilter(string $value, ?string $argument): string
+    {
+        $decimals = $argument === null || $argument === '' ? 2 : filter_var($argument, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 6]]);
+        if (!is_int($decimals)) {
+            throw new \InvalidArgumentException('The money filter requires 0 to 6 decimals.');
+        }
+        if ($value === '') { return ''; }
+        if (preg_match('/^-?\d+$/D', $value) !== 1) {
+            throw new \InvalidArgumentException('The money filter requires an integer amount in minor units.');
+        }
+        return number_format((int) $value / 10 ** $decimals, $decimals, '.', ',');
+    }
+
+    private function dateFilter(string $value, ?string $argument): string
+    {
+        $format = $argument === null || $argument === '' ? 'Y-m-d H:i:s' : $argument;
+        if (mb_strlen($format) > 40) {
+            throw new \InvalidArgumentException('The date filter format may contain at most 40 characters.');
+        }
+        if ($value === '') { return ''; }
+        try {
+            return (new \DateTimeImmutable($value))->format($format);
+        } catch (\Exception) {
+            throw new \InvalidArgumentException('The date filter requires a parseable date value.');
+        }
+    }
+
     /** @param array<string, mixed> $scope */
     private function value(array $scope, mixed $path): mixed
     {
@@ -191,7 +276,9 @@ final class PrintDocumentRenderer
         $x = $this->coordinate($node['x'] ?? 0, 'x');
         $y = $this->coordinate($node['y'] ?? 0, 'y');
         $font = $this->coordinate($node['font'] ?? 9, 'font', 1, 9);
-        $value = array_key_exists('value', $node) ? $this->literal($node['value']) : $this->stringValue($scope, $node['path'] ?? '');
+        $value = array_key_exists('template', $node)
+            ? $this->interpolate($scope, $node['template'])
+            : (array_key_exists('value', $node) ? $this->literal($node['value']) : $this->stringValue($scope, $node['path'] ?? ''));
         $w = $this->coordinate($node['w'] ?? 1, 'w', 1, 10);
         $h = $this->coordinate($node['h'] ?? 1, 'h', 1, 10);
         $rotation = $node['r'] ?? 0;
@@ -232,7 +319,10 @@ final class PrintDocumentRenderer
         $x = $this->coordinate($node['x'] ?? 0, 'x');
         $y = $this->coordinate($node['y'] ?? 0, 'y');
         $height = $this->coordinate($node['height'] ?? 64, 'height', 1, 255);
-        $value = $this->escape($this->stringValue($scope, $node['path'] ?? ''));
+        $value = array_key_exists('template', $node)
+            ? $this->interpolate($scope, $node['template'])
+            : $this->stringValue($scope, $node['path'] ?? '');
+        $value = $this->escape($value);
         if ($value === '') { throw new \InvalidArgumentException('Barcode content cannot be empty.'); }
         return sprintf('<%s x="%d" y="%d" h="%d">%s</%s>', $type, $x, $y, $height, $value, $type);
     }
@@ -246,7 +336,9 @@ final class PrintDocumentRenderer
     {
         $x = $this->coordinate($node['x'] ?? 0, 'x');
         $y = $this->coordinate($node['y'] ?? 0, 'y');
-        $value = $this->stringValue($scope, $node['path'] ?? '');
+        $value = array_key_exists('template', $node)
+            ? $this->interpolate($scope, $node['template'])
+            : $this->stringValue($scope, $node['path'] ?? '');
         $characters = preg_match_all('/./us', $value);
         if ($value === '' || $characters === false || $characters > 256) { throw new \InvalidArgumentException('QR content must contain 1 to 256 characters.'); }
         $errorCorrection = $node['errorCorrection'] ?? 'L';
@@ -305,7 +397,9 @@ final class PrintDocumentRenderer
             if ($totalWidth > 96) { throw new \InvalidArgumentException('Receipt column widths may total at most 96 display cells.'); }
             $align = $column['align'] ?? 'left';
             if (!in_array($align, ['left', 'right', 'center'], true)) { throw new \InvalidArgumentException('Invalid column alignment.'); }
-            $value = array_key_exists('value', $column) ? $this->literal($column['value']) : $this->stringValue($scope, $column['path'] ?? '');
+            $value = array_key_exists('template', $column)
+                ? $this->interpolate($scope, $column['template'])
+                : (array_key_exists('value', $column) ? $this->literal($column['value']) : $this->stringValue($scope, $column['path'] ?? ''));
             // Fixed cells must not contain line breaks or printer controls.
             if (preg_match('/[\x00-\x1f\x7f]/', $value)) { throw new \InvalidArgumentException('Receipt columns cannot contain control characters.'); }
             $value = $this->truncateDisplay($value, $width);
