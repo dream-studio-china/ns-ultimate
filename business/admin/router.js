@@ -8,6 +8,8 @@ const orderRoute = coreRoutes.find(route => route.name === 'OrderManage')
 if (!orderRoute) throw new Error('The admin core must expose the OrderManage route.')
 const promotionRoute = coreRoutes.find(route => route.name === 'PromotionManage')
 if (!promotionRoute) throw new Error('The admin core must expose the PromotionManage route.')
+const storeRoute = coreRoutes.find(route => route.name === 'StoreManage')
+if (!storeRoute) throw new Error('The admin core must expose the StoreManage route.')
 
 export default {
   add: [
@@ -105,6 +107,12 @@ export default {
     }
   ],
   replace: [{
+    ...storeRoute,
+    children: [
+      ...storeRoute.children,
+      ...r('Membership', t('Member management'))
+    ]
+  }, {
     ...orderRoute,
     children: [
       ...orderRoute.children,
