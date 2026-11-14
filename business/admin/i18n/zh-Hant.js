@@ -637,6 +637,8 @@ export default {
   'No successful results': '暫無執行成功的結果',
   'Verification coverage': '驗證覆蓋情況',
   'Verified': '驗證通過',
+  'The import store only filters campaigns. Each test cart uses its own store and simulated time.': '匯入門市僅用於篩選活動；每條購物車案例按各自的門市和模擬時間執行。',
+  '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.': '有 {count} 條案例的門市與匯入門市不同，門市專屬活動可能不命中；請編輯對應購物車選擇門市。',
   'Not verified': '未驗證',
   'Unverified runs need expected results; they are not passes.': '未驗證的案例需要設定預期結果，不計為驗證通過。'
 }

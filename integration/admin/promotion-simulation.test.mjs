@@ -72,6 +72,21 @@ test('running opens results and input invalidation always returns to configurati
   assert.equal(model.selectedResult, null)
 })
 
+test('importing a store snapshot warns about mismatched carts without changing test contexts', async () => {
+  const { model } = simulationModel({ get: async () => ({ data: { campaigns: [newCampaign({ key: 'store-rate', storeCode: 'S1' })] } }) })
+  model.scenario.storeCode = 'S1'
+  const before = JSON.stringify(model.scenario.cases)
+  await model.importCurrent()
+  assert.equal(JSON.stringify(model.scenario.cases), before)
+  assert.equal(model.storeMismatchCount, 1)
+  model.scenario.cases[0].storeCode = 'S1'
+  assert.equal(model.storeMismatchCount, 0)
+  model.scenario.cases.push(newCase({ key: 'intentional-mismatch', storeCode: 'OTHER' }))
+  assert.equal(model.storeMismatchCount, 1)
+  model.scenario.worlds[0].campaigns[0].storeCode = ''
+  assert.equal(model.storeMismatchCount, 0)
+})
+
 test('scenario defaults are safe, read-only and convertible to the backend request', () => {
   const scenario = createScenario(new Date('2026-11-12T10:00:00+08:00'))
   assert.equal(scenario.worlds.length, 1)

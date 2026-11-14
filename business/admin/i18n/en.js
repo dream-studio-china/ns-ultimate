@@ -633,6 +633,8 @@ export default {
   'No successful results': 'No successful results',
   'Verification coverage': 'Verification coverage',
   'Verified': 'Verified',
+  'The import store only filters campaigns. Each test cart uses its own store and simulated time.': 'The import store only filters campaigns. Each test cart uses its own store and simulated time.',
+  '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.': '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.',
   'Not verified': 'Not verified',
   'Unverified runs need expected results; they are not passes.': 'Unverified runs need expected results; they are not passes.'
 }

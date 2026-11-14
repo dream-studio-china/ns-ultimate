@@ -637,6 +637,8 @@ export default {
   'No successful results': '暂无执行成功的结果',
   'Verification coverage': '验证覆盖情况',
   'Verified': '验证通过',
+  'The import store only filters campaigns. Each test cart uses its own store and simulated time.': '导入门店仅用于筛选活动；每条购物车用例按各自的门店和模拟时间运行。',
+  '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.': '有 {count} 条用例的门店与导入门店不同，门店专属活动可能不命中；请编辑对应购物车选择门店。',
   'Not verified': '未验证',
   'Unverified runs need expected results; they are not passes.': '未验证的用例需要设置预期结果，不计为验证通过。'
 }

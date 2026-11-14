@@ -21,6 +21,8 @@ The business translation adapter interpolates named placeholders from an object 
 
 Store selectors load the existing paginated `GET /api/v1/manage/stores` list and search locally by name, numeric ID, UUID or code. Selecting a store still submits its exact `code`, not its ID/UUID, to the unchanged simulation APIs. Clearing selects global scope. Records without a non-empty code are not selectable. Existing imported codes are retained even when missing from the store list; failed list loads can be retried.
 
+The import-store selector filters the campaign snapshot only; it never silently overwrites existing cart stores or simulated times. Each cart runs with its own context, including the initial global cart and intentionally mismatched boundary probes. When selected-store campaigns exist and carts use other stores, the UI warns about this mismatch. Edit a cart explicitly to change its store.
+
 ### Boundary probes
 
 The expandable assistant uses a selectable base cart and campaign snapshots from every world. Dimensions can be enabled independently:
@@ -72,6 +74,8 @@ Every world/case result contains:
 - diagnostics for every configured campaign.
 
 Diagnostic statuses distinguish disabled/template-disabled, store mismatch, not started/ended, unsatisfied DSL conditions, applied, applied with no amount change, best-price candidate not selected, unsupported/invalid definitions and `eligible_not_selected`. The last status means the public calculator did not select an otherwise eligible campaign; the workbench does not invent a priority/conflict reason that the engine did not expose. Diagnostics are auxiliary evidence, separate from the actual applied trace.
+
+Applied trace entries take precedence over rechecking DSL conditions against the final cart: an applied reduction can itself lower the subtotal below its original eligibility threshold. Schedule diagnostics compare parsed instants, including timezone offsets, rather than serialized date strings. Invalid snapshots are explicitly marked `invalid`, consistent with their world-level exclusion errors. These diagnostic corrections do not change engine selection, discount amounts or stacking behavior.
 
 ## Reproducibility and limits
 

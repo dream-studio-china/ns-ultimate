@@ -530,25 +530,32 @@ final class PromotionScenarioSimulator
         $diagnostics = [];
         foreach ($world['campaigns'] as $campaign) {
             $entry = ['campaignKey' => $campaign['key'], 'name' => $campaign['name'], 'status' => 'eligible_not_selected'];
+            // Public metadata contains ISO strings; eligibility uses the parsed
+            // instants retained by the candidate, just like the real run.
+            $start = $campaign['candidate']['startTime'] ?? null;
+            $end = $campaign['candidate']['endTime'] ?? null;
             if ($campaign['invalid'] !== null) {
-                $entry += ['status' => 'invalid', 'message' => $campaign['invalid']];
+                $entry['status'] = 'invalid';
+                $entry['message'] = $campaign['invalid'];
             } elseif (!$campaign['templateEnabled']) {
                 $entry['status'] = 'template_disabled';
             } elseif (!$campaign['enabled']) {
                 $entry['status'] = 'disabled';
             } elseif ($campaign['storeCode'] !== '' && $campaign['storeCode'] !== $case['storeCode']) {
                 $entry['status'] = 'store_mismatch';
-            } elseif ($campaign['startTime'] !== null && $campaign['startTime'] > $case['simulatedAt']) {
+            } elseif ($start !== null && $start > $case['simulatedAt']) {
                 $entry['status'] = 'not_started';
-            } elseif ($campaign['endTime'] !== null && $campaign['endTime'] < $case['simulatedAt']) {
+            } elseif ($end !== null && $end < $case['simulatedAt']) {
                 $entry['status'] = 'ended';
-            } elseif ($campaign['ast'] instanceof AstNode && !$this->matches($campaign['ast'], $evaluator, $context, $campaign['config'])) {
-                $entry['status'] = 'condition_unmet';
-                $entry['message'] = 'One or more DSL conditions do not match this cart.';
             } elseif (isset($appliedByKey[$campaign['key']])) {
+                // The trace is authoritative. A successful discount can itself
+                // make the original subtotal condition false on the final cart.
                 $entry['status'] = $appliedByKey[$campaign['key']]['changedAmount'] === 0 ? 'applied_no_change' : 'applied';
                 $entry['totalAfter'] = $appliedByKey[$campaign['key']]['totalAfter'];
                 $entry['changedAmount'] = $appliedByKey[$campaign['key']]['changedAmount'];
+            } elseif ($campaign['ast'] instanceof AstNode && !$this->matches($campaign['ast'], $evaluator, $context, $campaign['config'])) {
+                $entry['status'] = 'condition_unmet';
+                $entry['message'] = 'One or more DSL conditions do not match this cart.';
             } elseif ($campaign['conflictMode'] === 'best_price' && isset($bestPriceKeys[$campaign['key']])) {
                 $entry['status'] = 'best_price_not_selected';
                 $entry['message'] = 'Participated in best-price comparison but was not the cheapest candidate.';
