@@ -99,13 +99,100 @@ export function newTemplateNode(type, kind) {
     field: { path: 'order.number' }, text: { value: 'Text' }, string: { value: '{order.number}' },
     qr: { template: '{order.uuid}', size: kind === 'label' ? 2 : 6, ...(kind === 'label' ? { x: 8, y: 64 } : { align: 'center' }) },
     barcode: { template: '{order.number}', x: 8, y: 64, height: 64, format: 'BC128' },
-    each: { path: 'items', children: [kind === 'label' ? { type: 'labelText', x: 8, y: 8, font: 9, path: 'item.name' } : { type: 'style', children: [{ type: 'string', value: '{item.name} x{item.quantity}' }] }] },
+    each: { path: 'order.items', children: [kind === 'label' ? { type: 'labelText', x: 8, y: 8, font: 9, path: 'item.name' } : { type: 'style', children: [{ type: 'string', value: '{item.name} x{item.quantity}' }] }] },
     repeat: { countPath: 'item.quantity', children: [] }, if: { path: 'order.number', children: [] },
     bold: { children: [{ type: 'text', value: 'Text' }] },
     columns: { columns: [{ value: 'Item', width: 24, align: 'left' }, { path: 'order.amountDue', width: 12, align: 'right' }] },
-    receiptCommand: { value: 'BR' }
+    receiptCommand: { value: '<BR>' }
   }
   return { type, ...cloneDefinition(defaults[type] || {}) }
+}
+
+// The generic form removes null object properties. JSON text is a compatible
+// Printer API input, decoded before validation/persistence at that boundary.
+export function templateFormValue(definition) {
+  const hasNull = value => value && typeof value === 'object' && Object.values(value).some(child => child === null || hasNull(child))
+  return hasNull(definition) ? JSON.stringify(definition) : cloneDefinition(definition)
+}
+
+export function starterTemplate(kind) {
+  if (kind === 'label') return { kind, widthMm: 50, heightMm: 40, nodes: [
+    { type: 'each', path: 'order.items', children: [
+      { type: 'labelText', template: '{store.name|truncate:12}', x: 8, y: 8, font: 9, align: 'center' },
+      { type: 'labelText', template: '{item.name|truncate:12}', x: 8, y: 56, font: 9 },
+      { type: 'labelText', template: '{item.quantityLabel}  {item.amount|money}', x: 8, y: 96, font: 9 },
+      { type: 'labelText', template: '#{order.number}', x: 8, y: 136, font: 9 }
+    ] }
+  ] }
+  return { kind: 'receipt', widthMm: 80, nodes: [
+    { type: 'style', align: 'center', bold: true, children: [{ type: 'field', path: 'store.name' }] },
+    { type: 'style', children: [{ type: 'string', value: '#{order.number}  {order.counterName}' }] },
+    { type: 'separator' },
+    { type: 'each', path: 'order.items', children: [
+      { type: 'style', children: [{ type: 'field', path: 'item.name' }] },
+      { type: 'style', children: [{ type: 'columns', columns: [{ template: '{item.quantityLabel}', width: 16 }, { template: '{item.amount|money}', width: 32, align: 'right' }] }] }
+    ] },
+    { type: 'separator' },
+    { type: 'style', align: 'right', bold: true, children: [{ type: 'string', value: '{order.amountDue|money}' }] }
+  ] }
+}
+
+export function scopeForNode(definition, sample, path) {
+  let scope = { ...sample }
+  for (let length = 1; length < path.length; length++) {
+    const node = nodeAt(definition, path.slice(0, length))
+    if (node?.type === 'each') scope = { ...scope, item: lookup(scope, node.path)?.[0] ?? {}, index: 0 }
+    if (node?.type === 'repeat') scope = { ...scope, repeatIndex: 0 }
+  }
+  return scope
+}
+
+export function sampleFields(scope, arrays = false) {
+  const fields = []
+  const visit = (value, path, depth) => {
+    if (depth > 8 || fields.length >= 200 || (path && !/^[A-Za-z_][A-Za-z0-9_.]*$/.test(path))) return
+    if (Array.isArray(value)) { if (arrays) fields.push({ path, value }); return }
+    if (value && typeof value === 'object') {
+      for (const [key, child] of Object.entries(value)) {
+        if (!['__proto__', 'prototype', 'constructor'].includes(key)) visit(child, path ? `${path}.${key}` : key, depth + 1)
+      }
+    } else if (!arrays && path) fields.push({ path, value })
+  }
+  visit(scope, '', 0)
+  return fields
+}
+
+export function previewData(sample, ticketMode) {
+  if (ticketMode !== 'per_unit') return sample
+  const source = sample.item ?? sample.order?.items?.[0]
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return sample
+  return {
+    ...sample,
+    order: { ...sample.order, items: [source] },
+    item: { index: 1, total: source.quantity, ...source }
+  }
+}
+
+export function containerEntries(definition) {
+  const entries = [{ path: [], type: 'root' }]
+  const visit = (nodes, path) => nodes.forEach((node, index) => {
+    const current = [...path, index]
+    if (containerTypes.includes(node.type)) entries.push({ path: current, type: node.type })
+    if (Array.isArray(node.children)) visit(node.children, current)
+  })
+  visit(definition.nodes, [])
+  return entries
+}
+
+export function moveNodeInto(definition, source, parent) {
+  if (!nodeAt(definition, source) || (parent.length >= source.length && source.every((part, index) => parent[index] === part))) return definition
+  const next = cloneDefinition(definition)
+  const destination = parent.length ? nodeAt(next, parent) : null
+  if (parent.length && !containerTypes.includes(destination?.type)) return definition
+  const to = parent.length ? (destination.children ??= []) : next.nodes
+  const from = source.length === 1 ? next.nodes : nodeAt(next, source.slice(0, -1)).children
+  to.push(from.splice(source.at(-1), 1)[0])
+  return next
 }
 
 const lookup = (scope, path) => String(path ?? '').split('.').reduce((value, key) => value && Object.hasOwn(value, key) ? value[key] : undefined, scope)

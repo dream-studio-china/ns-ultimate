@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
-import { changeNode, createDesignerState, designerHistory, labelBox, labelEntries, moveNode, newTemplateNode, nodeAt, parseDefinition, setDesignerDraft, transformLabel } from '../../business/admin/config/components/printer-template-designer.mjs'
+import { changeNode, createDesignerState, designerHistory, labelBox, labelEntries, moveNode, moveNodeInto, newTemplateNode, nodeAt, parseDefinition, sampleFields, scopeForNode, setDesignerDraft, starterTemplate, templateFormValue, transformLabel } from '../../business/admin/config/components/printer-template-designer.mjs'
 import { designerMessages } from '../../business/admin/i18n/printer-designer.js'
 
 const label = { kind: 'label', widthMm: 40, heightMm: 30, custom: { keep: true }, nodes: [{ type: 'labelText', value: 'Tea', x: 8, y: 16, font: 9, custom: 'preserve' }] }
@@ -76,7 +76,7 @@ test('label moves snap to dots and supported resize steps without losing custom 
 
 test('representative loop entries retain editable paths and use first-item sample scope', () => {
   const document = { kind: 'label', nodes: [newTemplateNode('each', 'label')] }
-  const entries = labelEntries(document, { items: [{ name: 'Tea' }, { name: 'Coffee' }] })
+  const entries = labelEntries(document, { order: { items: [{ name: 'Tea' }, { name: 'Coffee' }] } })
   assert.equal(entries.length, 1)
   assert.equal(entries[0].text, 'Tea')
   assert.deepEqual(entries[0].path, [0, 0])
@@ -116,19 +116,33 @@ function compile(name, bindings, directory = '../../business/admin/config/compon
 }
 
 const PrinterTemplateNode = compile('PrinterTemplateNode', { knownTypes: helpers.knownTypes })
-function mount(initial = label, post = async() => ({ data: { document: { kind: 'label', pages: ['preview'] } } })) {
+const paperSource = readFileSync(new URL('../../business/admin/config/components/PrinterPaper.js', import.meta.url), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'return')
+const paperBindings = { ...paper, defineComponent: Vue.defineComponent, h: Vue.h, ref: Vue.ref, watch: Vue.watch, resolveComponent: Vue.resolveComponent, t: key => key, QRCode: require('qrcode') }
+const PrinterPaper = new Function(...Object.keys(paperBindings), paperSource)(...Object.values(paperBindings))
+function labelPreview(template, data) {
+  const escape = text => String(text).replace(/</g, '&lt').replace(/>/g, '&gt')
+  const content = helpers.labelEntries(template, data).map(entry => {
+    const node = entry.node, box = helpers.labelBox(node, entry.text, template)
+    const command = node.type === 'labelText' ? `<TEXT x="${box.x}" y="${box.y}" font="${node.font ?? 9}" w="${node.w ?? 1}" h="${node.h ?? 1}" r="${node.r ?? 0}">${escape(entry.text)}</TEXT>`
+      : node.type === 'qr' ? `<QRC x="${box.x}" y="${box.y}" s="${node.size ?? 2}" e="L">${escape(entry.text)}</QRC>` : `<BC128 x="${box.x}" y="${box.y}" h="${node.height ?? 64}">${escape(entry.text)}</BC128>`
+    return `<DESIGNER path="${entry.path.join('.')}" type="${node.type}">${command}</DESIGNER>`
+  }).join('')
+  return { kind: template.kind, widthMm: template.widthMm, heightMm: template.heightMm, pages: [content.replace(/<DESIGNER[^>]+>|<\/DESIGNER>/g, '')], sourcePages: [content] }
+}
+function mount(initial = label, post = async(_url, body) => ({ data: { document: labelPreview(body.template, body.data) } })) {
   const requests = []
   const component = compile('PrinterTemplateDesigner', {
     ...helpers, ...paper, PrinterTemplateNode, sampleData,
     PrinterTemplateJson: { props: ['modelValue'], emits: ['update:modelValue'], render() { return Vue.h('textarea', { class: 'definition-json', value: this.modelValue, onInput: event => this.$emit('update:modelValue', event.target.value) }) } },
     t: key => key,
     request: { post: (url, body) => { requests.push({ url, body }); return post(url, body) } },
-    PrinterPaper: { props: ['document'], render() { return Vue.h('output', { class: 'rendered-preview' }, this.document.pages?.join('')) } }
+    PrinterPaper
   })
   const form = Vue.reactive({ kind: initial.kind, definition: structuredClone(initial) })
   const validators = [], released = []
   const root = document.createElement('div'); document.body.append(root)
   const app = Vue.createApp({ render: () => Vue.h(component, { form, field: { property: 'definition' } }) })
+  app.component('ElPagination', { props: ['currentPage', 'total'], emits: ['update:currentPage'], render() { return Vue.h('button', { type: 'button', onClick: () => this.$emit('update:currentPage', Math.min(this.total, this.currentPage + 1)) }, 'Next preview page') } })
   app.provide('registerFieldValidator', (property, validator) => { validators.push(validator); return () => released.push(property) })
   app.mount(root)
   const button = text => [...root.querySelectorAll('button')].find(element => element.textContent.trim() === text)
@@ -141,7 +155,8 @@ function mount(initial = label, post = async() => ({ data: { document: { kind: '
     Object.assign(event, { clientX: x, clientY: y, pointerId: 1, button: 0 })
     element.dispatchEvent(event); await Vue.nextTick()
   }
-  return { root, form, button, field, input, click, pointer, requests, validators, released, unmount() { app.unmount(); root.remove() } }
+  const preview = async() => { await click(button('Update preview')); await Promise.resolve(); await Vue.nextTick() }
+  return { root, form, button, field, input, click, pointer, preview, requests, validators, released, unmount() { app.unmount(); root.remove() } }
 }
 
 test('mounted designer synchronizes JSON, keeps invalid drafts and blocks saving until repaired', async() => {
@@ -153,10 +168,12 @@ test('mounted designer synchronizes JSON, keeps invalid drafts and blocks saving
     await ui.input(textarea, raw)
     assert.equal(ui.form.definition.nodes[0].x, 32)
     assert.equal(textarea.value, raw)
-    assert.equal(ui.root.querySelector('.label-glyphs').textContent, 'Coffee')
+    await ui.preview()
+    assert.equal(ui.root.querySelector('.paper-label-hit').textContent, 'Coffee')
     await ui.input(textarea, '{')
     assert.equal(ui.form.definition.nodes[0].value, 'Coffee')
-    assert.equal(ui.root.querySelector('.label-glyphs').textContent, 'Coffee')
+    assert.equal(ui.root.querySelector('.paper-label-hit').textContent, 'Coffee')
+    assert.equal(ui.root.querySelector('.paper-label-hit').getAttribute('tabindex'), '-1')
     assert.equal(textarea.value, '{')
     let error
     ui.validators[0](null, null, value => { error = value })
@@ -196,7 +213,8 @@ test('mounted visual properties preserve JSON extensions, support centering and 
 test('pointer dragging and resizing commit one undo step; clicking and cancelling do not rewrite alignment', async() => {
   const ui = mount({ ...label, nodes: [{ ...label.nodes[0], align: 'center' }] })
   try {
-    const element = ui.root.querySelector('.label-element')
+    await ui.preview()
+    const element = ui.root.querySelector('.paper-label-hit')
     await ui.pointer(element, 'pointerdown', 0, 0)
     await ui.pointer(element, 'pointerup', 0, 0)
     assert.equal(ui.form.definition.nodes[0].align, 'center')
@@ -209,12 +227,13 @@ test('pointer dragging and resizing commit one undo step; clicking and cancellin
     await ui.click(ui.button('Undo'))
     assert.equal(ui.form.definition.nodes[0].align, 'center')
     assert.equal(ui.form.definition.nodes[0].y, 16)
+    await ui.preview()
     await ui.pointer(element, 'pointerdown', 0, 0)
     await ui.pointer(element, 'pointermove', 16 * scale, 8 * scale)
     await ui.pointer(element, 'pointercancel', 16 * scale, 8 * scale)
     assert.equal(ui.form.definition.nodes[0].align, 'center')
     await ui.click(ui.root.querySelector('.template-node-row button'))
-    const handle = ui.root.querySelector('.resize-handle')
+    const handle = ui.root.querySelector('.paper-resize-handle')
     await ui.pointer(handle, 'pointerdown', 0, 0)
     await ui.pointer(handle, 'pointerup', 36 * scale, 24 * scale)
     assert.equal(ui.form.definition.nodes[0].w, 2)
@@ -252,10 +271,13 @@ test('preview uses unsaved JSON, rejects stale responses and never sends a live 
     assert.equal(ui.requests[1].body.template.widthMm, 50)
     pending[1]({ data: { document: { pages: ['latest'] } } }); await Promise.resolve(); await Vue.nextTick()
     pending[0]({ data: { document: { pages: ['stale'] } } }); await Promise.resolve(); await Vue.nextTick()
-    assert.equal(ui.root.querySelector('.rendered-preview').textContent, 'latest')
+    const preview = ui.root.querySelector('section[aria-label="Paper preview"]')
+    assert.ok(preview.textContent.includes('latest'))
+    assert.ok(!preview.textContent.includes('stale'))
     assert.ok(ui.requests.every(call => call.url === '/api/v1/manage/printer/preview'))
     await ui.input(ui.root.querySelector('.definition-json'), '{')
-    assert.equal(ui.root.querySelector('.rendered-preview'), null)
+    assert.ok(ui.root.querySelector('section[aria-label="Paper preview"]').textContent.includes('latest'))
+    assert.ok(ui.root.textContent.includes('Canvas awaiting valid preview'))
   } finally { ui.unmount() }
 })
 
@@ -286,11 +308,12 @@ test('unsupported definitions survive neighboring edits and content source chang
     await ui.click(ui.root.querySelector('.template-node-row button'))
     await ui.input(ui.field('Content source'), 'template', 'change')
     await ui.input(ui.field('Content'), '{order.number}')
-    assert.equal(ui.form.definition.nodes[0].value, undefined)
-    assert.equal(ui.form.definition.nodes[0].template, '{order.number}')
-    assert.equal(ui.form.definition.nodes[0].custom, 'preserve')
-    assert.deepEqual(JSON.parse(JSON.stringify(ui.form.definition.nodes[1])), unknown)
-    assert.equal(ui.form.definition.labelEnvelope, 'legacy')
+    const stored = typeof ui.form.definition === 'string' ? JSON.parse(ui.form.definition) : ui.form.definition
+    assert.equal(stored.nodes[0].value, undefined)
+    assert.equal(stored.nodes[0].template, '{order.number}')
+    assert.equal(stored.nodes[0].custom, 'preserve')
+    assert.deepEqual(JSON.parse(JSON.stringify(stored.nodes[1])), unknown)
+    assert.equal(stored.labelEnvelope, 'legacy')
     await ui.click(ui.root.querySelectorAll('.template-node-row button')[1])
     assert.ok(ui.root.textContent.includes('Unsupported node preserved'))
   } finally { ui.unmount() }
@@ -317,7 +340,7 @@ test('external form replacement resets history and kind mismatches block save wi
     ui.form.definition = { kind: 'receipt', nodes: [{ type: 'text', value: 'External' }] }
     await Vue.nextTick()
     assert.equal(ui.button('Undo').disabled, true)
-    assert.equal(ui.root.querySelector('.label-sheet'), null)
+    assert.equal(ui.root.querySelector('.paper-label-sheet'), null)
     assert.equal(JSON.parse(ui.root.querySelector('.definition-json').value).kind, 'receipt')
     let error
     ui.validators[0](null, null, value => { error = value })
@@ -379,8 +402,287 @@ test('designer theme bridge and JSON palette stay scoped and keep printed paper 
   const css = readFileSync(new URL('../../business/admin/config/components/printer-template-designer.css', import.meta.url), 'utf8')
   assert.match(css, /--el-bg-color: var\(--surface/)
   assert.match(css, /html\[data-theme='dark'\] \.printer-designer\s*\{\s*color-scheme: dark/)
-  assert.match(css, /\.printer-designer \.label-sheet \{ color-scheme: light/)
+  assert.match(css, /\.printer-designer \.paper-edit-sheet \{ color-scheme: light/)
   for (const selector of ['ace_string', 'ace_cursor', 'ace_selection', 'jsoneditor-contextmenu', 'jsoneditor-string']) assert.ok(css.includes(selector))
   const config = readFileSync(new URL('../../integration/admin/vite.config.ts', import.meta.url), 'utf8')
   assert.ok(config.includes("{ find: /^jsoneditor$/, replacement: coreRequire.resolve('jsoneditor') }"))
+})
+
+test('field choices use the selected loop scope and cannot expose inherited properties', () => {
+  const definition = { kind: 'label', nodes: [newTemplateNode('each', 'label')] }
+  const data = { order: { number: '75', items: [{ name: 'Tea', amount: 1200 }] }, store: { name: 'Store' } }
+  assert.ok(!sampleFields(scopeForNode(definition, data, [0])).some(item => item.path === 'item.name'))
+  assert.ok(sampleFields(scopeForNode(definition, data, [0, 0])).some(item => item.path === 'item.name'))
+  assert.deepEqual(sampleFields(data, true).map(item => item.path), ['order.items'])
+  assert.ok(!sampleFields(JSON.parse('{"__proto__":{"secret":1},"ok":2}')).some(item => item.path.includes('__proto__')))
+})
+
+test('move-into supports empty blocks and root append without introducing cycles', () => {
+  const definition = { kind: 'receipt', nodes: [{ type: 'text', value: 'Keep', extra: { a: 1 } }, { type: 'if', path: 'order.number' }] }
+  const nested = moveNodeInto(definition, [0], [1])
+  assert.equal(nested.nodes.length, 1)
+  assert.equal(nested.nodes[0].children[0].value, 'Keep')
+  assert.equal(moveNodeInto(nested, [0], [0, 0]), nested)
+  const unwrapped = moveNodeInto(nested, [0, 0], [])
+  assert.equal(unwrapped.nodes[1].extra.a, 1)
+  assert.equal(definition.nodes.length, 2)
+})
+
+test('field picker inserts formatted placeholders and reparent controls preserve loop children', async() => {
+  const ui = mount({ kind: 'receipt', nodes: [newTemplateNode('each', 'receipt'), { type: 'style', children: [] }] })
+  try {
+    await ui.click(ui.root.querySelectorAll('.template-node-row button')[2])
+    await ui.input(ui.field('Field format'), 'money', 'change')
+    await ui.input(ui.field('Insert data field'), 'item.amount', 'change')
+    assert.ok(ui.form.definition.nodes[0].children[0].children[0].value.endsWith('{item.amount|money}'))
+    await ui.input(ui.field('Move into block'), '1', 'change')
+    await ui.click(ui.button('Move into block'))
+    assert.equal(ui.form.definition.nodes[1].children[0].type, 'string')
+    await ui.click(ui.button('Undo'))
+    assert.equal(ui.form.definition.nodes[0].children[0].children[0].type, 'string')
+  } finally { ui.unmount() }
+})
+
+test('null comparison edits use lossless form text and initial nullable definitions are protected', async() => {
+  const definition = { kind: 'receipt', custom: { keep: null }, nodes: [{ type: 'if', path: 'order.paidAt', children: [{ type: 'text', value: 'Unpaid' }] }] }
+  const ui = mount(definition)
+  try {
+    assert.equal(typeof ui.form.definition, 'string')
+    assert.equal(JSON.parse(ui.form.definition).custom.keep, null)
+    await ui.click(ui.root.querySelector('.template-node-row button'))
+    await ui.input(ui.field('Condition comparison'), 'null', 'change')
+    assert.equal(JSON.parse(ui.form.definition).nodes[0].equals, null)
+    await ui.input(ui.field('Condition comparison'), 'boolean', 'change')
+    assert.equal(JSON.parse(ui.form.definition).nodes[0].equals, false)
+  } finally { ui.unmount() }
+})
+
+test('new-template setup supplies renderable starter blocks without rewriting existing definitions', async() => {
+  const ui = mount({ kind: 'receipt' })
+  try {
+    await ui.click(ui.button('Create template'))
+    assert.deepEqual(JSON.parse(JSON.stringify(ui.form.definition)), starterTemplate('receipt'))
+  } finally { ui.unmount() }
+  assert.equal(typeof templateFormValue({ ...label, extra: null }), 'string')
+  assert.equal(typeof templateFormValue(label), 'object')
+})
+
+test('per-unit preview supplies a representative item but never adds it to the saved template', async() => {
+  const ui = mount(label)
+  try {
+    ui.form.ticketMode = 'per_unit'; await Vue.nextTick()
+    await ui.click(ui.button('Update preview'))
+    assert.deepEqual(JSON.parse(JSON.stringify(ui.requests[0].body.data.item)), { index: 1, total: sampleData.order.items[0].quantity, ...sampleData.order.items[0] })
+    assert.equal(ui.requests[0].body.data.order.items.length, 1)
+    assert.equal(ui.form.definition.item, undefined)
+    assert.equal(ui.form.sampleData, undefined)
+  } finally { ui.unmount() }
+})
+
+test('column field selection preserves layout and extension properties', async() => {
+  const ui = mount({ kind: 'receipt', nodes: [{ type: 'each', path: 'order.items', children: [{ type: 'columns', columns: [{ value: 'Amount', width: 16, align: 'right', extra: true }] }] }] })
+  try {
+    await ui.click(ui.root.querySelectorAll('.template-node-row button')[1])
+    await ui.input(ui.field('Field format'), 'money', 'change')
+    await ui.input(ui.field('Insert data field'), 'item.amount', 'change')
+    const column = ui.form.definition.nodes[0].children[0].columns[0]
+    assert.equal(column.template, '{item.amount|money}')
+    assert.equal(column.value, undefined)
+    assert.equal(column.width, 16)
+    assert.equal(column.align, 'right')
+    assert.equal(column.extra, true)
+  } finally { ui.unmount() }
+})
+
+test('root drops append only nodes dragged from the same designer instance', async() => {
+  const definition = { kind: 'receipt', nodes: [{ type: 'text', value: 'First' }, { type: 'text', value: 'Last' }] }
+  const first = mount(definition), other = mount(definition)
+  try {
+    let payload
+    const start = new dom.window.Event('dragstart', { bubbles: true })
+    Object.assign(start, { dataTransfer: { setData: (_type, data) => { payload = data } } })
+    first.root.querySelector('.template-node-row').dispatchEvent(start)
+    const drop = target => {
+      const event = new dom.window.Event('drop', { bubbles: true, cancelable: true })
+      Object.assign(event, { dataTransfer: { getData: () => payload } })
+      target.dispatchEvent(event)
+    }
+    drop(other.root.querySelector('.root-drop')); await Vue.nextTick()
+    assert.equal(other.form.definition.nodes[0].value, 'First')
+    drop(first.root.querySelector('.root-drop')); await Vue.nextTick()
+    assert.equal(first.form.definition.nodes.at(-1).value, 'First')
+  } finally { first.unmount(); other.unmount() }
+})
+
+test('JSON editor keyboard undo is not handled again by the designer', async() => {
+  const ui = mount()
+  try {
+    await ui.input(ui.root.querySelector('.definition-json'), JSON.stringify({ ...label, widthMm: 50 }))
+    const tree = document.createElement('div'); tree.className = 'printer-template-json'
+    const editable = document.createElement('div'); tree.append(editable); ui.root.querySelector('.printer-designer').append(tree)
+    editable.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }))
+    await Vue.nextTick()
+    assert.equal(ui.form.definition.widthMm, 50)
+    await ui.click(ui.button('Undo'))
+    assert.equal(ui.form.definition.widthMm, 40)
+  } finally { ui.unmount() }
+})
+
+test('the only canvas uses server-formatted text and actual aligned coordinates during dragging', async() => {
+  const initial = { ...label, nodes: [{ type: 'labelText', template: '{order.createdAt|date:Y}', x: 8, y: 16, font: 9, align: 'center' }] }
+  const document = { kind: 'label', widthMm: 40, heightMm: 30, pages: ['<TEXT x="136" y="16" font="9">2026</TEXT>'],
+    sourcePages: ['<DESIGNER path="0" type="labelText"><TEXT x="136" y="16" font="9">2026</TEXT></DESIGNER>'] }
+  const ui = mount(initial, async() => ({ data: { document } }))
+  try {
+    await ui.preview()
+    assert.equal(ui.root.querySelectorAll('section[aria-label="Paper preview"]').length, 1)
+    assert.equal(ui.root.querySelector('.label-scroll'), null)
+    const element = ui.root.querySelector('.paper-label-hit')
+    assert.equal(element.textContent, '2026')
+    const scale = 96 / 25.4 / 8 * 1.5
+    await ui.pointer(element, 'pointerdown', 0, 0)
+    await ui.pointer(element, 'pointermove', 16 * scale, 8 * scale)
+    assert.equal(ui.form.definition.nodes[0].x, 8)
+    assert.equal(element.style.left, '19mm')
+    assert.equal(element.textContent, '2026')
+    await ui.pointer(element, 'pointerup', 16 * scale, 8 * scale)
+    assert.equal(ui.form.definition.nodes[0].x, 152)
+    assert.equal(ui.form.definition.nodes[0].y, 24)
+    assert.equal(ui.form.definition.nodes[0].template, '{order.createdAt|date:Y}')
+    assert.equal(ui.requests[0].body.editable, true)
+    assert.equal(JSON.parse(ui.root.querySelector('.definition-json').value).nodes[0].x, 152)
+    await ui.click(ui.button('Undo'))
+    assert.equal(ui.form.definition.nodes[0].align, 'center')
+    assert.equal(ui.form.definition.nodes[0].x, 8)
+  } finally { ui.unmount() }
+})
+
+test('printed receipt text selects its source and edits its enclosing style; rows reorder real blocks', async() => {
+  const initial = { kind: 'receipt', nodes: [
+    { type: 'style', align: 'center', children: [{ type: 'text', value: 'Tea' }] },
+    { type: 'style', children: [{ type: 'text', value: 'Cake' }] }
+  ] }
+  const document = { kind: 'receipt', widthMm: 80, pages: ['<C>Tea<BR></C><L>Cake<BR></L>'], sourcePages: [
+    '<DESIGNER path="0" type="style"><C><DESIGNER path="0.0" type="text">Tea</DESIGNER><BR></C></DESIGNER><DESIGNER path="1" type="style"><L><DESIGNER path="1.0" type="text">Cake</DESIGNER><BR></L></DESIGNER>'
+  ] }
+  const ui = mount(initial, async() => ({ data: { document } }))
+  try {
+    await ui.preview()
+    await ui.click(ui.root.querySelector('span[data-source-path="0.0"]'))
+    assert.equal(ui.field('Content').value, 'Tea')
+    assert.equal(ui.field('Alignment').value, 'center')
+    await ui.input(ui.field('Width multiplier'), '2', 'change')
+    assert.equal(ui.form.definition.nodes[0].width, 2)
+    assert.equal(ui.form.definition.nodes[0].children[0].value, 'Tea')
+    await ui.preview()
+    let payload
+    const start = new dom.window.Event('dragstart', { bubbles: true })
+    Object.assign(start, { dataTransfer: { setData: (_type, value) => { payload = value } } })
+    ui.root.querySelector('div[data-block-path="1"]').dispatchEvent(start)
+    const drop = new dom.window.Event('drop', { bubbles: true, cancelable: true })
+    Object.assign(drop, { dataTransfer: { getData: () => payload } })
+    ui.root.querySelector('div[data-block-path="0"]').dispatchEvent(drop)
+    await Vue.nextTick()
+    assert.equal(ui.form.definition.nodes[0].children[0].value, 'Cake')
+    assert.equal(ui.form.definition.nodes[1].width, 2)
+  } finally { ui.unmount() }
+})
+
+test('expanded label pages select and edit the same original loop node', async() => {
+  const initial = { kind: 'label', widthMm: 40, heightMm: 30, nodes: [{ type: 'each', path: 'order.items', children: [{ type: 'labelText', path: 'item.name', x: 8, y: 8 }] }] }
+  const pages = ['Tea', 'Cake'].map(value => `<TEXT x="8" y="8" font="9">${value}</TEXT>`)
+  const document = { kind: 'label', widthMm: 40, heightMm: 30, pages, sourcePages: pages.map(value => `<DESIGNER path="0.0" type="labelText">${value}</DESIGNER>`) }
+  const ui = mount(initial, async() => ({ data: { document } }))
+  try {
+    await ui.preview()
+    assert.equal(ui.root.querySelector('.paper-label-hit').textContent, 'Tea')
+    await ui.click(ui.button('Next preview page'))
+    const element = ui.root.querySelector('.paper-label-hit')
+    assert.equal(element.textContent, 'Cake')
+    await ui.click(element)
+    assert.equal(ui.field('Data field').value, 'item.name')
+    await ui.input(ui.field('X (mm)'), '3', 'change')
+    assert.equal(ui.form.definition.nodes[0].children[0].x, 24)
+    assert.equal(ui.form.definition.nodes[0].children[0].path, 'item.name')
+  } finally { ui.unmount() }
+})
+
+test('expired sessions and old unmapped backends never show a fake editable paper', async() => {
+  const failed = mount(label, async() => { throw { response: { data: { error: 'Session expired, please login again' } } } })
+  try {
+    await failed.preview()
+    assert.ok(failed.root.textContent.includes('Session expired'))
+    assert.ok(failed.root.textContent.includes('Canvas requires preview'))
+    assert.equal(failed.root.querySelector('.paper-label-hit'), null)
+    assert.ok(failed.root.querySelector('.definition-json'))
+  } finally { failed.unmount() }
+  const old = mount(label, async() => ({ data: { document: { kind: 'label', pages: ['<TEXT x="8" y="16" font="9">Tea</TEXT>'] } } }))
+  try {
+    await old.preview()
+    assert.ok(old.root.textContent.includes('Editable mapping unavailable'))
+    assert.equal(old.root.querySelector('.paper-label-hit'), null)
+  } finally { old.unmount() }
+})
+
+test('unified canvas renders actual QR matrices instead of a second schematic placeholder', async() => {
+  const ui = mount({ ...label, nodes: [{ type: 'qr', template: 'https://example.invalid/payment', x: 8, y: 8, size: 2 }] })
+  try {
+    await ui.preview()
+    const element = ui.root.querySelector('.paper-label-hit')
+    assert.ok(element.querySelector('svg path').getAttribute('d').startsWith('M'))
+    assert.equal(element.style.width, element.querySelector('svg').style.width)
+    assert.equal(ui.root.querySelector('.code-placeholder'), null)
+  } finally { ui.unmount() }
+})
+
+test('plain receipt text is wrapped for formatting only after an explicit action', async() => {
+  const original = { type: 'text', value: 'Legacy', custom: true }
+  const initial = { kind: 'receipt', nodes: [{ type: 'receiptCommand', value: '<B>' }, original] }
+  const document = { kind: 'receipt', pages: ['<B>Legacy'], sourcePages: ['<DESIGNER path="0" type="receiptCommand"><B></DESIGNER><DESIGNER path="1" type="text">Legacy</DESIGNER>'] }
+  const ui = mount(initial, async() => ({ data: { document } }))
+  try {
+    await ui.preview()
+    await ui.click(ui.root.querySelector('span[data-source-path="1"]'))
+    assert.deepEqual(JSON.parse(JSON.stringify(ui.form.definition)), initial)
+    await ui.click(ui.button('Make text block'))
+    assert.equal(ui.form.definition.nodes[1].type, 'style')
+    assert.deepEqual(JSON.parse(JSON.stringify(ui.form.definition.nodes[1].children[0])), original)
+    assert.equal(ui.form.definition.nodes[0].value, '<B>')
+    await ui.click(ui.button('Undo'))
+    assert.deepEqual(JSON.parse(JSON.stringify(ui.form.definition)), initial)
+  } finally { ui.unmount() }
+})
+
+test('paper gestures focus the printed element for keyboard nudging', async() => {
+  const ui = mount()
+  try {
+    await ui.preview()
+    const element = ui.root.querySelector('.paper-label-hit')
+    await ui.pointer(element, 'pointerdown', 0, 0)
+    await ui.pointer(element, 'pointerup', 0, 0)
+    assert.equal(document.activeElement, element)
+    const event = new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+    element.dispatchEvent(event); await Vue.nextTick()
+    assert.equal(ui.form.definition.nodes[0].x, 9)
+    assert.equal(event.defaultPrevented, true)
+  } finally { ui.unmount() }
+})
+
+test('a pending property edit is committed before a gesture and cannot be overwritten by stale ink', async() => {
+  const ui = mount()
+  try {
+    await ui.preview()
+    await ui.click(ui.root.querySelector('.template-node-row button'))
+    const x = ui.field('X (mm)')
+    x.focus(); x.value = '5'
+    x.addEventListener('blur', () => x.dispatchEvent(new dom.window.Event('change', { bubbles: true })), { once: true })
+    const element = ui.root.querySelector('.paper-label-hit')
+    await ui.pointer(element, 'pointerdown', 0, 0)
+    await ui.pointer(element, 'pointermove', 50, 0)
+    await ui.pointer(element, 'pointerup', 50, 0)
+    assert.equal(ui.form.definition.nodes[0].x, 40)
+    assert.equal(element.getAttribute('aria-disabled'), 'true')
+    await ui.click(ui.button('Undo'))
+    assert.equal(ui.form.definition.nodes[0].x, 8)
+  } finally { ui.unmount() }
 })

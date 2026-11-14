@@ -70,6 +70,22 @@ Templates reject invalid filter syntax when saved, an invalid result excludes th
 item, and an order with no matching item produces no print. Existing templates
 default to `single` and no filter.
 
+The legacy `all` and `kitchen` filter tokens are **DEPRECATED**, not removed.
+`all` still includes every item (and preserves whole-order receipts for empty
+orders); `kitchen` still includes only items whose resolved product settings have
+`kitchenPrinterEnable === true`. Missing flags and non-boolean truthy values do
+not opt an item in. Both tokens remain valid on create/update and are stored
+unchanged, so older clients and full-form saves keep working. New expressions
+are additive; upgrading the designer does not require rewriting filters or the
+print-template language.
+
+The expression-storage migration now widens the column without clearing legacy
+values. Its historical version previously cleared `all` and `kitchen`; databases
+which already ran that version cannot distinguish those former values from
+intentional empty filters. Review backups/configuration history before any
+operator-approved recovery; do not guess or bulk-fill filters. This compatibility
+fix does not restore already-cleared values or require rerunning that migration.
+
 Legacy `Store.settings.printing` cases are no longer read or automatically
 migrated. Before deploying, record each store's intended routes and configure
 equivalent rules; without rules there is no automatic printing. Existing values

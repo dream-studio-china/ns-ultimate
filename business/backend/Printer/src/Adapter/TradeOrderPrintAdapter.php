@@ -27,7 +27,7 @@ final class TradeOrderPrintAdapter
     /** @return list<array<string, mixed>> */
     public function buildPrintData(Order $order, Store $store, bool $perUnit = false, ?string $itemFilter = null): array
     {
-        $filtered = $itemFilter !== null && trim($itemFilter) !== '';
+        $filtered = $this->filter->isFiltering($itemFilter);
         $items = [];
         foreach ($order->getItems() as $item) {
             $product = $item->getProductSnapshot() ?? [];

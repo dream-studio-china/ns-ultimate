@@ -24,7 +24,11 @@ final class PrinterPreviewController
             if (!is_array($template) || !is_array($data)) {
                 return new JsonResponse(['error' => 'template and data must be objects.'], 400);
             }
-            $document = $renderer->render($template, $data);
+            $editable = array_key_exists('editable', $input) ? $input['editable'] : false;
+            if (!is_bool($editable)) {
+                return new JsonResponse(['error' => 'editable must be a boolean.'], 400);
+            }
+            $document = $renderer->render($template, $data, $editable);
             return new JsonResponse([
                 'document' => $document,
                 'cURL' => "curl -X POST 'https://your-host/api/v1/manage/printer/preview' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' -H 'Content-Type: application/json' \\\n  --data '<template-and-data-json>'",

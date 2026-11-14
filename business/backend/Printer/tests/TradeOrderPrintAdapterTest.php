@@ -91,6 +91,31 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame(0, $snapshots[0]['order']['amountDue']);
         self::assertArrayNotHasKey('paymentUrl', $snapshots[0]['order']);
         self::assertSame([], $adapter->buildPrintData($order, $store, false, 'entity.getQuantity() > 0'));
+        self::assertSame($snapshots, $adapter->buildPrintData($order, $store, false, 'all'));
+        self::assertSame([], $adapter->buildPrintData($order, $store, false, 'kitchen'));
+    }
+
+    public function testLegacyKitchenFilterKeepsOnlyStrictlyOptedInItemsAndPerUnitCounts(): void
+    {
+        $order = new Order();
+        foreach ([true, false, 1, 'true', null] as $enabled) {
+            $order->addItem((new OrderItem())->setProductSnapshot([
+                'name' => 'Item '.json_encode($enabled), 'settings' => ['kitchenPrinterEnable' => $enabled],
+            ])->setQuantity(2)->setUnitPrice(100)->setPrice(200));
+        }
+        $order->addItem((new OrderItem())->setProductSnapshot(['name' => 'Missing settings'])->setQuantity(1));
+        $store = new Store('legacy-filter-shop', 'Legacy filter shop');
+        $adapter = $this->snapshotAdapter($order, $store, []);
+        self::assertSame($adapter->buildPrintData($order, $store), $adapter->buildPrintData($order, $store, false, 'all'));
+        $kitchen = $adapter->buildPrintData($order, $store, false, 'kitchen');
+        self::assertCount(1, $kitchen);
+        self::assertCount(1, $kitchen[0]['order']['items']);
+        self::assertSame('Item true', $kitchen[0]['order']['items'][0]['name']);
+        $tickets = $adapter->buildPrintData($order, $store, true, 'kitchen');
+        self::assertCount(2, $tickets);
+        foreach ($tickets as $ticket) {
+            self::assertSame('Item true', $ticket['item']['name']);
+        }
     }
 
     public function testSnapshotUsesBoundCounterNamesAndAddsItemAliasesWithoutChangingMoneyTypes(): void

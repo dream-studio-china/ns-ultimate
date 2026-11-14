@@ -15,6 +15,7 @@ use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Business\Printer\Service\PrintDocumentRenderer;
 use NsUltimate\Business\Printer\Service\OrderItemFilter;
 use NsUltimate\Business\Printer\Service\PrinterTemplateService;
+use NsUltimate\Business\Printer\Service\TemplateDefinitionInput;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
@@ -43,9 +44,10 @@ final class PrinterTemplateController extends RestController
      */
     protected function processCreateContent(array $content, object $entity): array
     {
-        if (!$entity instanceof PrinterTemplate || !is_array($content['definition'] ?? null)) {
+        if (!$entity instanceof PrinterTemplate) {
             throw new \InvalidArgumentException('Template definition must be an object.');
         }
+        $content['definition'] = TemplateDefinitionInput::normalize($content['definition'] ?? null);
         if (!is_string($content['name'] ?? null) || trim($content['name']) === '') {
             throw new \InvalidArgumentException('Template name is required.');
         }
@@ -78,9 +80,7 @@ final class PrinterTemplateController extends RestController
         }
         $this->validateTicketOptions($content);
         if (array_key_exists('definition', $content)) {
-            if (!is_array($content['definition'])) {
-                throw new \InvalidArgumentException('Template definition must be an object.');
-            }
+            $content['definition'] = TemplateDefinitionInput::normalize($content['definition']);
             if (($content['definition']['kind'] ?? null) !== $entity->getKind()) {
                 throw new \InvalidArgumentException('Template kind cannot be changed after creation.');
             }

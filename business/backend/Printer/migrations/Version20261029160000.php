@@ -14,9 +14,8 @@ final class Version20261029160000 extends AbstractMigration
     public function up(Schema $schema): void
     {
         $this->addSql('ALTER TABLE printer_template MODIFY item_filter LONGTEXT DEFAULT NULL');
-        // Previous enum values are not valid filter syntax; clear them so existing
-        // templates keep printing every item.
-        $this->addSql("UPDATE printer_template SET item_filter = NULL WHERE item_filter IN ('all', 'kitchen', '')");
+        // DEPRECATED: legacy all/kitchen tokens remain valid with their original
+        // semantics. Never clear them: kitchen must not become an all-items filter.
     }
 
     public function down(Schema $schema): void

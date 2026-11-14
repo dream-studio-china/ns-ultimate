@@ -8,7 +8,7 @@ export default {
     entity: { name: 'PrinterTemplate', prefix: '/api/v1/manage/printer', plural: 'templates' },
     form: { fields: [
       { property: 'name', label: t('Template name'), required: true },
-      { property: 'kind', label: t('Printer type'), type: 'select', required: true, type_options: { options: [
+      { property: 'kind', label: t('Printer type'), type: 'select', required: true, hidden: 'update', type_options: { options: [
         { value: 'receipt', label: t('Receipt') }, { value: 'label', label: t('Label') }
       ] } },
       { property: 'ticketMode', label: t('Ticket mode'), type: 'select', required: true, default_value: 'single', help: t('Ticket mode help'), type_options: { options: [
