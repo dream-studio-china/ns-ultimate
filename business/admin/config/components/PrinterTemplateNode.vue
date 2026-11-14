@@ -10,7 +10,7 @@
     </div>
     <ol v-if="Array.isArray(node.children)">
       <PrinterTemplateNode
-        v-for="(child, index) in node.children" :key="index" :node="child" :path="[...path, index]" :selected="selected"
+        v-for="(child, index) in node.children" :key="index" :node="child" :path="[...path, index]" :selected="selected" :drag-scope="dragScope"
         @select="$emit('select', $event)" @move="$emit('move', $event)"
       />
     </ol>
@@ -22,7 +22,7 @@ import { knownTypes } from './printer-template-designer.mjs'
 
 export default {
   name: 'PrinterTemplateNode',
-  props: { node: { type: Object, required: true }, path: { type: Array, required: true }, selected: { type: String, default: '' } },
+  props: { node: { type: Object, required: true }, path: { type: Array, required: true }, selected: { type: String, default: '' }, dragScope: { type: String, default: '' } },
   emits: ['select', 'move'],
   computed: {
     knownTypes: () => knownTypes,
@@ -30,11 +30,11 @@ export default {
     summary() { return String(this.node.template ?? this.node.value ?? this.node.path ?? this.node.countPath ?? '').slice(0, 80) }
   },
   methods: {
-    startDrag(event) { event.dataTransfer.setData('application/x-printer-node', JSON.stringify(this.path)); event.dataTransfer.effectAllowed = 'move' },
+    startDrag(event) { event.dataTransfer.setData('application/x-printer-node', JSON.stringify({ scope: this.dragScope, path: this.path })); event.dataTransfer.effectAllowed = 'move' },
     drop(event) {
       try {
-        const source = JSON.parse(event.dataTransfer.getData('application/x-printer-node'))
-        if (Array.isArray(source) && source.every(Number.isInteger)) this.$emit('move', { source, target: this.path })
+        const payload = JSON.parse(event.dataTransfer.getData('application/x-printer-node'))
+        if (payload.scope === this.dragScope && Array.isArray(payload.path) && payload.path.every(index => Number.isInteger(index) && index >= 0)) this.$emit('move', { source: payload.path, target: this.path })
       } catch { /* Ignore drags from outside this designer. */ }
     }
   }

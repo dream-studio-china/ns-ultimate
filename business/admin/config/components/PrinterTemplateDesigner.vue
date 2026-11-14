@@ -51,8 +51,9 @@
               <p v-if="entries.some(entry => entry.box.overflow) && isLabel" role="status" class="designer-error">{{ t('Elements exceed paper bounds') }}</p>
               <strong>{{ t(isLabel ? 'Layout tree' : 'Receipt blocks') }}</strong>
               <ol class="layout-tree" :class="{ 'receipt-sheet': !isLabel }" :aria-label="t('Layout tree')">
-                <PrinterTemplateNode v-for="(node, index) in definition.nodes" :key="index" :node="node" :path="[index]" :selected="selectedKey" @select="select" @move="reorder" />
+                <PrinterTemplateNode v-for="(node, index) in definition.nodes" :key="index" :node="node" :path="[index]" :selected="selectedKey" :drag-scope="dragScope" @select="select" @move="reorder" />
               </ol>
+              <div class="root-drop" @dragover.prevent @drop.prevent="dropRoot">{{ t('Drop at end of template') }}</div>
               <p v-if="!definition.nodes.length">{{ t('Add a component to begin') }}</p>
             </div>
             <fieldset class="designer-properties" :disabled="blocked">
@@ -66,6 +67,16 @@
                   <button type="button" @click="duplicateNode">{{ t('Duplicate') }}</button>
                   <button type="button" @click="removeNode">{{ t('Remove') }}</button>
                 </div>
+                <label>{{ t('Move into block') }}
+                  <select v-model="moveTarget"><option v-for="target in moveTargets" :key="target.path.join('.')" :value="target.path.join('.')">{{ target.type === 'root' ? t('Template root') : target.path.join('.') + ' · ' + target.type }}</option></select>
+                </label>
+                <button type="button" @click="reparent">{{ t('Move into block') }}</button>
+                <template v-if="contentTypes.includes(selectedNode.type) && selectedNode.type !== 'receiptCommand'">
+                  <label>{{ t('Search data fields') }} <input v-model="fieldSearch" type="search"></label>
+                  <label>{{ t('Field format') }} <select v-model="fieldFormat"><option value="">{{ t('Unformatted') }}</option><option value="money">{{ t('Money in minor units') }}</option><option value="upper">{{ t('Uppercase') }}</option><option value="lower">{{ t('Lowercase') }}</option></select></label>
+                  <label>{{ t('Insert data field') }} <select value="" @change="insertField($event)"><option value="" disabled>{{ t('Select a data field') }}</option><option v-for="item in availableFields" :key="item.path" :value="item.path">{{ item.path }} · {{ String(item.value ?? '').slice(0, 32) }}</option></select></label>
+                  <p class="designer-help">{{ t('Field picker help') }}</p>
+                </template>
                 <template v-if="contentTypes.includes(selectedNode.type)">
                   <label v-if="['labelText', 'qr', 'barcode', 'text', 'string', 'field'].includes(selectedNode.type)">{{ t('Content source') }}
                     <select :value="contentMode" @change="setContentMode($event.target.value)">
@@ -77,6 +88,12 @@
                   </label>
                 </template>
                 <label v-if="['each', 'if', 'repeat'].includes(selectedNode.type)">{{ t('Data field') }} <input :value="selectedNode[selectedNode.type === 'repeat' ? 'countPath' : 'path']" @input="patchNode(selectedNode.type === 'repeat' ? 'countPath' : 'path', $event.target.value)"></label>
+                <label v-if="selectedNode.type === 'each'">{{ t('Sample array') }} <select :value="selectedNode.path" @change="patchNode('path', $event.target.value)"><option v-for="item in availableArrays" :key="item.path" :value="item.path">{{ item.path }}</option></select></label>
+                <template v-if="selectedNode.type === 'if'">
+                  <label>{{ t('Condition comparison') }} <select :value="conditionMode" @change="setConditionMode($event.target.value)"><option value="truthy">{{ t('Has a value') }}</option><option value="string">{{ t('Literal text') }}</option><option value="number">{{ t('Number') }}</option><option value="boolean">{{ t('Boolean') }}</option><option value="null">null</option></select></label>
+                  <label v-if="['string', 'number'].includes(conditionMode)">{{ t('Comparison value') }} <input :type="conditionMode === 'number' ? 'number' : 'text'" :value="selectedNode.equals" @input="setComparison($event.target.value)"></label>
+                  <label v-if="conditionMode === 'boolean'"><input type="checkbox" :checked="selectedNode.equals" @change="patchNode('equals', $event.target.checked)"> true</label>
+                </template>
                 <p v-if="['each', 'repeat', 'if'].includes(selectedNode.type)" class="designer-help">{{ t('Conditional and loop JSON help') }}</p>
                 <template v-if="isLabel && labelTypes.includes(selectedNode.type)">
                   <label v-for="key in ['x', 'y']" :key="key">{{ key.toUpperCase() }} (mm) <input type="number" min="0" max="256" step="0.125" :value="(selectedNode[key] || 0) / 8" @change="patchNumber(key, $event, 0, 2048, 8)"></label>
@@ -106,12 +123,14 @@
                   <label><input type="checkbox" :checked="selectedNode.bold || false" @change="patchNode('bold', $event.target.checked)"> {{ t('Bold') }}</label>
                 </template>
                 <template v-if="selectedNode.type === 'columns' && Array.isArray(selectedNode.columns)">
+                  <label>{{ t('Field format') }} <select v-model="fieldFormat"><option value="">{{ t('Unformatted') }}</option><option value="money">{{ t('Money in minor units') }}</option><option value="upper">{{ t('Uppercase') }}</option><option value="lower">{{ t('Lowercase') }}</option></select></label>
                   <fieldset v-for="(column, index) in selectedNode.columns" :key="index">
                     <legend>{{ t('Column') }} {{ index + 1 }}</legend>
                     <label>{{ t('Column width cells') }} <input type="number" min="1" max="96" :value="column.width" @change="patchColumn(index, 'width', Math.min(96, Math.max(1, Math.round(Number($event.target.value) || 1))))"></label>
                     <label>{{ t('Alignment') }} <select :value="column.align || 'left'" @change="patchColumn(index, 'align', $event.target.value)"><option v-for="alignment in alignments" :key="alignment" :value="alignment">{{ t(alignment) }}</option></select></label>
                     <label>{{ t('Content source') }} <select :value="columnMode(column)" @change="setColumnMode(index, $event.target.value)"><option value="value">{{ t('Literal text') }}</option><option value="path">{{ t('Data field') }}</option><option value="template">{{ t('Interpolated text') }}</option></select></label>
                     <label>{{ t('Content') }} <input :value="column[columnMode(column)]" @input="patchColumn(index, columnMode(column), $event.target.value)"></label>
+                    <label>{{ t('Insert data field') }} <select value="" @change="insertColumnField(index, $event)"><option value="" disabled>{{ t('Select a data field') }}</option><option v-for="item in availableFields" :key="item.path" :value="item.path">{{ item.path }}</option></select></label>
                     <button type="button" :disabled="selectedNode.columns.length <= 1" @click="removeColumn(index)">{{ t('Remove') }}</button>
                   </fieldset>
                   <button type="button" :disabled="selectedNode.columns.length >= 8" @click="addColumn">{{ t('Add column') }}</button>
@@ -121,7 +140,7 @@
             </fieldset>
           </div>
         </template>
-        <p v-else>{{ t('Create template to begin') }} <button type="button" @click="initialize">{{ t('Create template') }}</button></p>
+        <p v-else>{{ t('Create template to begin') }} <button type="button" @click="initialize">{{ t('Create template') }}</button> <button type="button" @click="initializeEmpty">{{ t('Create empty template') }}</button></p>
       </div>
       <div v-show="view !== 'Visual editor'" class="designer-json">
         <div class="designer-json-label">{{ t('Template JSON') }}</div>
@@ -134,6 +153,7 @@
       <button type="button" @click="sampleRaw = JSON.stringify(sampleData, null, 2)">{{ t('Restore default sample') }}</button>
       <p v-if="sampleError" role="alert" class="designer-error">{{ sampleError }}</p>
     </details>
+    <p v-if="props.form.ticketMode === 'per_unit'" class="designer-help">{{ t('Per-unit sample help') }}</p>
     <p v-if="previewBusy" role="status">{{ t('Loading') }}</p>
     <p v-if="previewError" role="alert" class="designer-error">{{ t('Preview failed') }}: {{ previewError }}</p>
     <PrinterPaper v-if="previewDocument" :document="previewDocument" />
@@ -150,7 +170,7 @@ import PrinterTemplateNode from './PrinterTemplateNode.vue'
 import './printer-template-designer.css'
 import sampleData from './printer-sample-data.json'
 import { printerFontMetrics } from './printer-paper.mjs'
-import { changeNode, cloneDefinition, containerTypes, createDesignerState, definitionErrorKeys, designerHistory, knownTypes, labelBox, labelEntries, labelTypes, moveNode, newTemplateNode, nodeAt, replaceNode, setDesignerDraft, transformLabel } from './printer-template-designer.mjs'
+import { changeNode, cloneDefinition, containerEntries, containerTypes, createDesignerState, definitionErrorKeys, designerHistory, knownTypes, labelBox, labelEntries, labelTypes, moveNode, moveNodeInto, newTemplateNode, nodeAt, previewData, replaceNode, sampleFields, scopeForNode, setDesignerDraft, starterTemplate, templateFormValue, transformLabel } from './printer-template-designer.mjs'
 
 defineOptions({ name: 'PrinterTemplateDesigner' })
 const PrinterTemplateJson = defineAsyncComponent(() => import('./PrinterTemplateJson.js'))
@@ -161,6 +181,8 @@ const views = ['Visual editor', 'JSON', 'Split view']
 const selected = ref([])
 const selectedKey = computed(() => selected.value.join('.'))
 const snap = ref(true), zoom = ref(1.5), addInside = ref(false)
+const dragScope = Math.random().toString(36).slice(2)
+const fieldSearch = ref(''), fieldFormat = ref(''), moveTarget = ref('')
 const gesture = shallowRef(null)
 const definition = computed(() => gesture.value?.definition || state.value.definition)
 const isLabel = computed(() => definition.value?.kind === 'label')
@@ -170,7 +192,13 @@ const blocked = computed(() => !!state.value.error || !!gesture.value)
 const kindMismatch = computed(() => props.form.kind && definition.value && props.form.kind !== definition.value.kind)
 const translatedError = computed(() => definitionErrorKeys.includes(state.value.error) ? t(state.value.error) : state.value.error)
 const sampleRaw = ref(JSON.stringify(sampleData, null, 2)), sample = shallowRef(sampleData), sampleError = ref('')
-const entries = computed(() => labelEntries(definition.value, sample.value).map(entry => ({ ...entry, box: labelBox(entry.node, entry.text, definition.value) })))
+const previewSample = computed(() => previewData(sample.value, props.form.ticketMode))
+const entries = computed(() => labelEntries(definition.value, previewSample.value).map(entry => ({ ...entry, box: labelBox(entry.node, entry.text, definition.value) })))
+const nodeScope = computed(() => scopeForNode(definition.value, previewSample.value, selected.value))
+const availableFields = computed(() => sampleFields(nodeScope.value).filter(item => item.path.toLowerCase().includes(fieldSearch.value.toLowerCase())))
+const availableArrays = computed(() => sampleFields(nodeScope.value, true))
+const moveTargets = computed(() => definition.value ? containerEntries(definition.value).filter(target => !(target.path.length >= selected.value.length && selected.value.every((part, index) => target.path[index] === part))) : [])
+const conditionMode = computed(() => !Object.hasOwn(selectedNode.value || {}, 'equals') ? 'truthy' : selectedNode.value.equals === null ? 'null' : typeof selectedNode.value.equals)
 const selectedEntry = computed(() => entries.value.find(entry => entry.path.join('.') === selectedKey.value))
 const alignments = ['left', 'center', 'right']
 const contentTypes = ['labelText', 'qr', 'barcode', 'text', 'string', 'field', 'receiptCommand']
@@ -192,7 +220,7 @@ function glyphStyle(entry) {
 
 function publish(next) {
   state.value = next
-  if (next.definition) props.form[props.field.property] = cloneDefinition(next.definition)
+  if (next.definition) props.form[props.field.property] = templateFormValue(next.definition)
 }
 function editJson(raw) { cancelGesture(); publish(setDesignerDraft(state.value, raw)) }
 function commit(next) {
@@ -201,8 +229,55 @@ function commit(next) {
 }
 function formatJson() { if (!state.value.error) commit(state.value.definition) }
 function history(direction) { cancelGesture(); publish(designerHistory(state.value, direction)); selected.value = [] }
-function initialize() { publish(setDesignerDraft(state.value, JSON.stringify({ kind: props.form.kind === 'label' ? 'label' : 'receipt', widthMm: props.form.kind === 'label' ? 40 : 80, ...(props.form.kind === 'label' ? { heightMm: 30 } : {}), nodes: [] }, null, 2))) }
-function select(path) { if (!gesture.value) { selected.value = path; addInside.value = false } }
+function initialize() { publish(setDesignerDraft(state.value, JSON.stringify(starterTemplate(props.form.kind), null, 2))) }
+function initializeEmpty() { publish(setDesignerDraft(state.value, JSON.stringify({ kind: props.form.kind === 'label' ? 'label' : 'receipt', widthMm: props.form.kind === 'label' ? 40 : 80, ...(props.form.kind === 'label' ? { heightMm: 30 } : {}), nodes: [] }, null, 2))) }
+function select(path) { if (!gesture.value) { selected.value = path; addInside.value = false; moveTarget.value = ''; fieldSearch.value = '' } }
+function insertField(event) {
+  const path = event.target.value
+  event.target.value = ''
+  if (!availableFields.value.some(item => item.path === path) || blocked.value) return
+  commit(changeNode(definition.value, selected.value, node => {
+    const plainPath = contentMode.value === 'path' && !fieldFormat.value
+    let text = plainPath ? path : `{${path}${fieldFormat.value ? '|' + fieldFormat.value : ''}}`
+    if (!plainPath && contentMode.value !== 'path') {
+      const previous = String(node[contentKey.value] ?? '')
+      text = (contentMode.value === 'value' ? previous.replace(/[{}]/g, brace => brace + brace) : previous) + text
+    }
+    delete node.value; delete node.path; delete node.template
+    if (['text', 'string', 'field'].includes(node.type)) { node.type = plainPath ? 'field' : 'string'; node[plainPath ? 'path' : 'value'] = text }
+    else node[plainPath ? 'path' : 'template'] = text
+  }))
+}
+function setConditionMode(mode) {
+  commit(changeNode(definition.value, selected.value, node => {
+    if (mode === 'truthy') delete node.equals
+    else node.equals = { string: '', number: 0, boolean: false, null: null }[mode]
+  }))
+}
+function insertColumnField(index, event) {
+  const path = event.target.value
+  event.target.value = ''
+  if (blocked.value || !availableFields.value.some(item => item.path === path)) return
+  commit(changeNode(definition.value, selected.value, node => {
+    const column = node.columns[index]
+    delete column.value; delete column.path; delete column.template
+    column[fieldFormat.value ? 'template' : 'path'] = fieldFormat.value ? `{${path}|${fieldFormat.value}}` : path
+  }))
+}
+function setComparison(value) { if (conditionMode.value !== 'number' || Number.isFinite(Number(value))) patchNode('equals', conditionMode.value === 'number' ? Number(value) : value) }
+function reparent() {
+  if (blocked.value) return
+  const parent = moveTarget.value === '' ? [] : moveTarget.value.split('.').map(Number)
+  if (!moveTargets.value.some(target => target.path.join('.') === parent.join('.'))) return
+  commit(moveNodeInto(definition.value, selected.value, parent)); selected.value = []
+}
+function dropRoot(event) {
+  if (blocked.value) return
+  try {
+    const payload = JSON.parse(event.dataTransfer.getData('application/x-printer-node'))
+    if (payload.scope === dragScope && Array.isArray(payload.path) && payload.path.every(index => Number.isInteger(index) && index >= 0)) { commit(moveNodeInto(definition.value, payload.path, [])); selected.value = [] }
+  } catch { /* Ignore unrelated drags. */ }
+}
 function patchNode(key, value) {
   if (blocked.value) return
   const box = selectedEntry.value?.box
@@ -250,7 +325,7 @@ function addNode(type) {
   const nodes = inside ? (nodeAt(next, selected.value).children ??= []) : next.nodes
   nodes.push(newTemplateNode(type, next.kind))
   const path = inside ? [...selected.value, nodes.length - 1] : [nodes.length - 1]
-  commit(next); selected.value = path
+  commit(next); selected.value = path; addInside.value = false
 }
 function removeNode() {
   const next = cloneDefinition(definition.value)
@@ -323,7 +398,7 @@ function nudge(event, entry) {
 }
 function shortcut(event) {
   // Text inputs keep native text undo; toolbar history spans both editing modes.
-  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) return
+  if (event.defaultPrevented || event.target.isContentEditable || event.target.closest?.('.printer-template-json') || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) return
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); history(event.shiftKey ? 'redo' : 'undo') }
 }
 
@@ -331,7 +406,11 @@ watch(() => props.form[props.field.property], value => {
   let same = false
   try { same = JSON.stringify(typeof value === 'string' ? JSON.parse(value) : value) === JSON.stringify(state.value.definition) } catch { /* External invalid drafts still need displaying. */ }
   if (!same) { cancelGesture(); state.value = createDesignerState(value); selected.value = [] }
-}, { deep: true })
+  if (state.value.definition && !state.value.error && typeof value !== 'string') {
+    const safe = templateFormValue(state.value.definition)
+    if (typeof safe === 'string') props.form[props.field.property] = safe
+  }
+}, { deep: true, immediate: true })
 
 // Use the core's existing instance-bound validation seam: an invalid draft must
 // not silently submit the last valid definition when the parent form is saved.
@@ -346,7 +425,7 @@ async function refreshPreview() {
   const version = previewVersion
   previewBusy.value = true
   try {
-    const response = await request.post('/api/v1/manage/printer/preview', { template: cloneDefinition(state.value.definition), data: cloneDefinition(sample.value) })
+    const response = await request.post('/api/v1/manage/printer/preview', { template: cloneDefinition(state.value.definition), data: cloneDefinition(previewSample.value) })
     if (!disposed && version === previewVersion) previewDocument.value = response.data.document
   } catch (cause) {
     if (!disposed && version === previewVersion) previewError.value = cause.response?.data?.error || cause.message || t('Preview failed')
@@ -360,7 +439,7 @@ watch(sampleRaw, raw => {
     sample.value = value; sampleError.value = ''
   } catch (cause) { sampleError.value = cause.message }
 })
-watch([() => state.value.raw, sampleRaw], () => {
+watch([() => state.value.raw, sampleRaw, () => props.form.ticketMode], () => {
   invalidatePreview()
   if (!state.value.error && !sampleError.value) previewTimer = setTimeout(refreshPreview, 450)
 }, { immediate: true })
@@ -386,13 +465,14 @@ fieldset { margin: 0; padding: 8px; border: 1px solid var(--el-border-color); mi
 .designer-workspace { display: grid; grid-template-columns: 115px minmax(160px, 1fr) 190px; gap: 8px; margin-top: 8px; }
 .designer-library { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
 .designer-stage { min-width: 0; overflow: auto; }
-.designer-properties { display: flex; flex-direction: column; align-self: start; gap: 8px; font-size: 12px; }
+.designer-properties { display: flex; flex-direction: column; align-self: start; gap: 8px; font-size: 12px; max-height: 75vh; overflow: auto; }
 .designer-properties label { display: flex; flex-direction: column; gap: 4px; }
 .designer-json-label { margin-bottom: 4px; }
 .designer-properties input, .designer-properties select, .designer-properties textarea { max-width: 100%; width: 100%; }
 .designer-properties input[type=checkbox] { width: auto; }
 .designer-properties .node-actions button { font-size: 11px; padding: 4px; }
 .layout-tree { padding: 0; max-height: 460px; overflow: auto; }
+.root-drop { border: 1px dashed var(--el-border-color); color: var(--el-text-color-secondary); padding: 8px; font-size: 12px; }
 .receipt-sheet { background: var(--el-fill-color-light); padding: 8px; min-height: 200px; }
 .label-scroll { padding: 16px; overflow: auto; background: var(--el-fill-color-light); max-height: 450px; margin-bottom: 8px; }
 .label-sheet { position: relative; background-color: white; color: black; box-shadow: 0 1px 8px #0003; flex-shrink: 0; }
