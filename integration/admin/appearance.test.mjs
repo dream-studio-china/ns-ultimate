@@ -141,7 +141,7 @@ test('appearance menu uses a registered palette icon rather than the system sett
   }
 })
 
-test('appearance page compiles and all locales contain the appearance messages', () => {
+test('appearance page compiles and all locales contain the appearance messages', async() => {
   const require = createRequire(new URL('../../core/crud-admin/package.json', import.meta.url))
   const { parse, compileScript, compileTemplate } = require('@vue/compiler-sfc')
   const source = readFileSync(new URL('../../business/admin/appearance/AppearanceSettings.vue', import.meta.url), 'utf8')
@@ -151,9 +151,7 @@ test('appearance page compiles and all locales contain the appearance messages',
   assert.deepEqual(compileTemplate({ source: descriptor.template.content, filename: 'AppearanceSettings.vue', id: 'appearance-test' }).errors, [])
   const keys = ['System Options', ...Array.from(source.matchAll(/\$t\('([^']+)'\)/g), match => match[1]), ...palettes.map(item => item.label)]
   for (const locale of ['en', 'zh', 'zh-Hant', 'ja']) {
-    const messages = readFileSync(new URL(`../../business/admin/i18n/${locale}.js`, import.meta.url), 'utf8')
-    const context = { messages: null }
-    runInNewContext(messages.replace('export default', 'messages ='), context)
-    for (const key of keys) assert.equal(typeof context.messages[key], 'string', `${locale}: ${key}`)
+    const { default: messages } = await import(`../../business/admin/i18n/${locale}.js`)
+    for (const key of keys) assert.equal(typeof messages[key], 'string', `${locale}: ${key}`)
   }
 })

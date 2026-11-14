@@ -191,7 +191,15 @@ form and API lifecycle; the backend registers the device with Xpyun before
 persisting it. Device status refresh, preview, and print submission/status use
 dedicated actions. Preview never submits a print job.
 
-Template create and edit forms no longer carry sample data. The paper preview
+Template create and edit forms include a business-owned visual/JSON designer:
+labels use free positioning and printer-supported resizing; receipts use ordered
+blocks, alignment, emphasis and columns. Both edit the existing `definition`,
+without converting legacy commands or dropping unknown properties. See the
+[designer contract](../../../docs/contracts/printer-template-designer.md) for
+draft validation, synchronization, history and preview limitations.
+
+Sample data is not part of the stored template. The designer has an editable,
+in-memory sample for automatic previews. The separate paper preview action
 owns an editable sample JSON that is saved in the browser and can be restored to
 the bundled default. Save-time rendering is only performed when an API client
 explicitly supplies `sampleData`; otherwise the template is stored as supplied

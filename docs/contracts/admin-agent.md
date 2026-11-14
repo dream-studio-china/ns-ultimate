@@ -30,6 +30,11 @@ Printer coverage follows the same configured-CRUD boundary. Accounts, devices, t
 
 JSON controls accept bounded safe JSON. Schema-form patches are limited to configured editable nested paths and merged with current data to preserve omitted values. Hidden descendants cannot be cleared through their container. The bounded schema subset used by the composed forms (types, required properties, enumerations, ranges, lengths, patterns, arrays, `additionalProperties` and property dependencies) is validated before preview; the backend remains authoritative for `$ref`, formats and domain rules outside that subset. Ordinary JSON controls replace the supplied value. Settings changes may affect future operations. Three printer tools exist as explicit host exceptions: `read_printer_setting` returns one record's bounded safe settings, `preview_printer_paper` calls only the non-persistent preview renderer, and `refresh_printer_status` asks the configured provider for device/job status. None submits or reprints a print job. The assistant still does not invoke payment, upload, dispatch, live print, reprint or device-deletion endpoints. Existing CRUD endpoint side effects remain those of the ordinary admin form.
 
+The [printer template designer](printer-template-designer.md) is also host-bound:
+`PrinterTemplate.definition` remains a JSON field through the exact
+`PrinterTemplateDesigner` component identity. The visual UI does not change
+assistant template CRUD permissions or authorize live printing.
+
 ## Preview and confirmation
 
 Manual admin operations support individual order-rule deletion and store reassignment. Assistant policy continues to prohibit both; `storeUuid` remains excluded from rule updates even though the API accepts it. Neither manual operation cancels or rewrites queued print snapshots.

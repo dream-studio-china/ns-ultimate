@@ -1,4 +1,7 @@
+import { designerMessages } from './printer-designer.js'
+
 export default {
+  ...designerMessages('ja'),
   'System Options': 'システム設定',
   'Dining mode': '注文方法',
   'Dining mode failed to load': '注文方法を読み込めませんでした',

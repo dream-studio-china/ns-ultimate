@@ -144,16 +144,13 @@ test('keeps immutable WeChat profile fields out of update payloads', () => {
   }
 })
 
-test('localizes WeChat form labels, placeholders and help in every business locale', () => {
+test('localizes WeChat form labels, placeholders and help in every business locale', async() => {
   for (const locale of ['en', 'zh', 'zh-Hant', 'ja']) {
-    const messagesContext = {}
-    const messagesSource = readFileSync(new URL(`../../business/admin/i18n/${locale}.js`, import.meta.url), 'utf8')
-      .replace('export default', 'globalThis.messages =')
-    runInNewContext(messagesSource, messagesContext)
+    const { default: messages } = await import(`../../business/admin/i18n/${locale}.js`)
     const t = key => {
       if (['Name', 'Store'].includes(key)) return key
-      assert.ok(messagesContext.messages[key], `Missing ${locale} translation: ${key}`)
-      return messagesContext.messages[key]
+      assert.ok(messages[key], `Missing ${locale} translation: ${key}`)
+      return messages[key]
     }
 
     for (const [name, properties] of [
@@ -170,7 +167,7 @@ test('localizes WeChat form labels, placeholders and help in every business loca
         const field = context.config[name].form.fields.find(field => field.property === property)
         for (const value of [field.field_options?.label, field.type_options?.placeholder, field.help]) {
           assert.ok(value && value !== property, `${locale} ${name}.${property} must explain its input`)
-          assert.ok(Object.values(messagesContext.messages).includes(value), `${locale} ${name}.${property} must use business translations`)
+          assert.ok(Object.values(messages).includes(value), `${locale} ${name}.${property} must use business translations`)
         }
       }
         if (name === 'StoreWechatSetting') {
