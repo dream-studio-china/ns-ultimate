@@ -168,59 +168,60 @@
       </el-table>
     </section>
 
-    <section v-if="selectedResult && workspaceTab === 'results'" class="promotion-simulation__panel promotion-simulation__detail">
-      <header class="promotion-simulation__panel-header">
-        <h2>{{ $t('Case detail') }} · {{ selectedCase?.name }}</h2>
-        <el-button size="small" @click="selectedResult = null">{{ $t('Close') }}</el-button>
-      </header>
-      <el-alert v-if="selectedResult.status === 'error'" :title="selectedResult.error" type="error" :closable="false" show-icon />
-      <template v-else>
-        <div class="promotion-simulation__totals">
-          <span>{{ $t('Before') }} <strong>{{ formatMinor(selectedResult.beforeAmount, selectedCase?.currency) }}</strong></span>
-          <span>{{ $t('After') }} <strong>{{ formatMinor(selectedResult.afterAmount, selectedCase?.currency) }}</strong></span>
-          <span>{{ $t('Discount') }} <strong>{{ formatMinor(selectedResult.discountAmount, selectedCase?.currency) }}</strong></span>
-          <span v-if="selectedResult.freeShipping"><el-tag type="success" effect="plain">{{ $t('Free shipping') }}</el-tag></span>
-          <span v-if="selectedResult.itemSummary?.giftQuantity">{{ $t('Gifts: {count}', { count: selectedResult.itemSummary.giftQuantity }) }}</span>
-        </div>
-        <h3>{{ $t('Applied promotions') }}</h3>
-        <el-table :data="selectedResult.applied" size="small" :empty-text="$t('No promotion applied')">
-          <el-table-column prop="name" :label="$t('Campaign')" min-width="160" />
-          <el-table-column prop="phase" :label="$t('Promotion calculation phase')" width="120" />
-          <el-table-column prop="conflictMode" :label="$t('Conflict mode')" width="130" />
-          <el-table-column :label="$t('After')" width="130"><template #default="{ row }">{{ formatMinor(row.totalAfter, selectedCase?.currency) }}</template></el-table-column>
-          <el-table-column :label="$t('Discount')" width="130"><template #default="{ row }">{{ formatMinor(row.changedAmount, selectedCase?.currency) }}</template></el-table-column>
-        </el-table>
-        <p v-if="selectedResult.bestPriceKeys?.length" class="promotion-simulation__muted">{{ $t('Best-price candidates') }}: {{ selectedResult.bestPriceKeys.join(', ') }}</p>
-        <h3>{{ $t('Diagnostics') }}</h3>
-        <el-table :data="selectedResult.diagnostics" size="small">
-          <el-table-column prop="campaignKey" :label="$t('Campaign key')" min-width="130" />
-          <el-table-column prop="name" :label="$t('Campaign')" min-width="160" />
-          <el-table-column :label="$t('Status')" min-width="150"><template #default="{ row }"><el-tag size="small" effect="plain">{{ row.status }}</el-tag></template></el-table-column>
-          <el-table-column prop="message" :label="$t('Reason')" min-width="280" show-overflow-tooltip />
-        </el-table>
-        <h3>{{ $t('Final item amounts') }}</h3>
-        <p class="promotion-simulation__note">{{ $t('Item prices reflect item-level actions. Order-level reductions affect only the order total.') }}</p>
-        <el-table :data="selectedResult.items" size="small">
-          <el-table-column prop="specificationId" :label="$t('Specification')" min-width="120" />
-          <el-table-column prop="name" :label="$t('Name')" min-width="160" />
-          <el-table-column prop="quantity" :label="$t('Quantity')" width="90" />
-          <el-table-column :label="$t('Unit price')" width="130"><template #default="{ row }">{{ formatMinor(row.unitPrice, selectedCase?.currency) }}</template></el-table-column>
-          <el-table-column :label="$t('Amount')" width="130"><template #default="{ row }">{{ formatMinor(row.price, selectedCase?.currency) }}</template></el-table-column>
-          <el-table-column :label="$t('Gift')" width="80"><template #default="{ row }">{{ row.isGift ? $t('Yes') : '' }}</template></el-table-column>
-        </el-table>
-        <template v-if="selectedResult.differences?.length">
-          <h3>{{ $t('Expected differences') }}</h3>
-          <el-table :data="selectedResult.differences" size="small">
-            <el-table-column prop="path" :label="$t('Field')" width="180" />
-            <el-table-column :label="$t('Expected')" min-width="180"><template #default="{ row }">{{ displayValue(row.expected) }}</template></el-table-column>
-            <el-table-column :label="$t('Actual')" min-width="180"><template #default="{ row }">{{ displayValue(row.actual) }}</template></el-table-column>
+    <el-dialog v-model="detailDialog" class="promotion-simulation__dialog promotion-simulation__detail-dialog" align-center
+      :title="`${$t('Case detail')}${selectedCase ? ` · ${selectedCase.name}` : ''}`" width="min(1100px, 96vw)" destroy-on-close
+      @closed="selectedResult = null">
+      <div v-if="selectedResult" class="promotion-simulation__detail">
+        <el-alert v-if="selectedResult.status === 'error'" :title="selectedResult.error" type="error" :closable="false" show-icon />
+        <template v-else>
+          <div class="promotion-simulation__totals">
+            <span>{{ $t('Before') }} <strong>{{ formatMinor(selectedResult.beforeAmount, selectedCase?.currency) }}</strong></span>
+            <span>{{ $t('After') }} <strong>{{ formatMinor(selectedResult.afterAmount, selectedCase?.currency) }}</strong></span>
+            <span>{{ $t('Discount') }} <strong>{{ formatMinor(selectedResult.discountAmount, selectedCase?.currency) }}</strong></span>
+            <span v-if="selectedResult.freeShipping"><el-tag type="success" effect="plain">{{ $t('Free shipping') }}</el-tag></span>
+            <span v-if="selectedResult.itemSummary?.giftQuantity">{{ $t('Gifts: {count}', { count: selectedResult.itemSummary.giftQuantity }) }}</span>
+          </div>
+          <h3>{{ $t('Applied promotions') }}</h3>
+          <el-table :data="selectedResult.applied" size="small" :empty-text="$t('No promotion applied')">
+            <el-table-column prop="name" :label="$t('Campaign')" min-width="160" />
+            <el-table-column prop="phase" :label="$t('Promotion calculation phase')" width="120" />
+            <el-table-column prop="conflictMode" :label="$t('Conflict mode')" width="130" />
+            <el-table-column :label="$t('After')" width="130"><template #default="{ row }">{{ formatMinor(row.totalAfter, selectedCase?.currency) }}</template></el-table-column>
+            <el-table-column :label="$t('Discount')" width="130"><template #default="{ row }">{{ formatMinor(row.changedAmount, selectedCase?.currency) }}</template></el-table-column>
           </el-table>
+          <p v-if="selectedResult.bestPriceKeys?.length" class="promotion-simulation__muted">{{ $t('Best-price candidates') }}: {{ selectedResult.bestPriceKeys.join(', ') }}</p>
+          <h3>{{ $t('Diagnostics') }}</h3>
+          <el-table :data="selectedResult.diagnostics" size="small">
+            <el-table-column prop="campaignKey" :label="$t('Campaign key')" min-width="130" />
+            <el-table-column prop="name" :label="$t('Campaign')" min-width="160" />
+            <el-table-column :label="$t('Status')" min-width="150"><template #default="{ row }"><el-tag size="small" effect="plain">{{ row.status }}</el-tag></template></el-table-column>
+            <el-table-column prop="message" :label="$t('Reason')" min-width="280" show-overflow-tooltip />
+          </el-table>
+          <h3>{{ $t('Final item amounts') }}</h3>
+          <p class="promotion-simulation__note">{{ $t('Item prices reflect item-level actions. Order-level reductions affect only the order total.') }}</p>
+          <el-table :data="selectedResult.items" size="small">
+            <el-table-column prop="specificationId" :label="$t('Specification')" min-width="120" />
+            <el-table-column prop="name" :label="$t('Name')" min-width="160" />
+            <el-table-column prop="quantity" :label="$t('Quantity')" width="90" />
+            <el-table-column :label="$t('Unit price')" width="130"><template #default="{ row }">{{ formatMinor(row.unitPrice, selectedCase?.currency) }}</template></el-table-column>
+            <el-table-column :label="$t('Amount')" width="130"><template #default="{ row }">{{ formatMinor(row.price, selectedCase?.currency) }}</template></el-table-column>
+            <el-table-column :label="$t('Gift')" width="80"><template #default="{ row }">{{ row.isGift ? $t('Yes') : '' }}</template></el-table-column>
+          </el-table>
+          <template v-if="selectedResult.differences?.length">
+            <h3>{{ $t('Expected differences') }}</h3>
+            <el-table :data="selectedResult.differences" size="small">
+              <el-table-column prop="path" :label="$t('Field')" width="180" />
+              <el-table-column :label="$t('Expected')" min-width="180"><template #default="{ row }">{{ displayValue(row.expected) }}</template></el-table-column>
+              <el-table-column :label="$t('Actual')" min-width="180"><template #default="{ row }">{{ displayValue(row.actual) }}</template></el-table-column>
+            </el-table>
+          </template>
+          <p class="promotion-simulation__note">{{ $t('Promotion-only snapshot. Catalog, tax, shipping fees, payment and concurrency are not verified.') }}</p>
         </template>
-        <p class="promotion-simulation__note">{{ $t('Promotion-only snapshot. Catalog, tax, shipping fees, payment and concurrency are not verified.') }}</p>
-      </template>
-    </section>
+      </div>
+      <template #footer><el-button @click="detailDialog = false">{{ $t('Close') }}</el-button></template>
+    </el-dialog>
 
-    <el-dialog v-model="campaignDialog" class="promotion-simulation__dialog" align-center :title="campaignDraft.isNew ? $t('Add campaign') : $t('Edit campaign')" width="min(760px, 94vw)" destroy-on-close>
+    <el-dialog v-model="campaignDialog" class="promotion-simulation__dialog promotion-simulation__editor" align-center :title="campaignDraft.isNew ? $t('Add campaign') : $t('Edit campaign')" width="min(760px, 94vw)" destroy-on-close>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <el-form label-position="top">
         <div class="promotion-simulation__form-grid">
@@ -249,7 +250,7 @@
       <template #footer><el-button @click="campaignDialog = false">{{ $t('Cancel') }}</el-button><el-button type="primary" @click="saveCampaign">{{ $t('Save to scenario') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="caseDialog" class="promotion-simulation__dialog" align-center :title="caseDraft.isNew ? $t('Add cart case') : $t('Edit cart case')" width="min(900px, 96vw)" destroy-on-close>
+    <el-dialog v-model="caseDialog" class="promotion-simulation__dialog promotion-simulation__editor" align-center :title="caseDraft.isNew ? $t('Add cart case') : $t('Edit cart case')" width="min(900px, 96vw)" destroy-on-close>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <el-form label-position="top">
         <div class="promotion-simulation__form-grid">
@@ -307,7 +308,7 @@
       <template #footer><el-button @click="caseDialog = false">{{ $t('Cancel') }}</el-button><el-button type="primary" @click="saveCase">{{ $t('Save to scenario') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="importDialog" class="promotion-simulation__dialog" align-center :title="$t('Import scenario')" width="min(720px, 94vw)">
+    <el-dialog v-model="importDialog" class="promotion-simulation__dialog promotion-simulation__editor" align-center :title="$t('Import scenario')" width="min(720px, 94vw)">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="promotion-simulation__alert" />
       <p>{{ $t('Paste a scenario JSON export. Importing replaces the current in-browser scenario, not live promotions.') }}</p>
       <el-input v-model="importText" type="textarea" :rows="14" spellcheck="false" />
@@ -346,6 +347,7 @@ export default {
       activeWorldKey: 'baseline',
       result: null,
       selectedResult: null,
+      detailDialog: false,
       error: '',
       notice: '',
       running: false,
@@ -397,6 +399,9 @@ export default {
     }
   },
   watch: {
+    selectedResult(value) {
+      if (!value) this.detailDialog = false
+    },
     scenario: { deep: true, handler() {
       this.persist()
       // Any input edit invalidates a previously displayed run. The user must
@@ -645,7 +650,10 @@ export default {
       } catch (cause) { this.error = cause?.response?.data?.message || cause?.message || this.$t('Simulation failed') } finally { this.running = false }
     },
     selectCell(worldKey, caseKey) {
-      this.selectedResult = this.result.results.find(result => result.worldKey === worldKey && result.caseKey === caseKey) || null
+      const found = this.result.results.find(result => result.worldKey === worldKey && result.caseKey === caseKey) || null
+      if (!found) return
+      this.selectedResult = found
+      this.detailDialog = true
     },
     openImport() { this.error = ''; this.importText = ''; this.importDialog = true },
     applyImport() {
@@ -724,6 +732,9 @@ export default {
 :global(.promotion-simulation__dialog .el-dialog__body) { overflow-y: auto; }
 :global(.promotion-simulation__dialog .el-alert) { margin-bottom: 16px; }
 :global(.promotion-simulation__dialog .el-dialog__body) { overflow-wrap: anywhere; }
+/* The detail dialog is teleported, so it cannot inherit the workbench typography by ancestor. */
+:global(.promotion-simulation__detail h3) { margin: 18px 0 8px; font-size: 14px; }
+:global(.promotion-simulation__detail p) { margin: 0; color: var(--el-text-color-secondary); }
 .promotion-simulation__inline { display: flex; gap: 8px; width: 100%; }
 .promotion-simulation__inline > .el-input { flex: 1; min-width: 0; }
 .promotion-simulation__add-row { margin-top: 8px; }
