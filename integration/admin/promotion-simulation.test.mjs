@@ -2,17 +2,75 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { runInNewContext } from 'node:vm'
+import * as scenarioHelpers from '../../business/admin/simulation/scenario.mjs'
+import { fetchAllPages } from '../../business/admin/config/components/catalog-copy.mjs'
 import en from '../../business/admin/i18n/en.js'
 import zh from '../../business/admin/i18n/zh.js'
 import zhHant from '../../business/admin/i18n/zh-Hant.js'
 import ja from '../../business/admin/i18n/ja.js'
 import {
-  boundaryCases, buildMatrix, buildRunRequest, createScenario, formatMinor, importWorldSnapshot,
+  BOUNDARY_KINDS, boundaryPlan, resultOverview, boundaryCases, buildMatrix, buildRunRequest, createScenario, formatMinor, importWorldSnapshot,
   localDateTime, newCampaign, newCase, normalizeScenario, scenarioExport, validateScenario
 } from '../../business/admin/simulation/scenario.mjs'
+import { storeOptions, filterStores } from '../../business/admin/simulation/stores.mjs'
 
 const repository = new URL('../../../', import.meta.url)
 const require = createRequire(new URL('../../core/crud-admin/package.json', import.meta.url))
+
+function simulationModel(request) {
+  const { parse } = require('@vue/compiler-sfc')
+  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const script = parse(source).descriptor.script.content
+    .replace(/^import '\.\/theme\.css'\n/m, '')
+    .replace(/^import[\s\S]*?from '[^']+'\n/gm, '')
+    .replace('export default', 'globalThis.component =')
+  const context = { ...scenarioHelpers, fetchAllPages, storeOptions, request, StoreSelect: {}, SimulationCharts: {}, localStorage: { setItem() {} } }
+  runInNewContext(script, context)
+  const component = context.component
+  const model = { ...component.data(), $t: key => key }
+  for (const [key, method] of Object.entries(component.methods)) model[key] = method.bind(model)
+  for (const [key, getter] of Object.entries(component.computed)) Object.defineProperty(model, key, { get: getter.bind(model) })
+  return { component, model }
+}
+
+test('store list supports failed-load retries, pagination and cached dropdown opens', async () => {
+  let attempts = 0
+  const pages = []
+  const { model } = simulationModel({ get: async (path, { params }) => {
+    assert.equal(path, '/api/v1/manage/stores')
+    if (++attempts === 1) throw new Error('unavailable')
+    pages.push(params.page)
+    return { data: [{ id: params.page, code: `S${params.page}`, name: 'Store' }], paginator: { has_next: params.page === 1 } }
+  } })
+  await model.loadStores()
+  assert.ok(model.storeError)
+  assert.equal(model.storesLoaded, false)
+  assert.equal(model.loadingStores, false)
+  await model.loadStores()
+  assert.equal(model.storeError, '')
+  assert.deepEqual(pages, [1, 2])
+  assert.deepEqual(Array.from(model.stores, item => item.code), ['S1', 'S2'])
+  await model.loadStores()
+  assert.equal(attempts, 3)
+})
+
+test('running opens results and input invalidation always returns to configuration', async () => {
+  const { component, model } = simulationModel({ post: async (path, body) => {
+    assert.equal(path, '/api/v1/manage/promotion-simulation/run')
+    assert.equal(body.cases.length, 1)
+    return { data: { summary: { passed: 0, failed: 0, errors: 0 } } }
+  } })
+  await model.run()
+  assert.equal(model.workspaceTab, 'results')
+  assert.ok(model.result)
+  // Imports/removal methods may already have cleared result before the deep
+  // watcher runs; the configuration must still become visible.
+  model.result = null
+  component.watch.scenario.handler.call(model)
+  assert.equal(model.workspaceTab, 'setup')
+  assert.equal(model.selectedResult, null)
+})
 
 test('scenario defaults are safe, read-only and convertible to the backend request', () => {
   const scenario = createScenario(new Date('2026-11-12T10:00:00+08:00'))
@@ -88,6 +146,117 @@ test('matrix lookup and money formatting are deterministic', () => {
   assert.equal(matrix[0].cells[1].result.afterAmount, 8500)
   assert.equal(matrix[1].cells[0].result, null)
   assert.match(formatMinor(9000, 'CNY'), /90\.00/)
+})
+
+test('store search matches names, numeric IDs, UUIDs and codes but always selects exact codes', () => {
+  const options = storeOptions([
+    { name: 'Central Store', id: 42, uuid: 'ABC-123', code: 'STORE-01' },
+    { name: 'No code', id: 1, uuid: 'missing' },
+    { name: 'West Store', id: 43, uuid: 'DEF-456', code: 'STORE-02' }
+  ])
+  assert.equal(options.length, 2)
+  for (const query of ['central', '42', 'abc-123', 'STORE-01', 'central 42']) {
+    assert.equal(filterStores(options, query)[0].code, 'STORE-01')
+  }
+  assert.equal(filterStores(options, '').length, 2)
+  assert.equal(filterStores(options, 'missing').length, 0)
+})
+
+function boundaryScenario() {
+  const scenario = createScenario(new Date('2026-11-12T10:00:00'))
+  scenario.cases[0].items[0].specificationUuid = 'keep-specification-uuid'
+  scenario.cases[0].expected = { ...scenario.cases[0].expected, totalAmount: 1 }
+  scenario.cases[0].expectedByWorld = { baseline: { totalAmount: 1 } }
+  scenario.worlds[0].campaigns = [newCampaign({
+    key: 'campaign:1', name: 'Boundary rule', storeCode: 'S1',
+    startTime: '2026-11-10T10:00:00', endTime: '2026-11-20T10:00:00',
+    config: { threshold: 15000, count: 4 },
+    template: { type: 'nth_discount', dsl: 'when:\n  cart.subtotal >= config.threshold\n  cart.items.count >= config.count\ndo:\n  discount item 5 50%\n' }
+  })]
+  return scenario
+}
+
+test('boundary planner detects DSL thresholds and preserves identity while clearing all assertions', () => {
+  const scenario = boundaryScenario()
+  const before = JSON.stringify(scenario)
+  const plan = boundaryPlan(scenario, scenario.cases[0])
+  assert.deepEqual(Object.keys(plan.counts).sort(), [...BOUNDARY_KINDS].sort())
+  for (const amount of [14999, 15000, 15001]) assert.ok(plan.cases.some(item => item.items[0].unitPrice === amount))
+  for (const count of [3, 4, 5]) assert.ok(plan.cases.some(item => item.items.length === count))
+  assert.ok(plan.cases.some(item => item.items[0].quantity === 5))
+  const start = new Date('2026-11-10T10:00:00').getTime()
+  for (const delta of [-1000, 0, 1000]) assert.ok(plan.cases.some(item => new Date(item.simulatedAt).getTime() === start + delta))
+  assert.ok(plan.cases.some(item => new Date(item.simulatedAt).getTime() === new Date('2026-11-20T10:00:01').getTime()))
+  assert.ok(plan.cases.some(item => item.user.level === 'diamond'))
+  assert.ok(plan.cases.some(item => item.storeCode === 'S1'))
+  assert.ok(plan.cases.some(item => item.storeCode === 'boundary-unmatched'))
+  assert.equal(new Set(plan.cases.map(item => item.key)).size, plan.cases.length)
+  assert.ok(plan.cases.every(item => item.expected.totalAmount === null && Object.keys(item.expectedByWorld).length === 0))
+  assert.ok(plan.cases.every(item => item.items[0].specificationUuid === 'keep-specification-uuid'))
+  assert.equal(JSON.stringify(scenario), before)
+  scenario.cases.push(...plan.cases)
+  assert.deepEqual(validateScenario(scenario), [])
+  assert.equal(boundaryPlan(scenario, scenario.cases[0]).cases.length, 0)
+})
+
+test('schedule boundaries retain absolute instants from offset-bearing snapshots', () => {
+  const scenario = createScenario()
+  scenario.worlds[0].campaigns = [newCampaign({ startTime: '2026-11-10T10:00:00+08:00' })]
+  const plan = boundaryPlan(scenario, scenario.cases[0], { kinds: ['Schedule boundaries'] })
+  assert.deepEqual(plan.cases.map(item => item.simulatedAt), ['2026-11-10T01:59:59.000Z', '2026-11-10T02:00:00.000Z', '2026-11-10T02:00:01.000Z'])
+})
+
+test('boundary planner supports zero, current catalog seeds, repeated clicks, disabled groups and case limits', () => {
+  const scenario = createScenario()
+  const base = scenario.cases[0]
+  base.pricingMode = 'current_catalog'
+  const plan = boundaryPlan(scenario, base, { thresholdMinor: 0, kinds: ['Amount boundaries'] })
+  assert.deepEqual(plan.cases.map(item => item.items[0].unitPrice), [0, 1])
+  assert.ok(plan.cases.every(item => item.pricingMode === 'snapshot'))
+  scenario.cases.push(...plan.cases)
+  assert.equal(boundaryPlan(scenario, base, { thresholdMinor: 0, kinds: ['Amount boundaries'] }).available, 0)
+  assert.equal(boundaryPlan(scenario, base, { kinds: [] }).available, 0)
+  while (scenario.cases.length < 29) scenario.cases.push(newCase({ key: `padding${scenario.cases.length}` }))
+  const limited = boundaryPlan(scenario, base)
+  assert.equal(limited.cases.length, 1)
+  assert.ok(limited.omitted > 0)
+  scenario.cases.push(...limited.cases)
+  assert.equal(boundaryPlan(scenario, base).cases.length, 0)
+})
+
+test('overview separates currencies, errors, failures and unverified results without inventing passes', () => {
+  const overview = resultOverview({
+    worlds: [{ key: 'w', name: 'World' }],
+    cases: [{ key: 'a', currency: 'CNY' }, { key: 'b', currency: 'USD' }, { key: 'c', currency: 'CNY' }, { key: 'd', currency: 'CNY' }],
+    results: [
+      { worldKey: 'w', caseKey: 'a', status: 'ok', beforeAmount: 10000, afterAmount: 8000, passed: null },
+      { worldKey: 'w', caseKey: 'b', status: 'ok', beforeAmount: 500, afterAmount: 400, passed: true },
+      { worldKey: 'w', caseKey: 'c', status: 'error', beforeAmount: 999999, passed: false },
+      { worldKey: 'w', caseKey: 'd', status: 'ok', beforeAmount: 2000, afterAmount: 2000, passed: false }
+    ]
+  })
+  assert.equal(overview.length, 2)
+  assert.deepEqual(overview[0], { key: 'w:CNY', name: 'World', currency: 'CNY', before: 12000, after: 10000, passed: 0, failed: 1, errors: 1, unverified: 1, count: 3, valid: 2 })
+  assert.equal(overview[1].before, 500)
+  assert.equal(overview[1].passed, 1)
+})
+
+test('simulation store and chart components compile and their labels are localized', () => {
+  const { parse, compileTemplate, compileScript } = require('@vue/compiler-sfc')
+  for (const name of ['StoreSelect', 'SimulationCharts', 'PromotionSimulation']) {
+    const source = readFileSync(new URL(`../../business/admin/simulation/${name}.vue`, import.meta.url), 'utf8')
+    const { descriptor, errors } = parse(source)
+    assert.deepEqual(errors, [])
+    assert.doesNotThrow(() => compileScript(descriptor, { id: name }))
+    assert.deepEqual(compileTemplate({ source: descriptor.template.content, filename: `${name}.vue`, id: name }).errors, [])
+    for (const match of source.matchAll(/\$t\('([^']+)'/g)) {
+      // Shared labels come from the core locale; business-owned labels must
+      // exist in every business overlay.
+      if (!Object.hasOwn(en, match[1])) continue
+      for (const messages of [en, zh, zhHant, ja]) assert.ok(messages[match[1]], match[1])
+    }
+  }
+  for (const kind of BOUNDARY_KINDS) for (const messages of [en, zh, zhHant, ja]) assert.ok(messages[kind], kind)
 })
 
 test('promotion simulation route is nested under the existing promotion menu', () => {
