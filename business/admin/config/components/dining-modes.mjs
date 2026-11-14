@@ -113,6 +113,25 @@ export function createDiningModesConfig() {
   return { version: DINING_MODES_VERSION, modes: [] }
 }
 
+function settingsObject(value) {
+  if (value === undefined || value === null || value === '') return {}
+  const parsed = typeof value === 'string' ? JSON.parse(value) : value
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('dining_modes_settings_invalid')
+  }
+  return { ...parsed }
+}
+
+export function copyDiningModesSettings(targetSettings, sourceSettings) {
+  const target = settingsObject(targetSettings)
+  const source = settingsObject(sourceSettings)
+  const diningModes = normalizeDiningModesConfig(source.diningModes)
+  return {
+    settings: { ...target, diningModes },
+    modeCount: diningModes.modes.length
+  }
+}
+
 function normalizeRule(value) {
   const type = RULES.has(value?.type) ? value.type : 'fixed_item'
   const rule = {

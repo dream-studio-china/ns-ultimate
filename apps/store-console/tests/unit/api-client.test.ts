@@ -93,6 +93,8 @@ describe('store-scoped permissions and adapters', () => {
   it('accepts PHP empty product metadata without inventing a cover image', () => {
     const product = productSchema.parse({ uuid: store, name: 'Product', status: 'active', category: null, metadata: [], version: 'a'.repeat(64), isSoldout: false, description: null, sortOrder: 0, recommendationLevel: 0, extensionEditable: true, settings: { kitchenPrinterEnable: false, startSaleTime: '', endSaleTime: '' } })
     expect(product.metadata).toBeNull()
+    // Missing means the connected backend does not support the setting yet.
+    expect(product.settings.kitchenTicketDisabled).toBeUndefined()
   })
   it('identifies membership lookup failures without exposing server messages or credentials', async () => {
     const client = new ApiClient()

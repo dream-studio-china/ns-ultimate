@@ -15,8 +15,18 @@ function loadProductConfig() {
     ProductMetadataSchema: {},
     ProductSettingsSchema: {},
     ProductNameWithCover: {},
+    ProductCategorySelect: { __testCategorySelector: true },
     SpecificationManager: {},
-    CopyProductsAction: {}
+    CopyProductsAction: {},
+    kitchenPrinterField: {},
+    kitchenTicketDisabledField: {},
+    recommendationLevelField: {},
+    soldoutField: {},
+    sortOrderField: {},
+    loadRelationRecords: async () => [
+      { uuid: '550e8400-e29b-41d4-a716-446655440000', name: 'Main store' },
+      { uuid: '550e8400-e29b-41d4-a716-446655440001', code: 'SECOND' },
+    ],
   }
   runInNewContext(source.slice(source.indexOf('export default')).replace('export default', 'globalThis.config ='), context)
   return context.config
@@ -45,4 +55,23 @@ test('Product store options and edit values use UUIDs even with numeric associat
   // The select and FormAdmin's edit hydration share this value resolver.
   assert.equal(relationValue(store, relation), store.uuid)
   assert.notEqual(relationValue(store, relation), store.id)
+})
+
+test('Product category field uses the store-aware category selector', () => {
+  const category = loadProductConfig().form.fields.find(field => field.property === 'category')
+
+  assert.equal(category.component.__testCategorySelector, true)
+  assert.equal(category.required, false)
+})
+
+test('Product management filters by the selected store UUID through the existing list endpoint', async () => {
+  const filter = await loadProductConfig().list.list_filter['store.uuid']()
+
+  assert.equal(filter.label, 'Store')
+  assert.equal(filter.type, 'select')
+  assert.equal(filter.expression, "entity.getStore().getUuid() == ':value'")
+  assert.deepEqual(JSON.parse(JSON.stringify(filter.data)), [
+    { value: '550e8400-e29b-41d4-a716-446655440000', label: 'Main store' },
+    { value: '550e8400-e29b-41d4-a716-446655440001', label: 'SECOND' },
+  ])
 })

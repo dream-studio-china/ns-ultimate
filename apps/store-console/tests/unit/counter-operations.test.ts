@@ -54,6 +54,28 @@ describe('live counter session boundary', () => {
     expect(parsed.diningModeName).toBe(metadata.diningModeName)
   })
 
+  it('reads exact discount amounts and preserves a historical total-only fallback', () => {
+    const base = {
+      uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 3000,
+      originalAmount: 3680, discountAmount: 680, notes: null, createdAt: '2026-10-31T10:00:00Z', canReplace: true, canCancel: true,
+      items: [{ ...item, quantity: 2, unitPrice: 1590, amount: 3180 }, { ...item, quantity: 1, unitPrice: 500, amount: 500 }],
+      discounts: [{ name: '会员优惠', type: 'member_discount', amount: 500 }],
+    }
+    const exact = sessionOrderSchema.parse(base)
+    expect(exact).toMatchObject({ originalAmount: 3680, discountAmount: 680, discounts: [{ name: '会员优惠', type: 'member_discount', amount: 500 }] })
+
+    const legacy = sessionOrderSchema.parse({
+      ...base,
+      originalAmount: undefined,
+      discountAmount: undefined,
+      discounts: undefined,
+      metadata: { _promotion: { applied: [{ name: '会员优惠' }, { name: '满减活动' }] } },
+    })
+    expect(legacy.originalAmount).toBe(3680)
+    expect(legacy.discountAmount).toBe(680)
+    expect(legacy.discounts).toEqual([{ name: '会员优惠 + 满减活动', type: null, amount: 680 }])
+  })
+
   it('normalizes object-valued diningModeUuid returned by the Counter API', () => {
     const order = {
       uuid: id, status: 'pending', paymentStatus: null, hasInvoice: false, currency: 'USD', totalAmount: 1590,

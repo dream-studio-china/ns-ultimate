@@ -29,8 +29,9 @@ final class StaffCatalogService
             'isSoldout' => $product instanceof Product && $product->isSoldout(),
             'sortOrder' => $product instanceof Product ? $product->getSortOrder() : 0,
             'recommendationLevel' => $product instanceof Product ? $product->getRecommendationLevel() : 0,
-            'settings' => ['kitchenPrinterEnable' => $settings['kitchenPrinterEnable'] ?? false,
-                'startSaleTime' => $settings['startSaleTime'] ?? '', 'endSaleTime' => $settings['endSaleTime'] ?? ''],
+            'settings' => array_replace(['kitchenPrinterEnable' => false,
+                'kitchenTicketDisabled' => false,
+                'startSaleTime' => '', 'endSaleTime' => ''], $settings),
             'extensionEditable' => $product instanceof Product];
         $result['version'] = StaffCommandService::version($result + ['storedMetadata' => $metadata, 'storedSettings' => $settings,
             'updatedAt' => $product->getUpdatedAt()?->format(DATE_ATOM)]);
@@ -50,8 +51,10 @@ final class StaffCatalogService
     public function save(Store $store, ?string $uuid, array $data): array
     {
         $allowed = ['commandUuid', 'version', 'name', 'description', 'status', 'category', 'subtitle', 'coverImageUuid',
-            'sortOrder', 'recommendationLevel', 'isSoldout', 'kitchenPrinterEnable', 'startSaleTime', 'endSaleTime'];
+            'sortOrder', 'recommendationLevel', 'isSoldout', 'kitchenPrinterEnable', 'startSaleTime', 'endSaleTime', 'settings'];
         if (array_diff(array_keys($data), $allowed)) throw new HttpException(422, 'unknown_field');
+        $settingUpdates = $data['settings'] ?? [];
+        if (!is_array($settingUpdates) || ($settingUpdates !== [] && array_is_list($settingUpdates))) throw new HttpException(422, 'invalid_field');
         $product = $uuid === null ? new Product($store) : $this->find($store, $uuid);
         $before = $uuid === null ? [] : $this->product($product);
         if ($uuid !== null) StaffCommandService::expectVersion($data, $before['version']);
@@ -66,14 +69,18 @@ final class StaffCatalogService
         foreach (['isSoldout', 'kitchenPrinterEnable'] as $key) {
             if (array_key_exists($key, $data) && !is_bool($data[$key])) throw new HttpException(422, 'invalid_field');
         }
+        foreach (['kitchenPrinterEnable', 'kitchenTicketDisabled'] as $key) {
+            if (array_key_exists($key, $settingUpdates) && !is_bool($settingUpdates[$key])) throw new HttpException(422, 'invalid_field');
+        }
         foreach (['startSaleTime', 'endSaleTime'] as $key) {
             if (array_key_exists($key, $data) && (!is_string($data[$key]) || !preg_match('/^(?:(?:[01][0-9]|2[0-3]):[0-5][0-9])?$/D', $data[$key]))) throw new HttpException(422, 'invalid_sale_window');
+            if (array_key_exists($key, $settingUpdates) && (!is_string($settingUpdates[$key]) || !preg_match('/^(?:(?:[01][0-9]|2[0-3]):[0-5][0-9])?$/D', $settingUpdates[$key]))) throw new HttpException(422, 'invalid_sale_window');
         }
         $settings = $product instanceof Product ? ($product->getSettings() ?? []) : [];
-        $start = $data['startSaleTime'] ?? $settings['startSaleTime'] ?? '';
-        $end = $data['endSaleTime'] ?? $settings['endSaleTime'] ?? '';
+        $start = $data['startSaleTime'] ?? $settingUpdates['startSaleTime'] ?? $settings['startSaleTime'] ?? '';
+        $end = $data['endSaleTime'] ?? $settingUpdates['endSaleTime'] ?? $settings['endSaleTime'] ?? '';
         if (($start === '') !== ($end === '') || ($start !== '' && $start === $end)) throw new HttpException(422, 'invalid_sale_window');
-        if (!($product instanceof Product) && array_intersect(array_keys($data), ['isSoldout', 'sortOrder', 'recommendationLevel', 'kitchenPrinterEnable', 'startSaleTime', 'endSaleTime'])) throw new HttpException(409, 'extension_unavailable');
+        if (!($product instanceof Product) && ($settingUpdates !== [] || array_intersect(array_keys($data), ['isSoldout', 'sortOrder', 'recommendationLevel', 'kitchenPrinterEnable', 'startSaleTime', 'endSaleTime']))) throw new HttpException(409, 'extension_unavailable');
         if (array_key_exists('category', $data)) {
             if ($data['category'] !== null && $data['category'] !== '' && (!is_string($data['category']) || !UUID::is_valid($data['category']))) throw new HttpException(422, 'invalid_category');
             $category = $data['category'] === null || $data['category'] === '' ? null : $this->em->getRepository(ProductCategory::class)->findOneBy(['uuid' => $data['category']]);
@@ -100,6 +107,7 @@ final class StaffCatalogService
             if (isset($data['sortOrder'])) $product->setSortOrder($data['sortOrder']);
             if (isset($data['recommendationLevel'])) $product->setRecommendationLevel($data['recommendationLevel']);
             if (isset($data['isSoldout'])) $product->setIsSoldout($data['isSoldout']);
+            $settings = array_replace($settings, $settingUpdates);
             foreach (['kitchenPrinterEnable', 'startSaleTime', 'endSaleTime'] as $key) if (array_key_exists($key, $data)) $settings[$key] = $data[$key];
             $product->setSettings($settings ?: null);
         }

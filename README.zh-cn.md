@@ -82,7 +82,7 @@ Store 业务模块提供按门店授权的员工 API，覆盖商品可售性、�
 
 ## Store 商品字段
 
-Store 商品管理表单提供独立字段 `sortOrder`、`recommendationLevel` 和 `isSoldout`，并提供 `settings` JSON 对象以保存 `kitchenPrinterEnable`、`startSaleTime` 和 `endSaleTime`。仅用于展示的 `subtitle` 与 `cover` URL 仍保存在 `metadata` 中。售卖时间按成对的 `HH:mm` 格式存储和校验，并由业务计价解析器在新报价和下单时执行，支持按门店时区跨午夜；售罄状态同样会阻止新报价。后厨标记仅参与匹配的打印规则，不会自行触发打印。system 元数据接口（`/system/entities/App/Store/Entity/Product`）会返回业务扩展字段及其后端翻译，同时对 Admin 保持 core Product 实体名称不变。集成和迁移详情见[后端实体扩展契约](docs/contracts/backend-entity-extension.md)。
+Store 商品管理表单提供独立字段 `sortOrder`、`recommendationLevel` 和 `isSoldout`，并提供 `settings` JSON 对象以保存 `kitchenPrinterEnable`、`kitchenTicketDisabled`、`startSaleTime` 和 `endSaleTime`。仅用于展示的 `subtitle` 与 `cover` URL 仍保存在 `metadata` 中。售卖时间按成对的 `HH:mm` 格式存储和校验，并由业务计价解析器在新报价和下单时执行，支持按门店时区跨午夜；售罄状态同样会阻止新报价。`kitchenPrinterEnable` 标记仅参与匹配的打印规则，不会自行触发打印；`kitchenTicketDisabled` 未设置或为 false 时商品仍打印厨房联，只有明确为 true 时才排除该商品。system 元数据接口（`/system/entities/App/Store/Entity/Product`）会返回业务扩展字段及其后端翻译，同时对 Admin 保持 core Product 实体名称不变。集成和迁移详情见[后端实体扩展契约](docs/contracts/backend-entity-extension.md)。
 
 ## 项目自有代码与上游许可证
 

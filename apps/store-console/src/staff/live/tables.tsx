@@ -5,6 +5,7 @@ import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, Printer
 import { QRCodeCanvas } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCounter, type SessionOrder } from '../adapters/live'
+import { OrderAmountSummary } from './OrderAmountSummary'
 import { ApiError } from '../adapters/api-client'
 import { minorUnitsToInput, paidOrderCanRefund, paymentStatusMessage, refundReasonBytes, refundResultKind, validateRefundAmount } from '../order-refund'
 import { OrderRefundDetails } from './OrderRefundDetails'
@@ -216,6 +217,7 @@ function OrderDetail({ order, counter, currency, canCancel, cancelAllowed, onCan
     <div className="order-detail-hero"><span><ReceiptText size={28} strokeWidth={1.3} /></span><p>{t('amount')}</p><strong>{formatOrderAmount(order, currency, locale)}</strong><StatusPill>{statusLabels[order.status] ? t(statusLabels[order.status]) : order.status}</StatusPill><small>{order.status}</small></div>
     <dl className="order-detail-meta"><dt>{t('tableNumber')}</dt><dd>{counter.name} · {counter.code}</dd><dt>{t('orderNo')}</dt><dd>{order.uuid}</dd><dt>{t('createdAt')}</dt><dd>{formatDate(order.createdAt, locale)}</dd><dt>{t('diningMode')}</dt><dd>{order.diningModeName ?? t('diningModeNotRecorded')}</dd><dt>{t('diningPaymentState')}</dt><dd>{order.paymentStatus ?? t('diningNoPayment')}</dd></dl>
     <h3>{t('orderItems')}</h3><div className="order-snapshot-items">{order.items.map((item, index) => <div key={`${item.specificationUuid ?? item.productName}-${index}`}><span className="snapshot-item-index">{String(index + 1).padStart(2, '0')}</span><span>{item.productName}{item.specificationName ? ` · ${item.specificationName}` : ''}</span><strong>×{item.quantity}</strong></div>)}</div>
+    <OrderAmountSummary order={order} />
     {canCancel && <Button block color="danger" fill="outline" disabled={!cancelAllowed} aria-label={cancelAllowed ? t('cancelOrder') : t('cancelOrderPermissionRequired')} onClick={onCancel}><XCircle size={15} />{t('cancelOrder')}</Button>}
     {canRefund && <Button block className="order-detail-refund" disabled={!refundAllowed} onClick={onRefund}><RotateCcw size={15} />{refundAllowed ? t('refundOrder') : t('refundPermissionRequired')}</Button>}
     {canPrint && <Button block className="order-detail-print" onClick={onPrint}><Printer size={15} />{t('manualPrintAction')}</Button>}

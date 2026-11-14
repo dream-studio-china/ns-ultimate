@@ -263,6 +263,10 @@ export default {
   'Sale end time': '販売終了時刻',
   Counters: 'テーブル',
   'Counter management': 'テーブル管理',
+  'Export QR codes': 'QR コードを出力',
+  'No counters match the current filters': '現在の絞り込み条件に一致するテーブルがありません',
+  'Exported {0} counter QR codes': '{0} 件のテーブル QR コードを出力しました',
+  'Failed to export counter QR codes': 'テーブル QR コードの出力に失敗しました',
   'Member management': 'メンバー管理',
   'User UUID': 'ユーザー UUID',
   'Role': 'ロール',
@@ -634,5 +638,9 @@ export default {
   'The import store only filters campaigns. Each test cart uses its own store and simulated time.': 'インポート店舗はキャンペーンの絞り込み専用です。各カートは自身の店舗とシミュレーション日時で実行されます。',
   '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.': '{count} 件のカートの店舗がインポート店舗と異なります。店舗限定キャンペーンが適用されない場合があります。各カートを編集して店舗を選択してください。',
   'Not verified': '未検証',
-  'Unverified runs need expected results; they are not passes.': '未検証のケースには期待値が必要です。検証成功には含みません。'
+  'Unverified runs need expected results; they are not passes.': '未検証のケースには期待値が必要です。検証成功には含みません。',
+  'Product category help': '選択した店舗のカテゴリとグローバルカテゴリのみを表示します。',
+  'Failed to load product categories': '商品カテゴリを読み込めませんでした。',
+  'No categories are available for this store or global scope': 'この店舗およびグローバル範囲で選択できるカテゴリはありません。',
+  'No global product categories are available': 'グローバル商品カテゴリはありません。'
 }

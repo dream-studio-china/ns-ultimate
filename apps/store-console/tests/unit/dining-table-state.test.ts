@@ -13,7 +13,8 @@ function table(statuses: string[]): CounterSessionView {
     orders: statuses.map((status, index) => ({
       uuid: `00000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`,
       tradeOrderUuid: `00000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`,
-      status, paymentStatus: null, hasInvoice: false, currency: 'CNY', totalAmount: 100, notes: null,
+      status, paymentStatus: null, hasInvoice: false, currency: 'CNY', totalAmount: 100,
+      originalAmount: 100, discountAmount: 0, discounts: [], notes: null,
       createdAt: '2026-11-02T10:00:00Z', items: [], diningModeUuid: 'mode-hotpot', diningModeName: 'Hotpot', canReplace: false, canCancel: false,
       changeBlockedReason: null, replaceBlockedReason: null,
     })),

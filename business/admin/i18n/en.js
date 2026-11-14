@@ -265,6 +265,10 @@ export default {
   'Sale end time': 'Sale end time',
   Counters: 'Counters',
   'Counter management': 'Counter management',
+  'Export QR codes': 'Export QR codes',
+  'No counters match the current filters': 'No counters match the current filters',
+  'Exported {0} counter QR codes': 'Exported {0} counter QR codes',
+  'Failed to export counter QR codes': 'Failed to export counter QR codes',
   'Member management': 'Member management',
   'User UUID': 'User UUID',
   'Role': 'Role',
@@ -636,5 +640,9 @@ export default {
   'The import store only filters campaigns. Each test cart uses its own store and simulated time.': 'The import store only filters campaigns. Each test cart uses its own store and simulated time.',
   '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.': '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.',
   'Not verified': 'Not verified',
-  'Unverified runs need expected results; they are not passes.': 'Unverified runs need expected results; they are not passes.'
+  'Unverified runs need expected results; they are not passes.': 'Unverified runs need expected results; they are not passes.',
+  'Product category help': 'Only categories belonging to the selected store and global categories are shown.',
+  'Failed to load product categories': 'Failed to load product categories.',
+  'No categories are available for this store or global scope': 'No categories are available for this store or global scope.',
+  'No global product categories are available': 'No global product categories are available.'
 }

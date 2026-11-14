@@ -12,7 +12,8 @@ namespace NsUltimate\Business\Promotion\Service;
  * configuration into every order, so this snapshot keeps just the display fields
  * the admin needs. Orders created before this snapshot existed have no key.
  *
- * @phpstan-type PromotionSnapshot array{applied: list<array{id: int|null, name: string, type: string|null, phase: string}>, recordedAt: string}
+ * @phpstan-type PromotionSnapshot array{applied: list<array{id: int|null, name: string, type: string|null, phase: string, amount: int}>, originalAmount?: int, discountAmount?: int, recordedAt: string}
+ * @phpstan-type OrderDiscountSummary array{originalAmount: int, discountAmount: int, discounts: list<array{name: string, type: string|null, amount: int}>}
  */
 final class OrderPromotionSnapshot
 {
@@ -32,6 +33,8 @@ final class OrderPromotionSnapshot
         }
 
         $promotion = $meta['promotion'];
+        $originalAmount = self::integer($promotion['originalAmount'] ?? null);
+        $discountAmount = self::integer($promotion['discountAmount'] ?? null);
         $applied = [];
         foreach (is_array($promotion['inner'] ?? null) ? $promotion['inner'] : [] as $entry) {
             self::append($applied, self::normalizeEntry($entry, self::PHASE_INNER));
@@ -39,10 +42,18 @@ final class OrderPromotionSnapshot
         self::append($applied, self::normalizeEntry($promotion['outer'] ?? null, self::PHASE_OUTER));
         self::append($applied, self::normalizeEntry($promotion['bestPrice'] ?? null, self::PHASE_BEST_PRICE));
 
-        return [
+        $snapshot = [
             'applied' => $applied,
             'recordedAt' => (new \DateTimeImmutable())->format(\DATE_ATOM),
         ];
+        if ($originalAmount !== null) {
+            $snapshot['originalAmount'] = $originalAmount;
+        }
+        if ($discountAmount !== null) {
+            $snapshot['discountAmount'] = $discountAmount;
+        }
+
+        return $snapshot;
     }
 
     /**
@@ -81,8 +92,8 @@ final class OrderPromotionSnapshot
     }
 
     /**
-     * @param list<array{id: int|null, name: string, type: string|null, phase: string}> $applied
-     * @param array{id: int|null, name: string, type: string|null, phase: string}|null $entry
+     * @param list<array{id: int|null, name: string, type: string|null, phase: string, amount: int}> $applied
+     * @param array{id: int|null, name: string, type: string|null, phase: string, amount: int}|null $entry
      */
     private static function append(array &$applied, ?array $entry): void
     {
@@ -92,7 +103,7 @@ final class OrderPromotionSnapshot
     }
 
     /**
-     * @return array{id: int|null, name: string, type: string|null, phase: string}|null
+     * @return array{id: int|null, name: string, type: string|null, phase: string, amount: int}|null
      */
     private static function normalizeEntry(mixed $entry, string $phase): ?array
     {
@@ -111,11 +122,73 @@ final class OrderPromotionSnapshot
             'name' => $name ?? '#'.$id,
             'type' => self::text($entry['type'] ?? null),
             'phase' => $phase,
+            'amount' => self::integer($entry['discountAmount'] ?? null) ?? 0,
+        ];
+    }
+
+    /**
+     * Build the only discount fields that may be exposed to staff and customers.
+     *
+     * New orders contain exact per-campaign amounts. Historical orders may only
+     * contain campaign names, so their known total reduction is emitted once
+     * rather than inventing a split.
+     *
+     * @param array<string, mixed>|null $metadata
+     * @return OrderDiscountSummary
+     */
+    public static function summary(?array $metadata, int $totalAmount, int $itemOriginalAmount = 0): array
+    {
+        $totalAmount = max(0, $totalAmount);
+        $snapshot = is_array($metadata[self::METADATA_KEY] ?? null) ? $metadata[self::METADATA_KEY] : [];
+        $recordedOriginal = self::integer($snapshot['originalAmount'] ?? null);
+        $originalAmount = max($totalAmount, $itemOriginalAmount, $recordedOriginal ?? 0);
+        $discountAmount = max(0, $originalAmount - $totalAmount);
+        $discounts = [];
+        $remaining = $discountAmount;
+        $names = [];
+
+        foreach (is_array($snapshot['applied'] ?? null) ? $snapshot['applied'] : [] as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $name = self::text($entry['name'] ?? null);
+            if ($name !== null) {
+                $names[] = $name;
+            }
+            $amount = min($remaining, self::integer($entry['amount'] ?? null) ?? 0);
+            if ($name === null || $amount <= 0) {
+                continue;
+            }
+            $discounts[] = [
+                'name' => $name,
+                'type' => self::text($entry['type'] ?? null),
+                'amount' => $amount,
+            ];
+            $remaining -= $amount;
+        }
+
+        if ($remaining > 0) {
+            $discounts[] = [
+                'name' => $names === [] ? '订单优惠' : implode(' + ', array_values(array_unique($names))),
+                'type' => 'order_discount',
+                'amount' => $remaining,
+            ];
+        }
+
+        return [
+            'originalAmount' => $originalAmount,
+            'discountAmount' => $discountAmount,
+            'discounts' => $discounts,
         ];
     }
 
     private static function text(mixed $value): ?string
     {
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private static function integer(mixed $value): ?int
+    {
+        return is_numeric($value) ? max(0, (int) $value) : null;
     }
 }

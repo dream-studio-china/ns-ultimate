@@ -125,6 +125,32 @@ final class CounterOperationsTest extends KernelTestCase
         self::assertSame($result['orderUuid'], $this->orderByUuid($next['orderUuid'])['metadata']['replacedOrderUuid']);
     }
 
+    public function testSessionOrderProjectionIncludesDiscountBreakdown(): void
+    {
+        $uuid = $this->startCustomerSession(false);
+        $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $uuid]);
+        self::assertInstanceOf(Order::class, $order);
+        $order->setTotalAmount(1390)->setMetadata([
+            ...($order->getMetadata() ?? []),
+            '_promotion' => [
+                'originalAmount' => 1590,
+                'discountAmount' => 200,
+                'applied' => [
+                    ['id' => 1, 'name' => '会员优惠', 'type' => 'member_discount', 'phase' => 'inner', 'amount' => 200],
+                ],
+            ],
+        ]);
+        $this->em->flush();
+        $this->em->clear();
+
+        $row = $this->orderByUuid($uuid);
+        self::assertSame(1590, $row['originalAmount']);
+        self::assertSame(200, $row['discountAmount']);
+        self::assertSame([
+            ['name' => '会员优惠', 'type' => 'member_discount', 'amount' => 200],
+        ], $row['discounts']);
+    }
+
     public function testStaffOrderMetadataRejectsInvalidAndReservedFields(): void
     {
         $this->startCustomerSession();

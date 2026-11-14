@@ -71,6 +71,40 @@ const withDiningModeMetadata = (value: unknown): Record<string, unknown> => {
     tradeOrderUuid: row.tradeOrderUuid ?? row.uuid,
   }
 }
+const safeCents = (value: unknown): number | null => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+const appliedPromotionNames = (metadata: Record<string, unknown> | null): string[] => {
+  const promotion = objectRecord(metadata?._promotion)
+  const applied = Array.isArray(promotion?.applied) ? promotion.applied : []
+  return [...new Set(applied.flatMap((entry) => {
+    const name = nonEmptyText(objectRecord(entry)?.name)
+    return name ? [name] : []
+  }))]
+}
+const withOrderDiscountSummary = (value: unknown): Record<string, unknown> => {
+  const row = withDiningModeMetadata(value)
+  const totalAmount = safeCents(row.totalAmount)
+  if (totalAmount === null) return row
+  const items = Array.isArray(row.items) ? row.items.map(record) : []
+  const itemOriginalAmount = items.reduce((sum, item) => {
+    const quantity = typeof item.quantity === 'number' && Number.isSafeInteger(item.quantity) && item.quantity > 0 ? item.quantity : 0
+    return sum + (safeCents(item.unitPrice) ?? 0) * quantity
+  }, 0)
+  const recordedOriginalAmount = safeCents(row.originalAmount)
+  const originalAmount = Math.max(totalAmount, itemOriginalAmount, recordedOriginalAmount ?? 0)
+  const discountAmount = Math.max(0, originalAmount - totalAmount)
+  const metadata = objectRecord(row.metadata)
+  const recordedDiscounts = Array.isArray(row.discounts) ? row.discounts.flatMap((entry) => {
+    const discount = objectRecord(entry)
+    const amount = safeCents(discount?.amount)
+    if (!discount || amount === null) return []
+    return [{ name: nonEmptyText(discount.name) ?? '', type: nonEmptyText(discount.type), amount }]
+  }) : []
+  const names = appliedPromotionNames(metadata)
+  const discounts = recordedDiscounts.length || discountAmount === 0
+    ? recordedDiscounts
+    : [{ name: names.join(' + '), type: null, amount: discountAmount }]
+  return { ...row, originalAmount, discountAmount, discounts }
+}
 const settingsSchema = z.preprocess((value) => {
   if (typeof value !== 'string' || !value.trim()) return value
   try { return JSON.parse(value) } catch { return {} }
@@ -90,7 +124,9 @@ export const authorizationSchema = z.object({
 export const productSchema = z.object({
   uuid, name: z.string(), status: z.enum(['active', 'inactive']), category: z.object({ uuid }).nullable(),
   version, isSoldout: z.boolean(), description: z.string().nullable(), sortOrder: z.number().int().nonnegative(), recommendationLevel: z.number().int().nonnegative(), extensionEditable: z.boolean(),
-  settings: z.object({ kitchenPrinterEnable: z.boolean(), startSaleTime: z.string(), endSaleTime: z.string() }),
+  // Older Store backends omit this setting. Preserve that distinction so the
+  // editor only submits a field supported by the connected backend.
+  settings: z.object({ kitchenPrinterEnable: z.boolean(), kitchenTicketDisabled: z.boolean().optional(), startSaleTime: z.string(), endSaleTime: z.string() }).passthrough(),
   metadata: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? null : value,
     z.object({ cover: z.string().nullable().optional(), subtitle: z.string().nullable().optional() }).nullable().optional()),
 })
@@ -151,14 +187,16 @@ export const reportingOrderSchema = z.object({
 })
 export type ReportingOrderRow = z.infer<typeof reportingOrderSchema>
 const sessionOrderItemSchema = z.object({ specificationUuid: uuid.nullable(), productName: z.string(), specificationName: z.string(), quantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), unitPrice: cents, amount: cents })
+const orderDiscountSchema = z.object({ name: z.string(), type: z.string().nullable(), amount: cents })
 export const orderableItemSchema = sessionOrderItemSchema.extend({ specificationUuid: uuid, quantity: z.number().int().min(1).max(99) })
 const orderMetadataSchema = z.preprocess((value) => objectRecord(value), z.record(z.string(), z.unknown()).nullable().optional())
 const optionalDiningModeUuidSchema = z.unknown().nullable().optional().transform((value) => diningModeUuidText(value))
 const optionalDiningModeNameSchema = z.unknown().nullable().optional().transform((value) => diningModeNameText(value))
 const optionalInvoiceUuidSchema = z.unknown().transform((value) => invoiceReferenceUuid(value)).optional()
-export const sessionOrderSchema = z.preprocess(withDiningModeMetadata, z.object({
+export const sessionOrderSchema = z.preprocess(withOrderDiscountSummary, z.object({
   uuid, tradeOrderUuid: uuid, status: z.string(), paymentStatus: z.string().nullable(), hasInvoice: z.boolean(),
-  currency, totalAmount: cents, notes: z.string().nullable(), createdAt: z.string(), items: z.array(sessionOrderItemSchema),
+  currency, totalAmount: cents, originalAmount: cents, discountAmount: cents, discounts: z.array(orderDiscountSchema),
+  notes: z.string().nullable(), createdAt: z.string(), items: z.array(sessionOrderItemSchema),
   metadata: orderMetadataSchema,
   // Newer Counter responses may expose the invoice UUID after recording the hasInvoice flag.
   // Keep both representations compatible while payment remains a Store-scoped operation.
@@ -315,31 +353,39 @@ export function legacyCounterSession(counter: LiveCounter, orders: LegacyCounter
   const diningModeOrder = confirmedOrders.find((order) => order.diningModeUuid || order.diningModeName)
   const diningModeUuid = diningModeOrder?.diningModeUuid ?? null
   const diningMode = confirmedOrders.map((order) => normalizeDiningMode(order.diningMode)).find((mode): mode is DiningMode => mode !== null) ?? null
-  const rows: SessionOrder[] = confirmedOrders.map((order) => ({
-    uuid: order.uuid,
-    tradeOrderUuid: order.uuid,
-    status: order.status,
-    paymentStatus: settledLegacyStatuses.has(order.status) && !['cancelled', 'refunded', 'merged'].includes(order.status) ? order.status : null,
-    hasInvoice: false,
-    currency: order.currency || fallbackCurrency,
-    totalAmount: order.totalAmount,
-    notes: null,
-    createdAt: order.createdAt,
-    diningModeUuid: order.diningModeUuid ?? null,
-    diningModeName: order.diningModeName ?? normalizeDiningMode(order.diningMode)?.name ?? null,
-    items: order.items.map((item) => ({
+  const rows: SessionOrder[] = confirmedOrders.map((order) => {
+    const items = order.items.map((item) => ({
       specificationUuid: null,
       productName: item.productName ?? '',
       specificationName: item.specificationName ?? '',
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       amount: item.price,
-    })),
-    canReplace: false,
-    canCancel: false,
-    changeBlockedReason: null,
-    replaceBlockedReason: null,
-  }))
+    }))
+    const originalAmount = Math.max(order.totalAmount, items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0))
+    const discountAmount = Math.max(0, originalAmount - order.totalAmount)
+    return {
+      uuid: order.uuid,
+      tradeOrderUuid: order.uuid,
+      status: order.status,
+      paymentStatus: settledLegacyStatuses.has(order.status) && !['cancelled', 'refunded', 'merged'].includes(order.status) ? order.status : null,
+      hasInvoice: false,
+      currency: order.currency || fallbackCurrency,
+      totalAmount: order.totalAmount,
+      originalAmount,
+      discountAmount,
+      discounts: discountAmount > 0 ? [{ name: '', type: null, amount: discountAmount }] : [],
+      notes: null,
+      createdAt: order.createdAt,
+      diningModeUuid: order.diningModeUuid ?? null,
+      diningModeName: order.diningModeName ?? normalizeDiningMode(order.diningMode)?.name ?? null,
+      items,
+      canReplace: false,
+      canCancel: false,
+      changeBlockedReason: null,
+      replaceBlockedReason: null,
+    }
+  })
   const orderedAmount = orders.reduce((total, order) => total + order.totalAmount, 0)
   const openAmount = confirmedOrders.reduce((total, order) => total + order.totalAmount, 0)
   return {

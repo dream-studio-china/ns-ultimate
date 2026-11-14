@@ -221,6 +221,10 @@ export default {
   'Sale end time': '结束售卖时间',
   Counters: '台位',
   'Counter management': '台位管理',
+  'Export QR codes': '导出二维码',
+  'No counters match the current filters': '当前筛选条件下没有可导出的台位',
+  'Exported {0} counter QR codes': '已导出 {0} 个台位二维码',
+  'Failed to export counter QR codes': '导出台位二维码失败',
   'Member management': '成员管理',
   'User UUID': '用户 UUID',
   'Role': '角色',
@@ -640,5 +644,9 @@ export default {
   'The import store only filters campaigns. Each test cart uses its own store and simulated time.': '导入门店仅用于筛选活动；每条购物车用例按各自的门店和模拟时间运行。',
   '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.': '有 {count} 条用例的门店与导入门店不同，门店专属活动可能不命中；请编辑对应购物车选择门店。',
   'Not verified': '未验证',
-  'Unverified runs need expected results; they are not passes.': '未验证的用例需要设置预期结果，不计为验证通过。'
+  'Unverified runs need expected results; they are not passes.': '未验证的用例需要设置预期结果，不计为验证通过。',
+  'Product category help': '仅显示所选门店的分类和全局分类。',
+  'Failed to load product categories': '加载商品分类失败。',
+  'No categories are available for this store or global scope': '当前门店和全局范围暂无可选分类。',
+  'No global product categories are available': '暂无全局商品分类。'
 }

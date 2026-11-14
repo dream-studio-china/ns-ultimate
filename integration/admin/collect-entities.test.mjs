@@ -22,6 +22,7 @@ function loadCounterCollections() {
     ), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
     const context = {
       t: key => key, orderByIdDesc: {}, uuidFilter,
+      CounterQrExportAction: { name: 'CounterQrExportAction' },
       loadRelationRecords: relation => Promise.resolve([
         { id: 17, uuid: `${relation.name}-uuid`, __toString: `${relation.name} display name` }
       ])
@@ -43,6 +44,7 @@ test('registers the actual Counter configurations with their API identities', ()
   assert.ok(entities.OrderCounter.list.disabled_actions.includes('edit'))
   assert.equal(entities.OrderCounter.form.fields[1].property, 'counter')
   assert.equal(entities.OrderCounter.form.fields[1].relation.valueKey, 'uuid')
+  assert.deepEqual(Array.from(entities.Counter.list.actions, action => action.name), ['counter-qr-export'])
 })
 
 test('registers the actual Membership configuration with its API identity', () => {
@@ -319,6 +321,41 @@ test('adds a read-only counter number column to the StoreOrder list', () => {
   assert.equal(config.detail.detail_display[0].label, 'Counter number')
   assert.equal(config.detail.detail_display[0].component, context.StoreOrderCounterNumbers)
   assert.equal(config.detail.detail_display[1], '__all__')
+})
+
+test('StoreOrder filters by a selectable store instead of a free-form store code', async () => {
+  const source = readFileSync(new URL('../../business/admin/config/overrides/store/store-order.js', import.meta.url), 'utf8')
+    .replace(/^import .*$/gm, '')
+    .replace('export default', 'globalThis.config =')
+  const base = {
+    entity: { name: 'StoreOrder', plural: 'store-orders' },
+    list: {
+      list_filter: { operationalStatus: 'Operational Status', storeCodeSnapshot: 'Store Code' },
+      list_display: ['id', 'storeCodeSnapshot', 'storeNameSnapshot', 'totalAmount']
+    },
+    detail: { detail_display: '__all__' }
+  }
+  const context = {
+    StoreOrder: { StoreOrder: base },
+    t: key => key,
+    StoreOrderCounterNumbers: {},
+    loadRelationRecords: async () => [
+      { uuid: 'store-a-uuid', name: 'Store A', code: 'A01' },
+      { uuid: '', name: 'Missing UUID', code: 'BAD' }
+    ]
+  }
+  runInNewContext(source, context)
+  const config = context.config
+  assert.equal(config.list.list_filter.storeCodeSnapshot, undefined)
+  assert.equal(config.list.list_filter.operationalStatus, 'Operational Status')
+
+  const filter = await config.list.list_filter['store.uuid']()
+  assert.equal(filter.label, 'Store')
+  assert.equal(filter.type, 'select')
+  assert.equal(filter.expression, "entity.getStore().getUuid() == ':value'")
+  assert.deepEqual(Array.from(filter.data, item => ({ value: item.value, label: item.label })), [
+    { value: 'store-a-uuid', label: 'Store A · A01' }
+  ])
 })
 
 test('collects unique entities from collection files and nested entity files', () => {

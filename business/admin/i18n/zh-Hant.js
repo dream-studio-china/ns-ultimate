@@ -269,6 +269,10 @@ export default {
   'Product store help': '所屬門店，可空',
   Counters: '桌台',
   'Counter management': '桌台管理',
+  'Export QR codes': '匯出 QR Code',
+  'No counters match the current filters': '目前篩選條件下沒有可匯出的桌台',
+  'Exported {0} counter QR codes': '已匯出 {0} 個桌台 QR Code',
+  'Failed to export counter QR codes': '匯出桌台 QR Code 失敗',
   'Member management': '成員管理',
   'User UUID': '使用者 UUID',
   'Role': '角色',
@@ -640,5 +644,9 @@ export default {
   'The import store only filters campaigns. Each test cart uses its own store and simulated time.': '匯入門市僅用於篩選活動；每條購物車案例按各自的門市和模擬時間執行。',
   '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.': '有 {count} 條案例的門市與匯入門市不同，門市專屬活動可能不命中；請編輯對應購物車選擇門市。',
   'Not verified': '未驗證',
-  'Unverified runs need expected results; they are not passes.': '未驗證的案例需要設定預期結果，不計為驗證通過。'
+  'Unverified runs need expected results; they are not passes.': '未驗證的案例需要設定預期結果，不計為驗證通過。',
+  'Product category help': '僅顯示所選門店的分類和全域分類。',
+  'Failed to load product categories': '載入商品分類失敗。',
+  'No categories are available for this store or global scope': '目前門店和全域範圍暫無可選分類。',
+  'No global product categories are available': '暫無全域商品分類。'
 }

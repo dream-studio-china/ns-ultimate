@@ -89,6 +89,14 @@
 .dining-round { border: 1px solid var(--ws-line); border-radius: 18px; padding: 16px; min-width: 0; }
 .dining-round header { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
 .dining-round p { margin: 10px 0; overflow-wrap: anywhere; }
+.dining-amount-summary { display: grid; gap: 1px; margin: 10px 0 0; padding: 1px; overflow: hidden; border: 1px solid var(--ws-line); border-radius: 12px; background: var(--ws-line); }
+.dining-amount-summary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 11px; background: var(--theme-paper); }
+.dining-amount-summary dt { min-width: 0; color: var(--ws-muted); font-size: 11px; overflow-wrap: anywhere; }
+.dining-amount-summary dd { flex: 0 0 auto; margin: 0; color: var(--ws-ink); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dining-amount-summary .is-discount dd { color: #a45f4d; }
+.dining-amount-summary .is-actual { background: var(--theme-soft); }
+.dining-amount-summary .is-actual dt { color: var(--ws-ink); font-weight: 650; }
+.dining-amount-summary .is-actual dd { color: var(--brand); font-size: 18px; }
 .dining-round-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .dining-round-actions .adm-button { flex: 0 0 auto; margin: 0; }
 .live-app .dining-collect-payment.adm-button-fill-outline, .live-sheet-content .dining-collect-payment.adm-button-fill-outline { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 48%, var(--ws-line)); background: color-mix(in srgb, var(--brand) 6%, var(--theme-paper)); }
@@ -318,6 +326,13 @@
 .dining-payment-total span { color: var(--ws-muted); font-size: 12px; }
 .dining-payment-total strong { color: var(--ws-ink); font-size: 25px; font-variant-numeric: tabular-nums; }
 .dining-payment-scan { display: grid; gap: 14px; padding: 17px; border: 1px solid var(--ws-line); border-radius: 18px; background: var(--theme-paper); }
+
+@media (min-width: 700px) {
+  .dining-detail-sheet .sheet-scroll { display: block; overflow-y: auto; }
+  .dining-detail-sheet .live-sheet-content { display: block; }
+  .dining-detail-sheet .dining-detail { display: grid; }
+  .dining-detail-sheet .dining-detail-scroll { overflow: visible; }
+}
 .dining-payment-scan > header { display: flex; align-items: center; gap: 10px; color: var(--ws-ink); }
 .dining-payment-scan > header svg { color: var(--brand); flex-shrink: 0; }
 .dining-payment-scan h3 { margin: 0; font-size: 16px; }

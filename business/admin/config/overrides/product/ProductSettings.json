@@ -8,7 +8,15 @@
   "properties": {
     "kitchenPrinterEnable": {
       "type": "boolean",
-      "title": "Kitchen printer enabled"
+      "title": "Print ticket",
+      "description": "When enabled, this product participates in receipt printing.",
+      "default": false
+    },
+    "kitchenTicketDisabled": {
+      "type": "boolean",
+      "title": "Kitchen ticket disabled",
+      "description": "When enabled, this product is omitted from the kitchen ticket. Unset or false prints normally.",
+      "default": false
     },
     "startSaleTime": {
       "type": "string",

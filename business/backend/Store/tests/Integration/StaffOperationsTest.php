@@ -152,7 +152,7 @@ final class StaffOperationsTest extends KernelTestCase
         $this->em->persist($local);
         $this->em->flush();
         self::assertSame(['Local category'], array_column($this->data($this->request('GET', '/product-categories'))['items'], 'name'));
-        foreach ([['store' => $this->other->getUuid()], ['metadata' => ['arbitrary' => true]], ['status' => null], ['category' => 123], ['category' => $category->getUuid()], ['isSoldout' => 'yes'], ['sortOrder' => -1], ['startSaleTime' => '25:00', 'endSaleTime' => '26:00'], ['startSaleTime' => '09:00'], ['coverImageUuid' => UUID::v4()]] as $extra) {
+        foreach ([['store' => $this->other->getUuid()], ['metadata' => ['arbitrary' => true]], ['status' => null], ['category' => 123], ['category' => $category->getUuid()], ['isSoldout' => 'yes'], ['kitchenTicketDisabled' => true], ['settings' => ['kitchenTicketDisabled' => 'yes']], ['settings' => 'invalid'], ['sortOrder' => -1], ['settings' => ['startSaleTime' => '25:00', 'endSaleTime' => '26:00']], ['startSaleTime' => '09:00'], ['coverImageUuid' => UUID::v4()]] as $extra) {
             self::assertSame(422, $this->request('PUT', '/products/'.$product['uuid'], ['commandUuid' => UUID::v4(), 'version' => $product['version']] + $extra)->getStatusCode(), json_encode($extra));
         }
         self::assertSame(0, $this->em->getRepository(StaffOperation::class)->count([]));
@@ -294,9 +294,11 @@ final class StaffOperationsTest extends KernelTestCase
 
     public function testCreationAndHistoryDoNotDuplicateOrExposeOtherStores(): void
     {
-        $body = ['commandUuid' => UUID::v4(), 'name' => 'New product', 'description' => 'Details', 'startSaleTime' => '22:00', 'endSaleTime' => '02:00'];
+        $body = ['commandUuid' => UUID::v4(), 'name' => 'New product', 'description' => 'Details', 'settings' => ['kitchenTicketDisabled' => true, 'customSetting' => 'preserved'], 'startSaleTime' => '22:00', 'endSaleTime' => '02:00'];
         $created = $this->data($this->request('POST', '/products', $body));
         self::assertTrue($created['extensionEditable']);
+        self::assertTrue($created['settings']['kitchenTicketDisabled']);
+        self::assertSame('preserved', $created['settings']['customSetting']);
         self::assertSame($created, $this->data($this->request('POST', '/products', $body)));
         self::assertSame(2, $this->em->getRepository(Product::class)->count([]));
         $history = $this->data($this->request('GET', '/history'));
