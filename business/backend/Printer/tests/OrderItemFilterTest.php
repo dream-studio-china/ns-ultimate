@@ -50,4 +50,27 @@ final class OrderItemFilterTest extends TestCase
         $withoutProduct = new PrintItemContext(['quantity' => 1, 'productSettings' => []], [], null);
         self::assertFalse($filter->matches('entity.getProduct().getCategory().getName() == "Kitchen"', $withoutProduct));
     }
+
+    public function testLegacyTokensKeepTheirOriginalSemantics(): void
+    {
+        $filter = new OrderItemFilter();
+        foreach (['all', 'kitchen', ' all ', ' kitchen '] as $legacy) {
+            $filter->validate($legacy);
+        }
+        foreach ([null, '', ' ', 'all', ' all '] as $unfiltered) {
+            self::assertFalse($filter->isFiltering($unfiltered));
+        }
+        self::assertTrue($filter->isFiltering('kitchen'));
+        self::assertTrue($filter->isFiltering('entity.getQuantity() > 1'));
+
+        foreach ([true, false, null, 1, 0, 'true', '1'] as $enabled) {
+            $item = new PrintItemContext(['quantity' => 2], ['kitchenPrinterEnable' => $enabled], null);
+            self::assertTrue($filter->matches('all', $item));
+            self::assertSame($enabled === true, $filter->matches('kitchen', $item));
+        }
+        $missing = new PrintItemContext([], [], null);
+        self::assertTrue($filter->matches('all', $missing));
+        self::assertFalse($filter->matches('kitchen', $missing));
+        self::assertFalse($filter->matches('unknownLegacyToken', $missing));
+    }
 }

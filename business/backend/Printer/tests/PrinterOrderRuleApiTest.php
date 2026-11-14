@@ -596,6 +596,46 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         self::assertSame('entity.getQuantity() > 1', $data['itemFilter']);
     }
 
+    public function testLegacyTemplateFiltersSurviveTextEditsAndFullFormResubmission(): void
+    {
+        [$token] = $this->fixtures();
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        foreach ([PrinterTemplate::ITEMS_ALL, PrinterTemplate::ITEMS_KITCHEN] as $legacy) {
+            // Persist directly to model an existing template predating expression filters.
+            $template = new PrinterTemplate('Legacy '.$legacy, 'label', [
+                'kind' => 'label', 'nodes' => [['type' => 'labelText', 'value' => 'Before']],
+            ], PrinterTemplate::TICKET_SINGLE, $legacy);
+            $em->persist($template);
+            $em->flush();
+            $id = $template->getId();
+
+            $detail = $this->request('GET', '/api/v1/manage/printer/templates/'.$id, $token, []);
+            self::assertSame(200, $detail->getStatusCode(), $detail->getContent());
+            $data = json_decode($detail->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+            self::assertSame($legacy, $data['itemFilter']);
+            $data['definition']['nodes'][0]['value'] = 'After';
+            $updated = $this->request('PUT', '/api/v1/manage/printer/templates/'.$id, $token, [
+                'name' => 'Edited '.$legacy, 'definition' => $data['definition'],
+                'ticketMode' => $data['ticketMode'], 'itemFilter' => $data['itemFilter'],
+            ]);
+            self::assertSame(200, $updated->getStatusCode(), $updated->getContent());
+            $saved = json_decode($updated->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+            self::assertSame($legacy, $saved['itemFilter']);
+            self::assertSame('After', $saved['definition']['nodes'][0]['value']);
+
+            $nameOnly = $this->request('PUT', '/api/v1/manage/printer/templates/'.$id, $token, ['name' => 'Renamed '.$legacy]);
+            self::assertSame(200, $nameOnly->getStatusCode(), $nameOnly->getContent());
+            self::assertSame($legacy, $em->getConnection()->fetchOne('SELECT item_filter FROM printer_template WHERE id = ?', [$id]));
+
+            $created = $this->request('POST', '/api/v1/manage/printer/templates', $token, [
+                'name' => 'Legacy client '.$legacy, 'kind' => 'label',
+                'definition' => $data['definition'], 'itemFilter' => $legacy,
+            ]);
+            self::assertSame(201, $created->getStatusCode(), $created->getContent());
+            self::assertSame($legacy, json_decode($created->getContent(), true, flags: JSON_THROW_ON_ERROR)['data']['itemFilter']);
+        }
+    }
+
     public function testTemplateSampleDataIsValidationOnlyAndCanBeResubmittedOnEdit(): void
     {
         [$token] = $this->fixtures();

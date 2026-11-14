@@ -15,6 +15,11 @@ class PrinterTemplate
     public const TICKET_SINGLE = 'single';
     public const TICKET_PER_UNIT = 'per_unit';
 
+    /** @deprecated DEPRECATED: use an empty filter for new templates; retained for existing clients and stored values. */
+    public const ITEMS_ALL = 'all';
+    /** @deprecated DEPRECATED: use an expression for new templates; retained with its original strict kitchen opt-in semantics. */
+    public const ITEMS_KITCHEN = 'kitchen';
+
     #[ORM\Id, ORM\GeneratedValue, ORM\Column(type: 'integer')]
     private ?int $id = null;
 

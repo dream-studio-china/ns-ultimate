@@ -192,7 +192,7 @@ export default {
   'Ticket mode': '出票方式', 'One ticket per order': '每單一張', 'One ticket per item': '每件一張',
   'Ticket mode help': '由範本決定一次列印一張總單，還是依商品數量逐件出票。',
   'Item filter': '項目篩選',
-  'Item filter help': '可選篩選器，對每個訂單商品求值；留空表示列印全部商品。範例：entity.getProduct().getCategory().getName() == "Kitchen"。儲存時會驗證語法。',
+  'Item filter help': '可選篩選器，對每個訂單商品求值；留空表示列印全部商品。舊值 all、kitchen 已標記為棄用，但仍按原有含義相容，無需修改。範例：entity.getProduct().getCategory().getName() == "Kitchen"。儲存時會驗證語法。',
   'Order print field placeholder': 'status 或 metadata.路徑',
   'Equals': '等於', 'Not equals': '不等於', 'Exists': '存在', 'Does not exist': '不存在',
   'Text value': '文字', 'Integer value': '整數', 'Boolean value': '布林值', 'Null value': '空值', 'Add condition': '新增條件',

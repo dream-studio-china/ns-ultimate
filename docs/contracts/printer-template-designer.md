@@ -8,6 +8,14 @@ uses the existing CRUD save lifecycle and preview renderer; it does not change
 routes, authorization, provider protocols or the persisted template language.
 No core edit or database migration is required.
 
+Editing a template must not invalidate its existing item filter. The deprecated
+`all` and `kitchen` tokens remain accepted and persisted unchanged alongside new
+expressions. `all` retains unfiltered behavior; `kitchen` retains strict boolean
+`kitchenPrinterEnable` opt-in, including suppressing output when no items match.
+Neither opening the designer nor saving unrelated content converts these tokens
+to empty filters. See the [Printer module guide](../../business/backend/Printer/README.md)
+for upgrade caveats when the historical clearing migration was already applied.
+
 Visual, JSON and split views share the same definition. Valid JSON changes update
 the layout and the parent form; visual changes update the JSON. Unknown node
 types and properties, conditional/loop subtrees, legacy receipt commands and

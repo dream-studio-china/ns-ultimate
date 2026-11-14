@@ -192,7 +192,7 @@ export default {
   'Ticket mode': '発行単位', 'One ticket per order': '注文ごとに1枚', 'One ticket per item': '商品ごとに1枚',
   'Ticket mode help': 'テンプレートが、注文全体を1枚で印刷するか、数量ごとに1枚ずつ印刷するかを決めます。',
   'Item filter': '項目フィルター',
-  'Item filter help': '任意のフィルターで、注文商品ごとに評価します。空欄ならすべての商品を印刷します。例: entity.getProduct().getCategory().getName() == "Kitchen"。保存時に構文を検証します。',
+  'Item filter help': '任意のフィルターで、注文商品ごとに評価します。空欄ならすべての商品を印刷します。旧値 all と kitchen は非推奨ですが、従来の意味で引き続き利用でき、変更は不要です。例: entity.getProduct().getCategory().getName() == "Kitchen"。保存時に構文を検証します。',
   'Order print field placeholder': 'status または metadata.パス',
   'Equals': '等しい', 'Not equals': '等しくない', 'Exists': '存在する', 'Does not exist': '存在しない',
   'Text value': 'テキスト', 'Integer value': '整数', 'Boolean value': '真偽値', 'Null value': 'Null', 'Add condition': '条件を追加',
