@@ -333,11 +333,34 @@ test('simulation editors display validation errors inside each modal', () => {
   const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   const { descriptor } = parse(source)
   const dialogs = descriptor.template.content.match(/<el-dialog\b[\s\S]*?<\/el-dialog>/g)
-  assert.equal(dialogs.length, 3)
-  for (const dialog of dialogs) {
+  assert.equal(dialogs.length, 4)
+  const editors = dialogs.filter(dialog => dialog.includes('promotion-simulation__editor'))
+  assert.equal(editors.length, 3)
+  for (const dialog of editors) {
     assert.match(dialog, /<el-alert v-if="error" :title="error" type="error"/)
     assert.match(dialog, /align-center/)
   }
+})
+
+test('result matrix opens case detail in a vertically centered dialog', () => {
+  const { parse } = require('@vue/compiler-sfc')
+  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const { descriptor } = parse(source)
+  const detail = descriptor.template.content.match(/<el-dialog\b[^>]*promotion-simulation__detail-dialog[\s\S]*?<\/el-dialog>/)[0]
+  assert.match(detail, /v-model="detailDialog"/)
+  assert.match(detail, /align-center/)
+  assert.match(detail, /width="min\(1100px, 96vw\)"/)
+  assert.match(detail, /@closed="selectedResult = null"/)
+  assert.match(detail, /#footer/)
+  // The detail must not remain an inline panel after the matrix.
+  assert.doesNotMatch(descriptor.template.content, /<section v-if="selectedResult/)
+  const script = descriptor.script.content
+  assert.match(script, /detailDialog: false/)
+  assert.match(script, /this\.detailDialog = true/)
+  assert.match(script, /if \(!value\) this\.detailDialog = false/)
+  const style = descriptor.styles[0].content
+  assert.match(style, /:global\(\.promotion-simulation__detail h3\)/)
+  assert.match(style, /:global\(\.promotion-simulation__detail p\)/)
 })
 
 test('centered simulation dialogs keep their body scrollable within the viewport', () => {
