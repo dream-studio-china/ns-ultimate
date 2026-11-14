@@ -16,14 +16,18 @@
     <el-alert v-if="notice" :title="notice" type="success" :closable="true" show-icon class="promotion-simulation__alert" @close="notice = ''" />
 
     <section class="promotion-simulation__toolbar">
-      <el-input v-model="scenario.name" class="promotion-simulation__name" :aria-label="$t('Scenario name')" :placeholder="$t('Scenario name')" />
+      <label class="promotion-simulation__field"><span>{{ $t('Scenario name') }}</span><el-input v-model="scenario.name" :aria-label="$t('Scenario name')" :placeholder="$t('Scenario name')" /></label>
+      <div class="promotion-simulation__field"><span>{{ $t('Campaign source') }}</span>
       <div class="promotion-simulation__import-group">
-        <el-input v-model="scenario.storeCode" class="promotion-simulation__store" :aria-label="$t('Store code')" :placeholder="$t('Store code for import')" />
+        <StoreSelect v-model="scenario.storeCode" class="promotion-simulation__store" :options="stores" :loading="loadingStores" @open="loadStores" />
         <el-button :loading="importingCurrent" :icon="icons.Refresh" @click="importCurrent">{{ $t('Import current campaigns') }}</el-button>
       </div>
+      </div>
+      <div class="promotion-simulation__field"><span>{{ $t('Order snapshot') }}</span>
       <div class="promotion-simulation__import-group">
         <el-input v-model="orderId" class="promotion-simulation__short" :aria-label="$t('Order ID')" :placeholder="$t('Order ID')" />
         <el-button :loading="importingOrder" :icon="icons.Tickets" @click="importOrder">{{ $t('Import order') }}</el-button>
+      </div>
       </div>
       <div class="promotion-simulation__actions">
         <el-button :icon="icons.Upload" @click="openImport">{{ $t('Import scenario') }}</el-button>
@@ -31,7 +35,20 @@
       </div>
     </section>
     <small class="promotion-simulation__note">{{ $t('Scenario data is kept in this browser only. Simulation is read-only.') }}</small>
+    <el-alert v-if="storeError" type="warning" :closable="false" :title="storeError"><el-button link type="primary" @click="loadStores">{{ $t('Retry') }}</el-button></el-alert>
 
+    <div class="promotion-simulation__stats">
+      <div><span>{{ $t('Worlds') }}</span><strong>{{ scenario.worlds.length }} <small>/ 4</small></strong></div>
+      <div><span>{{ $t('Test carts') }}</span><strong>{{ scenario.cases.length }} <small>/ 30</small></strong></div>
+      <div><span>{{ $t('Cases with expectations') }}</span><strong>{{ expectedCaseCount }} <small>/ {{ scenario.cases.length }}</small></strong></div>
+      <div><span>{{ $t('Planned executions') }}</span><strong>{{ scenario.worlds.length * scenario.cases.length }}</strong></div>
+    </div>
+    <el-tabs v-model="workspaceTab">
+      <el-tab-pane :label="$t('Configure scenario')" name="setup" />
+      <el-tab-pane :label="$t('Simulation results')" name="results" :disabled="!result" />
+    </el-tabs>
+
+    <section v-show="workspaceTab === 'setup'" class="promotion-simulation__panel">
     <el-tabs v-model="activeWorldKey" class="promotion-simulation__worlds" @tab-click="selectWorld">
       <el-tab-pane v-for="world in scenario.worlds" :key="world.key" :name="world.key">
         <template #label>
@@ -47,7 +64,7 @@
       </span>
     </div>
 
-    <section v-if="activeWorld" class="promotion-simulation__panel">
+    <section v-if="activeWorld">
       <header class="promotion-simulation__panel-header">
         <h2>{{ $t('Campaign set') }} · {{ activeWorld.name }}</h2>
         <el-button size="small" type="primary" :icon="icons.Plus" @click="addCampaign">{{ $t('Add campaign') }}</el-button>
@@ -73,17 +90,31 @@
         </el-table-column>
       </el-table>
     </section>
+    </section>
 
-    <section class="promotion-simulation__panel">
+    <section v-show="workspaceTab === 'setup'" class="promotion-simulation__panel">
       <header class="promotion-simulation__panel-header">
         <h2>{{ $t('Test carts') }}</h2>
         <div class="promotion-simulation__case-actions">
-          <el-input-number v-model="boundaryThreshold" :min="0" :precision="2" :controls="false" :aria-label="$t('Threshold in yuan')" :placeholder="$t('Threshold in yuan')" />
-          <el-button size="small" @click="generateBoundaryCases">{{ $t('Generate boundary cases') }}</el-button>
           <el-button size="small" type="primary" :icon="icons.Plus" @click="addCase">{{ $t('Add cart case') }}</el-button>
         </div>
       </header>
-      <el-table :data="scenario.cases" row-key="key" :empty-text="$t('No cart cases')">
+      <el-collapse class="promotion-simulation__generator">
+        <el-collapse-item :title="$t('Boundary case assistant')" name="boundaries">
+          <p>{{ $t('Boundary generation help') }}</p>
+          <div class="promotion-simulation__generator-fields">
+            <label class="promotion-simulation__field"><span>{{ $t('Base cart case') }}</span><el-select v-model="boundaryBaseKey" popper-class="promotion-simulation__popper"><el-option v-for="item in scenario.cases" :key="item.key" :label="item.name" :value="item.key" /></el-select></label>
+            <label class="promotion-simulation__field"><span>{{ $t('Additional threshold (yuan)') }}</span><el-input-number v-model="boundaryThreshold" :min="0" :max="1000000" :precision="2" :controls="false" :placeholder="$t('Auto-detect from campaigns')" /></label>
+          </div>
+          <el-checkbox-group v-model="boundaryKinds"><el-checkbox v-for="kind in allBoundaryKinds" :key="kind" :value="kind">{{ $t(kind) }}</el-checkbox></el-checkbox-group>
+          <div class="promotion-simulation__boundary-preview">
+            <el-tag v-for="(count, kind) in boundaryPreview.counts" :key="kind" effect="plain">{{ $t(kind) }} · {{ count }}</el-tag>
+            <span class="promotion-simulation__note">{{ $t('{count} new cases; {omitted} omitted by the limit.', { count: boundaryPreview.cases.length, omitted: boundaryPreview.omitted }) }}</span>
+            <el-button :disabled="!boundaryPreview.cases.length" @click="generateBoundaryCases">{{ $t('Generate boundary cases') }}</el-button>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+      <el-table :data="scenario.cases" row-key="key" max-height="440" :empty-text="$t('No cart cases')">
         <el-table-column prop="name" :label="$t('Case')" min-width="160" show-overflow-tooltip />
         <el-table-column :label="$t('Store code')" min-width="110"><template #default="{ row }">{{ row.storeCode || $t('Global') }}</template></el-table-column>
         <el-table-column :label="$t('Simulated at')" min-width="170"><template #default="{ row }">{{ formatDate(row.simulatedAt) }}</template></el-table-column>
@@ -100,7 +131,8 @@
       </el-table>
     </section>
 
-    <section v-if="result" class="promotion-simulation__panel">
+    <SimulationCharts v-if="result && workspaceTab === 'results'" :result="result" />
+    <section v-if="result" v-show="workspaceTab === 'results'" class="promotion-simulation__panel">
       <header class="promotion-simulation__panel-header">
         <h2>{{ $t('Result matrix') }}</h2>
         <span class="promotion-simulation__summary">
@@ -133,7 +165,7 @@
       </el-table>
     </section>
 
-    <section v-if="selectedResult" class="promotion-simulation__panel promotion-simulation__detail">
+    <section v-if="selectedResult && workspaceTab === 'results'" class="promotion-simulation__panel promotion-simulation__detail">
       <header class="promotion-simulation__panel-header">
         <h2>{{ $t('Case detail') }} · {{ selectedCase?.name }}</h2>
         <el-button size="small" @click="selectedResult = null">{{ $t('Close') }}</el-button>
@@ -191,7 +223,7 @@
         <div class="promotion-simulation__form-grid">
           <el-form-item :label="$t('Campaign key')"><el-input v-model="campaignDraft.key" :disabled="!campaignDraft.isNew" /></el-form-item>
           <el-form-item :label="$t('Campaign')"><el-input v-model="campaignDraft.name" /></el-form-item>
-          <el-form-item :label="$t('Store code')"><el-input v-model="campaignDraft.storeCode" :placeholder="$t('Empty means global')" /></el-form-item>
+          <el-form-item :label="$t('Store')"><StoreSelect v-model="campaignDraft.storeCode" :options="stores" :loading="loadingStores" @open="loadStores" /></el-form-item>
           <el-form-item :label="$t('Conflict mode')">
             <el-select v-model="campaignDraft.conflictMode" popper-class="promotion-simulation__popper"><el-option v-for="mode in conflictModes" :key="mode" :label="$t(conflictModeLabel(mode))" :value="mode" /></el-select>
           </el-form-item>
@@ -220,7 +252,7 @@
         <div class="promotion-simulation__form-grid">
           <el-form-item :label="$t('Case key')"><el-input v-model="caseDraft.key" :disabled="!caseDraft.isNew" /></el-form-item>
           <el-form-item :label="$t('Case')"><el-input v-model="caseDraft.name" /></el-form-item>
-          <el-form-item :label="$t('Store code')"><el-input v-model="caseDraft.storeCode" :placeholder="$t('Empty means global')" /></el-form-item>
+          <el-form-item :label="$t('Store')"><StoreSelect v-model="caseDraft.storeCode" :options="stores" :loading="loadingStores" @open="loadStores" /></el-form-item>
           <el-form-item :label="$t('Simulated at')"><el-date-picker v-model="caseDraft.simulatedAt" popper-class="promotion-simulation__popper" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
           <el-form-item :label="$t('Currency')"><el-input v-model="caseDraft.currency" maxlength="3" /></el-form-item>
           <el-form-item :label="$t('Pricing mode')">
@@ -285,8 +317,12 @@
 import './theme.css'
 import { Download, Plus, Refresh, Remove, Tickets, Upload, VideoPlay } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { fetchAllPages } from '../config/components/catalog-copy.mjs'
+import { storeOptions } from './stores.mjs'
+import StoreSelect from './StoreSelect.vue'
+import SimulationCharts from './SimulationCharts.vue'
 import {
-  CONFLICT_MODES, MEMBER_LEVELS, boundaryCases, buildMatrix, buildRunRequest,
+  BOUNDARY_KINDS, MAX_CASES, CONFLICT_MODES, MEMBER_LEVELS, boundaryPlan, buildMatrix, buildRunRequest,
   cloneWorldAs, createScenario, emptyExpected, formatMinor, hasExpected, importWorldSnapshot,
   localDateTime, newCampaign, newCase, newItem, newKey, normalizeScenario, scenarioExport,
   validateScenario
@@ -297,6 +333,7 @@ const TEMPLATE_TYPES = ['full_reduction', 'discount', 'member_discount', 'nth_di
 
 export default {
   name: 'PromotionSimulation',
+  components: { StoreSelect, SimulationCharts },
   setup() {
     return { icons: { Download, Plus, Refresh, Remove, Tickets, Upload, VideoPlay } }
   },
@@ -312,7 +349,15 @@ export default {
       importingCurrent: false,
       importingOrder: false,
       orderId: '',
+      workspaceTab: 'setup',
+      stores: [],
+      loadingStores: false,
+      storesLoaded: false,
+      storeError: '',
       boundaryThreshold: null,
+      boundaryBaseKey: 'case1',
+      boundaryKinds: [...BOUNDARY_KINDS],
+      allBoundaryKinds: BOUNDARY_KINDS,
       campaignDialog: false,
       campaignDraft: {},
       campaignConfigText: '{}',
@@ -329,6 +374,11 @@ export default {
   computed: {
     activeWorld() { return this.scenario.worlds.find(world => world.key === this.activeWorldKey) || this.scenario.worlds[0] },
     matrix() { return this.result ? buildMatrix(this.result) : [] },
+    expectedCaseCount() { return this.scenario.cases.filter(item => hasExpected(item.expected) || Object.values(item.expectedByWorld || {}).some(hasExpected)).length },
+    boundaryPreview() {
+      const base = this.scenario.cases.find(item => item.key === this.boundaryBaseKey) || this.scenario.cases[0]
+      return boundaryPlan(this.scenario, base, { thresholdMinor: Number.isFinite(this.boundaryThreshold) ? Math.round(this.boundaryThreshold * 100) : null, kinds: this.boundaryKinds })
+    },
     selectedCase() { return this.result?.cases.find(item => item.key === this.selectedResult?.caseKey) || null },
     worldErrors() {
       return this.result?.worlds.flatMap(world => world.errors.map(error => `${world.name}: ${error.key}: ${error.message}`)) || []
@@ -343,7 +393,9 @@ export default {
       this.persist()
       // Any input edit invalidates a previously displayed run. The user must
       // run again before treating the matrix as current evidence.
-      if (this.result) { this.result = null; this.selectedResult = null }
+      this.result = null
+      this.selectedResult = null
+      this.workspaceTab = 'setup'
     } }
   },
   mounted() {
@@ -354,10 +406,22 @@ export default {
         this.activeWorldKey = this.scenario.worlds[0].key
       }
     } catch { this.notice = this.$t('Stored scenario was invalid and has been ignored.') }
+    this.boundaryBaseKey = this.scenario.cases[0].key
+    this.loadStores()
   },
   methods: {
     newItem,
     formatMinor,
+    async loadStores() {
+      if (this.loadingStores || this.storesLoaded) return
+      this.loadingStores = true
+      this.storeError = ''
+      try {
+        this.stores = storeOptions(await fetchAllPages(request.get, '/api/v1/manage/stores', { '@order': 'entity.name|ASC' }))
+        this.storesLoaded = true
+      } catch { this.storeError = this.$t('Failed to load stores. Retry to search the store list.') }
+      finally { this.loadingStores = false }
+    },
     conflictModeLabel(mode) {
       return { stackable: 'Stackable', exclusive: 'Exclusive', lock_item: 'Lock item', best_price: 'Best price' }[mode] || mode
     },
@@ -408,6 +472,7 @@ export default {
       } catch (cause) { this.error = cause?.response?.data?.message || cause?.message || this.$t('Failed to import campaigns') } finally { this.importingCurrent = false }
     },
     async importOrder() {
+      if (this.scenario.cases.length >= MAX_CASES) { this.error = this.$t('At most 30 cart cases are supported.'); return }
       const id = String(this.orderId || '').trim()
       if (!/^\d+$/.test(id)) { this.error = this.$t('Enter an exact numeric order ID.'); return }
       this.importingOrder = true
@@ -494,6 +559,7 @@ export default {
       this.result = null
     },
     addCase() {
+      if (this.scenario.cases.length >= MAX_CASES) { this.error = this.$t('At most 30 cart cases are supported.'); return }
       this.error = ''
       const key = newKey('case', this.scenario.cases.map(item => item.key))
       this.caseDraft = { ...newCase({ key, name: 'Cart case', storeCode: this.scenario.storeCode, simulatedAt: localDateTime() }), isNew: true, expectedByWorld: this.ensureWorldExpected() }
@@ -540,13 +606,12 @@ export default {
       expected.appliedCampaignKeys = String(value || '').split(',').map(item => item.trim()).filter(Boolean)
     },
     generateBoundaryCases() {
-      if (!Number.isFinite(this.boundaryThreshold) || this.boundaryThreshold < 0) { this.error = this.$t('Enter a threshold amount in yuan.'); return }
-      const base = this.scenario.cases[0]
-      const cases = boundaryCases(base, Math.round(this.boundaryThreshold * 100))
-      for (const item of cases) item.key = newKey('case', [...this.scenario.cases.map(entry => entry.key), ...cases.map(entry => entry.key)])
+      this.error = ''
+      const cases = this.boundaryPreview.cases
+      if (!cases.length) return
       this.scenario.cases.push(...cases)
       this.result = null
-      this.notice = this.$t('Added three boundary cases. Set expected results before treating them as verification.')
+      this.notice = this.$t('Added {count} boundary cases. Set expected results before treating them as verification.', { count: cases.length })
     },
     async loadUser() {
       const id = Number(this.caseDraft.user.userId)
@@ -566,6 +631,7 @@ export default {
       try {
         const response = await request.post('/api/v1/manage/promotion-simulation/run', buildRunRequest(this.scenario), { timeout: 120000 })
         this.result = response.data
+        this.workspaceTab = 'results'
         this.selectedResult = null
         this.notice = this.$t('Simulation completed: {passed} passed, {failed} failed, {errors} errors.', this.result.summary)
       } catch (cause) { this.error = cause?.response?.data?.message || cause?.message || this.$t('Simulation failed') } finally { this.running = false }
@@ -597,7 +663,7 @@ export default {
 </script>
 
 <style scoped>
-.promotion-simulation { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 20px; }
+.promotion-simulation { display: flex; flex-direction: column; gap: 18px; min-width: 0; padding: 24px; max-width: 1600px; margin: 0 auto; }
 .promotion-simulation__header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
 .promotion-simulation__eyebrow { color: var(--el-text-color-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
 .promotion-simulation h1 { margin: 4px 0 6px; font-size: 24px; }
@@ -611,10 +677,21 @@ export default {
 .promotion-simulation__actions > .el-button + .el-button,
 .promotion-simulation__world-actions > .el-button + .el-button,
 .promotion-simulation__case-actions > .el-button + .el-button { margin-left: 0; }
-.promotion-simulation__toolbar { padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-blank); }
-.promotion-simulation__name { width: 220px; } .promotion-simulation__store { width: 180px; } .promotion-simulation__short { width: 130px; }
+.promotion-simulation__toolbar { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(320px, 1.5fr) minmax(220px, 1fr); align-items: end; gap: 16px; padding: 18px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; background: var(--el-fill-color-blank); }
+.promotion-simulation__toolbar > .promotion-simulation__actions { grid-column: 1 / -1; border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px; }
+.promotion-simulation__field { display: flex; min-width: 0; flex-direction: column; gap: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
+.promotion-simulation__store { flex: 1; min-width: 0; } .promotion-simulation__short { flex: 1; min-width: 0; }
+.promotion-simulation__stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.promotion-simulation__stats > div { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-fill-color-blank); }
+.promotion-simulation__stats span, .promotion-simulation__stats small { font-size: 12px; font-weight: normal; color: var(--el-text-color-secondary); }
+.promotion-simulation__stats strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.promotion-simulation__generator { margin-bottom: 16px; }
+.promotion-simulation__generator-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; max-width: 720px; }
+.promotion-simulation__generator-fields :is(.el-select, .el-input-number) { width: 100%; }
+.promotion-simulation__boundary-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .promotion-simulation__note, .promotion-simulation__muted { color: var(--el-text-color-secondary); font-size: 12px; }
-.promotion-simulation__worlds { margin-bottom: -10px; }
+.promotion-simulation__worlds { margin-bottom: 0; }
+.promotion-simulation__world-actions { margin-bottom: 20px; }
 .promotion-simulation__panel { min-width: 0; padding: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-fill-color-blank); }
 .promotion-simulation__panel-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
 .promotion-simulation__panel-header h2 { overflow-wrap: anywhere; }
@@ -642,6 +719,7 @@ export default {
 .promotion-simulation__inline { display: flex; gap: 8px; width: 100%; }
 .promotion-simulation__inline > .el-input { flex: 1; min-width: 0; }
 .promotion-simulation__add-row { margin-top: 8px; }
+@media (max-width: 1150px) { .promotion-simulation__toolbar { grid-template-columns: 1fr; } }
 @media (max-width: 760px) {
   .promotion-simulation { padding: 12px; }
   .promotion-simulation__header { flex-direction: column; }
@@ -650,5 +728,9 @@ export default {
   .promotion-simulation__name, .promotion-simulation__import-group { width: 100%; }
   .promotion-simulation__import-group > .el-input { flex: 1; min-width: 0; }
   .promotion-simulation__case-actions { width: 100%; }
+  .promotion-simulation__stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .promotion-simulation__generator-fields { grid-template-columns: 1fr; }
+  .promotion-simulation__import-group { flex-wrap: wrap; }
+  .promotion-simulation__store { flex-basis: 100%; }
 }
 </style>

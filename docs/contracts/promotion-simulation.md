@@ -15,6 +15,23 @@ Scope of this phase:
 - import from current campaigns and an existing order;
 - JSON scenario import/export and browser-local workspace persistence.
 
+The UI separates scenario configuration from simulation results. Summary cards show world/case counts, cases with assertions and planned execution count. Result charts compare before/after totals by world and currency (execution errors are excluded), and show verified, failed, error and unverified counts separately. Amount totals are descriptive aggregates, not checkout revenue; unverified results never count as assertion passes.
+
+Store selectors load the existing paginated `GET /api/v1/manage/stores` list and search locally by name, numeric ID, UUID or code. Selecting a store still submits its exact `code`, not its ID/UUID, to the unchanged simulation APIs. Clearing selects global scope. Records without a non-empty code are not selectable. Existing imported codes are retained even when missing from the store list; failed list loads can be retried.
+
+### Boundary probes
+
+The expandable assistant uses a selectable base cart and campaign snapshots from every world. Dimensions can be enabled independently:
+
+- subtotal comparisons against literal integers or `config.<parameter>` produce threshold −1, threshold and threshold +1 minor-unit cases; an optional manual yuan threshold is converted to minor units, including zero;
+- `cart.items.count` comparisons generate item-group counts (not summed quantities), while literal `discount item N` positions generate quantity probes around N;
+- campaign start/end timestamps generate −1 second, exact-time and +1 second probes, preserving offset-bearing schedule instants as UTC ISO timestamps;
+- anonymous/all supported membership levels, global/campaign stores and an intentionally unmatched store provide context probes.
+
+Amount probes use one base item at snapshot prices and retain its specification identity/UUID/name. Item-group probes can repeat base lines. Other dimensions retain base prices/mode/context except the dimension being changed. These are single-dimension probes, not exhaustive combinations or inferred expected outcomes. Detection recognizes only the documented DSL patterns and is not a replacement DSL parser. Other eligibility conditions can still block a promotion. All generated assertions are cleared and must be supplied manually.
+
+The preview reports per-dimension counts and omissions. Inputs are deduplicated against existing cases and each other, allocated round-robin across dimensions and limited to the remaining 30-case budget. Generated keys are unique; repeated clicks do not append identical inputs. No campaigns or backend state are mutated.
+
 Order import uses historical item price snapshots. It does **not** reconstruct the campaigns, time or environment of that order; it creates a case for explicit re-simulation against the chosen world.
 
 ## Endpoints
