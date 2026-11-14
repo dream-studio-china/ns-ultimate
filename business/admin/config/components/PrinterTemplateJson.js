@@ -1,4 +1,4 @@
-import JsonField from '@/easyadmin/ui/vue/plugins/form/Json.vue'
+import JsonField from '@/easyadmin/ui/vue/plugins/form/json.vue'
 import JSONEditor from 'jsoneditor'
 
 // Reuse the original JSON field's rendering, modes and teardown. Only its value

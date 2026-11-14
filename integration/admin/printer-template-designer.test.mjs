@@ -345,7 +345,7 @@ test('original JSON component adapter keeps raw drafts, tree updates and teardow
     setMode(mode) { this.mode = mode }
     destroy() { this.destroyed = true }
   }
-  const JsonField = compile('Json', { JSONEditor: FakeJSONEditor }, '../../core/crud-admin/src/easyadmin/ui/vue/plugins/form/')
+  const JsonField = compile('json', { JSONEditor: FakeJSONEditor }, '../../core/crud-admin/src/easyadmin/ui/vue/plugins/form/')
   const source = readFileSync(new URL('../../business/admin/config/components/PrinterTemplateJson.js', import.meta.url), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'return')
   const Adapter = new Function('JsonField', 'JSONEditor', source)(JsonField, FakeJSONEditor)
   const raw = Vue.ref(JSON.stringify(label)), events = []
