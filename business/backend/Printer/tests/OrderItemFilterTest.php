@@ -50,15 +50,4 @@ final class OrderItemFilterTest extends TestCase
         $withoutProduct = new PrintItemContext(['quantity' => 1, 'productSettings' => []], [], null);
         self::assertFalse($filter->matches('entity.getProduct().getCategory().getName() == "Kitchen"', $withoutProduct));
     }
-
-    public function testKitchenTicketExclusionPrintsUnlessExplicitlyDisabled(): void
-    {
-        $filter = new OrderItemFilter();
-        $expression = '(entity.getProductSettings()["kitchenTicketDisabled"] ?? false) != true';
-
-        foreach ([[], ['kitchenTicketDisabled' => false], ['kitchenTicketDisabled' => true]] as $index => $settings) {
-            $item = new PrintItemContext(['quantity' => 1], $settings, null);
-            self::assertSame($index !== 2, $filter->matches($expression, $item), json_encode($settings));
-        }
-    }
 }

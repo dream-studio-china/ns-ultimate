@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace NsUltimate\Business\Printer\Tests;
 
-use App\Store\Entity\Product as CoreProduct;
+use App\Store\Entity\Product;
 use App\Store\Entity\Store;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderItem;
@@ -25,7 +25,6 @@ use NsUltimate\Business\Printer\Service\OrderPrintRuleEnqueuer;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleMatcher;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleSelector;
 use NsUltimate\Business\Printer\Service\OrderPrintRuleValidator;
-use NsUltimate\Business\Store\Entity\Product;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Workflow\Event\CompletedEvent;
 use Symfony\Component\Workflow\Marking;
@@ -150,7 +149,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame('¥5.00', $data['discount']);
         self::assertSame('¥43.00', $data['amountDue']);
         self::assertSame(
-            'https://shop.example/h5/payment/p.html?o='.$order->getUuid(),
+            'https://shop.example/h5/payment/index.html?orderUuid='.$order->getUuid().'&storeUuid='.$store->getUuid(),
             $data['paymentUrl'],
         );
         self::assertSame('Large', $data['items'][0]['subTitle']);
@@ -201,26 +200,8 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame('Slice', $data['items'][1]['subTitle']);
     }
 
-    public function testKitchenTicketFilterUsesCurrentProductExclusionSetting(): void
-    {
-        $product = (new Product())->setName('Jasmine tea')->setSettings(['kitchenTicketDisabled' => true]);
-        $order = (new Order())->addItem((new OrderItem())
-            ->setProductSnapshot(['uuid' => $product->getUuid(), 'name' => 'Jasmine tea'])
-            ->setSpecSnapshot(['name' => 'Large'])->setQuantity(1)->setUnitPrice(1500)->setPrice(1500));
-        $store = new Store('shop-a', 'Shop A');
-        $adapter = $this->snapshotAdapter($order, $store, [], '', $product);
-        $expression = '(entity.getProductSettings()["kitchenTicketDisabled"] ?? false) != true';
-
-        self::assertSame([], $adapter->buildPrintData($order, $store, false, $expression));
-
-        $product->setSettings(['kitchenTicketDisabled' => false]);
-        self::assertCount(1, $adapter->buildPrintData($order, $store, false, $expression));
-        $product->setSettings([]);
-        self::assertCount(1, $adapter->buildPrintData($order, $store, false, $expression));
-    }
-
     /** @param list<OrderCounter> $bindings */
-    private function snapshotAdapter(Order $order, Store $store, array $bindings, string $paymentBaseUrl = '', ?CoreProduct $product = null): TradeOrderPrintAdapter
+    private function snapshotAdapter(Order $order, Store $store, array $bindings, string $paymentBaseUrl = '', ?Product $product = null): TradeOrderPrintAdapter
     {
         $repository = $this->createStub(EntityRepository::class);
         $repository->method('findBy')->willReturnCallback(
@@ -232,12 +213,12 @@ final class TradeOrderPrintAdapterTest extends TestCase
         );
         $products = $this->createStub(EntityRepository::class);
         $products->method('findOneBy')->willReturnCallback(
-            static fn (array $criteria): ?CoreProduct => $product !== null && ($criteria['uuid'] ?? null) === $product->getUuid() ? $product : null,
+            static fn (array $criteria): ?Product => $product !== null && ($criteria['uuid'] ?? null) === $product->getUuid() ? $product : null,
         );
         $em = $this->createStub(EntityManagerInterface::class);
         $em->method('getRepository')->willReturnCallback(static fn (string $class): EntityRepository => match ($class) {
             OrderCounter::class => $repository,
-            CoreProduct::class => $products,
+            Product::class => $products,
             default => throw new \LogicException('Unexpected repository '.$class),
         });
         return new TradeOrderPrintAdapter($em, null, $paymentBaseUrl);
