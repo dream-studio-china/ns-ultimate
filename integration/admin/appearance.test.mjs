@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { createRequire } from 'node:module'
 import { applyPalette, getPalette, initializePalette, palettes, PALETTE_STORAGE_KEY } from '../../business/admin/appearance/palette.mjs'
-import { mergeEntities, mergeRoutes, moveRouteAfter } from './merge-config.mjs'
+import { mergeEntities, mergeRoutes, moveRouteAfter, moveRouteBefore } from './merge-config.mjs'
 import appearanceRoute from '../../business/admin/appearance/route.mjs'
 
 function browser(t, stored = {}) {
@@ -83,7 +83,7 @@ test('appearance joins System Options without changing existing routes or role r
     .replace(/^import .*$/gm, '').replace('export default', 'result =')
   const integration = {
     coreConfig: { routes: coreContext.routes, entities: {} }, businessRoutes: context.routes,
-    businessConfig: {}, mergeEntities, mergeRoutes, moveRouteAfter, appearanceRoute,
+    businessConfig: {}, mergeEntities, mergeRoutes, moveRouteAfter, moveRouteBefore, appearanceRoute,
     t: key => key, installMenuIcons() {}, initializePalette() {}, result: null
   }
   runInNewContext(integrationSource, integration)
