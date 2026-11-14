@@ -1,4 +1,7 @@
+import { designerMessages } from './printer-designer.js'
+
 export default {
+  ...designerMessages('zh-Hant'),
   'System Options': '系統設定',
   'Dining mode': '點餐方式',
   'Dining mode failed to load': '點餐方式載入失敗',

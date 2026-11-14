@@ -1,4 +1,7 @@
+import { designerMessages } from './printer-designer.js'
+
 export default {
+  ...designerMessages('en'),
   'System Options': 'System settings',
   'Dining mode': 'Dining mode',
   'Dining mode failed to load': 'Dining mode failed to load',

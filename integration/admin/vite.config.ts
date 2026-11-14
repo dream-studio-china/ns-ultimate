@@ -47,6 +47,7 @@ export default (configEnv: { mode: string; command: string }) => {
       alias: [
         { find: /^i$/, replacement: coreRequire.resolve('i') },
         { find: /^qrcode$/, replacement: coreRequire.resolve('qrcode/lib/browser.js') },
+        { find: /^jsoneditor$/, replacement: coreRequire.resolve('jsoneditor') },
         // Business modules live outside the core package tree, so bare imports
         // of core-installed dependencies must resolve through the core package.
         { find: /^@element-plus\/icons-vue$/, replacement: coreRequire.resolve('@element-plus/icons-vue/dist/index.js') },

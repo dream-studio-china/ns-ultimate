@@ -1,0 +1,88 @@
+/* The host's dark theme changes application tokens, not Element Plus defaults.
+ * Keep the bridge local so the designer cannot recolor other admin pages. */
+.printer-designer {
+  --el-bg-color: var(--surface, #fff);
+  --el-fill-color: var(--surface-muted, #f8fafc);
+  --el-fill-color-light: var(--surface-muted, #f8fafc);
+  --el-text-color-primary: var(--text-primary, #1d2939);
+  --el-text-color-secondary: var(--text-secondary, #667085);
+  --el-border-color: var(--border, #e7edf4);
+  --el-color-primary: var(--accent, #2563eb);
+  --el-color-primary-light-9: var(--control-hover, #f2f5f9);
+}
+
+html[data-theme='dark'] .printer-designer {
+  color-scheme: dark;
+  --el-color-danger: #fda29b;
+}
+
+.printer-designer .label-sheet { color-scheme: light; }
+.printer-template-json { min-width: 0; width: 100%; }
+.printer-designer .printer-template-json .jsoneditor-container {
+  height: 500px;
+  min-height: 350px;
+  max-height: none;
+  resize: vertical;
+  overflow: auto;
+}
+.printer-designer .printer-template-json .jsoneditor-outer,
+.printer-designer .printer-template-json .ace_editor { min-height: 0; max-height: none; }
+.printer-template-json .jsoneditor { border-color: var(--el-border-color); }
+
+/* JSONEditor/Ace ship their own palette. Scope these overrides to this adapter;
+ * selectors also cover menu popovers, tree inputs, validation and search. */
+html[data-theme='dark'] .printer-template-json .jsoneditor,
+html[data-theme='dark'] .printer-template-json .jsoneditor-outer,
+html[data-theme='dark'] .printer-template-json .jsoneditor-tree,
+html[data-theme='dark'] .printer-template-json .jsoneditor-text,
+html[data-theme='dark'] .printer-template-json .ace_editor,
+html[data-theme='dark'] .printer-template-json .ace_content,
+html[data-theme='dark'] .printer-template-json .ace_scroller,
+html[data-theme='dark'] .printer-template-json table,
+html[data-theme='dark'] .printer-template-json td {
+  color: var(--text-primary) !important;
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+html[data-theme='dark'] .printer-template-json .jsoneditor-menu,
+html[data-theme='dark'] .printer-template-json .jsoneditor-navigation-bar,
+html[data-theme='dark'] .printer-template-json .jsoneditor-statusbar,
+html[data-theme='dark'] .printer-template-json .jsoneditor-contextmenu .menu,
+html[data-theme='dark'] .printer-template-json .jsoneditor-modal,
+html[data-theme='dark'] .printer-template-json .ace_gutter,
+html[data-theme='dark'] .printer-template-json input,
+html[data-theme='dark'] .printer-template-json textarea {
+  color: var(--text-primary) !important;
+  background: var(--surface-muted) !important;
+  border-color: var(--border) !important;
+}
+html[data-theme='dark'] .printer-template-json .jsoneditor-field,
+html[data-theme='dark'] .printer-template-json .jsoneditor-readonly,
+html[data-theme='dark'] .printer-template-json .jsoneditor-value,
+html[data-theme='dark'] .printer-template-json .jsoneditor-contextmenu button,
+html[data-theme='dark'] .printer-template-json .ace_variable { color: var(--text-primary); }
+html[data-theme='dark'] .printer-template-json .jsoneditor-string,
+html[data-theme='dark'] .printer-template-json .ace_string { color: #a6e3a1; }
+html[data-theme='dark'] .printer-template-json .jsoneditor-number,
+html[data-theme='dark'] .printer-template-json .ace_constant.ace_numeric { color: #f9cb80; }
+html[data-theme='dark'] .printer-template-json .jsoneditor-boolean,
+html[data-theme='dark'] .printer-template-json .jsoneditor-null,
+html[data-theme='dark'] .printer-template-json .ace_constant.ace_language { color: #c4b5fd; }
+html[data-theme='dark'] .printer-template-json .ace_punctuation { color: #cbd5e1; }
+html[data-theme='dark'] .printer-template-json .ace_cursor { color: #f2f4f7; }
+html[data-theme='dark'] .printer-template-json .ace_marker-layer .ace_selection,
+html[data-theme='dark'] .printer-template-json .ace_marker-layer .ace_active-line,
+html[data-theme='dark'] .printer-template-json .ace_gutter-active-line,
+html[data-theme='dark'] .printer-template-json .jsoneditor-highlight,
+html[data-theme='dark'] .printer-template-json .jsoneditor-selected { background: var(--control-hover) !important; }
+html[data-theme='dark'] .printer-template-json .jsoneditor-field[contenteditable=true]:hover,
+html[data-theme='dark'] .printer-template-json .jsoneditor-field[contenteditable=true]:focus,
+html[data-theme='dark'] .printer-template-json .jsoneditor-value[contenteditable=true]:hover,
+html[data-theme='dark'] .printer-template-json .jsoneditor-value[contenteditable=true]:focus,
+html[data-theme='dark'] .printer-template-json .jsoneditor-contextmenu button:hover,
+html[data-theme='dark'] .printer-template-json .jsoneditor-contextmenu button:focus {
+  background: var(--control-hover) !important;
+  border-color: var(--accent);
+}
+html[data-theme='dark'] .printer-template-json .jsoneditor-tree button.jsoneditor-button,
+html[data-theme='dark'] .printer-template-json .jsoneditor-contextmenu .jsoneditor-icon { filter: invert(.85); }
