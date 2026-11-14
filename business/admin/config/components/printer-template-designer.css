@@ -16,7 +16,16 @@ html[data-theme='dark'] .printer-designer {
   --el-color-danger: #fda29b;
 }
 
-.printer-designer .label-sheet { color-scheme: light; }
+.printer-designer .paper-edit-sheet { color-scheme: light; }
+.printer-designer .paper-label-hit { outline: 1px dashed #8888; cursor: move; user-select: none; }
+.printer-designer .paper-receipt-hit { cursor: grab; }
+.printer-designer .paper-receipt-hit:hover { outline: 1px dashed #2563eb; }
+.printer-designer .paper-selected { outline: 2px solid #2563eb; outline-offset: 0; z-index: 2; }
+.printer-designer .paper-overflow { outline-color: #dc2626; }
+.printer-designer .paper-overflow-message { color: var(--el-color-danger); }
+.printer-designer .paper-label-hit:focus-visible,
+.printer-designer .paper-receipt-hit:focus-visible { outline: 2px solid #2563eb; }
+.printer-designer .paper-resize-handle { position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; padding: 0; background: #2563eb; border: 1px solid white; cursor: nwse-resize; touch-action: none; }
 .printer-template-json { min-width: 0; width: 100%; }
 .printer-designer .printer-template-json .jsoneditor-container {
   height: 500px;

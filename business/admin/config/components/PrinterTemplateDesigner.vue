@@ -17,7 +17,7 @@
             <label>{{ t('Paper width mm') }} <input :value="definition.widthMm ?? (isLabel ? 40 : 80)" type="number" min="10" max="200" @change="setDimension('widthMm', $event)"></label>
             <label v-if="isLabel">{{ t('Paper height mm') }} <input :value="definition.heightMm ?? 30" type="number" min="10" max="200" @change="setDimension('heightMm', $event)"></label>
             <label v-if="isLabel"><input v-model="snap" type="checkbox"> {{ t('Snap to 1 mm grid') }}</label>
-            <label v-if="isLabel">{{ t('Zoom') }} <select v-model.number="zoom"><option :value="0.75">75%</option><option :value="1">100%</option><option :value="1.5">150%</option><option :value="2">200%</option><option :value="3">300%</option></select></label>
+            <label>{{ t('Zoom') }} <select v-model.number="zoom"><option :value="0.75">75%</option><option :value="1">100%</option><option :value="1.5">150%</option><option :value="2">200%</option><option :value="3">300%</option></select></label>
           </fieldset>
           <div class="designer-workspace">
             <aside class="designer-library">
@@ -26,34 +26,24 @@
               <button v-for="type in palette" :key="type" type="button" :disabled="blocked" @click="addNode(type)">{{ t(nodeLabels[type] || type) }}</button>
             </aside>
             <div class="designer-stage">
-              <p class="designer-help">{{ t(isLabel ? 'Label canvas help' : 'Receipt canvas help') }}</p>
-              <div v-if="isLabel" class="label-scroll">
-                <div class="label-sheet" :class="{ grid: snap }" :style="sheetStyle">
-                  <div
-                    v-for="entry in entries" :key="entry.path.join('.')" class="label-element"
-                    :class="{ active: selectedKey === entry.path.join('.'), overflowing: entry.box.overflow }"
-                    :style="elementStyle(entry)" role="button" tabindex="0"
-                    :aria-label="entry.node.type + ': ' + entry.text" :aria-pressed="selectedKey === entry.path.join('.')"
-                    @focus="select(entry.path)" @keydown="nudge($event, entry)"
-                    @pointerdown="beginGesture($event, entry, 'move')"
-                    @pointermove="moveGesture" @pointerup="endGesture" @pointercancel="cancelGesture" @lostpointercapture="cancelGesture"
-                  >
-                    <span v-if="entry.node.type === 'labelText'" class="label-glyphs" :style="glyphStyle(entry)">{{ entry.text || t('Empty text') }}</span>
-                    <span v-else class="code-placeholder">{{ entry.node.type === 'qr' ? '▦ QR' : '▥ ' + (entry.node.format || 'BC128') }}<small>{{ entry.text }}</small></span>
-                    <button
-                      v-if="selectedKey === entry.path.join('.') && !(entry.node.r ?? 0)" type="button" class="resize-handle"
-                      :aria-label="t('Resize element')" @pointerdown.stop="beginGesture($event, entry, 'resize')"
-                      @pointermove.stop="moveGesture" @pointerup.stop="endGesture" @pointercancel.stop="cancelGesture" @lostpointercapture.stop="cancelGesture"
-                    />
-                  </div>
-                </div>
-              </div>
-              <p v-if="entries.some(entry => entry.box.overflow) && isLabel" role="status" class="designer-error">{{ t('Elements exceed paper bounds') }}</p>
-              <strong>{{ t(isLabel ? 'Layout tree' : 'Receipt blocks') }}</strong>
+              <p class="designer-help">{{ t(isLabel ? 'Unified label canvas help' : 'Unified receipt canvas help') }}</p>
+              <p v-if="previewBusy" role="status">{{ t('Loading') }}</p>
+              <p v-if="previewError" role="alert" class="designer-error">{{ t('Preview failed') }}: {{ previewError }}</p>
+              <p v-if="previewDocument && !previewFresh" role="status" class="designer-help">{{ t('Canvas awaiting valid preview') }}</p>
+              <PrinterPaper
+                v-if="previewDocument" :document="previewDocument" editable :disabled="!previewFresh || !!state.error"
+                :selected-path="selectedKey" :zoom="zoom" :grid="snap" :drag-scope="dragScope" :override="paperOverride"
+                @select="select" @geometry="selectedPrinted = $event" @move-node="reorder"
+                @label-start="startPrintedGesture" @label-move="moveGesture" @label-end="endGesture" @label-cancel="cancelGesture" @label-key="nudgePrinted"
+              />
+              <p v-else class="designer-help">{{ t('Canvas requires preview') }}</p>
+              <details class="designer-structure">
+              <summary>{{ t(isLabel ? 'Layout tree' : 'Receipt blocks') }}</summary>
               <ol class="layout-tree" :class="{ 'receipt-sheet': !isLabel }" :aria-label="t('Layout tree')">
                 <PrinterTemplateNode v-for="(node, index) in definition.nodes" :key="index" :node="node" :path="[index]" :selected="selectedKey" :drag-scope="dragScope" @select="select" @move="reorder" />
               </ol>
               <div class="root-drop" @dragover.prevent @drop.prevent="dropRoot">{{ t('Drop at end of template') }}</div>
+              </details>
               <p v-if="!definition.nodes.length">{{ t('Add a component to begin') }}</p>
             </div>
             <fieldset class="designer-properties" :disabled="blocked">
@@ -115,12 +105,16 @@
                   <label>{{ t('QR size') }} <input type="number" :min="isLabel ? 1 : 0" :max="isLabel ? 10 : 16" :value="selectedNode.size ?? (isLabel ? 2 : 6)" @change="patchNumber('size', $event, isLabel ? 1 : 0, isLabel ? 10 : 16)"></label>
                   <label>{{ t('QR correction') }} <select :value="selectedNode.errorCorrection ?? 'L'" @change="patchNode('errorCorrection', $event.target.value)"><option v-for="level in ['L', 'M', 'Q', 'H']" :key="level">{{ level }}</option></select></label>
                 </template>
-                <template v-if="!isLabel && ['style', 'qr'].includes(selectedNode.type)">
-                  <label>{{ t('Alignment') }} <select :value="selectedNode.align ?? (selectedNode.type === 'qr' ? 'center' : 'left')" @change="patchNode('align', $event.target.value)"><option v-for="alignment in alignments" :key="alignment" :value="alignment">{{ t(alignment) }}</option></select></label>
+                <template v-if="!isLabel && (receiptFormatNode || selectedNode.type === 'qr')">
+                  <label>{{ t('Alignment') }} <select :value="receiptFormatNode ? receiptFormatNode.align ?? 'left' : selectedNode.align ?? 'center'" @change="receiptFormatNode ? patchReceiptStyle('align', $event.target.value) : patchNode('align', $event.target.value)"><option v-for="alignment in alignments" :key="alignment" :value="alignment">{{ t(alignment) }}</option></select></label>
                 </template>
-                <template v-if="selectedNode.type === 'style'">
-                  <label v-for="key in ['width', 'height']" :key="key">{{ t(key === 'width' ? 'Width multiplier' : 'Height multiplier') }} <input type="number" min="1" max="2" :value="selectedNode[key] ?? 1" @change="patchNumber(key, $event, 1, 2)"></label>
-                  <label><input type="checkbox" :checked="selectedNode.bold || false" @change="patchNode('bold', $event.target.checked)"> {{ t('Bold') }}</label>
+                <template v-if="receiptFormatNode">
+                  <label v-for="key in ['width', 'height']" :key="key">{{ t(key === 'width' ? 'Width multiplier' : 'Height multiplier') }} <input type="number" min="1" max="2" :value="receiptFormatNode[key] ?? 1" @change="patchReceiptStyle(key, Math.min(2, Math.max(1, Math.round(Number($event.target.value) || 1))))"></label>
+                  <label><input type="checkbox" :checked="receiptFormatNode.bold || false" @change="patchReceiptStyle('bold', $event.target.checked)"> {{ t('Bold') }}</label>
+                </template>
+                <template v-if="!isLabel && !receiptFormatNode && ['text', 'string', 'field', 'bold', 'columns'].includes(selectedNode.type)">
+                  <p class="designer-help">{{ t('Receipt text block help') }}</p>
+                  <button type="button" @click="makeTextBlock">{{ t('Make text block') }}</button>
                 </template>
                 <template v-if="selectedNode.type === 'columns' && Array.isArray(selectedNode.columns)">
                   <label>{{ t('Field format') }} <select v-model="fieldFormat"><option value="">{{ t('Unformatted') }}</option><option value="money">{{ t('Money in minor units') }}</option><option value="upper">{{ t('Uppercase') }}</option><option value="lower">{{ t('Lowercase') }}</option></select></label>
@@ -154,9 +148,6 @@
       <p v-if="sampleError" role="alert" class="designer-error">{{ sampleError }}</p>
     </details>
     <p v-if="props.form.ticketMode === 'per_unit'" class="designer-help">{{ t('Per-unit sample help') }}</p>
-    <p v-if="previewBusy" role="status">{{ t('Loading') }}</p>
-    <p v-if="previewError" role="alert" class="designer-error">{{ t('Preview failed') }}: {{ previewError }}</p>
-    <PrinterPaper v-if="previewDocument" :document="previewDocument" />
     <p class="designer-help">{{ t('Designer preview safety help') }}</p>
   </section>
 </template>
@@ -169,7 +160,6 @@ import PrinterPaper from './PrinterPaper.js'
 import PrinterTemplateNode from './PrinterTemplateNode.vue'
 import './printer-template-designer.css'
 import sampleData from './printer-sample-data.json'
-import { printerFontMetrics } from './printer-paper.mjs'
 import { changeNode, cloneDefinition, containerEntries, containerTypes, createDesignerState, definitionErrorKeys, designerHistory, knownTypes, labelBox, labelEntries, labelTypes, moveNode, moveNodeInto, newTemplateNode, nodeAt, previewData, replaceNode, sampleFields, scopeForNode, setDesignerDraft, starterTemplate, templateFormValue, transformLabel } from './printer-template-designer.mjs'
 
 defineOptions({ name: 'PrinterTemplateDesigner' })
@@ -180,13 +170,25 @@ const view = ref('Split view')
 const views = ['Visual editor', 'JSON', 'Split view']
 const selected = ref([])
 const selectedKey = computed(() => selected.value.join('.'))
-const snap = ref(true), zoom = ref(1.5), addInside = ref(false)
+const snap = ref(true), zoom = ref(state.value.definition?.kind === 'label' || props.form.kind === 'label' ? 1.5 : 1), addInside = ref(false)
 const dragScope = Math.random().toString(36).slice(2)
 const fieldSearch = ref(''), fieldFormat = ref(''), moveTarget = ref('')
 const gesture = shallowRef(null)
+const pendingOverride = shallowRef(null), selectedPrinted = shallowRef(null)
+const paperOverride = computed(() => gesture.value ? { path: gesture.value.path.join('.'), node: nodeAt(gesture.value.definition, gesture.value.path) } : pendingOverride.value)
 const definition = computed(() => gesture.value?.definition || state.value.definition)
 const isLabel = computed(() => definition.value?.kind === 'label')
+watch(isLabel, label => { cancelGesture(); zoom.value = label ? 1.5 : 1 })
 const selectedNode = computed(() => nodeAt(definition.value, selected.value))
+const receiptStylePath = computed(() => {
+  if (isLabel.value || selectedNode.value?.type === 'qr') return null
+  for (let length = selected.value.length; length > 0; length--) {
+    const path = selected.value.slice(0, length)
+    if (nodeAt(definition.value, path)?.type === 'style') return path
+  }
+  return null
+})
+const receiptFormatNode = computed(() => receiptStylePath.value ? nodeAt(definition.value, receiptStylePath.value) : null)
 const selectedContainer = computed(() => selectedNode.value && containerTypes.includes(selectedNode.value.type))
 const blocked = computed(() => !!state.value.error || !!gesture.value)
 const kindMismatch = computed(() => props.form.kind && definition.value && props.form.kind !== definition.value.kind)
@@ -199,7 +201,10 @@ const availableFields = computed(() => sampleFields(nodeScope.value).filter(item
 const availableArrays = computed(() => sampleFields(nodeScope.value, true))
 const moveTargets = computed(() => definition.value ? containerEntries(definition.value).filter(target => !(target.path.length >= selected.value.length && selected.value.every((part, index) => target.path[index] === part))) : [])
 const conditionMode = computed(() => !Object.hasOwn(selectedNode.value || {}, 'equals') ? 'truthy' : selectedNode.value.equals === null ? 'null' : typeof selectedNode.value.equals)
-const selectedEntry = computed(() => entries.value.find(entry => entry.path.join('.') === selectedKey.value))
+const selectedEntry = computed(() => {
+  if (previewFresh.value && selectedPrinted.value?.element.sourcePath === selectedKey.value) return { ...selectedPrinted.value, node: selectedNode.value, text: selectedPrinted.value.element.value }
+  return entries.value.find(entry => entry.path.join('.') === selectedKey.value)
+})
 const alignments = ['left', 'center', 'right']
 const contentTypes = ['labelText', 'qr', 'barcode', 'text', 'string', 'field', 'receiptCommand']
 const nodeLabels = { labelText: 'Text', style: 'Text block', field: 'Data field', string: 'Interpolated text', qr: 'QR code', barcode: 'Barcode', each: 'Item loop', repeat: 'Quantity repeat', if: 'Conditional block', line: 'Line break', separator: 'Separator', columns: 'Columns', text: 'Literal text', bold: 'Bold', page: 'Page break' }
@@ -208,17 +213,9 @@ const contentMode = computed(() => selectedNode.value?.type === 'string' || 'tem
 const contentKey = computed(() => selectedNode.value?.type === 'string' ? 'value' : contentMode.value)
 const contentModes = computed(() => ['text', 'string', 'field'].includes(selectedNode.value?.type) ? ['value', 'path', 'template'] : ['qr', 'barcode'].includes(selectedNode.value?.type) ? ['path', 'template'] : ['value', 'path', 'template'])
 const pixelsPerDot = computed(() => 96 / 25.4 / 8 * zoom.value)
-const sheetStyle = computed(() => ({ width: `${(definition.value?.widthMm || 40) * 8 * pixelsPerDot.value}px`, height: `${(definition.value?.heightMm || 30) * 8 * pixelsPerDot.value}px`, backgroundSize: `${8 * pixelsPerDot.value}px ${8 * pixelsPerDot.value}px` }))
-function elementStyle(entry) {
-  const b = entry.box, scale = pixelsPerDot.value
-  return { left: `${b.x * scale}px`, top: `${b.y * scale}px`, width: `${b.width * scale}px`, height: `${b.height * scale}px`, transform: `rotate(${entry.node.r || 0}deg)`, transformOrigin: 'top left' }
-}
-function glyphStyle(entry) {
-  const metrics = printerFontMetrics(entry.node.font || 9)
-  return { fontSize: `${metrics.heightMm * 8 * pixelsPerDot.value}px`, lineHeight: 1, transform: `scale(${entry.node.w || 1}, ${entry.node.h || 1})`, transformOrigin: 'top left' }
-}
 
 function publish(next) {
+  pendingOverride.value = null
   state.value = next
   if (next.definition) props.form[props.field.property] = templateFormValue(next.definition)
 }
@@ -231,7 +228,24 @@ function formatJson() { if (!state.value.error) commit(state.value.definition) }
 function history(direction) { cancelGesture(); publish(designerHistory(state.value, direction)); selected.value = [] }
 function initialize() { publish(setDesignerDraft(state.value, JSON.stringify(starterTemplate(props.form.kind), null, 2))) }
 function initializeEmpty() { publish(setDesignerDraft(state.value, JSON.stringify({ kind: props.form.kind === 'label' ? 'label' : 'receipt', widthMm: props.form.kind === 'label' ? 40 : 80, ...(props.form.kind === 'label' ? { heightMm: 30 } : {}), nodes: [] }, null, 2))) }
-function select(path) { if (!gesture.value) { selected.value = path; addInside.value = false; moveTarget.value = ''; fieldSearch.value = '' } }
+function select(path) { if (!gesture.value) { if (path.join('.') !== selectedKey.value) selectedPrinted.value = null; selected.value = path; addInside.value = false; moveTarget.value = ''; fieldSearch.value = '' } }
+function patchReceiptStyle(key, value) { if (!blocked.value && receiptStylePath.value) commit(changeNode(definition.value, receiptStylePath.value, node => { node[key] = value })) }
+function makeTextBlock() {
+  if (!blocked.value && selectedNode.value) commit(replaceNode(definition.value, selected.value, { type: 'style', align: 'left', width: 1, height: 1, bold: false, children: [cloneDefinition(selectedNode.value)] }))
+}
+function printedEntry(payload) {
+  const path = payload.element.sourcePath.split('.').map(Number)
+  const node = nodeAt(state.value.definition, path)
+  return node && labelTypes.includes(node.type) ? { node, path, box: payload.box, text: payload.element.value } : null
+}
+function startPrintedGesture(payload) {
+  const entry = printedEntry(payload)
+  if (entry && previewFresh.value) { selectedPrinted.value = payload; beginGesture(payload.event, entry, payload.operation) }
+}
+function nudgePrinted(payload) {
+  const entry = printedEntry(payload)
+  if (entry && previewFresh.value) nudge(payload.event, entry)
+}
 function insertField(event) {
   const path = event.target.value
   event.target.value = ''
@@ -347,7 +361,8 @@ function reorder({ source, target }) {
   if (blocked.value) return
   const valid = path => path.length && path.every(index => Number.isInteger(index) && index >= 0) && nodeAt(definition.value, path)
   if (!valid(source) || !valid(target)) return
-  commit(moveNode(definition.value, source, target)); selected.value = []
+  const next = moveNode(definition.value, source, target)
+  if (next !== definition.value) { commit(next); selected.value = [] }
 }
 function alignLabel(alignment) {
   const entry = selectedEntry.value
@@ -366,9 +381,18 @@ function alignLabel(alignment) {
 }
 function beginGesture(event, entry, operation) {
   if (state.value.error || gesture.value || event.button !== 0) return
+  const target = event.currentTarget
+  const active = target.ownerDocument?.activeElement
+  const beforeBlur = state.value.raw
+  if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) active.blur()
+  // Commit a pending numeric property edit before using printed coordinates.
+  // If blur changed the definition, wait for its new source-mapped preview.
+  if (state.value.raw !== beforeBlur) return
   event.preventDefault(); selected.value = entry.path
-  event.currentTarget.setPointerCapture(event.pointerId)
-  gesture.value = { pointerId: event.pointerId, target: event.currentTarget, path: entry.path, node: cloneDefinition(entry.node), box: entry.box, operation, x: event.clientX, y: event.clientY, scale: pixelsPerDot.value, definition: cloneDefinition(state.value.definition) }
+  const focusTarget = target.closest('[data-source-path]') || target
+  focusTarget.focus({ preventScroll: true })
+  target.setPointerCapture(event.pointerId)
+  gesture.value = { pointerId: event.pointerId, target, path: entry.path, node: cloneDefinition(entry.node), box: entry.box, operation, x: event.clientX, y: event.clientY, scale: pixelsPerDot.value, definition: cloneDefinition(state.value.definition) }
 }
 function moveGesture(event) {
   const current = gesture.value
@@ -381,8 +405,8 @@ function moveGesture(event) {
 function endGesture(event) {
   if (!gesture.value || event.pointerId !== gesture.value.pointerId) return
   moveGesture(event)
-  const { definition: next, changed } = gesture.value
-  cancelGesture(); if (changed) commit(next)
+  const { definition: next, changed, path } = gesture.value
+  cancelGesture(); if (changed) { commit(next); pendingOverride.value = { path: path.join('.'), node: nodeAt(next, path) } }
 }
 function cancelGesture() {
   const current = gesture.value
@@ -416,17 +440,17 @@ watch(() => props.form[props.field.property], value => {
 // not silently submit the last valid definition when the parent form is saved.
 const registerValidator = inject('registerFieldValidator', null)
 const unregister = registerValidator?.(props.field.property, (_rule, _value, callback) => callback(state.value.error || kindMismatch.value ? new Error(t(state.value.error ? 'Invalid template draft' : 'Template kind mismatch')) : undefined))
-const previewDocument = shallowRef(null), previewBusy = ref(false), previewError = ref('')
+const previewDocument = shallowRef(null), previewBusy = ref(false), previewError = ref(''), previewFresh = ref(false)
 let previewTimer, previewVersion = 0, disposed = false
-function invalidatePreview() { clearTimeout(previewTimer); previewVersion++; previewDocument.value = null; previewBusy.value = false; previewError.value = '' }
+function invalidatePreview() { clearTimeout(previewTimer); previewVersion++; cancelGesture(); previewFresh.value = false; previewBusy.value = false; previewError.value = '' }
 async function refreshPreview() {
   invalidatePreview()
   if (state.value.error || !definition.value || sampleError.value || disposed) return
   const version = previewVersion
   previewBusy.value = true
   try {
-    const response = await request.post('/api/v1/manage/printer/preview', { template: cloneDefinition(state.value.definition), data: cloneDefinition(previewSample.value) })
-    if (!disposed && version === previewVersion) previewDocument.value = response.data.document
+    const response = await request.post('/api/v1/manage/printer/preview', { template: cloneDefinition(state.value.definition), data: cloneDefinition(previewSample.value), editable: true })
+    if (!disposed && version === previewVersion) { previewDocument.value = response.data.document; previewFresh.value = true; pendingOverride.value = null; selectedPrinted.value = null }
   } catch (cause) {
     if (!disposed && version === previewVersion) previewError.value = cause.response?.data?.error || cause.message || t('Preview failed')
   } finally { if (!disposed && version === previewVersion) previewBusy.value = false }
@@ -453,7 +477,7 @@ button, input, select, textarea { font: inherit; color: inherit; box-sizing: bor
 button, select, input:not([type=checkbox]), textarea { border: 1px solid var(--el-border-color); border-radius: 4px; background: var(--el-bg-color); padding: 5px 8px; }
 button { cursor: pointer; } button:disabled { opacity: .45; cursor: not-allowed; }
 button[aria-pressed=true] { border-color: var(--el-color-primary); color: var(--el-color-primary); }
-button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .label-element:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 fieldset { margin: 0; padding: 8px; border: 1px solid var(--el-border-color); min-width: 0; }
 .designer-help { color: var(--el-text-color-secondary); font-size: 12px; margin: 6px 0; }
 .designer-error { color: var(--el-color-danger); font-size: 13px; overflow-wrap: anywhere; }
@@ -474,19 +498,8 @@ fieldset { margin: 0; padding: 8px; border: 1px solid var(--el-border-color); mi
 .layout-tree { padding: 0; max-height: 460px; overflow: auto; }
 .root-drop { border: 1px dashed var(--el-border-color); color: var(--el-text-color-secondary); padding: 8px; font-size: 12px; }
 .receipt-sheet { background: var(--el-fill-color-light); padding: 8px; min-height: 200px; }
-.label-scroll { padding: 16px; overflow: auto; background: var(--el-fill-color-light); max-height: 450px; margin-bottom: 8px; }
-.label-sheet { position: relative; background-color: white; color: black; box-shadow: 0 1px 8px #0003; flex-shrink: 0; }
-.label-sheet.grid { background-image: linear-gradient(to right, #ddd7 1px, transparent 1px), linear-gradient(to bottom, #ddd7 1px, transparent 1px); }
-.label-sheet::before, .label-sheet::after { content: ''; position: absolute; pointer-events: none; }
-.label-sheet::before { top: 0; bottom: 0; left: 50%; border-left: 1px dashed #409eff66; }
-.label-sheet::after { left: 0; right: 0; top: 50%; border-top: 1px dashed #409eff66; }
-.label-element { position: absolute; outline: 1px dashed #888; cursor: move; touch-action: none; user-select: none; white-space: pre; font-family: monospace; }
-.label-element.active { outline: 2px solid #409eff; z-index: 2; }
-.label-element.overflowing { outline-color: #f56c6c; }
-.label-glyphs { display: block; width: max-content; letter-spacing: 0; }
-.code-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; overflow: hidden; background: #f5f5f5; font-size: 12px; }
-.code-placeholder small { max-width: 100%; overflow: hidden; font-size: 9px; }
-.resize-handle { position: absolute; right: -5px; bottom: -5px; width: 11px; height: 11px; padding: 0; background: #409eff; border: 1px solid white; cursor: nwse-resize; touch-action: none; }
+.designer-structure { margin-top: 8px; }
+.designer-structure summary { cursor: pointer; }
 .designer-sample { margin-top: 12px; }
 .designer-sample summary { cursor: pointer; }
 .designer-sample textarea { display: block; width: 100%; font-family: monospace; }

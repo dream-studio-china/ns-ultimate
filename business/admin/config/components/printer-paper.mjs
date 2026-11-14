@@ -15,11 +15,12 @@ function integer(value, min, max, fallback) {
   return /^\d+$/.test(value ?? '') && Number.isSafeInteger(Number(value)) && Number(value) >= min && Number(value) <= max ? Number(value) : fallback
 }
 
-export function paperElements(content) {
+export function paperElements(content, { sources = false } = {}) {
   const elements = []
   let state = { bold: false, align: 'left', w: 1, h: 1 }
   const stack = []
-  const tokens = String(content).split(/(<TEXT\b[^>]*>[\s\S]*?<\/TEXT>|<BC128\b[^>]*>[\s\S]*?<\/BC128>|<BC39\b[^>]*>[\s\S]*?<\/BC39>|<QRCODE\b[^>]*>[\s\S]*?<\/QRCODE>|<QRC\b[^>]*>[\s\S]*?<\/QRC>|<BR\s*\/?>|<\/?(?:BOLD|CB|WB2?|HB2?|B2?|C|L|R|W|H|N)>|\r\n|\r|\n)/g)
+  const sourceStack = []
+  const tokens = String(content).split(/(<DESIGNER path="\d+(?:\.\d+)*" type="[A-Za-z]+">|<\/DESIGNER>|<TEXT\b[^>]*>[\s\S]*?<\/TEXT>|<BC128\b[^>]*>[\s\S]*?<\/BC128>|<BC39\b[^>]*>[\s\S]*?<\/BC39>|<QRCODE\b[^>]*>[\s\S]*?<\/QRCODE>|<QRC\b[^>]*>[\s\S]*?<\/QRC>|<BR\s*\/?>|<\/?(?:BOLD|CB|WB2?|HB2?|B2?|C|L|R|W|H|N)>|\r\n|\r|\n)/g)
   // Legacy receipts use unpaired commands as persistent setters. Only matched
   // wrappers save state; a later closing tag must not pop an earlier setter.
   const pending = new Map()
@@ -34,6 +35,13 @@ export function paperElements(content) {
   }
   for (const [tokenIndex, token] of tokens.entries()) {
     if (!token) continue
+    if (sources) {
+      const marker = token.match(/^<DESIGNER path="(\d+(?:\.\d+)*)" type="([A-Za-z]+)">$/)
+      if (marker) { sourceStack.push({ path: marker[1], type: marker[2] }); continue }
+      if (token === '</DESIGNER>') { sourceStack.pop(); continue }
+    }
+    const source = sourceStack.at(-1)
+    const provenance = source ? { sourcePath: source.path, blockPath: sourceStack.findLast(item => item.type === 'style')?.path || source.path } : {}
     const command = token.match(/^<(\/?)(BOLD|CB|WB2?|HB2?|B2?|C|L|R|W|H|N)>$/)
     if (command) {
       const [, close, tag] = command
@@ -50,12 +58,12 @@ export function paperElements(content) {
       }
       continue
     }
-    if (/^(?:<BR\s*\/?>|\r\n|\r|\n)$/.test(token)) { elements.push({ type: 'line', ...state }); continue }
+    if (/^(?:<BR\s*\/?>|\r\n|\r|\n)$/.test(token)) { elements.push({ type: 'line', ...state, ...provenance }); continue }
     const match = token.match(/^<(TEXT|BC128|BC39|QRC|QRCODE)\b([^>]*)>([\s\S]*)<\/\1>$/)
-    if (!match) { elements.push({ type: 'text', value: decode(token), ...state }); continue }
-    const [, format, source, value] = match
-    const attrs = attributes(source)
-    const position = { x: integer(attrs.x, 0, 2048, 0), y: integer(attrs.y, 0, 2048, 0) }
+    if (!match) { elements.push({ type: 'text', value: decode(token), ...state, ...provenance }); continue }
+    const [, format, attributeSource, value] = match
+    const attrs = attributes(attributeSource)
+    const position = { x: integer(attrs.x, 0, 2048, 0), y: integer(attrs.y, 0, 2048, 0), ...provenance }
     if (format === 'TEXT') {
       elements.push({ type: 'labelText', format, value: decode(value), ...position, font: integer(attrs.font, 1, 9, 9), w: integer(attrs.w, 1, 10, 1), h: integer(attrs.h, 1, 10, 1), r: [0, 90, 180, 270].includes(integer(attrs.r, 0, 270, -1)) ? Number(attrs.r) : 0 })
     } else if (format === 'QRC' || format === 'QRCODE') {
@@ -82,7 +90,7 @@ export function receiptRows(elements, columns = 32) {
   const flush = () => { rows.push(row); row = { type: 'row', align: row.align, h: 1, cells: 0, items: [] } }
   for (const element of elements) {
     if (element.type === 'line') {
-      if (!row.items.length) { row.align = element.align; row.h = element.h }
+      if (!row.items.length) { row.align = element.align; row.h = element.h; if (element.sourcePath) { row.sourcePath = element.sourcePath; row.blockPath = element.blockPath } }
       flush()
     } else if (element.type === 'text') {
       for (const character of element.value) {
@@ -94,8 +102,9 @@ export function receiptRows(elements, columns = 32) {
         row.align = element.align
         row.h = Math.max(row.h, element.h)
         row.cells += cells
+        if (element.sourcePath && !row.sourcePath) { row.sourcePath = element.sourcePath; row.blockPath = element.blockPath }
         const last = row.items.at(-1)
-        if (last && last.bold === element.bold && last.w === element.w && last.h === element.h) last.value += character
+        if (last && last.bold === element.bold && last.w === element.w && last.h === element.h && last.sourcePath === element.sourcePath) last.value += character
         else row.items.push({ ...element, value: character })
       }
     } else {
@@ -137,6 +146,17 @@ export function paperSize(document) {
 export function printerFontMetrics(font = 9) {
   const [width, height] = ({ 1: [8, 12], 2: [12, 20], 3: [16, 24], 4: [24, 32], 5: [32, 48], 6: [14, 19], 7: [21, 27], 8: [14, 25], 9: [12, 24] })[font] || [12, 24]
   return { cellMm: width / 8, heightMm: height / 8 }
+}
+
+export function labelElementBox(element, qrWidthMm = null) {
+  const metrics = printerFontMetrics(element.font)
+  const width = element.type === 'labelText' ? Math.max(1, textCells(element.value)) * metrics.cellMm * 8 * element.w
+    : element.type === 'qr' ? (qrWidthMm ?? 25 * element.s / 8) * 8 : Math.max(64, textCells(element.value) * 12)
+  const height = element.type === 'labelText' ? metrics.heightMm * 8 * element.h : element.type === 'qr' ? width : element.h
+  const corners = [[0, 0], [width, 0], [0, height], [width, height]].map(([x, y]) => element.r === 90 ? [-y, x] : element.r === 180 ? [-x, -y] : element.r === 270 ? [y, -x] : [x, y])
+  return { x: element.x, y: element.y, width, height,
+    minX: Math.min(...corners.map(point => point[0])), maxX: Math.max(...corners.map(point => point[0])),
+    minY: Math.min(...corners.map(point => point[1])), maxY: Math.max(...corners.map(point => point[1])) }
 }
 
 export function receiptMetrics(widthMm) {

@@ -214,7 +214,7 @@ function renderPaper(document) {
   const source = readFileSync(new URL('../../business/admin/config/components/PrinterPaper.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.component =')
   const context = {
-    defineComponent: value => value, ref: value => ({ value }), resolveComponent: name => name,
+    defineComponent: value => value, ref: value => ({ value }), resolveComponent: name => name, watch: () => {},
     h: (type, props, children) => Array.isArray(props) || typeof props === 'string'
       ? { type, props: {}, children: props } : { type, props: props || {}, children },
     t: key => key, paperElements, paperSize, printerFontMetrics, qrGeometry, receiptMetrics, receiptRows, textCells,

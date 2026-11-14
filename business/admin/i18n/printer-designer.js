@@ -1,5 +1,14 @@
 // Keep the designer's vocabulary together while using the host locale overlays.
 const labels = {
+  'Print edit canvas': ['Print edit canvas', '打印编辑画布', '列印編輯畫布', '印刷編集キャンバス'],
+  'Make text block': ['Make text block', '转为文本区块', '轉為文字區塊', 'テキストブロックにする'],
+  'Receipt text block help': ['This text has no style block. Convert it explicitly to enable alignment and sizing. A text block adds a line break; legacy commands are otherwise kept unchanged.', '此文字没有所属样式区块。可显式转换后调整对齐和大小。文本区块会增加换行；其余旧指令保持不变。', '此文字沒有所屬樣式區塊。可明確轉換後調整對齊與大小。文字區塊會增加換行；其餘舊指令保持不變。', '書式ブロックがありません。明示的に変換すると整列とサイズを変更できます。ブロックには改行が追加され、他の旧コマンドは維持されます。'],
+  'Unified label canvas help': ['This is the rendered print page. Click text to edit it; drag to move, or use the corner handle to resize. Repeated elements edit the same template node on every page.', '这里就是渲染后的打印页面。点击文字编辑，拖动移动，拖右下角调整大小。重复元素的修改会作用于所有页面中的同一模板节点。', '這裡就是渲染後的列印頁面。點擊文字編輯，拖曳移動，拖右下角調整大小。重複元件的修改會套用至所有頁面中的同一範本節點。', '印刷プレビュー上の文字をクリックして編集し、ドラッグで移動、右下でサイズ変更できます。同じノードの繰り返しは全ページに反映されます。'],
+  'Unified receipt canvas help': ['Click printed text to edit it and its enclosing text style. Drag a printed row to reorder its template block. Receipts remain line-based, not freely positioned.', '点击纸上的文字编辑内容及所属文本样式，拖动打印行调整模板区块顺序。小票仍按行排版，不做任意坐标定位。', '點擊紙上文字編輯內容與所屬文字樣式，拖曳列印行調整範本區塊順序。收據仍按行排版，不做任意座標定位。', '印字をクリックして内容と書式を編集し、行をドラッグしてブロックを並べ替えます。レシートは自由座標ではなく行単位です。'],
+  'Select printed element': ['Select printed element', '选择打印元素', '選取列印元件', '印字要素を選択'],
+  'Canvas requires preview': ['The editing canvas appears after a successful preview. If your session has expired, sign in again. The layout tree and JSON remain available.', '预览成功后才会显示编辑画布。如果登录已失效，请重新登录。仍可通过布局结构和 JSON 编辑。', '預覽成功後才會顯示編輯畫布。若登入已失效，請重新登入。仍可透過版面結構與 JSON 編輯。', 'プレビュー成功後に編集キャンバスが表示されます。セッション切れの場合は再ログインしてください。構造と JSON での編集は引き続き可能です。'],
+  'Canvas awaiting valid preview': ['Showing the last rendered page. Canvas editing is paused until the current draft previews successfully.', '当前显示上一次渲染结果。待当前草稿预览成功后，才可继续在纸上操作。', '目前顯示上一次渲染結果。待目前草稿預覽成功後，才可繼續在紙上操作。', '直前の描画結果を表示中です。現在の入力のプレビューが成功するまでキャンバス編集を停止します。'],
+  'Editable mapping unavailable': ['This preview has no editable source mapping. Update the backend to enable editing directly on the paper.', '此预览缺少编辑节点映射，请更新后端以启用纸上直接编辑。', '此預覽缺少編輯節點對應，請更新後端以啟用紙上直接編輯。', '編集元の対応情報がありません。バックエンドを更新すると用紙上で編集できます。'],
   'Drop at end of template': ['Drop at end of template', '拖到这里移至模板末尾', '拖至此處移到範本末尾', 'ここにドロップして末尾へ移動'],
   'Move into block': ['Move into block', '移入区块', '移入區塊', 'ブロック内へ移動'],
   'Template root': ['Template root', '模板根层级', '範本根層級', 'テンプレート直下'],

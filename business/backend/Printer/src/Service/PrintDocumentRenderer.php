@@ -9,8 +9,8 @@ final class PrintDocumentRenderer
 {
     /** @param array<string, mixed> $template
      * @param array<string, mixed> $data
-     * @return array{kind: string, pages: list<string>, content: string, widthMm: int, heightMm: ?int} */
-    public function render(array $template, array $data): array
+     * @return array{kind: string, pages: list<string>, content: string, widthMm: int, heightMm: ?int, sourcePages?: list<string>} */
+    public function render(array $template, array $data, bool $editable = false): array
     {
         $kind = $template['kind'] ?? null;
         if (!in_array($kind, ['receipt', 'label'], true)) {
@@ -18,11 +18,20 @@ final class PrintDocumentRenderer
         }
         $width = $this->dimension($template['widthMm'] ?? ($kind === 'receipt' ? 80 : 40), 'widthMm');
         $height = $this->dimension($template['heightMm'] ?? 30, 'heightMm');
-        $pages = $this->nodes($template['nodes'] ?? [], $data, 0, ['kind' => $kind, 'width' => $width]);
+        $pages = $this->nodes($template['nodes'] ?? [], $data, 0, ['kind' => $kind, 'width' => $width, 'trace' => $editable]);
         if ($kind === 'receipt') {
             $pages = [implode('', $pages)];
         }
-        $pages = array_values(array_filter($pages, static fn (string $page): bool => trim($page) !== ''));
+        $sourcePages = [];
+        $cleanPages = [];
+        foreach ($pages as $page) {
+            $clean = $editable ? $this->withoutSources($page) : $page;
+            if (trim($clean) !== '') {
+                $cleanPages[] = $clean;
+                $sourcePages[] = $page;
+            }
+        }
+        $pages = $cleanPages;
         if ($pages === [] || count($pages) > 200) {
             throw new \InvalidArgumentException('A print document must produce between 1 and 200 pages.');
         }
@@ -49,12 +58,24 @@ final class PrintDocumentRenderer
         if (strlen($content) > 100_000) {
             throw new \InvalidArgumentException('Expanded print document is too large.');
         }
-        return ['kind' => $kind, 'pages' => $pages, 'content' => $content, 'widthMm' => $width, 'heightMm' => $kind === 'label' ? $height : null];
+        $document = ['kind' => $kind, 'pages' => $pages, 'content' => $content, 'widthMm' => $width, 'heightMm' => $kind === 'label' ? $height : null];
+        if ($editable) {
+            if (array_sum(array_map('strlen', $sourcePages)) > 2_000_000) {
+                throw new \InvalidArgumentException('Editable preview is too large.');
+            }
+            $document['sourcePages'] = $sourcePages;
+        }
+        return $document;
+    }
+
+    private function withoutSources(string $content): string
+    {
+        return preg_replace('/<DESIGNER path="[0-9.]+" type="[A-Za-z]+">|<\/DESIGNER>/', '', $content) ?? $content;
     }
 
     /** @param mixed $nodes
      * @param array<string, mixed> $scope
-     * @param array{kind: string, width: int} $layout
+     * @param array{kind: string, width: int, trace?: bool, path?: list<int>} $layout
      * @return list<string> */
     private function nodes(mixed $nodes, array $scope, int $depth, array $layout): array
     {
@@ -62,10 +83,11 @@ final class PrintDocumentRenderer
             throw new \InvalidArgumentException('Invalid template structure or excessive loop depth.');
         }
         $out = [''];
-        foreach ($nodes as $node) {
+        foreach (array_values($nodes) as $nodeIndex => $node) {
             if (!is_array($node) || !is_string($node['type'] ?? null)) {
                 throw new \InvalidArgumentException('Each template node must have a type.');
             }
+            $childLayout = array_replace($layout, ['path' => [...($layout['path'] ?? []), $nodeIndex]]);
             if ($node['type'] === 'each') {
                 $items = $this->value($scope, $node['path'] ?? '');
                 if (!is_array($items) || count($items) > 100) {
@@ -74,7 +96,7 @@ final class PrintDocumentRenderer
                 $expanded = [];
                 foreach (array_values($items) as $index => $item) {
                     if (!is_array($item)) { throw new \InvalidArgumentException('Loop items must be objects.'); }
-                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['item' => $item, 'index' => $index]), $depth + 1, $layout)];
+                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['item' => $item, 'index' => $index]), $depth + 1, $childLayout)];
                     if (count($expanded) > 200) { throw new \InvalidArgumentException('Template expands to too many pages.'); }
                 }
                 $out = $this->combine($out, $layout['kind'] === 'receipt' ? [implode('', $expanded)] : $expanded);
@@ -87,7 +109,7 @@ final class PrintDocumentRenderer
                 }
                 $expanded = [];
                 for ($index = 0; $index < $count; ++$index) {
-                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['repeatIndex' => $index]), $depth + 1, $layout)];
+                    $expanded = [...$expanded, ...$this->nodes($node['children'] ?? [], array_replace($scope, ['repeatIndex' => $index]), $depth + 1, $childLayout)];
                     if (count($expanded) > 200) { throw new \InvalidArgumentException('Template expands to too many pages.'); }
                 }
                 $out = $this->combine($out, $layout['kind'] === 'receipt' ? [implode('', $expanded)] : $expanded);
@@ -99,7 +121,7 @@ final class PrintDocumentRenderer
                     ? $condition === $node['equals']
                     : !in_array($condition, ['', null, false, 0], true);
                 if ($matches) {
-                    $out = $this->combine($out, $this->nodes($node['children'] ?? [], $scope, $depth + 1, $layout));
+                    $out = $this->combine($out, $this->nodes($node['children'] ?? [], $scope, $depth + 1, $childLayout));
                 }
                 continue;
             }
@@ -109,8 +131,8 @@ final class PrintDocumentRenderer
                 'field' => $this->escape($this->stringValue($scope, $node['path'] ?? '')),
                 'line' => '<BR>',
                 'separator' => '--------------------------------<BR>',
-                'bold' => '<BOLD>'.$this->plainChildren($node['children'] ?? [], $scope, $depth + 1, $layout).'</BOLD>',
-                'style' => $this->receiptStyle($node, $scope, $depth, $layout),
+                'bold' => '<BOLD>'.$this->plainChildren($node['children'] ?? [], $scope, $depth + 1, $childLayout).'</BOLD>',
+                'style' => $this->receiptStyle($node, $scope, $depth, $childLayout),
                 'receiptCommand' => $this->receiptCommand($node, $layout),
                 'columns' => $this->columns($node, $scope, $layout),
                 'labelText' => $this->labelText($node, $scope, $layout),
@@ -119,6 +141,9 @@ final class PrintDocumentRenderer
                 'page' => "\n",
                 default => throw new \InvalidArgumentException('Unsupported print template node type.'),
             };
+            if ($layout['trace'] ?? false) {
+                $piece = sprintf('<DESIGNER path="%s" type="%s">%s</DESIGNER>', implode('.', $childLayout['path']), $node['type'], $piece);
+            }
             foreach ($out as &$current) { $current .= $piece; }
             unset($current);
         }
@@ -142,7 +167,7 @@ final class PrintDocumentRenderer
     /**
      * @param mixed $nodes
      * @param array<string, mixed> $scope
-     * @param array{kind: string, width: int} $layout
+     * @param array{kind: string, width: int, trace?: bool, path?: list<int>} $layout
      */
     private function plainChildren(mixed $nodes, array $scope, int $depth, array $layout): string
     {
@@ -269,7 +294,7 @@ final class PrintDocumentRenderer
     /**
      * @param array<string, mixed> $node
      * @param array<string, mixed> $scope
-     * @param array{kind: string, width: int} $layout
+     * @param array{kind: string, width: int, trace?: bool, path?: list<int>} $layout
      */
     private function labelText(array $node, array $scope, array $layout): string
     {
@@ -330,7 +355,7 @@ final class PrintDocumentRenderer
     /**
      * @param array<string, mixed> $node
      * @param array<string, mixed> $scope
-     * @param array{kind: string, width: int} $layout
+     * @param array{kind: string, width: int, trace?: bool, path?: list<int>} $layout
      */
     private function qr(array $node, array $scope, array $layout): string
     {
@@ -358,7 +383,7 @@ final class PrintDocumentRenderer
     /**
      * @param array<string, mixed> $node
      * @param array<string, mixed> $scope
-     * @param array{kind: string, width: int} $layout
+     * @param array{kind: string, width: int, trace?: bool, path?: list<int>} $layout
      */
     private function receiptStyle(array $node, array $scope, int $depth, array $layout): string
     {
@@ -372,7 +397,7 @@ final class PrintDocumentRenderer
         $size = $width === 2 ? ($height === 2 ? 'B' : 'WB') : ($height === 2 ? 'HB' : 'N');
         $content = $this->plainChildren($node['children'] ?? [], $scope, $depth + 1, $layout);
         // Vendor alignment is line-based: the terminating break must be inside the alignment tag.
-        if (!str_ends_with($content, '<BR>')) { $content .= '<BR>'; }
+        if (!str_ends_with(($layout['trace'] ?? false) ? $this->withoutSources($content) : $content, '<BR>')) { $content .= '<BR>'; }
         if ($node['bold'] ?? false) { $content = '<BOLD>'.$content.'</BOLD>'; }
         return '<'.$tag.'><'.$size.'>'.$content.'</'.$size.'></'.$tag.'>';
     }

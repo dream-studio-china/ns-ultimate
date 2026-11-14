@@ -4,7 +4,8 @@ import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { starterTemplate, templateFormValue, newTemplateNode, previewData } from '../../business/admin/config/components/printer-template-designer.mjs'
+import { starterTemplate, templateFormValue, newTemplateNode, previewData, nodeAt, replaceNode, transformLabel } from '../../business/admin/config/components/printer-template-designer.mjs'
+import { paperElements, receiptRows, labelElementBox } from '../../business/admin/config/components/printer-paper.mjs'
 
 const require = createRequire(new URL('../../core/crud-admin/package.json', import.meta.url))
 const ts = require('typescript')
@@ -16,17 +17,18 @@ const sample = JSON.parse(readFileSync(new URL('../../business/admin/config/comp
 const renderer = fileURLToPath(new URL('../../business/backend/Printer/src/Service/PrintDocumentRenderer.php', import.meta.url))
 const normalizer = fileURLToPath(new URL('../../business/backend/Printer/src/Service/TemplateDefinitionInput.php', import.meta.url))
 
-function render(definition, data = sample) {
+function render(definition, data = sample, editable = false) {
   const payload = { definition: templateFormValue(definition) }
   // Execute the actual generic form cleaner before the business API input and
   // renderer. No database, Symfony container or provider is involved.
   saveHelpers.cleanBlankAttributes(payload)
   payload.data = data
+  payload.editable = editable
   const result = spawnSync('php', ['-r', `
     require $argv[1]; require $argv[2];
     $input = json_decode(stream_get_contents(STDIN), true, 64, JSON_THROW_ON_ERROR);
     $definition = \\NsUltimate\\Business\\Printer\\Service\\TemplateDefinitionInput::normalize($input['definition']);
-    $document = (new \\NsUltimate\\Business\\Printer\\Service\\PrintDocumentRenderer())->render($definition, $input['data']);
+    $document = (new \\NsUltimate\\Business\\Printer\\Service\\PrintDocumentRenderer())->render($definition, $input['data'], $input['editable']);
     echo json_encode(['definition' => $definition, 'document' => $document], JSON_THROW_ON_ERROR);
   `, renderer, normalizer], { input: JSON.stringify(payload), encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr || result.error?.message)
@@ -73,4 +75,38 @@ test('per-unit starter preview matches one live-adapter-shaped ticket', () => {
   assert.equal(data.item.total, sample.order.items[0].quantity)
   assert.equal(sample.item, undefined)
   assert.ok(sample.order.items.length > 1)
+})
+
+test('actual rendered label elements map back to the editable node across expanded pages', () => {
+  const template = starterTemplate('label')
+  const { document } = render(template, sample, true)
+  assert.equal(document.sourcePages.length, document.pages.length)
+  for (const [index, page] of document.sourcePages.entries()) {
+    const elements = paperElements(page, { sources: true })
+    assert.deepEqual(elements.map(({ sourcePath, blockPath, ...element }) => element), paperElements(document.pages[index]))
+    assert.ok(elements.every(element => nodeAt(template, element.sourcePath.split('.').map(Number))))
+  }
+  const element = paperElements(document.sourcePages[0], { sources: true })[1]
+  const path = element.sourcePath.split('.').map(Number)
+  const moved = transformLabel(nodeAt(template, path), labelElementBox(element), 16, 8, 'move', false)
+  const edited = replaceNode(template, path, moved)
+  const result = render(edited, sample, true)
+  const printed = paperElements(result.document.sourcePages[0], { sources: true }).find(item => item.sourcePath === element.sourcePath)
+  assert.equal(printed.x, element.x + 16)
+  assert.equal(printed.y, element.y + 8)
+  assert.equal(printed.value, element.value)
+  assert.ok(!JSON.stringify(result.definition).includes('DESIGNER'))
+  assert.ok(!result.document.content.includes('<DESIGNER'))
+})
+
+test('annotated receipt pages preserve the same row geometry and printer commands', () => {
+  const template = starterTemplate('receipt')
+  const plain = render(template).document
+  const mapped = render(template, sample, true).document
+  const { sourcePages, ...clean } = mapped
+  assert.deepEqual(clean, plain)
+  const geometry = rows => rows.map(row => ({ align: row.align, h: row.h, cells: row.cells,
+    glyphs: (row.items || []).flatMap(item => Array.from(item.value, value => ({ value, bold: item.bold, w: item.w, h: item.h }))) }))
+  assert.deepEqual(geometry(receiptRows(paperElements(sourcePages[0], { sources: true }), 48)), geometry(receiptRows(paperElements(plain.pages[0]), 48)))
+  assert.ok(receiptRows(paperElements(sourcePages[0], { sources: true }), 48).some(row => row.blockPath === '3.0'))
 })
