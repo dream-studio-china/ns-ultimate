@@ -16,9 +16,3 @@ services:
     NsUltimate\Business\Printer\Service\PrinterCredentialCipher:
         arguments:
             $key: '%env(PRINTER_CONFIG_KEY)%'
-
-    NsUltimate\Business\Printer\Adapter\TradeOrderPrintAdapter:
-        arguments:
-            $entityManager: '@Doctrine\ORM\EntityManagerInterface'
-            $filter: '@NsUltimate\Business\Printer\Service\OrderItemFilter'
-            $paymentBaseUrl: '%env(DEFAULT_URI)%'

@@ -47,6 +47,28 @@ test('registers the actual Counter configurations with their API identities', ()
   assert.deepEqual(Array.from(entities.Counter.list.actions, action => action.name), ['counter-qr-export'])
 })
 
+test('registers the actual Membership configuration with its API identity', () => {
+  const source = readFileSync(new URL(
+    '../../business/admin/config/collections/store/Membership.js', import.meta.url
+  ), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
+  const context = {
+    t: key => key,
+    orderByIdDesc: {},
+    loadRelationRecords: () => Promise.resolve([]),
+    MembershipStatusAction: {}
+  }
+  runInNewContext(source, context)
+  const entities = mergeEntities({}, { add: collectEntities({ './collections/store/Membership.js': { default: context.config } }) })
+  assert.deepEqual(Object.keys(entities), ['Membership'])
+  assert.equal(entities.Membership.entity.plural, 'memberships')
+  assert.equal(entities.Membership.entity.prefix, '/api/v1/manage')
+  assert.equal(entities.Membership.form.fields[0].property, 'store')
+  assert.equal(entities.Membership.form.fields[0].hidden, 'update')
+  assert.equal(entities.Membership.form.fields[1].hidden, 'update')
+  assert.ok(entities.Membership.list.actions.some(action => action.name === 'membership-status'))
+  assert.ok(entities.Membership.list.disabled_actions.includes('delete'))
+})
+
 test('overrides WechatUser display fields without changing core configuration', () => {
   const source = readFileSync(new URL(
     '../../business/admin/config/overrides/wechat/wechat-user.js', import.meta.url
@@ -203,6 +225,11 @@ test('puts counter pages in a standalone menu and hides Business management', ()
     Layout: {},
     r: (name, title) => [{ name, meta: { title } }],
     coreRoutes: [{
+      path: '/store',
+      name: 'StoreManage',
+      meta: { title: 'Store Management' },
+      children: [{ path: '/store', name: 'StoreList', meta: { title: 'Store' } }]
+    }, {
       path: '/order',
       name: 'OrderManage',
       meta: { title: 'Order Management' },
@@ -225,6 +252,9 @@ test('puts counter pages in a standalone menu and hides Business management', ()
   assert.deepEqual(Array.from(counters.children, route => route.name), ['Counter', 'OrderCounter'])
   assert.equal(routes.find(route => route.name === 'WechatConfiguration').meta.icon, 'wechat')
   const order = context.routes.replace.find(route => route.name === 'OrderManage')
+  const store = context.routes.replace.find(route => route.name === 'StoreManage')
+  assert.deepEqual(Array.from(store.children, route => route.name), ['StoreList', 'Membership'])
+  assert.equal(store.children[1].meta.title, 'Member management')
   assert.deepEqual(Array.from(order.children, route => route.name), ['OrderList', 'OrderRefundRecords'])
   assert.equal(order.children[1].path, 'refund-records')
   assert.equal(order.children[1].meta.title, 'Order refund records')

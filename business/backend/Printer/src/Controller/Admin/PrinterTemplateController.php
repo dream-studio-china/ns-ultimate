@@ -25,7 +25,7 @@ final class PrinterTemplateController extends RestController
     use ApiView, ListApiViewMixin, DetailApiViewMixin, CreateApiViewMixin, UpdateApiViewMixin;
 
     /** @var list<string> */
-    protected array $requiredCreateProperties = ['name', 'kind', 'definition', 'sampleData'];
+    protected array $requiredCreateProperties = ['name', 'kind', 'definition'];
     /** @var list<string> */
     protected array $acceptedCreateProperties = ['name', 'kind', 'definition', 'sampleData', 'ticketMode', 'itemFilter'];
     /** @var list<string> */
@@ -43,8 +43,8 @@ final class PrinterTemplateController extends RestController
      */
     protected function processCreateContent(array $content, object $entity): array
     {
-        if (!$entity instanceof PrinterTemplate || !is_array($content['definition'] ?? null) || !is_array($content['sampleData'] ?? null)) {
-            throw new \InvalidArgumentException('Template definition and sampleData must be objects.');
+        if (!$entity instanceof PrinterTemplate || !is_array($content['definition'] ?? null)) {
+            throw new \InvalidArgumentException('Template definition must be an object.');
         }
         if (!is_string($content['name'] ?? null) || trim($content['name']) === '') {
             throw new \InvalidArgumentException('Template name is required.');
@@ -54,7 +54,14 @@ final class PrinterTemplateController extends RestController
             throw new \InvalidArgumentException('Template kind must match the definition kind.');
         }
         $this->validateTicketOptions($content);
-        $this->renderer->render($content['definition'], $content['sampleData']);
+        // Sample data is optional; when an API client supplies it, the renderer
+        // also validates the definition against that sample.
+        if (array_key_exists('sampleData', $content)) {
+            if (!is_array($content['sampleData'])) {
+                throw new \InvalidArgumentException('Template sampleData must be an object.');
+            }
+            $this->renderer->render($content['definition'], $content['sampleData']);
+        }
         unset($content['sampleData']);
         return $content;
     }
@@ -71,13 +78,18 @@ final class PrinterTemplateController extends RestController
         }
         $this->validateTicketOptions($content);
         if (array_key_exists('definition', $content)) {
-            if (!is_array($content['definition']) || !is_array($content['sampleData'] ?? null)) {
-                throw new \InvalidArgumentException('Template updates require a definition and sampleData object.');
+            if (!is_array($content['definition'])) {
+                throw new \InvalidArgumentException('Template definition must be an object.');
             }
             if (($content['definition']['kind'] ?? null) !== $entity->getKind()) {
                 throw new \InvalidArgumentException('Template kind cannot be changed after creation.');
             }
-            $this->renderer->render($content['definition'], $content['sampleData']);
+            if (array_key_exists('sampleData', $content)) {
+                if (!is_array($content['sampleData'])) {
+                    throw new \InvalidArgumentException('Template sampleData must be an object.');
+                }
+                $this->renderer->render($content['definition'], $content['sampleData']);
+            }
         }
         unset($content['sampleData']);
         return $content;

@@ -308,10 +308,139 @@ export function boundaryCases(baseCase, thresholdMinor) {
     next.key = `${baseCase.key}-b${index + 1}`
     next.name = `${baseCase.name} @ ${formatMinor(amount)}`
     next.pricingMode = 'snapshot'
-    next.items = [{ ...newItem(), specificationId: baseCase.items[0]?.specificationId || 1, quantity: 1, unitPrice: amount }]
+    next.items = [{ ...newItem(baseCase.items[0]), quantity: 1, unitPrice: amount }]
     next.expected = emptyExpected()
     next.expectedByWorld = {}
     return next
+  })
+}
+
+export const BOUNDARY_KINDS = ['Amount boundaries', 'Quantity boundaries', 'Schedule boundaries', 'Member coverage', 'Store coverage']
+
+// Recognize only explicit, supported condition paths; do not infer units from
+// arbitrary config names or pretend to parse/validate the complete DSL here.
+function conditionValues(campaign, path) {
+  const values = []
+  const pattern = new RegExp(`${path.replaceAll('.', '\\.')}\\s*(?:>=|<=|==|>|<|!=)\\s*(config\\.[A-Za-z_][A-Za-z0-9_]*|[0-9]+)(?=\\s|$)`, 'g')
+  for (const match of (campaign.template?.dsl || '').matchAll(pattern)) {
+    const value = match[1].startsWith('config.') ? campaign.config?.[match[1].slice(7)] : Number(match[1])
+    if (Number.isSafeInteger(value) && value >= 0) values.push(value)
+  }
+  return values
+}
+
+function caseFingerprint(item) {
+  return JSON.stringify([item.storeCode, item.simulatedAt, item.currency, item.pricingMode, item.items, item.user])
+}
+
+export function boundaryPlan(scenario, baseCase, { thresholdMinor = null, kinds = BOUNDARY_KINDS } = {}) {
+  if (!baseCase) return { cases: [], available: 0, omitted: 0, counts: {} }
+  const campaigns = scenario.worlds.flatMap(world => world.campaigns)
+  const groups = Object.fromEntries(BOUNDARY_KINDS.map(kind => [kind, []]))
+  const add = (kind, label, change) => {
+    if (!kinds.includes(kind)) return
+    const item = clone(baseCase)
+    item.name = `${baseCase.name} · ${label}`.slice(0, 120)
+    item.expected = emptyExpected()
+    item.expectedByWorld = {}
+    change(item)
+    groups[kind].push(item)
+  }
+  const amounts = new Set(campaigns.flatMap(campaign => conditionValues(campaign, 'cart.subtotal')))
+  if (Number.isSafeInteger(thresholdMinor) && thresholdMinor >= 0) amounts.add(thresholdMinor)
+  for (const threshold of amounts) {
+    for (const amount of [threshold - 1, threshold, threshold + 1].filter(value => value >= 0 && value <= 100000000)) {
+      add('Amount boundaries', `subtotal ${amount} minor`, item => {
+        item.pricingMode = 'snapshot'
+        item.items = [{ ...newItem(baseCase.items[0]), quantity: 1, unitPrice: amount }]
+      })
+    }
+  }
+  // cart.items.count counts item groups, not the sum of quantities.
+  const groupCounts = new Set(campaigns.flatMap(campaign => conditionValues(campaign, 'cart.items.count')))
+  for (const threshold of groupCounts) {
+    for (const count of [threshold - 1, threshold, threshold + 1].filter(value => value >= 1 && value <= MAX_ITEMS)) {
+      add('Quantity boundaries', `item groups ${count}`, item => {
+        item.items = Array.from({ length: count }, (_, index) => newItem(baseCase.items[index % baseCase.items.length]))
+      })
+    }
+  }
+  const quantities = new Set([1, 2])
+  for (const campaign of campaigns) {
+    for (const match of (campaign.template?.dsl || '').matchAll(/discount\s+item\s+([0-9]+)\s/g)) quantities.add(Number(match[1]))
+  }
+  for (const threshold of quantities) {
+    for (const quantity of [threshold - 1, threshold, threshold + 1].filter(value => value >= 1 && value <= 1000)) {
+      add('Quantity boundaries', `quantity ${quantity}`, item => { item.items = [{ ...newItem(baseCase.items[0]), quantity }] })
+    }
+  }
+  for (const campaign of campaigns) {
+    for (const field of ['startTime', 'endTime']) {
+      if (!campaign[field]) continue
+      const time = new Date(campaign[field]).getTime()
+      if (!Number.isFinite(time)) continue
+      for (const delta of [-1000, 0, 1000]) {
+        add('Schedule boundaries', `${campaign.name} ${field} ${delta / 1000}s`, item => {
+          // Preserve the actual instant even when the browser and server use
+          // different timezones or the imported schedule contains an offset.
+          item.simulatedAt = new Date(time + delta).toISOString()
+        })
+      }
+    }
+  }
+  for (const level of ['anonymous', ...MEMBER_LEVELS]) {
+    add('Member coverage', level, item => { item.user = { mode: level === 'anonymous' ? 'anonymous' : 'level', level: level === 'anonymous' ? 'bronze' : level, userId: null } })
+  }
+  const stores = new Set(['', ...campaigns.map(campaign => campaign.storeCode).filter(Boolean)])
+  let unmatched = 'boundary-unmatched'
+  while (stores.has(unmatched) || unmatched === baseCase.storeCode) unmatched += '-x'
+  stores.add(unmatched)
+  for (const store of stores) add('Store coverage', `store ${store || 'global'}`, item => { item.storeCode = store })
+
+  const seen = new Set(scenario.cases.map(caseFingerprint))
+  const candidates = []
+  const counts = {}
+  // Round-robin dimensions so the 30-case budget cannot starve later groups.
+  const length = Math.max(0, ...Object.values(groups).map(group => group.length))
+  for (let index = 0; index < length; index++) {
+    for (const kind of BOUNDARY_KINDS) {
+      const item = groups[kind][index]
+      if (!item) continue
+      const fingerprint = caseFingerprint(item)
+      if (seen.has(fingerprint)) continue
+      seen.add(fingerprint)
+      candidates.push({ item, kind })
+    }
+  }
+  const selected = candidates.slice(0, Math.max(0, MAX_CASES - scenario.cases.length))
+  const keys = scenario.cases.map(item => item.key)
+  for (const { item, kind } of selected) {
+    item.key = newKey('case', keys)
+    keys.push(item.key)
+    counts[kind] = (counts[kind] || 0) + 1
+  }
+  return { cases: selected.map(({ item }) => item), available: candidates.length, omitted: candidates.length - selected.length, counts }
+}
+
+export function resultOverview(run) {
+  if (!run) return []
+  return run.worlds.flatMap(world => {
+    const currencies = [...new Set(run.cases.map(item => item.currency || 'CNY'))]
+    return currencies.map(currency => {
+      const keys = new Set(run.cases.filter(item => (item.currency || 'CNY') === currency).map(item => item.key))
+      const results = run.results.filter(item => item.worldKey === world.key && keys.has(item.caseKey))
+      const valid = results.filter(item => item.status !== 'error' && Number.isSafeInteger(item.beforeAmount) && Number.isSafeInteger(item.afterAmount))
+      return {
+        key: `${world.key}:${currency}`, name: world.name, currency,
+        before: valid.reduce((sum, item) => sum + item.beforeAmount, 0),
+        after: valid.reduce((sum, item) => sum + item.afterAmount, 0),
+        passed: results.filter(item => item.status !== 'error' && item.passed === true).length,
+        failed: results.filter(item => item.status !== 'error' && item.passed === false).length,
+        errors: results.filter(item => item.status === 'error').length,
+        unverified: results.filter(item => item.status !== 'error' && item.passed !== true && item.passed !== false).length,
+        count: results.length, valid: valid.length
+      }
+    })
   })
 }
 

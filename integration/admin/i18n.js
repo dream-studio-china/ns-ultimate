@@ -13,7 +13,11 @@ export function t(key, ...args) {
   }
 
   if (args.length === 0) return value
-  return value.replace(/\{(\d+)\}/g, (_, index) => String(args[index] ?? ''))
+  const named = args[0] !== null && typeof args[0] === 'object' && !Array.isArray(args[0]) ? args[0] : null
+  return value.replace(/\{(\d+|[A-Za-z_][A-Za-z0-9_]*)\}/g, (placeholder, name) => {
+    if (/^\d+$/.test(name)) return String(args[name] ?? '')
+    return named && Object.hasOwn(named, name) && named[name] != null ? String(named[name]) : placeholder
+  })
 }
 
 export function setLocale(locale) {

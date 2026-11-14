@@ -13,18 +13,14 @@ use NsUltimate\Business\Printer\Service\OrderItemFilter;
 use NsUltimate\Business\Printer\Value\PrintCategoryContext;
 use NsUltimate\Business\Printer\Value\PrintItemContext;
 use NsUltimate\Business\Printer\Value\PrintProductContext;
-use Symfony\Component\Intl\Currencies;
 
 /** Builds durable Trade order snapshots for print rules. */
 final class TradeOrderPrintAdapter
 {
     private readonly OrderItemFilter $filter;
 
-    public function __construct(
-        private readonly EntityManagerInterface $entityManager,
-        ?OrderItemFilter $filter = null,
-        private readonly string $paymentBaseUrl = '',
-    ) {
+    public function __construct(private readonly EntityManagerInterface $entityManager, ?OrderItemFilter $filter = null)
+    {
         $this->filter = $filter ?? new OrderItemFilter();
     }
 
@@ -123,10 +119,9 @@ final class TradeOrderPrintAdapter
                 'paidAt' => $order->getPaidAt()?->format(DATE_ATOM),
                 'currency' => $currency,
                 'totalAmount' => $order->getTotalAmount(),
-                'totalPrice' => $this->money($subtotal, $currency),
-                'discount' => $this->money(max(0, $subtotal - $order->getTotalAmount()), $currency),
-                'amountDue' => $this->money($order->getTotalAmount(), $currency),
-                'paymentUrl' => $this->paymentUrl($order, $store),
+                'totalPrice' => $subtotal,
+                'discount' => max(0, $subtotal - $order->getTotalAmount()),
+                'amountDue' => $order->getTotalAmount(),
                 'items' => $items,
             ],
             'store' => ['uuid' => $store->getUuid(), 'name' => $store->getName(), 'code' => $store->getCode()],
@@ -149,26 +144,5 @@ final class TradeOrderPrintAdapter
             }
         }
         return $tickets;
-    }
-
-    /** Render a minor-unit amount the way receipt templates display it. */
-    private function money(int $amount, string $currency): string
-    {
-        $code = strtoupper($currency);
-        $digits = Currencies::exists($code) ? Currencies::getFractionDigits($code) : 2;
-        $symbol = Currencies::exists($code) ? Currencies::getSymbol($code, 'zh_CN') : $code.' ';
-        return $symbol.number_format($amount / 10 ** $digits, $digits, '.', ',');
-    }
-
-    /** Build the customer H5 payment link from the configured origin and snapshot identities. */
-    private function paymentUrl(Order $order, Store $store): string
-    {
-        $base = rtrim(trim($this->paymentBaseUrl), '/');
-        $scheme = strtolower((string) parse_url($base, PHP_URL_SCHEME));
-        if ($base === '' || !in_array($scheme, ['http', 'https'], true)) {
-            return '';
-        }
-        return $base.'/h5/payment/index.html?orderUuid='.rawurlencode($order->getUuid())
-            .'&storeUuid='.rawurlencode($store->getUuid());
     }
 }

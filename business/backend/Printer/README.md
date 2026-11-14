@@ -82,8 +82,8 @@ requests without template snapshots fail closed and require operator investigati
 
 Order snapshots also expose demo-compatible `order.id` (nullable numeric database
 ID), `createdTime` (`Y/m/d H:i:s`, using the stored creation timestamp's timezone),
-`counterName`, `counterLabel`, `labelHeader`, `totalPrice`, `discount`, `amountDue`,
-and `paymentUrl`. Counter fields use the order's store-scoped Counter bindings,
+`counterName`, `counterLabel`, `labelHeader`, `totalPrice`, `discount`, and
+`amountDue`. Counter fields use the order's store-scoped Counter bindings,
 ordered by binding ID, and freeze the binding's name snapshot (falling back to its
 code snapshot). Multiple counters are joined with `, `; no bindings produce empty
 strings. `counterLabel` adds `(#id)` for each counter's database ID, and
@@ -94,16 +94,16 @@ Items expose `product`, `spec`, `subTitle`, `quantityLabel`, and `price` aliases
 the core Trade item snapshot) and falls back to the specification name when it is
 missing. Both whole-order and per-unit tickets include these fields.
 `totalPrice` is the recorded line subtotal, `amountDue` is the stored order
-`totalAmount`, and `discount` is `totalPrice - amountDue` clamped at zero; all three
-are display strings with the currency symbol, the currency's fraction digits and
-thousands separators. `unitPrice`, `amount`, `price`, and `totalAmount` remain
-integer minor units. `paymentUrl` is built from the backend public origin
-(`DEFAULT_URI`) as `<origin>/h5/payment/index.html?orderUuid=<order
-uuid>&storeUuid=<store uuid>` using snapshot identities only; it is empty when
-`DEFAULT_URI` is missing or not http(s), and order metadata can never supply it. Demo-only staff/booking/waiter
-names and labels, `isAdd`, `laterPay`, and item `tags` have no validated equivalent
-in this adapter and are not fabricated from arbitrary order metadata. Existing
-queued requests and job reprints retain their saved snapshots without enrichment.
+`totalAmount`, and `discount` is `totalPrice - amountDue` clamped at zero. All
+monetary snapshot fields, including `totalPrice`, `discount`, `amountDue`,
+`unitPrice`, `amount`, `price`, and `totalAmount`, are integer minor units; format
+them in the template (for example `{order.amountDue|money}`) when needed. Payment
+links are not snapshotted: compose them in the template from `order.uuid` and
+`store.uuid` with a `string` or `qr` `template` property. Demo-only
+staff/booking/waiter names and labels, `isAdd`, `laterPay`, and item `tags` have no
+validated equivalent in this adapter and are not fabricated from arbitrary order
+metadata. Existing queued requests and job reprints retain their saved snapshots
+without enrichment.
 
 Events never call printer providers. Run
 `app:printer:dispatch-orders` periodically (or as a supervised worker command)
@@ -191,11 +191,12 @@ form and API lifecycle; the backend registers the device with Xpyun before
 persisting it. Device status refresh, preview, and print submission/status use
 dedicated actions. Preview never submits a print job.
 
-Template create and edit forms initialize temporary validation data from the
-bundled printer sample. Operators can adjust it for custom template fields before
-saving. Sample data is used only for validation and is not persisted; reopening
-the form starts with the bundled sample again. Live printing uses order data,
-not this sample. No database migration is needed for sample data.
+Template create and edit forms no longer carry sample data. The paper preview
+owns an editable sample JSON that is saved in the browser and can be restored to
+the bundled default. Save-time rendering is only performed when an API client
+explicitly supplies `sampleData`; otherwise the template is stored as supplied
+and the preview or dispatch render is the validation step. Live printing always
+uses order data, not this sample. No database migration is needed for sample data.
 
 Account and job dialogs use labeled forms, loading guards and separate
 error/result alerts. Job templates are filtered to match the selected device
@@ -236,14 +237,25 @@ their individual-page behavior. Existing saved job content is never rewritten.
   legacy stateful/unpaired commands without adding closing tags or line breaks.
   Compose literal LF characters using `text`, and dynamic content using escaped
   `field` nodes. This is not arbitrary printer markup or executable code.
+- `string`: `value` combines literals and fields without executing code. A
+  placeholder is `{path}` or `{path|filter:argument}`; `{{` and `}}` emit literal
+  braces. Filters are `upper`, `lower`, `trim`, `truncate:N` (1-500),
+  `default:text`, `money[:decimals]` (integer minor units, 0-6 decimals, default
+  2, thousands separators) and `date[:format]` (default `Y-m-d H:i:s`), and they
+  chain left to right. Missing paths insert an empty string; invalid paths,
+  filters or unbalanced braces reject the template when it is rendered (save,
+  preview or dispatch). Output is escaped like `text` and `field`.
+  `columns` cells, `labelText`, `qr` and `barcode` accept the same syntax through
+  a `template` property instead of `path`/`value`.
 - `columns` (receipt only): `columns` contains 1-8 cells, each with `width`
-  (display cells), `align`, and either `path` or `value`. Text is truncated and
-  padded by Unicode display width before escaping. CJK characters occupy two
-  cells. Total widths are capped at 96; choose widths that fit the physical
-  printer (normally 32 cells for 58 mm or 48 for 80 mm before width scaling).
-  Format amounts upstream; templates do not perform monetary calculations.
-- `labelText`: accepts either `path` or literal `value`, font 1-9, `w`/`h`
-  multipliers 1-10, and `r` rotation 0/90/180/270. Optional `align` computes the
+  (display cells), `align`, and either `path`, a literal `value`, or a `template`
+  string. Text is truncated and padded by Unicode display width before escaping.
+  CJK characters occupy two cells. Total widths are capped at 96; choose widths
+  that fit the physical printer (normally 32 cells for 58 mm or 48 for 80 mm
+  before width scaling). Format amounts upstream or with the `money` filter;
+  templates do not calculate order totals.
+- `labelText`: accepts `path`, literal `value`, or a `template` string, font 1-9,
+  `w`/`h` multipliers 1-10, and `r` rotation 0/90/180/270. Optional `align` computes the
   x coordinate for unrotated font 9: ASCII cells are 12 dots, CJK cells 24 dots,
   multiplied by `w`. Center/right alignment uses the configured label width
   at 8 dots/mm and clamps overlong text to x=0, matching the legacy behavior.
@@ -252,11 +264,13 @@ their individual-page behavior. Existing saved job content is never rewritten.
   trim only for measurement and count every multibyte code point as two
   half-cells, including accented letters. The emitted text remains unchanged.
   The default `display` mode retains Unicode display-width measurement.
-- `qr`: accepts `path`, `size`, `errorCorrection` (`L/M/Q/H`). Receipts use
+- `qr`: accepts `path` or a `template` string, `size`, `errorCorrection`
+  (`L/M/Q/H`). Receipts use
   `size` 0-16 (default 6) and `align` (default `center`); whitespace in receipt
   QR payloads is rejected as required by Xpyun. Labels use `size` 1-10 (default
-  2), `x`/`y` and UTF-8 `QRC`. Both kinds cap content at 256 characters. Payment
-  URLs must come from trusted application data, never from hardcoded live links.
+  2), `x`/`y` and UTF-8 `QRC`. Both kinds cap content at 256 characters. Compose
+  payment URLs from trusted application fields or operator-authored template
+  literals; never derive them from user-supplied order metadata.
 
 The paper preview interprets these commands without injecting HTML and renders
 QR matrices locally. Fonts, line wrapping and QR sizing are approximations;
