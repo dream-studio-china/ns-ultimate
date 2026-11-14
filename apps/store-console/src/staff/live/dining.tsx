@@ -17,6 +17,7 @@ import { ApiError } from '../adapters/api-client'
 import { reportingOrdersFromCounterSessions, summarizeReport } from '../reporting'
 import { errorKey, ListFeedback, LiveSheet, MutationForm, Notice, PageControls, RecommendationThumbs, StatusPill, useCommand, usePage, usePageRefresh } from './ui'
 import { canManuallyPrintOrderStatus, ManualPrintButton, ManualPrintSheet } from './ManualPrintSheet'
+import { OrderAmountSummary } from './OrderAmountSummary'
 import './dining.css'
 
 const tradeLabels: Record<string, MessageKey> = { draft: 'diningDraft', pending: 'diningPending', confirmed: 'diningConfirmed', paid: 'diningPaid', fulfilled: 'stateFulfilled', completed: 'diningCompleted', cancelled: 'stateCancelled', refunded: 'diningRefunded', merged: 'diningMerged' }
@@ -441,7 +442,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
             <p><time dateTime={order.createdAt}>{formatDiningDate(order.createdAt, locale)}</time></p>
             <p>{t('diningMode')} · {orderDiningModeName(order)}</p>
             <p>{t('diningPaymentState')} · {order.paymentStatus ?? t('diningNoPayment')}{order.hasInvoice && ` · ${t('diningHasInvoice')}`}</p>
-            <DiningLines items={order.items} currency={order.currency} /><strong>{new Intl.NumberFormat(locale, { style: 'currency', currency: order.currency }).format(order.totalAmount / 100)}</strong>
+            <DiningLines items={order.items} currency={order.currency} /><OrderAmountSummary order={order} />
             {order.notes && <p className="dining-notes">{order.notes}</p>}
             {order.status === 'pending' && permitted(access, 'confirm') && <ConfirmPendingOrder api={api} table={table} order={order} onDone={() => { detail.reload(); changed() }} />}
             {(canManuallyPrintOrderStatus(order.status) || (confirmedOrderCanCollect(order) && !failedInvoiceNeedsRelease(order) && !paymentAlreadyConfirmed.has(order.tradeOrderUuid))) && <div className="dining-round-actions">
@@ -511,7 +512,7 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
     <section className="dining-payment-order" aria-label={t('collectPaymentTitle')}>
       <header><div><span>#{order.uuid.slice(0, 8).toUpperCase()}</span><h3>{table.counter.name}</h3><small>{order.diningModeName ?? t('diningModeNotRecorded')}</small></div><strong>{amount}</strong></header>
       <DiningLines items={order.items} currency={order.currency} />
-      <div className="dining-payment-total"><span>{t('amountDue')}</span><strong>{amount}</strong></div>
+      <OrderAmountSummary order={order} />
     </section>
 
     <Notice subtle>{t('paymentCustomerHint')}</Notice>

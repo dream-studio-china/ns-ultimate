@@ -22,6 +22,7 @@ use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\CounterSession;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
+use NsUltimate\Business\Promotion\Service\OrderPromotionSnapshot;
 use NsUltimate\Business\Store\Service\StaffCommandService;
 use NsUltimate\Business\Store\Service\StaffOrderPricing;
 use NsUltimate\Business\Store\Service\StaffOrderService;
@@ -94,14 +95,18 @@ final class CounterSessionOperations
                 $storeOrder = $this->findCurrent(StoreOrder::class, ['tradeOrderUuid' => $order->getUuid()], $lock);
                 if ($storeOrder !== null && $storeOrder->getStore()->getUuid() !== $counter->getStoreUuid()) throw new HttpException(409, 'invalid_counter_binding');
                 $items = [];
+                $itemOriginalAmount = 0;
                 foreach ($order->getItems() as $item) {
                     $productName = $item->getProductSnapshot()['name'] ?? '';
                     $items[] = ['specificationUuid' => $item->getSpecificationUuid(), 'productName' => is_string($productName) ? $productName : '',
                         'specificationName' => $item->getSpecificationTitle() ?? '', 'quantity' => $item->getQuantity(), 'unitPrice' => $item->getUnitPrice(), 'amount' => $item->getPrice()];
+                    $itemOriginalAmount += $item->getUnitPrice() * $item->getQuantity();
                 }
+                $discountSummary = OrderPromotionSnapshot::summary($order->getMetadata(), $order->getTotalAmount(), $itemOriginalAmount);
                 $rows[] = ['uuid' => $order->getUuid(), 'status' => $order->getStatus(), 'operationalStatus' => $storeOrder?->getOperationalStatus(),
                     'paymentStatus' => $order->getPaymentStatus(), 'hasInvoice' => $order->getInvoiceId() !== null,
-                    'currency' => $order->getCurrency(), 'totalAmount' => $order->getTotalAmount(), 'notes' => $order->getNotes(), 'metadata' => $order->getMetadata(),
+                    'currency' => $order->getCurrency(), 'totalAmount' => $order->getTotalAmount(), ...$discountSummary,
+                    'notes' => $order->getNotes(), 'metadata' => $order->getMetadata(),
                     'createdAt' => $order->getCreatedAt()->format(DATE_ATOM), 'items' => $items,
                     'canReplace' => $this->canReplace($order, $lifecycle, $storeOrder), 'canCancel' => $this->canCancel($order, $lifecycle, $storeOrder),
                     'changeBlockedReason' => $this->changeBlockedReason($order, $lifecycle, $storeOrder),

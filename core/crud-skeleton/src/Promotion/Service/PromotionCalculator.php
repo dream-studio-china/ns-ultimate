@@ -26,6 +26,7 @@ class PromotionCalculator implements PriceCalculatorInterface
 
     public function calculate(PriceCalculationContext $context): void
     {
+        $originalAmount = max(0, $context->totalAmount);
         $appliedIds = [];
 
         $innerApplied = [];
@@ -42,6 +43,7 @@ class PromotionCalculator implements PriceCalculatorInterface
                 break;
             }
 
+            $beforeAmount = $context->totalAmount;
             $this->promotionService->apply($promotion, $context);
 
             // Every promotion instance is applied at most once per quotation.
@@ -53,6 +55,7 @@ class PromotionCalculator implements PriceCalculatorInterface
                 'templateName' => $promotion->getTemplate()?->getName(),
                 'type' => $promotion->getTemplate()?->getType(),
                 'config' => $promotion->getConfig(),
+                'discountAmount' => max(0, $beforeAmount - $context->totalAmount),
                 'snapshot' => [
                     'totalAmount' => $context->totalAmount,
                     'itemsCount' => count($context->items),
@@ -80,6 +83,7 @@ class PromotionCalculator implements PriceCalculatorInterface
 
         $outerApplied = null;
         if ($outerPromotion !== null) {
+            $beforeAmount = $context->totalAmount;
             $this->promotionService->apply($outerPromotion, $context);
 
             $outerApplied = [
@@ -89,6 +93,7 @@ class PromotionCalculator implements PriceCalculatorInterface
                 'type' => $outerPromotion->getTemplate()?->getType(),
                 'config' => $outerPromotion->getConfig(),
                 'phase' => 'outer',
+                'discountAmount' => max(0, $beforeAmount - $context->totalAmount),
             ];
             $appliedIds[] = (int) $outerPromotion->getId();
         }
@@ -96,7 +101,11 @@ class PromotionCalculator implements PriceCalculatorInterface
         $bestPricePromotion = $this->applyBestPricePromotion($context, $appliedIds);
 
         // Write to meta channel — Trade never sees this structure
-        $result = ['inner' => $innerApplied];
+        $result = [
+            'originalAmount' => $originalAmount,
+            'discountAmount' => max(0, $originalAmount - $context->totalAmount),
+            'inner' => $innerApplied,
+        ];
         if ($outerApplied !== null) {
             $result['outer'] = $outerApplied;
         }
@@ -159,6 +168,7 @@ class PromotionCalculator implements PriceCalculatorInterface
             return null;
         }
 
+        $beforeAmount = $context->totalAmount;
         $this->promotionService->apply($winner, $context);
 
         return [
@@ -166,6 +176,7 @@ class PromotionCalculator implements PriceCalculatorInterface
             'promotionName' => $winner->getName(),
             'templateName' => $winner->getTemplate()?->getName(),
             'type' => $winner->getTemplate()?->getType(),
+            'discountAmount' => max(0, $beforeAmount - $context->totalAmount),
             'totalAmount' => $context->totalAmount,
             'candidates' => $evaluations,
         ];

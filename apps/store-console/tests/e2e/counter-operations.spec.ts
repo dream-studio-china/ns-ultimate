@@ -13,12 +13,12 @@ const store = { uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'U
 const item = { specificationUuid: specId, productName: 'Soup', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }
 const stamp = '2026-10-31T10:00:00+00:00'
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; failedInvoice?: boolean; paymentClose?: 'success' | 'already-paid' | 'network'; paymentCloseAccess?: boolean; printAccess?: boolean; printOptions?: boolean; recommended?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; failedInvoice?: boolean; paymentClose?: 'success' | 'already-paid' | 'network'; paymentCloseAccess?: boolean; printAccess?: boolean; printOptions?: boolean; recommended?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; orderCount?: number; discountedOrder?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   let session: { uuid: string; participantCount: number; notes: string; startedAt: string; revision: number } | null = options.empty ? null : { uuid: sessionId, participantCount: 3, notes: 'Birthday', startedAt: stamp, revision }
   const initialStatus = options.pendingOrder ? 'pending' : options.customerOrder ? 'confirmed' : 'completed'
-  let orders: { uuid: string; status: string; operationalStatus: string; paymentStatus: string | null; hasInvoice: boolean; currency: string; totalAmount: number; notes: string; createdAt: string; items: typeof item[]; diningModeUuid: string; diningModeName: string; canReplace: boolean; canCancel: boolean }[] = options.empty ? [] : [{ uuid: orderId, status: initialStatus, operationalStatus: initialStatus === 'completed' ? 'fulfilled' : 'pending_validation', paymentStatus: options.payingOrder ? 'paying' : options.failedInvoice ? 'failed' : null, hasInvoice: Boolean(options.failedInvoice), currency: 'USD', totalAmount: 1590, notes: '', createdAt: stamp, items: [item], diningModeUuid: 'dining-mode-hotpot', diningModeName: '火锅', canReplace: initialStatus === 'confirmed', canCancel: initialStatus === 'pending' || initialStatus === 'confirmed' }]
+  let orders: { uuid: string; status: string; operationalStatus: string; paymentStatus: string | null; hasInvoice: boolean; currency: string; totalAmount: number; originalAmount?: number; discountAmount?: number; discounts?: { name: string; type: string | null; amount: number }[]; notes: string; createdAt: string; items: typeof item[]; diningModeUuid: string; diningModeName: string; canReplace: boolean; canCancel: boolean }[] = options.empty ? [] : Array.from({ length: options.orderCount ?? 1 }, (_, index) => ({ uuid: `10000000-0000-4000-8000-${String(9 + index).padStart(12, '0')}`, status: initialStatus, operationalStatus: initialStatus === 'completed' ? 'fulfilled' : 'pending_validation', paymentStatus: options.payingOrder ? 'paying' : options.failedInvoice ? 'failed' : null, hasInvoice: Boolean(options.failedInvoice), currency: 'USD', totalAmount: options.discountedOrder ? 1390 : 1590, ...(options.discountedOrder ? { originalAmount: 1590, discountAmount: 200, discounts: [{ name: '会员优惠', type: 'member_discount', amount: 200 }] } : {}), notes: '', createdAt: stamp, items: [item], diningModeUuid: 'dining-mode-hotpot', diningModeName: '火锅', canReplace: initialStatus === 'confirmed', canCancel: initialStatus === 'pending' || initialStatus === 'confirmed' }))
   const receipts = new Map<string, Record<string, unknown>>()
   const version = () => revision.toString(16).padStart(64, 'a')
   const newOrderUuid = () => `10000000-0000-4000-8000-${String(revision + 10).padStart(12, '0')}`
@@ -201,6 +201,33 @@ for (const width of [320, 390, 768, 1280]) {
   })
 }
 
+test('desktop table details can scroll the final order batch fully into view', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await setup(page, { customerOrder: true, orderCount: 8 })
+  await viewTable(page)
+
+  const scroll = page.locator('.dining-detail-sheet .sheet-scroll')
+  await expect(page.locator('.dining-round')).toHaveCount(8)
+  const metrics = await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    const lastCard = element.querySelector('.dining-round:last-of-type')
+    if (!lastCard) throw new Error('last order batch is missing')
+    const viewport = element.getBoundingClientRect()
+    const card = lastCard.getBoundingClientRect()
+    return {
+      canScroll: element.scrollHeight > element.clientHeight,
+      lastCardTop: card.top,
+      lastCardBottom: card.bottom,
+      viewportTop: viewport.top,
+      viewportBottom: viewport.bottom,
+    }
+  })
+
+  expect(metrics.canScroll).toBe(true)
+  expect(metrics.lastCardTop).toBeGreaterThanOrEqual(metrics.viewportTop - 1)
+  expect(metrics.lastCardBottom).toBeLessThanOrEqual(metrics.viewportBottom + 1)
+})
+
 test('table details hide party and end-session actions', async ({ page }) => {
   const requests = await setup(page, { customerOrder: true })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
@@ -240,6 +267,27 @@ test('payment QR and receipt printing use the customer entry and manual print co
   expect(requests.some((request) => request.path.includes('huifu-payments') || request.path.includes('/app/orders'))).toBe(false)
   const print = requests.find((request) => request.method === 'POST' && request.path.endsWith(`/trade-orders/${orderId}/print`))
   expect(print?.body).toMatchObject({ ruleUuid: printRuleId, commandUuid: expect.any(String), reason: '收银台手动打印' })
+})
+
+test('table and payment views show original price, discount method, discount amount and actual price', async ({ page }) => {
+  await setup(page, { customerOrder: true, discountedOrder: true })
+  await viewTable(page)
+
+  let summary = page.locator('.dining-round .dining-amount-summary')
+  await expect(summary).toContainText('原价')
+  await expect(summary).toContainText('US$15.90')
+  await expect(summary).toContainText('优惠方式 · 会员优惠')
+  await expect(summary).toContainText('-US$2.00')
+  await expect(summary).toContainText('实收价')
+  await expect(summary).toContainText('US$13.90')
+
+  await page.getByRole('button', { name: '收款', exact: true }).click()
+  summary = page.getByRole('dialog', { name: '订单收款' }).locator('.dining-amount-summary')
+  await expect(summary).toContainText('原价')
+  await expect(summary).toContainText('优惠方式 · 会员优惠')
+  await expect(summary).toContainText('-US$2.00')
+  await expect(summary).toContainText('实收价')
+  await expect(summary).toContainText('US$13.90')
 })
 
 test('cashier product rows show a thumbs-up for recommended products', async ({ page }) => {

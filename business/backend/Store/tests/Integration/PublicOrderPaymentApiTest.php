@@ -83,6 +83,7 @@ final class PublicOrderPaymentApiTest extends KernelTestCase
             'store' => ['uuid' => $this->store->getUuid(), 'name' => 'Public payment store'],
             'counter' => ['uuid' => $this->counter->getUuid(), 'name' => 'A01', 'code' => 'A01'],
             'currency' => 'CNY', 'amount' => 2400,
+            'originalAmount' => 2400, 'discountAmount' => 0, 'discounts' => [],
             'items' => [['name' => 'Lunch', 'specification' => 'Regular', 'quantity' => 2, 'unitPrice' => 1200, 'amount' => 2400]],
             'provider' => 'huifu', 'channels' => ['native'], 'defaultChannel' => 'native', 'invoice' => null,
         ]], $body);
@@ -92,6 +93,36 @@ final class PublicOrderPaymentApiTest extends KernelTestCase
         self::assertSame('confirmed', $this->order->getStatus());
         self::assertStringNotContainsString('private-', $response->getContent());
         self::assertSame(200, $this->request(strtoupper($this->order->getUuid()))->getStatusCode());
+    }
+
+    public function testAnonymousReadProjectsOnlySafeDiscountSummary(): void
+    {
+        $this->order->setTotalAmount(2000)->setMetadata([
+            'private' => 'private-order-metadata',
+            'counterUuid' => $this->counter->getUuid(),
+            '_promotion' => [
+                'originalAmount' => 2400,
+                'discountAmount' => 400,
+                'applied' => [
+                    ['id' => 1, 'name' => '会员优惠', 'type' => 'member_discount', 'phase' => 'inner', 'amount' => 300],
+                    ['id' => 2, 'name' => '满减活动', 'type' => 'full_reduction', 'phase' => 'outer', 'amount' => 100],
+                ],
+                'private' => 'private-promotion-configuration',
+            ],
+        ]);
+        $this->em->flush();
+
+        $response = $this->request();
+        self::assertSame(200, $response->getStatusCode());
+        $data = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
+        self::assertSame(2400, $data['originalAmount']);
+        self::assertSame(400, $data['discountAmount']);
+        self::assertSame([
+            ['name' => '会员优惠', 'type' => 'member_discount', 'amount' => 300],
+            ['name' => '满减活动', 'type' => 'full_reduction', 'amount' => 100],
+        ], $data['discounts']);
+        self::assertArrayNotHasKey('metadata', $data);
+        self::assertStringNotContainsString('private-', $response->getContent());
     }
 
     public function testExistingInvoiceSummaryDoesNotExposePayerOrGatewayPayloads(): void

@@ -105,6 +105,36 @@ final class PromotionCalculatorTest extends TestCase
         self::assertSame('outer', $outer['phase']);
     }
 
+    public function testCalculateRecordsOriginalAmountAndExactReductionPerPromotion(): void
+    {
+        $context = new PriceCalculationContext([]);
+        $context->totalAmount = 5000;
+
+        $innerPromotion = $this->createMockPromotion(1, 'Member discount', 'Member discount', 'member_discount', []);
+        $outerPromotion = $this->createMockPromotion(2, 'Spend and save', 'Full reduction', 'full_reduction', []);
+        $innerCalls = 0;
+        $service = $this->createMock(PromotionServiceInterface::class);
+        $service->method('getFirstAvailable')
+            ->willReturnCallback(function (PriceCalculationContext $ctx, ?int $phase) use ($innerPromotion, $outerPromotion, &$innerCalls) {
+                if ($phase === PromotionTemplate::PHASE_INNER) {
+                    return $innerCalls++ === 0 ? $innerPromotion : null;
+                }
+                return $phase === PromotionTemplate::PHASE_OUTER ? $outerPromotion : null;
+            });
+        $service->method('apply')->willReturnCallback(function (Promotion $promotion, PriceCalculationContext $ctx): void {
+            if ($promotion->getId() === 1) $ctx->totalAmount -= 500;
+            if ($promotion->getId() === 2) $ctx->totalAmount -= 700;
+        });
+
+        (new PromotionCalculator($service))->calculate($context);
+
+        self::assertSame(5000, $context->meta['promotion']['originalAmount']);
+        self::assertSame(1200, $context->meta['promotion']['discountAmount']);
+        self::assertSame(500, $context->meta['promotion']['inner'][0]['discountAmount']);
+        self::assertSame(700, $context->meta['promotion']['outer']['discountAmount']);
+        self::assertSame(3800, $context->totalAmount);
+    }
+
     public function testCalculateNoPromotionsAvailable(): void
     {
         $context = new PriceCalculationContext([]);

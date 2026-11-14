@@ -13,6 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuProfileResolver;
+use NsUltimate\Business\Promotion\Service\OrderPromotionSnapshot;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 
@@ -46,19 +47,22 @@ final class OrderPaymentController
         }
 
         $items = [];
+        $itemOriginalAmount = 0;
         foreach ($order->getItems() as $item) {
             $name = $item->getProductSnapshot()['name'] ?? '';
             $items[] = ['name' => is_string($name) ? $name : '', 'specification' => $item->getSpecificationTitle() ?? '',
                 'quantity' => $item->getQuantity(), 'unitPrice' => $item->getUnitPrice(), 'amount' => $item->getPrice()];
+            $itemOriginalAmount += $item->getUnitPrice() * $item->getQuantity();
         }
         $channels = $this->huifu->publicChannels($store->getUuid());
         $counter = $this->publicCounter($order, $store->getUuid());
+        $discountSummary = OrderPromotionSnapshot::summary($order->getMetadata(), $order->getTotalAmount(), $itemOriginalAmount);
 
         return new JsonResponse(['code' => 0, 'message' => 'SUCCESS', 'data' => [
             'orderUuid' => $order->getUuid(), 'status' => $order->getStatus(),
             'store' => ['uuid' => $store->getUuid(), 'name' => $store->getName()],
             'counter' => $counter,
-            'currency' => $order->getCurrency(), 'amount' => $order->getTotalAmount(), 'items' => $items,
+            'currency' => $order->getCurrency(), 'amount' => $order->getTotalAmount(), ...$discountSummary, 'items' => $items,
             'provider' => 'huifu', 'channels' => $channels['channels'], 'defaultChannel' => $channels['defaultChannel'],
             'invoice' => $invoice === null ? null : [
                 'uuid' => $invoice->getUuid(), 'outTradeNo' => $invoice->getOutTradeNo(), 'status' => $invoice->getStatus(),
