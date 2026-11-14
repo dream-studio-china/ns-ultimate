@@ -127,7 +127,8 @@ test('inspects only the Product kitchen-print flag, not sibling settings', async
     status: 'active',
     settings: { kitchenPrinterEnable: true }
   })
-  assert.ok(!JSON.stringify(result).includes('09:30'))
+  assert.ok(!JSON.stringify(result).includes('startSaleTime'))
+  assert.ok(!JSON.stringify(result).includes('endSaleTime'))
 })
 
 test('host omission diagnostics use only policy paths and preserve successful response semantics', async() => {
