@@ -17,6 +17,8 @@ Scope of this phase:
 
 The UI separates scenario configuration from simulation results. Summary cards show world/case counts, cases with assertions and planned execution count. Result charts compare before/after totals by world and currency (execution errors are excluded), and show verified, failed, error and unverified counts separately. Amount totals are descriptive aggregates, not checkout revenue; unverified results never count as assertion passes.
 
+The business translation adapter interpolates named placeholders from an object (for example, `{passed}`, `{failed}` and `{errors}` from the run summary), including zero values. Import timestamps/counts, gift counts, excluded-snapshot diagnostics and boundary-generation notices use the same adapter. Existing positional `{0}`/`{1}` calls and core translation fallback remain unchanged.
+
 Store selectors load the existing paginated `GET /api/v1/manage/stores` list and search locally by name, numeric ID, UUID or code. Selecting a store still submits its exact `code`, not its ID/UUID, to the unchanged simulation APIs. Clearing selects global scope. Records without a non-empty code are not selectable. Existing imported codes are retained even when missing from the store list; failed list loads can be retried.
 
 ### Boundary probes
