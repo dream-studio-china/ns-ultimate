@@ -631,6 +631,8 @@ export default {
   'No successful results': '実行成功の結果がありません',
   'Verification coverage': '検証状況',
   'Verified': '検証成功',
+  'The import store only filters campaigns. Each test cart uses its own store and simulated time.': 'インポート店舗はキャンペーンの絞り込み専用です。各カートは自身の店舗とシミュレーション日時で実行されます。',
+  '{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.': '{count} 件のカートの店舗がインポート店舗と異なります。店舗限定キャンペーンが適用されない場合があります。各カートを編集して店舗を選択してください。',
   'Not verified': '未検証',
   'Unverified runs need expected results; they are not passes.': '未検証のケースには期待値が必要です。検証成功には含みません。'
 }

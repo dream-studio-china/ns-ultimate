@@ -116,6 +116,60 @@ final class PromotionScenarioApiTest extends KernelTestCase
         self::assertArrayNotHasKey('username', $profile);
     }
 
+    public function testAppliedCampaignIsNotReclassifiedAfterItsDiscountChangesTheThreshold(): void
+    {
+        $campaign = $this->worldCampaign('threshold-rate', 'discount', $this->discountDsl(90, 10), ['threshold' => 10000, 'rate' => 90]);
+        $data = $this->postJson('/api/v1/manage/promotion-simulation/run', [
+            'worlds' => [['key' => 'world', 'name' => 'World', 'campaigns' => [$campaign]]],
+            'cases' => [$this->scenarioCase('cart')],
+        ]);
+        $result = $data['results'][0];
+        self::assertSame(9000, $result['afterAmount']);
+        self::assertSame(['threshold-rate'], array_column($result['applied'], 'campaignKey'));
+        self::assertSame('applied', $result['diagnostics'][0]['status']);
+    }
+
+    public function testScheduleAndStoreDiagnosticsAgreeWithTheActualAppliedTrace(): void
+    {
+        $campaign = $this->worldCampaign('scheduled-rate', 'discount', $this->discountDsl(90, 10), ['threshold' => 0, 'rate' => 90]);
+        $campaign['startTime'] = '2026-11-12T09:00:00+08:00';
+        $campaign['endTime'] = '2026-11-12T11:00:00+08:00';
+        $data = $this->postJson('/api/v1/manage/promotion-simulation/run', [
+            'worlds' => [['key' => 'world', 'name' => 'World', 'campaigns' => [$campaign]]],
+            'cases' => [
+                $this->scenarioCase('global', ['storeCode' => '']),
+                $this->scenarioCase('before', ['simulatedAt' => '2026-11-12T00:59:59Z']),
+                $this->scenarioCase('start', ['simulatedAt' => '2026-11-12T01:00:00Z']),
+                $this->scenarioCase('during'),
+                $this->scenarioCase('end', ['simulatedAt' => '2026-11-12T03:00:00Z']),
+                $this->scenarioCase('after', ['simulatedAt' => '2026-11-12T03:00:01Z']),
+            ],
+        ]);
+        self::assertSame(['store_mismatch', 'not_started', 'applied', 'applied', 'applied', 'ended'], array_map(static fn (array $result): string => $result['diagnostics'][0]['status'], $data['results']));
+        self::assertSame([10000, 10000, 9000, 9000, 9000, 10000], array_column($data['results'], 'afterAmount'));
+    }
+
+    public function testInvalidSnapshotsAreReportedAsInvalidRatherThanEligible(): void
+    {
+        $campaign = $this->worldCampaign('invalid', 'unsupported', 'type: unsupported', []);
+        $data = $this->postJson('/api/v1/manage/promotion-simulation/run', [
+            'worlds' => [['key' => 'world', 'name' => 'World', 'campaigns' => [$campaign]]],
+            'cases' => [$this->scenarioCase('cart')],
+        ]);
+        self::assertCount(1, $data['worlds'][0]['errors']);
+        self::assertSame('invalid', $data['results'][0]['diagnostics'][0]['status']);
+        self::assertSame([], $data['results'][0]['applied']);
+    }
+
+    private function scenarioCase(string $key, array $overrides = []): array
+    {
+        return array_replace([
+            'key' => $key, 'name' => $key, 'storeCode' => 'STACK-TEST',
+            'simulatedAt' => '2026-11-12T10:00:00+08:00', 'currency' => 'CNY', 'pricingMode' => 'snapshot',
+            'items' => [['specificationId' => 1, 'quantity' => 1, 'unitPrice' => 10000]],
+        ], $overrides);
+    }
+
     public function testCurrentCatalogErrorsAreReportedPerResultAndInvalidRequestsFailClosed(): void
     {
         $world = ['key' => 'world', 'name' => 'World', 'campaigns' => [$this->worldCampaign('rate', 'discount', $this->discountDsl(90, 10), ['threshold' => 0, 'rate' => 90])]];

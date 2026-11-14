@@ -35,6 +35,7 @@
       </div>
     </section>
     <small class="promotion-simulation__note">{{ $t('Scenario data is kept in this browser only. Simulation is read-only.') }}</small>
+    <small class="promotion-simulation__note">{{ $t('The import store only filters campaigns. Each test cart uses its own store and simulated time.') }}</small>
     <el-alert v-if="storeError" type="warning" :closable="false" :title="storeError"><el-button link type="primary" @click="loadStores">{{ $t('Retry') }}</el-button></el-alert>
 
     <div class="promotion-simulation__stats">
@@ -114,6 +115,8 @@
           </div>
         </el-collapse-item>
       </el-collapse>
+      <el-alert v-if="storeMismatchCount" type="warning" :closable="false" show-icon class="promotion-simulation__alert"
+        :title="$t('{count} carts use a different store from the import store. Store-specific campaigns may not apply; edit each cart to choose its store.', { count: storeMismatchCount })" />
       <el-table :data="scenario.cases" row-key="key" max-height="440" :empty-text="$t('No cart cases')">
         <el-table-column prop="name" :label="$t('Case')" min-width="160" show-overflow-tooltip />
         <el-table-column :label="$t('Store code')" min-width="110"><template #default="{ row }">{{ row.storeCode || $t('Global') }}</template></el-table-column>
@@ -375,6 +378,11 @@ export default {
     activeWorld() { return this.scenario.worlds.find(world => world.key === this.activeWorldKey) || this.scenario.worlds[0] },
     matrix() { return this.result ? buildMatrix(this.result) : [] },
     expectedCaseCount() { return this.scenario.cases.filter(item => hasExpected(item.expected) || Object.values(item.expectedByWorld || {}).some(hasExpected)).length },
+    storeMismatchCount() {
+      const store = this.scenario.storeCode
+      const hasStoreCampaign = store && this.scenario.worlds.some(world => world.campaigns.some(campaign => campaign.storeCode === store))
+      return hasStoreCampaign ? this.scenario.cases.filter(item => item.storeCode !== store).length : 0
+    },
     boundaryPreview() {
       const base = this.scenario.cases.find(item => item.key === this.boundaryBaseKey) || this.scenario.cases[0]
       return boundaryPlan(this.scenario, base, { thresholdMinor: Number.isFinite(this.boundaryThreshold) ? Math.round(this.boundaryThreshold * 100) : null, kinds: this.boundaryKinds })

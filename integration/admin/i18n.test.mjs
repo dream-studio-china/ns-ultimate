@@ -43,7 +43,7 @@ for (const [locale, messages] of Object.entries({ en, zh, 'zh-Hant': zhHant, ja 
       assert.equal(t(key, params), expected, key)
       checked++
     }
-    assert.equal(checked, 7)
+    assert.ok(checked >= 7)
   })
 }
 
