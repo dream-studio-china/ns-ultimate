@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { mergeEntities, mergeRoutes, moveRouteAfter } from './merge-config.mjs'
+import { mergeEntities, mergeRoutes, moveRouteAfter, moveRouteBefore } from './merge-config.mjs'
 
 test('positions promotion management directly after orders without nesting or changing paths', () => {
   const source = readFileSync(new URL('./config.ts', import.meta.url), 'utf8')
@@ -25,6 +25,16 @@ test('positions promotion management directly after orders without nesting or ch
   assert.equal(routes[2], core[3])
   assert.equal(routes[2].path, '/promotion')
   assert.deepEqual(routes[2].children, [{ path: 'simulation' }])
+})
+
+test('positions store management before product management', () => {
+  let routes = [
+    { name: 'ProductManage' },
+    { name: 'StoreManage' }
+  ]
+  routes = moveRouteBefore(routes, 'StoreManage', 'ProductManage')
+
+  assert.deepEqual(routes.map(route => route.name), ['StoreManage', 'ProductManage'])
 })
 
 test('positions printer management after content and before WeChat configuration', () => {
