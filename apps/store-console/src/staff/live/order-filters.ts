@@ -1,4 +1,4 @@
-export const DEFAULT_TRADE_ORDER_STATUSES = ['paid', 'refunded'] as const
+export const DEFAULT_TRADE_ORDER_STATUSES = ['paid'] as const
 
 export interface TradeOrderFilterRow {
   order: {
