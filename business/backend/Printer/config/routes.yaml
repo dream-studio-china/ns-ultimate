@@ -3,3 +3,8 @@ printer_module_admin:
     type: attribute
     prefix: /api/v1
     name_prefix: api-v1-
+
+printer_module_store:
+    resource: ../src/Controller/Store/
+    type: attribute
+    prefix: /api/v1

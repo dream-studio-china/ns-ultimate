@@ -93,7 +93,7 @@ or order-operator grants do not silently acquire printing authority. No schema
 migration is required.
 
 - `GET /print-options` returns `data.items` with at most 50 enabled store-owned
-  rules whose device, account and matching template are enabled. Each option
+  rules containing the `manual` event whose device, account and matching template are enabled. Each option
   exposes only `ruleUuid`, `name`, `deviceName`, `kind`, `copies` and
   `ticketMode`. Credentials, raw templates and arbitrary provider settings are
   not returned.
@@ -106,8 +106,9 @@ migration is required.
 `tradeOrderUuid` is a Trade Order UUID, not a StoreOrder UUID. Its lifecycle must
 belong to the path Store; inaccessible orders/rules return 404 after Store
 authorization. Only `confirmed`, `paid` and `completed` orders accept a new
-command. Any enabled rule is offered and can be printed through this API; the
-`manual` event is optional and not required. The admin rule form exposes it as
+command. Only enabled rules containing the `manual` event are offered and can be
+printed through this API; submission rechecks it and returns 409
+`print_rule_not_manual` when absent. The admin rule form exposes it as
 **Manual print**, but the event is not an automatic trigger: the matcher never
 treats it as confirmed/paid/accepted. The server builds data
 from the persisted order and freezes the rule, template, item filter, ticket mode
@@ -151,6 +152,36 @@ command UUID is an explicit new print, built from current order/configuration,
 not an immutable old-job reprint. It can duplicate an automatic print or an
 unresolved previous print; never issue a new command simply because a request
 timed out. Automatic rule deduplication claims are not consumed or cleared.
+
+## Print job inspection, preview and reprint
+
+Store employees with active membership and the `store:order:print` grant can
+read the store's print jobs at `/api/v1/store/{storeUuid}/print-jobs`. These
+routes use the Core list/detail lifecycle and are filtered to the path Store
+before any lookup. A cross-store identifier returns 404; a missing membership
+or grant returns 403.
+
+- `GET /print-jobs` returns the standard Core list envelope: `data` is the job
+  array and `paginator` is top-level. Core client query parameters `page`,
+  `limit` and `@order` remain available; the default order is newest first.
+- `GET /print-jobs/{id}` returns the job. Identifiers accept the numeric ID or
+  UUID. Both responses serialize the stored job fields: `id`, `uuid`, `device`,
+  `storeUuid`, `kind`, `copies`, `status`, `providerOrderId`, `errorCode`,
+  `renderedContent`, `templateSnapshot`, `dataSnapshot`, `createdAt` and
+  `idempotencyKey`. The `device` association follows Core serialization and is
+  reduced to its identifier/string representation; account credentials are not
+  exposed.
+- `GET /print-jobs/{id}/preview` returns `{"document": {...}, "copies": n}` from
+  the stored `renderedContent` and template snapshot. The document contains
+  `kind`, `pages`, `content`, `widthMm` and `heightMm`. It does not render again,
+  submit a job or contact the provider.
+- `POST /print-jobs/{id}/reprint` reuses the existing administrator reprint
+  path. It creates a new job from the immutable snapshots and dispatches it
+  immediately, so it may contact the provider. `submitting` and `unknown` jobs
+  return 409 with an unresolved-outcome message; a disabled device or account
+  returns 409. The response is 201 with the new job, or 422 when the provider
+  call failed. No new command receipt or idempotency layer is added; a caller
+  that lost the response must inspect the job list before reprinting again.
 
 ## Explicit reads and pagination
 
