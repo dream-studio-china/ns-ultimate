@@ -153,6 +153,36 @@ not an immutable old-job reprint. It can duplicate an automatic print or an
 unresolved previous print; never issue a new command simply because a request
 timed out. Automatic rule deduplication claims are not consumed or cleared.
 
+## Print job inspection, preview and reprint
+
+Store employees with active membership and the `store:order:print` grant can
+read the store's print jobs at `/api/v1/store/{storeUuid}/print-jobs`. These
+routes use the Core list/detail lifecycle and are filtered to the path Store
+before any lookup. A cross-store identifier returns 404; a missing membership
+or grant returns 403.
+
+- `GET /print-jobs` returns the standard Core list envelope: `data` is the job
+  array and `paginator` is top-level. Core client query parameters `page`,
+  `limit` and `@order` remain available; the default order is newest first.
+- `GET /print-jobs/{id}` returns the job. Identifiers accept the numeric ID or
+  UUID. Both responses serialize the stored job fields: `id`, `uuid`, `device`,
+  `storeUuid`, `kind`, `copies`, `status`, `providerOrderId`, `errorCode`,
+  `renderedContent`, `templateSnapshot`, `dataSnapshot`, `createdAt` and
+  `idempotencyKey`. The `device` association follows Core serialization and is
+  reduced to its identifier/string representation; account credentials are not
+  exposed.
+- `GET /print-jobs/{id}/preview` returns `{"document": {...}, "copies": n}` from
+  the stored `renderedContent` and template snapshot. The document contains
+  `kind`, `pages`, `content`, `widthMm` and `heightMm`. It does not render again,
+  submit a job or contact the provider.
+- `POST /print-jobs/{id}/reprint` reuses the existing administrator reprint
+  path. It creates a new job from the immutable snapshots and dispatches it
+  immediately, so it may contact the provider. `submitting` and `unknown` jobs
+  return 409 with an unresolved-outcome message; a disabled device or account
+  returns 409. The response is 201 with the new job, or 422 when the provider
+  call failed. No new command receipt or idempotency layer is added; a caller
+  that lost the response must inspect the job list before reprinting again.
+
 ## Explicit reads and pagination
 
 `GET /products`, `/product-categories`, `/counters`, `/orders` and `/history` return a standard success envelope whose **data** is:

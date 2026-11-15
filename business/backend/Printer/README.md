@@ -200,6 +200,14 @@ the [manual printing contract](../../../docs/contracts/store-console-operations.
 for payloads, limits, retry semantics and permission setup. This does not connect
 the Store Console UI or expose administrator/provider APIs to staff.
 
+The same grant can inspect store-owned jobs with the Core list/detail lifecycle
+under `/api/v1/store/{storeUuid}/print-jobs`, read the stored preview document
+at `/{id}/preview`, and reprint through the existing administrator reprint
+service at `/{id}/reprint`. See the
+[print job contract](../../../docs/contracts/store-console-operations.md#print-job-inspection-preview-and-reprint).
+Reprint is a new job from the immutable snapshots and is submitted immediately;
+it does not add a command receipt or retry layer.
+
 The admin menu uses the project's EasyAdmin entity configuration for accounts,
 devices, templates, and jobs. Device creation uses the standard CRUD create
 form and API lifecycle; the backend registers the device with Xpyun before
