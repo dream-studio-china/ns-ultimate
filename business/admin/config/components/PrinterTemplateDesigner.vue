@@ -1,11 +1,15 @@
 <template>
   <section class="printer-designer" :aria-label="t('Template designer')" @keydown="shortcut">
     <div class="designer-toolbar">
-      <button v-for="item in views" :key="item" type="button" :aria-pressed="view === item" @click="view = item">{{ t(item) }}</button>
-      <button type="button" :disabled="!state.past.length" @click="history('undo')">{{ t('Undo') }}</button>
-      <button type="button" :disabled="!state.future.length" @click="history('redo')">{{ t('Redo') }}</button>
-      <button type="button" :disabled="!!state.error" @click="formatJson">{{ t('Format JSON') }}</button>
-      <button type="button" :disabled="!!state.error || !!sampleError" @click="refreshPreview">{{ t('Update preview') }}</button>
+      <el-tooltip v-for="item in views" :key="item" :content="t(item)" placement="bottom" :show-after="0" :hide-after="0">
+        <button type="button" class="designer-toolbar__view" :aria-label="t(item)" :aria-pressed="view === item" @click="view = item">
+          <el-icon><component :is="viewIcons[item]" /></el-icon>
+        </button>
+      </el-tooltip>
+      <button type="button" :disabled="!state.past.length" @click="history('undo')"><el-icon><RefreshLeft /></el-icon>{{ t('Undo') }}</button>
+      <button type="button" :disabled="!state.future.length" @click="history('redo')"><el-icon><RefreshRight /></el-icon>{{ t('Redo') }}</button>
+      <button type="button" :disabled="!!state.error" @click="formatJson"><el-icon><MagicStick /></el-icon>{{ t('Format JSON') }}</button>
+      <button type="button" :disabled="!!state.error || !!sampleError" @click="refreshPreview"><el-icon><View /></el-icon>{{ t('Update preview') }}</button>
     </div>
     <p class="designer-help">{{ t('Designer sync help') }}</p>
     <p v-if="state.error" role="alert" class="designer-error">{{ t('Invalid template draft') }}: {{ translatedError }}. {{ t('Last valid layout retained') }}</p>
@@ -23,7 +27,9 @@
             <aside class="designer-library">
               <strong>{{ t('Components') }}</strong>
               <label><input v-model="addInside" type="checkbox" :disabled="!selectedContainer"> {{ t('Add inside selected block') }}</label>
-              <button v-for="type in palette" :key="type" type="button" :disabled="blocked" @click="addNode(type)">{{ t(nodeLabels[type] || type) }}</button>
+              <button v-for="type in palette" :key="type" type="button" :disabled="blocked" @click="addNode(type)">
+                <el-icon v-if="paletteIcons[type]"><component :is="paletteIcons[type]" /></el-icon>{{ t(nodeLabels[type] || type) }}
+              </button>
             </aside>
             <div class="designer-stage">
               <p class="designer-help">{{ t(isLabel ? 'Unified label canvas help' : 'Unified receipt canvas help') }}</p>
@@ -52,10 +58,10 @@
                 <strong>{{ selectedNode.type }} · {{ selectedKey }}</strong>
                 <p v-if="!knownTypes.includes(selectedNode.type)" class="designer-help">{{ t('Unsupported node preserved') }}</p>
                 <div class="node-actions">
-                  <button type="button" @click="shiftNode(-1)">{{ t('Move up') }}</button>
-                  <button type="button" @click="shiftNode(1)">{{ t('Move down') }}</button>
-                  <button type="button" @click="duplicateNode">{{ t('Duplicate') }}</button>
-                  <button type="button" @click="removeNode">{{ t('Remove') }}</button>
+                  <button type="button" @click="shiftNode(-1)"><el-icon><ArrowUpBold /></el-icon>{{ t('Move up') }}</button>
+                  <button type="button" @click="shiftNode(1)"><el-icon><ArrowDownBold /></el-icon>{{ t('Move down') }}</button>
+                  <button type="button" @click="duplicateNode"><el-icon><CopyDocument /></el-icon>{{ t('Duplicate') }}</button>
+                  <button type="button" @click="removeNode"><el-icon><Delete /></el-icon>{{ t('Remove') }}</button>
                 </div>
                 <label>{{ t('Move into block') }}
                   <select v-model="moveTarget"><option v-for="target in moveTargets" :key="target.path.join('.')" :value="target.path.join('.')">{{ target.type === 'root' ? t('Template root') : target.path.join('.') + ' · ' + target.type }}</option></select>
@@ -125,9 +131,9 @@
                     <label>{{ t('Content source') }} <select :value="columnMode(column)" @change="setColumnMode(index, $event.target.value)"><option value="value">{{ t('Literal text') }}</option><option value="path">{{ t('Data field') }}</option><option value="template">{{ t('Interpolated text') }}</option></select></label>
                     <label>{{ t('Content') }} <input :value="column[columnMode(column)]" @input="patchColumn(index, columnMode(column), $event.target.value)"></label>
                     <label>{{ t('Insert data field') }} <select value="" @change="insertColumnField(index, $event)"><option value="" disabled>{{ t('Select a data field') }}</option><option v-for="item in availableFields" :key="item.path" :value="item.path">{{ item.path }}</option></select></label>
-                    <button type="button" :disabled="selectedNode.columns.length <= 1" @click="removeColumn(index)">{{ t('Remove') }}</button>
+                    <button type="button" :disabled="selectedNode.columns.length <= 1" @click="removeColumn(index)"><el-icon><Delete /></el-icon>{{ t('Remove') }}</button>
                   </fieldset>
-                  <button type="button" :disabled="selectedNode.columns.length >= 8" @click="addColumn">{{ t('Add column') }}</button>
+                  <button type="button" :disabled="selectedNode.columns.length >= 8" @click="addColumn"><el-icon><Plus /></el-icon>{{ t('Add column') }}</button>
                 </template>
               </template>
               <p v-else>{{ t('Select a component') }}</p>
@@ -144,7 +150,7 @@
     <details class="designer-sample">
       <summary>{{ t('Sample data JSON') }}</summary>
       <textarea v-model="sampleRaw" rows="7" spellcheck="false" :aria-label="t('Sample data JSON')" />
-      <button type="button" @click="sampleRaw = JSON.stringify(sampleData, null, 2)">{{ t('Restore default sample') }}</button>
+      <button type="button" @click="sampleRaw = JSON.stringify(sampleData, null, 2)"><el-icon><Refresh /></el-icon>{{ t('Restore default sample') }}</button>
       <p v-if="sampleError" role="alert" class="designer-error">{{ sampleError }}</p>
     </details>
     <p v-if="props.form.ticketMode === 'per_unit'" class="designer-help">{{ t('Per-unit sample help') }}</p>
@@ -154,6 +160,7 @@
 
 <script setup>
 import { computed, defineAsyncComponent, inject, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { ArrowDownBold, ArrowUpBold, Bottom, Brush, Connection, CopyDocument, Delete, Document, Edit, EditPen, Files, Grid, Histogram, Link, List, MagicStick, Memo, Menu, Minus, Plus, Refresh, RefreshLeft, RefreshRight, Switch, Tickets, View } from '@element-plus/icons-vue'
 import { t } from '@/i18n'
 import request from '@/utils/request'
 import PrinterPaper from './PrinterPaper.js'
@@ -168,6 +175,10 @@ const props = defineProps({ form: { type: Object, required: true }, field: { typ
 const state = shallowRef(createDesignerState(props.form[props.field.property]))
 const view = ref('Split view')
 const views = ['Visual editor', 'JSON', 'Split view']
+// Icon-only view switches keep the toolbar compact; labels stay on hover.
+const viewIcons = { 'Visual editor': EditPen, JSON: Document, 'Split view': Files }
+// Palette icons are scanning aids; every component still renders its text label.
+const paletteIcons = { labelText: Memo, style: Tickets, field: Link, string: Connection, text: Edit, line: Bottom, separator: Minus, columns: Menu, qr: Grid, barcode: Histogram, each: List, repeat: RefreshRight, if: Switch, bold: Brush }
 const selected = ref([])
 const selectedKey = computed(() => selected.value.join('.'))
 const snap = ref(true), zoom = ref(state.value.definition?.kind === 'label' || props.form.kind === 'label' ? 1.5 : 1), addInside = ref(false)
@@ -476,6 +487,12 @@ onBeforeUnmount(() => { disposed = true; invalidatePreview(); cancelGesture(); u
 button, input, select, textarea { font: inherit; color: inherit; box-sizing: border-box; }
 button, select, input:not([type=checkbox]), textarea { border: 1px solid var(--el-border-color); border-radius: 4px; background: var(--el-bg-color); padding: 5px 8px; }
 button { cursor: pointer; } button:disabled { opacity: .45; cursor: not-allowed; }
+.designer-toolbar button, .node-actions button, .designer-library button, .designer-sample button { display: inline-flex; align-items: center; gap: 4px; }
+.designer-toolbar .el-icon, .node-actions .el-icon, .designer-library .el-icon, .designer-sample .el-icon { flex: none; font-size: 14px; }
+.designer-library button { align-items: flex-start; line-height: 1.3; text-align: left; }
+.designer-library .el-icon { font-size: 13px; margin-top: 1px; }
+.designer-toolbar__view { justify-content: center; width: 32px; }
+.designer-toolbar__view[aria-pressed=true] { background: var(--el-color-primary-light-9); }
 button[aria-pressed=true] { border-color: var(--el-color-primary); color: var(--el-color-primary); }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 fieldset { margin: 0; padding: 8px; border: 1px solid var(--el-border-color); min-width: 0; }
@@ -486,8 +503,9 @@ fieldset { margin: 0; padding: 8px; border: 1px solid var(--el-border-color); mi
 .designer-visual, .designer-json { min-width: 0; }
 .paper-settings label { display: flex; align-items: center; gap: 5px; }
 .paper-settings input[type=number] { width: 70px; }
-.designer-workspace { display: grid; grid-template-columns: 115px minmax(160px, 1fr) 190px; gap: 8px; margin-top: 8px; }
-.designer-library { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.designer-workspace { display: grid; grid-template-columns: 92px minmax(160px, 1fr) 190px; gap: 8px; margin-top: 8px; }
+.designer-library { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.designer-library button { padding: 4px 6px; }
 .designer-stage { min-width: 0; overflow: auto; }
 .designer-properties { display: flex; flex-direction: column; align-self: start; gap: 8px; font-size: 12px; max-height: 75vh; overflow: auto; }
 .designer-properties label { display: flex; flex-direction: column; gap: 4px; }

@@ -92,6 +92,9 @@ const { parse, compileScript, compileTemplate } = require('@vue/compiler-sfc')
 const helpers = await import('../../business/admin/config/components/printer-template-designer.mjs')
 const paper = await import('../../business/admin/config/components/printer-paper.mjs')
 const sampleData = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer-sample-data.json', import.meta.url)))
+// Icon imports are stripped by the compiler harness, so bind inert stand-ins that still render markup.
+const iconStub = name => ({ name: `${name}Icon`, render() { return Vue.h('svg', { 'data-icon': name }) } })
+const designerIcons = Object.fromEntries(['ArrowDownBold', 'ArrowUpBold', 'Bottom', 'Brush', 'Connection', 'CopyDocument', 'Delete', 'Document', 'Edit', 'EditPen', 'Files', 'Grid', 'Histogram', 'Link', 'List', 'MagicStick', 'Memo', 'Menu', 'Minus', 'Plus', 'Refresh', 'RefreshLeft', 'RefreshRight', 'Switch', 'Tickets', 'View'].map(name => [name, iconStub(name)]))
 
 function compile(name, bindings, directory = '../../business/admin/config/components/') {
   const filename = `${name}.vue`
@@ -132,7 +135,7 @@ function labelPreview(template, data) {
 function mount(initial = label, post = async(_url, body) => ({ data: { document: labelPreview(body.template, body.data) } })) {
   const requests = []
   const component = compile('PrinterTemplateDesigner', {
-    ...helpers, ...paper, PrinterTemplateNode, sampleData,
+    ...helpers, ...paper, PrinterTemplateNode, sampleData, ...designerIcons,
     PrinterTemplateJson: { props: ['modelValue'], emits: ['update:modelValue'], render() { return Vue.h('textarea', { class: 'definition-json', value: this.modelValue, onInput: event => this.$emit('update:modelValue', event.target.value) }) } },
     t: key => key,
     request: { post: (url, body) => { requests.push({ url, body }); return post(url, body) } },
@@ -143,6 +146,10 @@ function mount(initial = label, post = async(_url, body) => ({ data: { document:
   const root = document.createElement('div'); document.body.append(root)
   const app = Vue.createApp({ render: () => Vue.h(component, { form, field: { property: 'definition' } }) })
   app.component('ElPagination', { props: ['currentPage', 'total'], emits: ['update:currentPage'], render() { return Vue.h('button', { type: 'button', onClick: () => this.$emit('update:currentPage', Math.min(this.total, this.currentPage + 1)) }, 'Next preview page') } })
+  app.component('ElTooltip', {
+    props: ['content', 'placement', 'showAfter', 'hideAfter'],
+    render() { return Vue.h('span', { class: 'tooltip-stub', 'data-content': this.content, 'data-show-after': String(this.showAfter) }, this.$slots.default?.()) }
+  })
   app.provide('registerFieldValidator', (property, validator) => { validators.push(validator); return () => released.push(property) })
   app.mount(root)
   const button = text => [...root.querySelectorAll('button')].find(element => element.textContent.trim() === text)
@@ -348,6 +355,42 @@ test('external form replacement resets history and kind mismatches block save wi
     ui.form.kind = 'receipt'; await Vue.nextTick()
     ui.validators[0](null, null, value => { error = value })
     assert.equal(error, undefined)
+  } finally { ui.unmount() }
+})
+
+test('toolbar view switches are icon-only with immediate tooltips while actions keep their labels', async() => {
+  const ui = mount()
+  try {
+    const switches = [...ui.root.querySelectorAll('.designer-toolbar__view')]
+    assert.equal(switches.length, 3)
+    assert.deepEqual(switches.map(element => element.textContent.trim()), ['', '', ''])
+    assert.deepEqual(switches.map(element => element.getAttribute('aria-label')), ['Visual editor', 'JSON', 'Split view'])
+    assert.equal(switches[2].getAttribute('aria-pressed'), 'true')
+    const tips = [...ui.root.querySelectorAll('.tooltip-stub')]
+    assert.deepEqual(tips.map(element => element.getAttribute('data-content')), ['Visual editor', 'JSON', 'Split view'])
+    assert.ok(tips.every(element => element.getAttribute('data-show-after') === '0'))
+    await ui.click(switches[1])
+    assert.equal(ui.root.querySelector('.designer-visual').style.display, 'none')
+    assert.equal(ui.root.querySelector('.designer-json').style.display, '')
+    const undo = ui.button('Undo')
+    assert.equal(undo.textContent.trim(), 'Undo')
+    assert.equal(undo.querySelector('svg[data-icon]').getAttribute('data-icon'), 'RefreshLeft')
+    assert.equal(ui.button('Update preview').querySelector('svg[data-icon]').getAttribute('data-icon'), 'View')
+    await ui.click(ui.root.querySelector('.template-node-row button'))
+    assert.equal(ui.button('Duplicate').querySelector('svg[data-icon]').getAttribute('data-icon'), 'CopyDocument')
+    assert.equal(ui.button('Remove').querySelector('svg[data-icon]').getAttribute('data-icon'), 'Delete')
+  } finally { ui.unmount() }
+})
+
+test('component library buttons keep their labels and gain scanning icons', async() => {
+  const ui = mount()
+  try {
+    const icons = palette => [...ui.root.querySelectorAll('.designer-library button')].map(element => element.querySelector('svg[data-icon]').getAttribute('data-icon'))
+    const labels = () => [...ui.root.querySelectorAll('.designer-library button')].map(element => element.textContent.trim())
+    assert.deepEqual(labels(), ['Text', 'QR code', 'Barcode', 'Item loop', 'Quantity repeat', 'Conditional block'])
+    assert.deepEqual(icons(), ['Memo', 'Grid', 'Histogram', 'List', 'RefreshRight', 'Switch'])
+    await ui.click(ui.root.querySelector('.designer-library button'))
+    assert.equal(ui.form.definition.nodes.at(-1).type, 'labelText')
   } finally { ui.unmount() }
 })
 
