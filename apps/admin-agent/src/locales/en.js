@@ -102,6 +102,7 @@ export default {
   'Update preview — not saved': 'Update preview — not saved',
   'One record only': 'One record only',
   'Field': 'Field',
+  'Value': 'Value',
   'Current snapshot': 'Current snapshot',
   'Proposed value': 'Proposed value',
   'Preview only. Nothing was saved. Backend permissions and business rules have not been validated; current values may have changed since the query.': 'Preview only. Nothing was saved. Backend permissions and business rules have not been validated; current values may have changed since the query.',

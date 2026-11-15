@@ -102,6 +102,7 @@ export default {
   'Update preview — not saved': '修改预览 — 尚未保存',
   'One record only': '仅影响一条记录',
   'Field': '字段',
+  'Value': '值',
   'Current snapshot': '查询时的值',
   'Proposed value': '拟修改为',
   'Preview only. Nothing was saved. Backend permissions and business rules have not been validated; current values may have changed since the query.': '仅供预览，未保存任何修改。尚未验证后端权限和业务规则；当前值可能已在查询后发生变化。',
