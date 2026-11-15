@@ -77,18 +77,20 @@
               <el-button-group>
                 <el-button
                   size="small"
-                  icon="el-icon-top"
                   :disabled="displayIndex === 0"
                   :title="$t('Move up')"
                   @click="moveMode(entry.mode, -1)"
-                />
+                >
+                  <el-icon><Top /></el-icon>
+                </el-button>
                 <el-button
                   size="small"
-                  icon="el-icon-bottom"
                   :disabled="displayIndex === sortedModeEntries.length - 1"
                   :title="$t('Move down')"
                   @click="moveMode(entry.mode, 1)"
-                />
+                >
+                  <el-icon><Bottom /></el-icon>
+                </el-button>
               </el-button-group>
               <el-button size="small" type="danger" plain @click="removeMode(entry.mode)">
                 {{ $t('Delete') }}
@@ -262,16 +264,18 @@
                   <el-button-group>
                     <el-button
                       size="small"
-                      icon="el-icon-top"
                       :disabled="ruleIndex === 0"
                       @click="moveRule(entry.mode, ruleIndex, -1)"
-                    />
+                    >
+                      <el-icon><Top /></el-icon>
+                    </el-button>
                     <el-button
                       size="small"
-                      icon="el-icon-bottom"
                       :disabled="ruleIndex === entry.mode.rules.length - 1"
                       @click="moveRule(entry.mode, ruleIndex, 1)"
-                    />
+                    >
+                      <el-icon><Bottom /></el-icon>
+                    </el-button>
                   </el-button-group>
                   <el-button type="danger" link @click="removeRule(entry.mode, ruleIndex)">
                     {{ $t('Delete') }}
@@ -476,16 +480,18 @@
                   <el-button-group>
                     <el-button
                       size="small"
-                      icon="el-icon-top"
                       :disabled="checkoutRuleIndex === 0"
                       @click="moveCheckoutRule(entry.mode, checkoutRuleIndex, -1)"
-                    />
+                    >
+                      <el-icon><Top /></el-icon>
+                    </el-button>
                     <el-button
                       size="small"
-                      icon="el-icon-bottom"
                       :disabled="checkoutRuleIndex === entry.mode.checkoutRules.length - 1"
                       @click="moveCheckoutRule(entry.mode, checkoutRuleIndex, 1)"
-                    />
+                    >
+                      <el-icon><Bottom /></el-icon>
+                    </el-button>
                   </el-button-group>
                   <el-button type="danger" link @click="removeCheckoutRule(entry.mode, checkoutRuleIndex)">
                     {{ $t('Delete') }}
@@ -560,6 +566,7 @@
 import request from '@/utils/request'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import { t } from '@/i18n'
+import { Bottom, Top } from '@element-plus/icons-vue'
 import {
   changeCheckoutRuleType,
   changeDiningRuleType,
@@ -577,6 +584,7 @@ const productEndpoint = apiPath(API_PREFIX, 'manage/products')
 
 export default {
   name: 'DiningModesEditor',
+  components: { Bottom, Top },
   props: {
     form: { type: Object, required: true },
     property: { type: String, required: true },

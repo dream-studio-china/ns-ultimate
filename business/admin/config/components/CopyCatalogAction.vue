@@ -1,6 +1,6 @@
 <template>
   <span class="catalog-copy-action">
-    <el-button type="primary" plain icon="el-icon-copy-document" @click="open">
+    <el-button type="primary" plain icon="el-icon-document-copy" @click="open">
       {{ $t('Copy from store') }}
     </el-button>
 
