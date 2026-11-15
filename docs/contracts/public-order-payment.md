@@ -54,6 +54,11 @@ All controller responses, including its 404/409 errors, use `Cache-Control: no-s
 
 `channels` is the intersection of Store-enabled Huifu methods and merchant capabilities. The Store setting, merchant and provider must be enabled, the provider must have stored credentials, and the merchant must currently be granted to the Store. Missing or disabled configuration yields `channels: []` and `defaultChannel: null`. If the configured default is excluded by merchant capabilities, the first remaining channel is the default.
 
+The additive `alipay` method denotes Alipay Native (`A_NATIVE`), not an alias for
+the existing WeChat `native` channel. It appears only after both merchant and
+Store opt-in; existing configurations/defaults are unchanged. Reading this value
+does not create an Alipay order or verify that Huifu has granted merchant access.
+
 This projection neither decrypts nor validates stored credentials, contacts Huifu, checks the payer's WeChat identity, nor guarantees browser/device or currency compatibility. In particular, JSAPI can still require WeChat sign-in. These checks remain the responsibility of the future payment initiation flow.
 
 GET never creates/replaces an Invoice, generates an attempt/request sequence, recalculates prices, confirms an order, or initiates/retries payment. It does not return a QR code, JSAPI `payInfo`, or signing material. `outTradeNo` is an identifier, not a launch credential. Signed-in customers can use the separate [Huifu customer payment endpoint](huifu-customer-payments.md). Anonymous initiation and multiple-Invoice exception handling remain [proposed follow-ups](../design/architecture.md#payment-evolution-multiple-invoices-and-public-checkout).

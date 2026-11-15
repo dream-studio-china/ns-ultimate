@@ -15,6 +15,7 @@ export default {
       { property: 'defaultMethod', type: 'select', required: true, default_value: 'jspay', type_options: { options: [
         { value: 'jspay', label: 'jspay' },
         { value: 'native', label: 'native' },
+        { value: 'alipay', label: t('Alipay QR payment') },
         { value: 'quickpay', label: 'quickpay' }
       ] } },
       { property: 'posEnabled', type: 'boolean', required: false, default_value: false, field_options: { label: t('POS enabled') } }

@@ -12,7 +12,45 @@ Use the ordinary order ID or UUID and select the provider in `payment` and its i
 { "payment": "huifu", "gateway": "native", "tradeType": "T_NATIVE" }
 ```
 
-An omitted/empty `gateway` selects the effective configured default. `native` uses `T_NATIVE`; `jspay` and `quickpay` use `T_JSAPI`. A supplied trade type must match that selection. The channel must be allowed by the enabled Store setting and merchant capabilities, with an enabled provider, stored credentials and a current merchant-to-Store grant. Credential validity and provider support are checked during initiation, not inferred from the public channel list. JSAPI requires the actual Invoice payer's WeChat identity for the Store's configured application. Quick-pay product compatibility and its previously documented refund limitations remain unchanged.
+An omitted/empty `gateway` selects the effective configured default. Channel defaults are:
+
+| Gateway | Trade type | Launch result |
+| --- | --- | --- |
+| `jspay` | `T_JSAPI` | WeChat `payload.payInfo`; requires the payer's Store-scoped WeChat identity |
+| `native` | `T_NATIVE` | Existing WeChat QR result |
+| `quickpay` | `T_JSAPI` | Existing product-specific quick-pay result |
+| `alipay` | `A_NATIVE` | Alipay URL/QR in `payUrl` and `qrCode`; no WeChat OpenID or Alipay buyer identity required |
+
+A supplied trade type must match that selection. `alipay` is an additive, opt-in
+method: add it to both merchant capabilities and Store allowed methods only after
+the merchant has the required Huifu Alipay acquiring permission. Existing defaults
+and configured methods are unchanged; `native` is not reinterpreted as Alipay.
+The channel must be allowed by the enabled Store setting and merchant capabilities,
+with an enabled provider, stored credentials and a current merchant-to-Store grant.
+Credential validity and provider support are checked during initiation, not inferred
+from the public channel list. Quick-pay product compatibility and its previously
+documented refund limitations remain unchanged.
+
+For Alipay, use the same authenticated payment endpoint:
+
+```json
+{ "payment": "huifu", "gateway": "alipay", "tradeType": "A_NATIVE" }
+```
+
+The optional `tradeType` may be omitted (not JSON null). The server sends
+`A_NATIVE` through Huifu's existing `/v2/trade/payment/jspay` endpoint and returns
+its `qr_code`, not a fabricated JSAPI `tradeNO` or an application-generated payment
+URL. The client can display that QR or navigate to the returned payment URL using
+its existing safe URL policy. The public payment summary exposes `alipay` only
+when both configuration gates permit it. A common order link can select this
+gateway in an Alipay browser, but browser detection is not authorization and must
+not trigger automatic fallback/retry after an uncertain payment submission.
+
+Alipay JSAPI (`A_JSAPI`), Alipay OAuth, anonymous payment initiation and automatic
+browser-based routing are not added by this backend integration. The repository's
+store-console customer payment page remains a demo; the separately deployed H5
+checkout must consume this contract to expose real Alipay launch behavior. Customer
+authentication and the third-party payer policy above remain required and unchanged.
 
 Only positive CNY orders within the customer adapter's amount bound are accepted. Store ownership is taken from the Trade lifecycle; the Store must be active. A currently linked Invoice must match the order source, scene, amount and currency, and must not already record a paid/refunded collection against a still-confirmed order. The Huifu dispatch adapter accepts only `payment`, `gateway`, `tradeType` and the server-supplied `_payer` User context. Core always replaces any request-supplied `_payer` with the authenticated user. Other fields, including amounts, payer/OpenID, Store/merchant selection, attempt IDs, proofs, preparation contexts, wallet deductions and credentials, are rejected.
 
@@ -53,7 +91,7 @@ A successful initiation returns the existing Core HTTP 200 success envelope (`co
 }
 ```
 
-The existing owner response shape is preserved. JSAPI launch information, when returned by Huifu, is in `payload.payInfo`. Do not interpret HTTP 200 or a QR/JSAPI result as proof of payment. Signed notifications on the existing `/api/payment/notify/huifu/{attemptUuid}` endpoint or reconciliation establish success/failure through the existing Invoice/Trade workflow. A verified failure must not mark the order paid.
+The existing owner response shape is preserved. JSAPI launch information, when returned by Huifu, is in `payload.payInfo`. Do not interpret HTTP 200 or a QR/JSAPI result as proof of payment. Signed notifications on the existing `/api/payment/notify/huifu/{attemptUuid}` endpoint or reconciliation establish success/failure through the existing Invoice/Trade workflow. A verified failure must not mark the order paid. Alipay reuses the same attempt identity, durable commit, amount/signature checks, notification deduplication, scanpay query/close and confirmed-refund workflows; a redirect or browser success message never marks an Invoice paid.
 
 An unresolved initiation (for example, a timeout after submission) uses the same HTTP 200 result envelope with `data.status = unknown`, the Invoice summary and attempt identity, without fabricated launch parameters. The Invoice summary reflects persisted state after rollback, not a transient in-memory transition. The durable attempt remains available for reconciliation. Do not automatically retry or treat an unknown result as a confirmed failure. Existing Core controller semantics are retained: service-level state/configuration/validation failures return HTTP 400, non-owner authorization failure returns 404, and anonymous callers are denied by authentication. Provider failure details are redacted by the customer service; internal proofs and owner notes are not returned in the non-owner projection. A business response subscriber marks shared app order payment responses `Cache-Control: no-store, private` and adds `Vary: Authorization` without editing Core.
 

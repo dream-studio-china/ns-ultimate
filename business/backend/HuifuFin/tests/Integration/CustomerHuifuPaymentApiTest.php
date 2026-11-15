@@ -16,6 +16,7 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\HuifuFin\Client\HuifuClientInterface;
+use NsUltimate\Business\HuifuFin\Client\HuifuEndpoints;
 use NsUltimate\Business\HuifuFin\Entity\HuifuMerchant;
 use NsUltimate\Business\HuifuFin\Entity\HuifuMerchantStoreGrant;
 use NsUltimate\Business\HuifuFin\Entity\HuifuPaymentAttempt;
@@ -23,6 +24,7 @@ use NsUltimate\Business\HuifuFin\Entity\HuifuProviderProfile;
 use NsUltimate\Business\HuifuFin\Entity\HuifuWebhookEvent;
 use NsUltimate\Business\HuifuFin\Entity\StoreHuifuSetting;
 use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuSecretCipher;
+use NsUltimate\Business\HuifuFin\Service\Payment\HuifuReconciliationService;
 use NsUltimate\Business\HuifuFin\Tests\Support\FakeHuifuClient;
 use NsUltimate\Business\Store\Entity\Product;
 use NsUltimate\Business\Wechat\Entity\StoreWechatSetting;
@@ -74,15 +76,17 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
         $client = $this->createStub(HuifuClientInterface::class);
         $client->method('post')->willReturnCallback(function (string $path, array $payload, string $environment): array {
             // A second connection observes only committed rows, not Core's pay transaction.
-            $connection = DriverManager::getConnection($this->em->getConnection()->getParams());
-            try {
-                self::assertSame(1, (int) $connection->fetchOne(
-                    'SELECT COUNT(*) FROM huifu_payment_attempt WHERE req_seq_id = ?',
-                    [$payload['data']['req_seq_id']],
-                ));
-                ++$this->durableSubmissions;
-            } finally {
-                $connection->close();
+            if (in_array($path, [HuifuEndpoints::JSPAY, HuifuEndpoints::QUICKPAY], true)) {
+                $connection = DriverManager::getConnection($this->em->getConnection()->getParams());
+                try {
+                    self::assertSame(1, (int) $connection->fetchOne(
+                        'SELECT COUNT(*) FROM huifu_payment_attempt WHERE req_seq_id = ?',
+                        [$payload['data']['req_seq_id']],
+                    ));
+                    ++$this->durableSubmissions;
+                } finally {
+                    $connection->close();
+                }
             }
             if ($this->networkFailure) {
                 $this->huifu->requests[] = ['path' => $path, 'payload' => $payload, 'environment' => $environment];
@@ -242,6 +246,100 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
         self::assertSame(Order::STATUS_PAID, $this->order($orderUuid)->getStatus());
     }
 
+    public function testAlipayCreatesAnIndependentDurableAttemptWithoutWeChatIdentityAndPaysOnlyOnSignedNotification(): void
+    {
+        $this->enableAlipay();
+        $this->allowThirdPartyPayment();
+        $orderUuid = $this->createConfirmedOrder();
+        $public = $this->json($this->request('GET', '/api/v1/public/orders/'.$orderUuid.'/payment'), 200)['data'];
+        self::assertSame(['native', 'jspay', 'alipay'], $public['channels']);
+        self::assertSame('native', $public['defaultChannel']);
+        self::assertCount(0, $this->huifu->requests);
+
+        $launch = $this->launch($orderUuid, ['gateway' => 'alipay', 'tradeType' => null]);
+        $attempt = $this->attempt($launch['payload']['attemptUuid']);
+        self::assertSame('alipay', $attempt->getChannel());
+        self::assertSame('A_NATIVE', $attempt->getTradeType());
+        self::assertSame('A_NATIVE', $launch['payload']['tradeType']);
+        self::assertSame(1, $this->durableSubmissions);
+        self::assertSame(HuifuEndpoints::JSPAY, $this->huifu->requests[0]['path']);
+        $sent = $this->huifu->requests[0]['payload']['data'];
+        self::assertSame('A_NATIVE', $sent['trade_type']);
+        self::assertSame('24.00', $sent['trans_amt']);
+        self::assertArrayNotHasKey('wx_data', $sent);
+        self::assertArrayNotHasKey('alipay_data', $sent);
+        self::assertSame(0, $this->em->getRepository(WechatUser::class)->count([]));
+        self::assertSame($this->payer->getUuid(), $attempt->getInvoice()?->getPayer()?->getUuid());
+        self::assertSame(Invoice::STATUS_PAYING, $this->invoice($launch['invoice']['uuid'])->getStatus());
+        self::assertSame(Order::STATUS_CONFIRMED, $this->order($orderUuid)->getStatus());
+
+        self::assertGreaterThanOrEqual(400, $this->notify($attempt, 'S', ['trans_amt' => '0.01'])->getStatusCode());
+        self::assertSame(Order::STATUS_CONFIRMED, $this->order($orderUuid)->getStatus());
+        self::assertSame(200, $this->notify($attempt, 'S', ['out_trans_id' => 'ALIPAY-TEST-TRANSACTION'])->getStatusCode());
+        self::assertSame(200, $this->notify($attempt, 'S', ['out_trans_id' => 'ALIPAY-TEST-TRANSACTION'])->getStatusCode());
+        self::assertSame(Order::STATUS_PAID, $this->order($orderUuid)->getStatus());
+        self::assertSame('ALIPAY-TEST-TRANSACTION', $this->invoice($launch['invoice']['uuid'])->getTransactionId());
+        self::assertSame(2, $this->em->getRepository(HuifuWebhookEvent::class)->count([]));
+        self::assertSame(1, $this->em->getRepository(HuifuWebhookEvent::class)->count(['processed' => true, 'error' => null]));
+        self::assertCount(1, $this->huifu->requests);
+    }
+
+    public function testAlipayPaymentCanBeConfirmedBySignedReconciliationWithoutResubmission(): void
+    {
+        $this->enableAlipay();
+        $orderUuid = $this->createConfirmedOrder();
+        $launch = $this->launch($orderUuid, ['gateway' => 'alipay', 'tradeType' => 'A_NATIVE'], $this->ownerToken);
+        $attempt = $this->attempt($launch['payload']['attemptUuid']);
+        $this->huifu->responses[] = ['data' => [
+            'resp_code' => '00000000', 'trans_stat' => 'S', 'trans_amt' => '24.00', 'currency' => 'CNY',
+            'huifu_id' => $attempt->getHuifuId(), 'req_date' => $attempt->getReqDate(),
+            'req_seq_id' => $attempt->getReqSeqId(), 'out_trans_id' => 'ALIPAY-QUERY-CONFIRMED',
+        ]];
+        $reconciliation = self::getContainer()->get(HuifuReconciliationService::class);
+        $reconciliation->queryPayment($attempt);
+        $reconciliation->queryPayment($attempt);
+        self::assertSame(Order::STATUS_PAID, $this->order($orderUuid)->getStatus());
+        self::assertSame(HuifuPaymentAttempt::STATUS_SUCCEEDED, $this->attempt($attempt->getUuid())->getStatus());
+        self::assertSame('ALIPAY-QUERY-CONFIRMED', $this->invoice($launch['invoice']['uuid'])->getTransactionId());
+        self::assertSame([HuifuEndpoints::JSPAY, HuifuEndpoints::SCANPAY_QUERY], array_column($this->huifu->requests, 'path'));
+        self::assertSame(1, $this->durableSubmissions);
+    }
+
+    #[DataProvider('alipayOptIns')]
+    public function testAlipayMustBeExplicitlyEnabledByBothStoreAndMerchant(bool $storeEnabled, bool $merchantEnabled): void
+    {
+        $this->enableAlipay($storeEnabled, $merchantEnabled);
+        $orderUuid = $this->createConfirmedOrder();
+        $public = $this->json($this->request('GET', '/api/v1/public/orders/'.$orderUuid.'/payment'), 200)['data'];
+        self::assertNotContains('alipay', $public['channels']);
+        $response = $this->request('POST', $this->paymentPath($orderUuid), $this->ownerToken, [
+            'payment' => 'huifu', 'gateway' => 'alipay', 'tradeType' => 'A_NATIVE',
+        ]);
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(0, $this->em->getRepository(HuifuPaymentAttempt::class)->count([]));
+        self::assertSame(0, $this->em->getRepository(Invoice::class)->count([]));
+        self::assertCount(0, $this->huifu->requests);
+    }
+
+    public static function alipayOptIns(): iterable
+    {
+        yield 'disabled by both' => [false, false];
+        yield 'Store only' => [true, false];
+        yield 'merchant only' => [false, true];
+    }
+
+    public function testAlipayCanBeTheConfiguredDefaultWithoutChangingExistingDefaults(): void
+    {
+        $this->enableAlipay();
+        $setting = $this->em->getRepository(StoreHuifuSetting::class)->findOneBy(['storeUuid' => $this->store->getUuid()]);
+        $setting->setDefaultMethod('alipay');
+        $this->em->flush();
+        $orderUuid = $this->createConfirmedOrder();
+        $launch = $this->launch($orderUuid, ['gateway' => '', 'tradeType' => null], $this->ownerToken);
+        self::assertSame('alipay', $launch['payload']['channel']);
+        self::assertSame('A_NATIVE', $launch['payload']['tradeType']);
+    }
+
     #[DataProvider('invalidNotifications')]
     public function testInvalidNotificationsCannotPayTheInvoiceOrOrder(array $overrides, bool $invalidSignature): void
     {
@@ -317,6 +415,7 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
     #[DataProvider('invalidTradeTypes')]
     public function testChannelAndTradeTypeMustMatch(string $channel, string $tradeType): void
     {
+        $this->enableAlipay();
         $this->allowThirdPartyPayment();
         $orderUuid = $this->createConfirmedOrder();
         $response = $this->request('POST', $this->paymentPath($orderUuid), $this->payerToken, [
@@ -332,6 +431,10 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
     {
         yield 'native cannot use JSAPI' => ['native', 'T_JSAPI'];
         yield 'JSAPI cannot use native' => ['jspay', 'T_NATIVE'];
+        yield 'Alipay cannot use WeChat native' => ['alipay', 'T_NATIVE'];
+        yield 'Alipay JSAPI needs a separate identity integration' => ['alipay', 'A_JSAPI'];
+        yield 'WeChat native cannot bypass Alipay opt-in' => ['native', 'A_NATIVE'];
+        yield 'WeChat JSAPI cannot use Alipay' => ['jspay', 'A_NATIVE'];
     }
 
     #[DataProvider('spoofedFields')]
@@ -363,13 +466,15 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
         yield 'customer context' => ['_customerOrder', ['payerUuid' => 'spoofed-payer']];
     }
 
-    public function testNetworkTimeoutReturnsSafeUnknownWithDurableAttemptAndNoSecondSubmission(): void
+    #[DataProvider('qrChannels')]
+    public function testNetworkTimeoutReturnsSafeUnknownWithDurableAttemptAndNoSecondSubmission(string $channel, string $tradeType): void
     {
+        $this->enableAlipay();
         $this->allowThirdPartyPayment();
         $orderUuid = $this->createConfirmedOrder();
         $this->networkFailure = true;
         $response = $this->request('POST', $this->paymentPath($orderUuid), $this->payerToken, [
-            'payment' => 'huifu', 'gateway' => 'native', 'tradeType' => 'T_NATIVE',
+            'payment' => 'huifu', 'gateway' => $channel, 'tradeType' => $tradeType,
         ]);
         $body = $this->json($response, 200);
         self::assertSame('unknown', $body['data']['status']);
@@ -386,7 +491,7 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
         self::assertCount(1, $this->huifu->requests);
 
         $retry = $this->request('POST', $this->paymentPath($orderUuid), $this->payerToken, [
-            'payment' => 'huifu', 'gateway' => 'native', 'tradeType' => 'T_NATIVE',
+            'payment' => 'huifu', 'gateway' => $channel, 'tradeType' => $tradeType,
         ]);
         self::assertContains($retry->getStatusCode(), [200, 400], (string) $retry->getContent());
         if ($retry->getStatusCode() === 200) {
@@ -397,6 +502,20 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
         // An unknown synchronous result can still be resolved by a valid callback.
         self::assertSame(200, $this->notify($attempt, 'S')->getStatusCode());
         self::assertSame(Order::STATUS_PAID, $this->order($orderUuid)->getStatus());
+    }
+
+    public static function qrChannels(): iterable
+    {
+        yield 'WeChat' => ['native', 'T_NATIVE'];
+        yield 'Alipay' => ['alipay', 'A_NATIVE'];
+    }
+
+    private function enableAlipay(bool $storeEnabled = true, bool $merchantEnabled = true): void
+    {
+        $setting = $this->em->getRepository(StoreHuifuSetting::class)->findOneBy(['storeUuid' => $this->store->getUuid()]);
+        $setting->setAllowedMethods($storeEnabled ? ['native', 'jspay', 'alipay'] : ['native', 'jspay']);
+        $setting->getMerchant()->setCapabilities($merchantEnabled ? ['native', 'jspay', 'alipay'] : ['native', 'jspay']);
+        $this->em->flush();
     }
 
     private function allowThirdPartyPayment(string $value = 'true'): void
@@ -428,9 +547,12 @@ final class CustomerHuifuPaymentApiTest extends KernelTestCase
             'trans_amt' => '24.00', 'qr_code' => 'https://qr.example.test/customer-payment',
             'pay_info' => ['appId' => 'wx-customer-huifu', 'package' => 'prepay_id=test-only'],
         ]];
-        $response = $this->request('POST', $this->paymentPath($orderUuid), $token ?? $this->payerToken, array_replace([
+        $requestBody = array_replace([
             'payment' => 'huifu', 'gateway' => 'native', 'tradeType' => 'T_NATIVE',
-        ], $body));
+        ], $body);
+        // A null override in this helper tests omission, not a JSON null trade type.
+        if (($requestBody['tradeType'] ?? null) === null) unset($requestBody['tradeType']);
+        $response = $this->request('POST', $this->paymentPath($orderUuid), $token ?? $this->payerToken, $requestBody);
         $decoded = $this->json($response, 200);
         self::assertSame(0, $decoded['code']);
         self::assertIsString($decoded['message']);

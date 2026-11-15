@@ -39,7 +39,7 @@ final class HuifuPaymentCloseGateway implements PaymentCloseGatewayInterface
             ->setParameter('invoice', $invoice)->orderBy('a.id', 'ASC')->getQuery()->setLockMode(LockMode::PESSIMISTIC_WRITE)->setHint(Query::HINT_REFRESH, true)->getResult();
         if ($attempts === [] || count($attempts) > 10) return new PaymentCloseResult();
         foreach ($attempts as $attempt) {
-            if (!$attempt instanceof HuifuPaymentAttempt || !in_array($attempt->getChannel(), ['native', 'jspay'], true)) return new PaymentCloseResult();
+            if (!$attempt instanceof HuifuPaymentAttempt || !in_array($attempt->getChannel(), ['native', 'jspay', 'alipay'], true)) return new PaymentCloseResult();
         }
         foreach ($attempts as $attempt) {
             $original = ['huifu_id' => $attempt->getHuifuId(), 'org_req_date' => $attempt->getReqDate(), 'org_req_seq_id' => $attempt->getReqSeqId()];

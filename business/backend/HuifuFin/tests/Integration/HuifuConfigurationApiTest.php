@@ -103,9 +103,10 @@ final class HuifuConfigurationApiTest extends KernelTestCase
 
         $merchantA = $this->request('POST', '/api/v1/manage/huifu-merchants', $adminToken, [
             'name' => 'Merchant A', 'huifuId' => '6666000000000101', 'providerUuid' => $profileUuid,
-            'capabilities' => ['jspay', 'native'],
+            'capabilities' => ['jspay', 'native', 'alipay'],
         ]);
         self::assertSame(201, $merchantA['status'], json_encode($merchantA, JSON_THROW_ON_ERROR));
+        self::assertSame(['jspay', 'native', 'alipay'], $merchantA['data']['capabilities']);
         $merchantB = $this->request('POST', '/api/v1/manage/huifu-merchants', $adminToken, [
             'name' => 'Merchant B', 'huifuId' => '6666000000000102', 'providerUuid' => $profileUuid,
             'capabilities' => ['jspay'],
@@ -123,11 +124,13 @@ final class HuifuConfigurationApiTest extends KernelTestCase
         ]);
 
         $settingA = $this->request('POST', '/api/v1/store/'.$storeA->getUuid().'/huifu-settings', $ownerToken, [
-            'merchantUuid' => $merchantA['data']['uuid'], 'allowedMethods' => ['jspay', 'native'], 'defaultMethod' => 'jspay',
+            'merchantUuid' => $merchantA['data']['uuid'], 'allowedMethods' => ['jspay', 'native', 'alipay'], 'defaultMethod' => 'alipay',
         ]);
         self::assertSame(201, $settingA['status'], json_encode($settingA, JSON_THROW_ON_ERROR));
         self::assertSame($storeA->getUuid(), $settingA['data']['storeUuid']);
         self::assertSame($merchantA['data']['uuid'], $settingA['data']['merchantUuid']);
+        self::assertSame(['jspay', 'native', 'alipay'], $settingA['data']['allowedMethods']);
+        self::assertSame('alipay', $settingA['data']['defaultMethod']);
 
         $settingB = $this->request('POST', '/api/v1/store/'.$storeB->getUuid().'/huifu-settings', $ownerToken, [
             'merchantUuid' => $merchantA['data']['uuid'],

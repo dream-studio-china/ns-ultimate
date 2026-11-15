@@ -141,8 +141,10 @@ final class HuifuRefundConfirmationTest extends KernelTestCase
         self::assertSame(2, $refund->getQueryCount());
     }
 
-    public function testSubmissionTimeoutRecoversByQueryWithoutResubmission(): void
+    #[DataProvider('scanpayChannels')]
+    public function testSubmissionTimeoutRecoversByQueryWithoutResubmission(string $channel): void
     {
+        if ($channel === 'alipay') $this->useAlipayAttempt();
         $this->client->responses[] = new \RuntimeException('Simulated timeout');
         $workflow = self::getContainer()->get(HuifuRefundWorkflow::class);
         try {
@@ -175,8 +177,10 @@ final class HuifuRefundConfirmationTest extends KernelTestCase
         self::assertSame(Order::STATUS_REFUNDED, $this->order->getStatus());
     }
 
-    public function testAcceptedSubmissionImmediatelyQueriesAndConfirms(): void
+    #[DataProvider('scanpayChannels')]
+    public function testAcceptedSubmissionImmediatelyQueriesAndConfirms(string $channel): void
     {
+        if ($channel === 'alipay') $this->useAlipayAttempt();
         $number = 'SOR'.str_repeat('c', 32);
         $data = ['resp_code' => '00000100', 'req_seq_id' => $number, 'req_date' => date('Ymd'), 'huifu_id' => 'test-merchant', 'refund_amt' => '4.00'];
         $this->client->responses[] = ['data' => $data + ['trans_stat' => 'P']];
@@ -253,6 +257,24 @@ final class HuifuRefundConfirmationTest extends KernelTestCase
         self::assertSame(1, $command->execute(['--refund' => $refund->getUuid()]));
         self::assertStringContainsString('coreApplied=no', $command->getDisplay());
         $this->assertNotApplied($refund);
+    }
+
+    public static function scanpayChannels(): iterable
+    {
+        yield 'WeChat' => ['native'];
+        yield 'Alipay' => ['alipay'];
+    }
+
+    private function useAlipayAttempt(): void
+    {
+        $old = $this->attempt;
+        $this->em->remove($old);
+        $this->em->flush();
+        $this->attempt = new HuifuPaymentAttempt($this->invoice, $old->getStoreUuid(), $old->getProviderProfileUuid(), $old->getMerchantUuid(),
+            $old->getHuifuId(), $old->getCredentialVersion(), $old->getReqDate(), $old->getReqSeqId(), 'alipay', 'A_NATIVE', 1000);
+        $this->attempt->markSucceeded('alipay-payment-transaction');
+        $this->em->persist($this->attempt);
+        $this->em->flush();
     }
 
     private function existingRefund(int $amount = 400): HuifuRefund

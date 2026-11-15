@@ -133,6 +133,18 @@ describe('store-scoped permissions and adapters', () => {
     expect(() => new StoreApi(client, '../manage')).toThrow()
     expect(() => api.remove('products', '../orders')).toThrow()
   })
+  it('uses Alipay Native only when explicitly selected and preserves the existing WeChat payment default', async () => {
+    const client = new ApiClient()
+    const data = vi.spyOn(client, 'data').mockResolvedValue({ status: 'paying', payUrl: 'https://qr.example.test/alipay', qrCode: 'https://qr.example.test/alipay' })
+    const api = new StoreApi(client, store)
+    const invoiceUuid = '00000000-0000-4000-8000-000000000003'
+    const result = await api.startHuifuPayment(invoiceUuid, { channel: 'alipay' })
+    expect(data.mock.calls[0]?.[3]).toEqual({ invoiceUuid, channel: 'alipay', tradeType: 'A_NATIVE' })
+    expect(result.status).toBe('paying')
+    expect(result.qrCode).toBe('https://qr.example.test/alipay')
+    await api.startHuifuPayment(invoiceUuid)
+    expect(data.mock.calls[1]?.[3]).toEqual({ invoiceUuid, channel: 'native', tradeType: 'T_NATIVE' })
+  })
   it('sends raster uploads as multipart without overriding the browser boundary', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(tokens())).mockResolvedValueOnce(json({ code: 0, data: { uuid: store, url: 'https://cdn.example.com/test.png' } }))
     const client = new ApiClient(fetcher)

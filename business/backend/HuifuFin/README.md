@@ -48,7 +48,7 @@ historical attempts. Credentials and descriptive fields remain editable.
 ## Online payment
 
 Signed-in customer initiation uses the unified `POST /api/v1/app/orders/{id}/payment`
-with `payment: huifu`, `gateway: native|jspay|quickpay` and an optional matching `tradeType`.
+with `payment: huifu`, `gateway: native|jspay|quickpay|alipay` and an optional matching `tradeType`.
 It supports the order owner and globally enabled third-party payment without
 employee Store permissions. It reuses the composed Trade preparation checks and
 the Huifu attempt/proof pipeline, with an explicit commit boundary before any
@@ -61,7 +61,7 @@ Payment initiation goes through:
 
 ```text
 POST /api/v1/store/{scopeId}/huifu-payments
-{"invoiceUuid": "...", "channel": "jspay|native|quickpay", "tradeType": "T_JSAPI|T_NATIVE"}
+{"invoiceUuid": "...", "channel": "alipay", "tradeType": "A_NATIVE"}
 ```
 
 The Store payment service creates a committed `HuifuPaymentAttempt` before
@@ -74,11 +74,39 @@ attempts enter reconciliation after five minutes. The Store endpoint supplies a
 short-lived internal proof, so the generic Core pay route cannot submit or
 resume a Huifu attempt.
 
-The initial implementation supports Huifu JSAPI and Native order creation. Quick
+The implementation supports WeChat JSAPI/Native and Alipay Native order creation. Quick
 pay is stored and submitted, but quick-pay refunds are intentionally rejected
 until the product-specific endpoint is validated. WeChat JSAPI requires the payer
 to have logged in through the Store's configured WeChat application; the OpenID
 is resolved server-side.
+
+### Enable Alipay without changing existing WeChat configuration
+
+1. Confirm the Huifu merchant has Alipay acquiring permission for the contracted
+   scanpay product. A local capability flag cannot open a provider product.
+2. Add `alipay` to that merchant's `capabilities` and the Store setting's
+   `allowedMethods`, retaining the existing entries. The Admin default-method
+   selector also offers **Alipay QR payment**; selecting it is optional.
+3. Initiate with `channel: alipay` on the employee Store endpoint, or
+   `gateway: alipay` on the authenticated customer endpoint. The default trade type
+   is `A_NATIVE`; an explicit WeChat trade type on `alipay`, or `A_NATIVE` on an
+   existing WeChat method, is rejected rather than bypassing configuration.
+4. Use the provider-returned `payUrl`/`qrCode`. No WeChat OpenID is looked up for
+   Alipay Native. Success still requires a verified callback or query.
+
+No database migration, automatic configuration rewrite, credential rotation or
+new payment authorization is needed. Alipay is disabled unless explicitly enabled
+on both configuration levels. Existing `jspay`, `native`, `quickpay` names, defaults
+and legacy employee WeChat trade-type overrides remain compatible. The customer
+endpoint continues to require the exact channel/type pairing. Refund and close
+confirmation use the same scanpay workflows; unknown results must not be retried
+blindly. See the [customer contract](../../../docs/contracts/huifu-customer-payments.md)
+for the separately deployed H5 checkout integration and unsupported JSAPI/OAuth scope.
+
+Protocol reference: Huifu's [official Python SDK example](https://pypi.org/project/dg-sdk/)
+uses `trade_type: A_NATIVE` with `/v2/trade/payment/jspay`; the
+[Huifu payment-method guide](https://spin.cloudpnr.com/topds/paytype_introduce.html)
+describes Native QR launch. Production merchant/browser acceptance is still required.
 
 A successful order-creation response leaves the invoice in `paying`. Only a
 verified notification or reconciliation query marks it paid.

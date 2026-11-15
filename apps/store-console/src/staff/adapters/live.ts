@@ -551,7 +551,7 @@ export class StoreApi {
     const result = await this.client.data(`${this.base}/huifu-payments`, z.unknown(), 'POST', {
       invoiceUuid: uuid.parse(invoiceUuid),
       channel: options.channel ?? 'native',
-      tradeType: options.tradeType ?? 'T_NATIVE',
+      tradeType: options.tradeType ?? (options.channel === 'alipay' ? 'A_NATIVE' : 'T_NATIVE'),
     })
     return parseStaffPaymentResult(result)
   }
