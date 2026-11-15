@@ -139,7 +139,7 @@ export function validatePrinterChange({ entity, action, record = {}, changes = {
       evidence: {
         scope: 'future_automatic_printing',
         automaticPrintingEnabled: rule.enabled === true && rule.events.some(event => event !== 'manual'),
-        manualPrintingEnabled: rule.enabled === true && rule.events.includes('manual'),
+        manualPrintingEnabled: rule.enabled === true,
         events: rule.events,
         match: rule.match,
         conditionCount: rule.conditions.length,

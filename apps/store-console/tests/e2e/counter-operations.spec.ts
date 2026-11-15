@@ -306,12 +306,12 @@ test('manual print controls are hidden without the order print grant', async ({ 
   await expect(page.getByRole('button', { name: '手动打印', exact: true })).toHaveCount(0)
 })
 
-test('manual print explains when no rule opts into staff printing', async ({ page }) => {
+test('manual print explains when no print rule is available', async ({ page }) => {
   await setup(page, { customerOrder: true, printOptions: false })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await page.getByRole('button', { name: '手动打印', exact: true }).click()
   const printDialog = page.getByRole('dialog', { name: '手动打印订单', exact: true })
-  await expect(printDialog).toContainText('门店未配置手动打印规则')
+  await expect(printDialog).toContainText('门店未配置可用的打印规则')
   await expect(printDialog.getByRole('button', { name: '发送打印任务', exact: true })).toBeDisabled()
 })
 

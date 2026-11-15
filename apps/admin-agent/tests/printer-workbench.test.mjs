@@ -80,7 +80,7 @@ test('printer change annotations cover rule impact, provider registration and te
   assert.equal(ruleEvidence.evidence.scope, 'future_automatic_printing')
   assert.equal(ruleEvidence.evidence.automaticPrintingEnabled, true)
   assert.deepEqual(ruleEvidence.evidence.events, ['paid'])
-  assert.equal(ruleEvidence.evidence.manualPrintingEnabled, false)
+  assert.equal(ruleEvidence.evidence.manualPrintingEnabled, true)
   const manualEvidence = validatePrinterChange({
     entity: 'PrinterOrderRule',
     action: 'update',
