@@ -135,20 +135,22 @@ final class StaffOrderPrintApiTest extends KernelTestCase
         self::assertSame(2, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
     }
 
-    public function testRulesWithoutManualEventAreNotOfferedOrPrintable(): void
+    public function testRulesWithoutManualEventAreOfferedAndPrintable(): void
     {
         $automaticOnly = (new PrinterOrderRule())->setStoreUuid($this->store->getUuid())->setName('Automatic only')->setEnabled(true)
             ->setEvents(['paid'])->setDeviceUuid($this->device->getUuid())->setTemplateUuid($this->template->getUuid());
         $this->em->persist($automaticOnly);
         $this->em->flush();
         $items = $this->data($this->request('GET', '/print-options'))['items'];
-        self::assertCount(1, $items);
-        self::assertSame($this->rule->getUuid(), $items[0]['ruleUuid']);
-        self::assertSame(409, $this->request('POST', $this->path(), [...$this->payload(), 'ruleUuid' => $automaticOnly->getUuid()])->getStatusCode());
-        self::assertSame(0, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
+        self::assertSame([$this->rule->getUuid(), $automaticOnly->getUuid()], array_column($items, 'ruleUuid'));
+        self::assertSame(202, $this->request('POST', $this->path(), [...$this->payload(), 'ruleUuid' => $automaticOnly->getUuid()])->getStatusCode());
+        self::assertSame(1, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
+        $queued = $this->em->getRepository(PrinterOrderRequest::class)->findOneBy([]);
+        self::assertSame('manual', $queued->getTrigger());
+        self::assertSame($automaticOnly->getUuid(), $queued->getConfiguration()['id']);
     }
 
-    public function testManualEventIgnoresAutomaticConditionsButStillRequiresManualOptIn(): void
+    public function testManualPrintIgnoresAutomaticConditionsRegardlessOfRuleEvents(): void
     {
         $this->rule->setConditions([['field' => 'status', 'operator' => 'equals', 'value' => 'paid']]);
         $this->em->flush();
@@ -158,8 +160,9 @@ final class StaffOrderPrintApiTest extends KernelTestCase
         self::assertSame(1, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
         $this->rule->setEvents(['paid']);
         $this->em->flush();
-        self::assertSame([], $this->data($this->request('GET', '/print-options'))['items']);
-        self::assertSame(409, $this->request('POST', $this->path(), $this->payload())->getStatusCode());
+        self::assertSame([$this->rule->getUuid()], array_column($this->data($this->request('GET', '/print-options'))['items'], 'ruleUuid'));
+        self::assertSame(202, $this->request('POST', $this->path(), $this->payload())->getStatusCode());
+        self::assertSame(2, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
     }
 
     public function testPermissionMembershipAndOrderOwnershipAreRequired(): void

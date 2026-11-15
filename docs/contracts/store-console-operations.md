@@ -93,10 +93,10 @@ or order-operator grants do not silently acquire printing authority. No schema
 migration is required.
 
 - `GET /print-options` returns `data.items` with at most 50 enabled store-owned
-  rules that include the `manual` event and whose device, account and matching
-  template are enabled. Each option exposes only `ruleUuid`, `name`, `deviceName`,
-  `kind`, `copies` and `ticketMode`. Credentials, raw templates and arbitrary
-  provider settings are not returned.
+  rules whose device, account and matching template are enabled. Each option
+  exposes only `ruleUuid`, `name`, `deviceName`, `kind`, `copies` and
+  `ticketMode`. Credentials, raw templates and arbitrary provider settings are
+  not returned.
 - `POST /trade-orders/{tradeOrderUuid}/print` accepts exactly:
 
   ```json
@@ -106,10 +106,10 @@ migration is required.
 `tradeOrderUuid` is a Trade Order UUID, not a StoreOrder UUID. Its lifecycle must
 belong to the path Store; inaccessible orders/rules return 404 after Store
 authorization. Only `confirmed`, `paid` and `completed` orders accept a new
-command. The rule must include the `manual` event; the admin rule form exposes it
-as **Manual print**. A rule without that event is not offered and cannot be
-printed through this API. Manual is an opt-in event, not an automatic trigger:
-the matcher never treats it as confirmed/paid/accepted. The server builds data
+command. Any enabled rule is offered and can be printed through this API; the
+`manual` event is optional and not required. The admin rule form exposes it as
+**Manual print**, but the event is not an automatic trigger: the matcher never
+treats it as confirmed/paid/accepted. The server builds data
 from the persisted order and freezes the rule, template, item filter, ticket mode
 and device label dimensions. It applies the template's item filter and per-unit
 behavior, but deliberately does not evaluate the rule's automatic conditions:
@@ -138,7 +138,7 @@ printable order rather than silently printing every order. The UI identifies a
 202 response as queued, retains the same command for an unchanged retry after an
 uncertain network result, and generates a new command only after a successful
 command or a deliberate new print. Employees without `store:order:print` do not
-see print controls. No manual rule configured for the store produces a visible
+see print controls. No enabled rule configured for the store produces a visible
 configuration guidance state instead of a synthetic template or print job.
 
 Unchanged retries by the same actor/store/command return the original receipt
