@@ -87,6 +87,7 @@
           type="warning"
           :closable="false"
           show-icon
+          class="store-dining-modes__notice"
         />
         <el-alert
           v-if="copyError"
@@ -339,6 +340,15 @@ export default {
 
 .store-dining-modes__error {
   margin-bottom: 16px;
+}
+
+/* The host switches Element Plus components through its own dark tokens, so pull the
+ * alerts onto the same surfaces instead of Element Plus' light tints. */
+html[data-theme='dark'] .store-dining-modes__error,
+html[data-theme='dark'] .store-dining-modes__notice {
+  --el-color-error: #fda29b;
+  --el-color-error-light-9: color-mix(in srgb, #fda29b 16%, transparent);
+  --el-color-warning-light-9: color-mix(in srgb, #fbbf24 16%, transparent);
 }
 
 .store-dining-modes__content {

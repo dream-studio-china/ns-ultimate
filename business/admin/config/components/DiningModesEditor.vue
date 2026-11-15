@@ -845,6 +845,33 @@ export default {
   gap: 16px;
   width: 100%;
 }
+
+/* The host dark theme changes application tokens, not Element Plus defaults. Bridge
+ * them inside the editor so cards, notes and chips follow the dialog surface. */
+html[data-theme='dark'] .dining-modes {
+  color-scheme: dark;
+  --el-bg-color: var(--surface);
+  --el-fill-color: var(--surface-muted);
+  --el-fill-color-lighter: var(--surface-muted);
+  --el-fill-color-dark: var(--control-hover);
+  --el-fill-color-blank: var(--surface);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-primary);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-border-color: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-color-primary-light-5: color-mix(in srgb, var(--el-color-primary) 35%, transparent);
+  --el-color-primary-light-7: color-mix(in srgb, var(--el-color-primary) 25%, transparent);
+  --el-color-primary-light-9: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+  --el-color-error: #fda29b;
+  --el-color-error-light-9: color-mix(in srgb, #fda29b 16%, transparent);
+  --el-color-warning-light-9: color-mix(in srgb, #fbbf24 16%, transparent);
+  --el-color-info-light-9: var(--control-hover);
+}
+
+html[data-theme='dark'] .dining-modes .rule-card {
+  box-shadow: none;
+}
 .dining-modes__header,
 .mode-card__header,
 .mode-section__title,
