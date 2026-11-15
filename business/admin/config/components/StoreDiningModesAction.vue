@@ -31,6 +31,7 @@
       :title="dialogTitle"
       width="min(1180px, 96vw)"
       append-to-body
+      align-center
       :close-on-click-modal="false"
       destroy-on-close
       @closed="reset"
