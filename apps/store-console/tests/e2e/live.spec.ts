@@ -518,7 +518,7 @@ test('order details expose operational state without fulfillment or payment comm
   expect(requests.some((request) => /payment|refund|manage/.test(request.path))).toBe(false)
 })
 
-test('trade orders default to paid and refunded and filter by table and date', async ({ page }) => {
+test('trade orders default to paid and filter by table and date', async ({ page }) => {
   await mockApi(page, { orderOperations: true })
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '门店订单（只读）', exact: true }).click()
@@ -528,7 +528,7 @@ test('trade orders default to paid and refunded and filter by table and date', a
   const refunded = filters.getByRole('button', { name: '已退款', exact: true })
   const confirmed = filters.getByRole('button', { name: '已确认', exact: true })
   await expect(paid).toHaveAttribute('aria-pressed', 'true')
-  await expect(refunded).toHaveAttribute('aria-pressed', 'true')
+  await expect(refunded).toHaveAttribute('aria-pressed', 'false')
   await expect(confirmed).toHaveAttribute('aria-pressed', 'false')
   await expect(page.locator('.workspace-order-list article')).toHaveCount(1)
 
@@ -548,9 +548,13 @@ test('trade orders default to paid and refunded and filter by table and date', a
   await paid.click()
   await expect(paid).toHaveAttribute('aria-pressed', 'false')
   await expect(page.locator('.workspace-order-list article')).toHaveCount(0)
+  await refunded.click()
+  await expect(refunded).toHaveAttribute('aria-pressed', 'true')
+  // The live-order fixture has no refunded order, so selecting it alone stays empty.
+  await expect(page.locator('.workspace-order-list article')).toHaveCount(0)
   await filters.getByRole('button', { name: '重置筛选', exact: true }).click()
   await expect(paid).toHaveAttribute('aria-pressed', 'true')
-  await expect(refunded).toHaveAttribute('aria-pressed', 'true')
+  await expect(refunded).toHaveAttribute('aria-pressed', 'false')
   await expect(table).toHaveValue('')
   await expect(date).toHaveValue('')
   await expect(page.locator('.workspace-order-list article')).toHaveCount(1)

@@ -19,7 +19,7 @@ describe('trade order filters', () => {
     row('confirmed', 'A01', '2026-11-07T08:00:00Z'),
   ]
 
-  it('defaults to paid and refunded orders', () => {
+  it('defaults to paid orders', () => {
     const visible = filterTradeOrders(rows, {
       statuses: new Set(DEFAULT_TRADE_ORDER_STATUSES),
       tableCode: '',
@@ -27,8 +27,8 @@ describe('trade order filters', () => {
       timeZone: 'Asia/Shanghai',
     })
 
-    expect(DEFAULT_TRADE_ORDER_STATUSES).toEqual(['paid', 'refunded'])
-    expect(visible.map((item) => item.order.status)).toEqual(['paid', 'refunded'])
+    expect(DEFAULT_TRADE_ORDER_STATUSES).toEqual(['paid'])
+    expect(visible.map((item) => item.order.status)).toEqual(['paid'])
   })
 
   it('filters by table and uses the store date instead of the UTC date', () => {
@@ -36,7 +36,7 @@ describe('trade order filters', () => {
     expect(tradeOrderDate('2026-11-07T16:30:00Z', 'Asia/Shanghai')).toBe('2026-11-08')
 
     const visible = filterTradeOrders(rows, {
-      statuses: new Set(DEFAULT_TRADE_ORDER_STATUSES),
+      statuses: new Set(['paid', 'refunded']),
       tableCode: 'B02',
       date: '2026-11-08',
       timeZone: 'Asia/Shanghai',
