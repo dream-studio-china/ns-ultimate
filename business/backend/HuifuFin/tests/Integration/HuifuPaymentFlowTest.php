@@ -36,6 +36,7 @@ use NsUltimate\Business\HuifuFin\Service\Configuration\HuifuStoreContextResolver
 use NsUltimate\Business\HuifuFin\Service\Refund\HuifuRefundWorkflow;
 use NsUltimate\Business\HuifuFin\Tests\Support\FakeHuifuClient;
 use NsUltimate\Integration\Backend\Kernel;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -414,7 +415,8 @@ final class HuifuPaymentFlowTest extends KernelTestCase
         self::assertNotContains($fresh->getUuid(), $dueAttempts);
     }
 
-    public function testStorePaymentServiceCreatesAttemptBeforeCallingCore(): void
+    #[DataProvider('storePaymentChannels')]
+    public function testStorePaymentServiceCreatesAttemptBeforeCallingCore(string $channel, ?string $requestedTradeType, string $expectedTradeType, string $capability): void
     {
         [$privateKey, $publicKey] = $this->keyPair();
         $em = self::getContainer()->get(EntityManagerInterface::class);
@@ -430,10 +432,10 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             'huifu_public_key' => $publicKey,
         ], $cipher);
         $merchant = new HuifuMerchant('Init merchant', '6666000000000101', $provider);
-        $merchant->setCapabilities(['native']);
+        $merchant->setCapabilities([$capability]);
         $setting = new StoreHuifuSetting($store->getUuid(), $merchant);
-        $setting->setAllowedMethods(['native']);
-        $setting->setDefaultMethod('native');
+        $setting->setAllowedMethods([$channel]);
+        $setting->setDefaultMethod($channel);
         foreach ([$provider, $merchant, $setting] as $entity) {
             $em->persist($entity);
         }
@@ -447,10 +449,10 @@ final class HuifuPaymentFlowTest extends KernelTestCase
 
         $invoiceService = $this->createMock(InvoiceServiceInterface::class);
         $invoiceService->expects(self::once())->method('pay')->willReturnCallback(
-            static function (Invoice $paidInvoice, string $payment, array $options): \App\Payment\DTO\PaymentResult {
+            static function (Invoice $paidInvoice, string $payment, array $options) use ($channel, $expectedTradeType): \App\Payment\DTO\PaymentResult {
                 self::assertSame('huifu', $payment);
-                self::assertSame('native', $options['gateway']);
-                self::assertSame('T_NATIVE', $options['tradeType']);
+                self::assertSame($channel, $options['gateway']);
+                self::assertSame($expectedTradeType, $options['tradeType']);
                 self::assertArrayHasKey('huifuAttemptUuid', $options);
                 self::assertSame(Invoice::STATUS_PENDING, $paidInvoice->getStatus());
 
@@ -464,13 +466,29 @@ final class HuifuPaymentFlowTest extends KernelTestCase
             $invoiceService,
             self::getContainer()->get(HuifuOperationProof::class),
         );
-        $result = $service->start($invoice, 'native');
+        try {
+            $service->start($invoice, $channel, ['tradeType' => $channel === 'alipay' ? 'T_NATIVE' : 'A_NATIVE']);
+            self::fail('A channel must not bypass a separately enabled payment method.');
+        } catch (\RuntimeException $error) {
+            self::assertStringContainsString('trade type', $error->getMessage());
+        }
+        self::assertSame(0, $em->getRepository(HuifuPaymentAttempt::class)->count([]));
+        $result = $service->start($invoice, $channel, ['tradeType' => $requestedTradeType]);
         self::assertSame(Invoice::STATUS_PAYING, $result->status);
         $attempt = $em->getRepository(HuifuPaymentAttempt::class)->findOneBy(['invoice' => $invoice]);
         self::assertInstanceOf(HuifuPaymentAttempt::class, $attempt);
         self::assertSame($store->getUuid(), $attempt->getStoreUuid());
         self::assertSame(HuifuPaymentAttempt::STATUS_CLOSED, $attempt->getStatus());
         self::assertSame(1200, $attempt->getAmount());
+        self::assertSame($expectedTradeType, $attempt->getTradeType());
+    }
+
+    public static function storePaymentChannels(): iterable
+    {
+        yield 'WeChat native default' => ['native', null, 'T_NATIVE', 'native'];
+        yield 'Alipay native default' => ['alipay', null, 'A_NATIVE', 'alipay'];
+        yield 'Alipay native explicit' => ['alipay', 'A_NATIVE', 'A_NATIVE', 'alipay'];
+        yield 'legacy explicit WeChat type' => ['jspay', 'T_NATIVE', 'T_NATIVE', 'native'];
     }
 
     public function testTimeoutMarksTheAttemptUnknownAndBlocksReplacement(): void

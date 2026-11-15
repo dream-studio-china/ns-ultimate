@@ -41,7 +41,7 @@ final class CustomerPaymentPolicy
         $configured = $this->profiles->publicChannels($context->storeUuid);
         $channel = $channel !== '' ? $channel : ($configured['defaultChannel'] ?? '');
         if ($channel === '' || !in_array($channel, $configured['channels'], true)) throw new HttpException(409, 'huifu_channel_unavailable');
-        $expected = $channel === 'native' ? 'T_NATIVE' : 'T_JSAPI';
+        $expected = HuifuPaymentChannel::tradeType($channel);
         if ($tradeType !== null && $tradeType !== $expected) throw new HttpException(422, 'invalid_huifu_trade_type');
         return $channel;
     }

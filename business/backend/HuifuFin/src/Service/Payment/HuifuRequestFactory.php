@@ -39,7 +39,7 @@ final class HuifuRequestFactory
         $amount = number_format($attempt->getAmount() / 100, 2, '.', '');
 
         $data = match ($attempt->getChannel()) {
-            'jspay', 'native' => [
+            'jspay', 'native', 'alipay' => [
                 'req_date' => $attempt->getReqDate(),
                 'req_seq_id' => $attempt->getReqSeqId(),
                 'huifu_id' => $attempt->getHuifuId(),

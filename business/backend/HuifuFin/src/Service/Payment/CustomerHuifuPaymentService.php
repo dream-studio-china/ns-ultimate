@@ -42,7 +42,7 @@ final class CustomerHuifuPaymentService
         $invoice = $prepared->invoice;
         try {
             return $this->payments->start($invoice, $channel, [
-                'tradeType' => $channel === 'native' ? 'T_NATIVE' : 'T_JSAPI', 'clientIp' => $clientIp,
+                'tradeType' => HuifuPaymentChannel::tradeType($channel), 'clientIp' => $clientIp,
                 '_customerOrder' => $context,
             ]);
         } catch (\Throwable $error) {

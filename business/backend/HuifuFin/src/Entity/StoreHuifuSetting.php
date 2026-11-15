@@ -73,7 +73,7 @@ class StoreHuifuSetting
     {
         $this->allowedMethods = array_values(array_unique(array_filter(
             $methods,
-            static fn (mixed $method): bool => is_string($method) && in_array($method, ['jspay', 'quickpay', 'native'], true),
+            static fn (mixed $method): bool => is_string($method) && in_array($method, ['jspay', 'quickpay', 'native', 'alipay'], true),
         )));
         if ($this->allowedMethods === []) {
             throw new \InvalidArgumentException('At least one Huifu payment method is required.');

@@ -20,7 +20,7 @@ final class HuifuEndpoints
     public static function forChannel(string $channel): string
     {
         return match ($channel) {
-            'jspay', 'native' => self::JSPAY,
+            'jspay', 'native', 'alipay' => self::JSPAY,
             'quickpay' => self::QUICKPAY,
             default => throw new \InvalidArgumentException(sprintf('Unsupported Huifu payment channel "%s".', $channel)),
         };

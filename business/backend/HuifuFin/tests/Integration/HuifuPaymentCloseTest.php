@@ -70,8 +70,10 @@ final class HuifuPaymentCloseTest extends KernelTestCase
         self::getContainer()->set(HuifuClientInterface::class, $this->client);
     }
 
-    public function testPayingInvoiceClosesOnlyAfterVerifiedTerminalPaymentQuery(): void
+    #[DataProvider('scanpayChannels')]
+    public function testPayingInvoiceClosesOnlyAfterVerifiedTerminalPaymentQuery(string $channel): void
     {
+        if ($channel === 'alipay') $this->useAlipayAttempt();
         $this->client->responses = [$this->payment('P'), ['data' => ['resp_code' => '00000100', 'trans_stat' => 'P']], $this->payment('F')];
         $result = $this->close();
         self::assertTrue($result['released']);
@@ -96,8 +98,10 @@ final class HuifuPaymentCloseTest extends KernelTestCase
         self::assertSame(Invoice::STATUS_CANCELLED, $this->invoice->getStatus());
     }
 
-    public function testPaymentSuccessDuringCloseIsAppliedRatherThanReleased(): void
+    #[DataProvider('scanpayChannels')]
+    public function testPaymentSuccessDuringCloseIsAppliedRatherThanReleased(string $channel): void
     {
+        if ($channel === 'alipay') $this->useAlipayAttempt();
         $this->client->responses = [$this->payment('P'), ['data' => ['resp_code' => '00000000', 'trans_stat' => 'S']], $this->payment('S')];
         $result = $this->close();
         self::assertFalse($result['released']);
@@ -109,7 +113,7 @@ final class HuifuPaymentCloseTest extends KernelTestCase
     /** @return iterable<string, array{string}> */
     public static function unresolvedCases(): iterable
     {
-        foreach (['close-rejected', 'still-processing', 'timeout', 'unsigned', 'amount-mismatch', 'identity-mismatch', 'query-rejected', 'missing-attempt', 'quickpay'] as $case) yield $case => [$case];
+        foreach (['close-rejected', 'still-processing', 'timeout', 'unsigned', 'amount-mismatch', 'alipay-amount-mismatch', 'identity-mismatch', 'query-rejected', 'missing-attempt', 'quickpay'] as $case) yield $case => [$case];
     }
 
     #[DataProvider('unresolvedCases')]
@@ -124,6 +128,9 @@ final class HuifuPaymentCloseTest extends KernelTestCase
             case 'timeout': $this->client->responses[] = new \RuntimeException('Simulated close timeout'); break;
             case 'unsigned': $this->client->responses = [['resp_code' => '00000000']]; break;
             case 'amount-mismatch': $this->client->responses = [$this->payment('F', ['trans_amt' => '1.00'])]; break;
+            case 'alipay-amount-mismatch':
+                $this->useAlipayAttempt();
+                $this->client->responses = [$this->payment('F', ['trans_amt' => '1.00'])]; break;
             case 'identity-mismatch': $this->client->responses = [$this->payment('F', ['req_seq_id' => 'OTHER-PAYMENT'])]; break;
             case 'query-rejected': $this->client->responses = [$this->payment('F', ['resp_code' => 'ERROR'])]; break;
             case 'missing-attempt': $this->em->remove($this->attempt); $this->em->flush(); break;
@@ -154,6 +161,24 @@ final class HuifuPaymentCloseTest extends KernelTestCase
         } catch (HttpException) {
             self::assertSame($this->invoice->getUuid(), $this->em->getRepository(Order::class)->findOneBy(['uuid' => $this->order->getUuid()])->getInvoiceId());
         }
+    }
+
+    public static function scanpayChannels(): iterable
+    {
+        yield 'WeChat' => ['native'];
+        yield 'Alipay' => ['alipay'];
+    }
+
+    private function useAlipayAttempt(): void
+    {
+        $old = $this->attempt;
+        $this->em->remove($old);
+        $this->em->flush();
+        $this->attempt = new HuifuPaymentAttempt($this->invoice, $this->store->getUuid(), $old->getProviderProfileUuid(), $old->getMerchantUuid(),
+            $old->getHuifuId(), $old->getCredentialVersion(), $old->getReqDate(), $old->getReqSeqId(), 'alipay', 'A_NATIVE', 1000);
+        $this->attempt->markPending();
+        $this->em->persist($this->attempt);
+        $this->em->flush();
     }
 
     /** @param array<string, mixed> $overrides

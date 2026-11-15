@@ -16,6 +16,7 @@ class HuifuMerchant
     public const CAPABILITY_JSPAY = 'jspay';
     public const CAPABILITY_QUICKPAY = 'quickpay';
     public const CAPABILITY_NATIVE = 'native';
+    public const CAPABILITY_ALIPAY = 'alipay';
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -98,7 +99,7 @@ class HuifuMerchant
      *  @return list<string> */
     private static function normalizeCapabilities(array $capabilities): array
     {
-        $allowed = [self::CAPABILITY_JSPAY, self::CAPABILITY_QUICKPAY, self::CAPABILITY_NATIVE];
+        $allowed = [self::CAPABILITY_JSPAY, self::CAPABILITY_QUICKPAY, self::CAPABILITY_NATIVE, self::CAPABILITY_ALIPAY];
         $normalized = array_values(array_unique(array_filter(
             $capabilities,
             static fn (mixed $capability): bool => is_string($capability) && in_array($capability, $allowed, true),
