@@ -4,12 +4,12 @@
       type="warning"
       size="small"
       plain
-      icon="el-icon-switch-button"
       :disabled="!buttonEligible"
       :title="buttonEligible ? $t('Close Invoice') : $t('Only pending, processing, or failed Trade order invoices can be closed')"
       @click="open"
     >
-      {{ $t('Close Invoice') }}
+      <el-icon><SwitchButton /></el-icon>
+      <span>{{ $t('Close Invoice') }}</span>
     </el-button>
 
     <el-dialog
@@ -71,6 +71,7 @@
 <script>
 import { createUiFeedback } from '@/easyadmin/ui/vue/feedback'
 import { t } from '@/i18n'
+import { SwitchButton } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { formatMoney, paymentStatusLabel } from './order-refund.mjs'
 import {
@@ -87,6 +88,7 @@ import {
 
 export default {
   name: 'InvoiceCloseAction',
+  components: { SwitchButton },
   props: {
     record: { type: Object, default: () => ({}) },
     refresh: { type: Function, default: () => {} }
