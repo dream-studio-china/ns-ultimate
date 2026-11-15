@@ -35,6 +35,7 @@ final class OrderPrintCommandService
     {
         $options = [];
         foreach ($this->em->getRepository(PrinterOrderRule::class)->findBy(['storeUuid' => $store->getUuid(), 'enabled' => true], ['id' => 'ASC'], 50) as $rule) {
+            if (!in_array('manual', $rule->getEvents(), true)) continue;
             if (!$this->matcher->isValid($rule->toRule())) continue;
             try { [$device, $template] = $this->output($rule, $store); }
             catch (HttpException) { continue; }
@@ -66,6 +67,7 @@ final class OrderPrintCommandService
             if (!$rule instanceof PrinterOrderRule) throw new HttpException(404, 'print_rule_not_found');
             $this->em->refresh($rule, LockMode::PESSIMISTIC_WRITE);
             if (!$rule->isEnabled() || $rule->getStoreUuid() !== $store->getUuid()) throw new HttpException(409, 'print_rule_unavailable');
+            if (!in_array('manual', $rule->getEvents(), true)) throw new HttpException(409, 'print_rule_not_manual');
             if (!$this->matcher->isValid($rule->toRule())) {
                 throw new HttpException(409, 'print_rule_unavailable');
             }

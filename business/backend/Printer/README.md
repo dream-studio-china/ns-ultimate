@@ -193,7 +193,7 @@ Store employees can manually queue an order through the scoped
 `GET /api/v1/store/{storeUuid}/operations/print-options` and
 `POST /api/v1/store/{storeUuid}/operations/trade-orders/{tradeOrderUuid}/print`
 APIs with active membership and the separately assigned `store:order:print`
-grant. They select any enabled configured rule; the backend builds trusted
+grant. They select an enabled configured rule containing the `manual` event; the backend builds trusted
 order data and queues immutable requests under a durable command UUID. The
 existing dispatcher submits them; acceptance never proves physical output. See
 the [manual printing contract](../../../docs/contracts/store-console-operations.md#manual-order-printing)

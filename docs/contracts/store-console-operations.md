@@ -93,7 +93,7 @@ or order-operator grants do not silently acquire printing authority. No schema
 migration is required.
 
 - `GET /print-options` returns `data.items` with at most 50 enabled store-owned
-  rules whose device, account and matching template are enabled. Each option
+  rules containing the `manual` event whose device, account and matching template are enabled. Each option
   exposes only `ruleUuid`, `name`, `deviceName`, `kind`, `copies` and
   `ticketMode`. Credentials, raw templates and arbitrary provider settings are
   not returned.
@@ -106,8 +106,9 @@ migration is required.
 `tradeOrderUuid` is a Trade Order UUID, not a StoreOrder UUID. Its lifecycle must
 belong to the path Store; inaccessible orders/rules return 404 after Store
 authorization. Only `confirmed`, `paid` and `completed` orders accept a new
-command. Any enabled rule is offered and can be printed through this API; the
-`manual` event is optional and not required. The admin rule form exposes it as
+command. Only enabled rules containing the `manual` event are offered and can be
+printed through this API; submission rechecks it and returns 409
+`print_rule_not_manual` when absent. The admin rule form exposes it as
 **Manual print**, but the event is not an automatic trigger: the matcher never
 treats it as confirmed/paid/accepted. The server builds data
 from the persisted order and freezes the rule, template, item filter, ticket mode
