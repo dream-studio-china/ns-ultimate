@@ -60,12 +60,12 @@ final class TradeOrderPrintAdapter
             $data['product'] = $data['name'];
             $data['spec'] = $data['specification'];
             // Display subtitle lives in the current product metadata, which the core
-            // Trade item snapshot does not carry; fall back to the specification name.
+            // Trade item snapshot does not carry; never mirror the product/spec name.
             $productMetadata = $currentProduct?->getMetadata();
             $subtitle = is_array($productMetadata) && is_string($productMetadata['subtitle'] ?? null)
                 ? trim($productMetadata['subtitle'])
                 : '';
-            $data['subTitle'] = $subtitle !== '' ? $subtitle : $data['specification'];
+            $data['subTitle'] = $subtitle;
             $data['quantityLabel'] = 'x'.$item->getQuantity();
             $data['price'] = $data['amount'];
             if ($filtered) {

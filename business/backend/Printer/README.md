@@ -107,8 +107,9 @@ strings. `counterLabel` adds `(#id)` for each counter's database ID, and
 Items expose `product`, `spec`, `subTitle`, `quantityLabel`, and `price` aliases for
 `name`, `specification`, the product display subtitle, `x{quantity}`, and `amount`.
 `subTitle` reads the current product metadata `subtitle` (display-only, not part of
-the core Trade item snapshot) and falls back to the specification name when it is
-missing. Both whole-order and per-unit tickets include these fields.
+the core Trade item snapshot) and is an empty string when it is missing; it never
+falls back to the product or specification name. Both whole-order and per-unit
+tickets include these fields.
 `totalPrice` is the recorded line subtotal, `amountDue` is the stored order
 `totalAmount`, and `discount` is `totalPrice - amountDue` clamped at zero. All
 monetary snapshot fields, including `totalPrice`, `discount`, `amountDue`,
