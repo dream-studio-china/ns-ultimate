@@ -143,7 +143,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         $item = $data['items'][0];
         self::assertSame('Jasmine tea', $item['product']);
         self::assertSame('Large', $item['spec']);
-        self::assertSame('Large', $item['subTitle']);
+        self::assertSame('', $item['subTitle']);
         self::assertSame('x2', $item['quantityLabel']);
         self::assertSame(1500, $item['unitPrice']);
         self::assertSame(3000, $item['price']);
@@ -172,7 +172,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame(4800, $data['totalPrice']);
         self::assertSame(500, $data['discount']);
         self::assertSame(4300, $data['amountDue']);
-        self::assertSame('Large', $data['items'][0]['subTitle']);
+        self::assertSame('', $data['items'][0]['subTitle']);
         self::assertArrayNotHasKey('paymentUrl', $data);
     }
 
@@ -201,7 +201,7 @@ final class TradeOrderPrintAdapterTest extends TestCase
         self::assertSame('Table A, B01', $data['labelHeader']);
     }
 
-    public function testSnapshotPrefersProductMetadataSubtitleAndFallsBackToSpecification(): void
+    public function testSnapshotUsesOnlyProductMetadataSubtitleAndKeepsMissingValuesEmpty(): void
     {
         $product = (new Product())->setName('Jasmine tea')->setMetadata(['subtitle' => 'Less ice']);
         $order = (new Order())->addItem((new OrderItem())
@@ -214,7 +214,8 @@ final class TradeOrderPrintAdapterTest extends TestCase
         $data = $this->snapshotAdapter($order, $store, [], $product)->buildPrintData($order, $store)[0]['order'];
 
         self::assertSame('Less ice', $data['items'][0]['subTitle']);
-        self::assertSame('Slice', $data['items'][1]['subTitle']);
+        self::assertSame('', $data['items'][1]['subTitle']);
+        self::assertSame('Slice', $data['items'][1]['specification']);
     }
 
     /** @param list<OrderCounter> $bindings */
