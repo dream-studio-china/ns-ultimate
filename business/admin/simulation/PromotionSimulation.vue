@@ -232,7 +232,7 @@
             <el-select v-model="campaignDraft.conflictMode" popper-class="promotion-simulation__popper"><el-option v-for="mode in conflictModes" :key="mode" :label="$t(conflictModeLabel(mode))" :value="mode" /></el-select>
           </el-form-item>
           <el-form-item :label="$t('Start time')"><el-date-picker v-model="campaignDraft.startTime" popper-class="promotion-simulation__popper" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" clearable /></el-form-item>
-          <el-form-item :label="$t('End time')"><el-date-picker v-model="campaignDraft.endTime" popper-class="promotion-simulation__popper" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" clearable /></el-form-item>
+          <el-form-item :label="$t('End time')"><el-date-picker v-model="campaignDraft.endTime" popper-class="promotion-simulation__popper" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" :default-time="pickerDefaultTime" clearable /></el-form-item>
           <el-form-item :label="$t('Campaign enabled')"><el-switch v-model="campaignDraft.enabled" /></el-form-item>
           <el-form-item :label="$t('Template enabled')"><el-switch v-model="campaignDraft.templateEnabled" /></el-form-item>
           <el-form-item :label="$t('Template type')">
@@ -322,6 +322,7 @@ import './theme.css'
 import { Download, Plus, Refresh, Remove, Tickets, Upload, VideoPlay } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 import { fetchAllPages } from '../config/components/catalog-copy.mjs'
+import { midnightPickerTime } from '../config/components/date-picker-defaults.mjs'
 import { storeOptions } from './stores.mjs'
 import StoreSelect from './StoreSelect.vue'
 import SimulationCharts from './SimulationCharts.vue'
@@ -339,7 +340,10 @@ export default {
   name: 'PromotionSimulation',
   components: { StoreSelect, SimulationCharts },
   setup() {
-    return { icons: { Download, Plus, Refresh, Remove, Tickets, Upload, VideoPlay } }
+    return {
+      icons: { Download, Plus, Refresh, Remove, Tickets, Upload, VideoPlay },
+      pickerDefaultTime: midnightPickerTime()
+    }
   },
   data() {
     return {

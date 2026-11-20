@@ -1,5 +1,6 @@
 import { t } from '@/i18n'
 import Promotion from '../../../../../core/crud-admin/src/configs/collections/promotion/Promotion.js'
+import { midnightPickerTime } from '../../components/date-picker-defaults.mjs'
 
 const config = Promotion.Promotion
 
@@ -27,7 +28,13 @@ export default {
       { property: 'storeCode', required: false, help: t('Promotion storeCode help') },
       { property: 'enabled', type: 'boolean', required: false, default_value: false, help: t('Promotion enabled help') },
       { property: 'startTime', type: 'datetime', required: false, help: t('Promotion schedule help') },
-      { property: 'endTime', type: 'datetime', required: false, help: t('Promotion schedule help') },
+      {
+        property: 'endTime',
+        type: 'datetime',
+        required: false,
+        help: t('Promotion schedule help'),
+        type_options: { 'default-time': midnightPickerTime() }
+      },
       {
         property: 'config',
         type: 'json',
