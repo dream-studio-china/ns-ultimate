@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { createServer as createHttpServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -38,7 +39,7 @@ test('direct appearance navigation serves the SPA while system API requests stil
   await vite.listen()
   const origin = `http://127.0.0.1:${vite.httpServer.address().port}`
 
-  for (const path of ['/system-option/appearance', '/system-option/appearance?preview=1', '/settings/appearance']) {
+  for (const path of ['/system-option/appearance', '/system-option/appearance?preview=1', '/settings/appearance', '/store/list']) {
     const response = await fetch(`${origin}${path}`, { headers: { Accept: 'text/html' } })
     assert.equal(response.status, 200, path)
     assert.match(response.headers.get('content-type'), /text\/html/, path)
@@ -49,4 +50,13 @@ test('direct appearance navigation serves the SPA while system API requests stil
     assert.equal(response.status, 200, path)
     assert.deepEqual(await response.json(), { backendPath: path })
   }
+
+  await t.test('the composed fixed-header layout supplies full viewport bounds for record dialogs', async() => {
+    const entry = await readFile(new URL('./config.ts', import.meta.url), 'utf8')
+    assert.match(entry, /^import '\.\/layout\.css'$/m)
+    const layoutPath = fileURLToPath(new URL('./layout.css', import.meta.url))
+    const response = await fetch(`${origin}/@fs${layoutPath}?direct`)
+    assert.equal(response.status, 200)
+    assert.match(await response.text(), /\.main-container\s*>\s*\.fixed-header\s*\+\s*\.app-main\s*\{\s*min-height:\s*100vh;\s*min-height:\s*100dvh;/)
+  })
 })
