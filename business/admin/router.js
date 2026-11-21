@@ -11,6 +11,8 @@ if (!promotionRoute) throw new Error('The admin core must expose the PromotionMa
 const storeRoute = coreRoutes.find(route => route.name === 'StoreManage')
 if (!storeRoute) throw new Error('The admin core must expose the StoreManage route.')
 
+const accountingPath = '/finance/accounting'
+const journalMenu = `${accountingPath}/journals`
 const financeMenu = title => ({ title: t(title), icon: 'el-icon-caret-right' })
 const journalModal = (mode, to) => ({
   name: 'AccountingJournals',
@@ -24,10 +26,10 @@ const journalModal = (mode, to) => ({
 export default {
   add: [
     {
-      path: '/finance',
+      path: accountingPath,
       name: 'Finance',
       component: Layout,
-      redirect: '/finance/ledger',
+      redirect: `${accountingPath}/ledger`,
       meta: { title: t('Finance management'), icon: 'el-icon-money' },
       alwaysShow: true,
       children: [
@@ -35,9 +37,9 @@ export default {
         { path: 'accounts', name: 'AccountingAccounts', component: () => import('./accounting/AccountingAccounts.vue'), meta: financeMenu('Accounts') },
         { path: 'periods', name: 'AccountingPeriods', component: () => import('./accounting/AccountingPeriods.vue'), meta: financeMenu('Accounting periods') },
         { path: 'journals', name: 'AccountingJournals', component: () => import('./accounting/AccountingJournals.vue'), meta: financeMenu('Journals') },
-        { path: 'journals/new', name: 'AccountingJournalCreate', hidden: true, redirect: to => journalModal('new', to), meta: { activeMenu: '/finance/journals' } },
-        { path: 'journals/:id/edit', name: 'AccountingJournalEdit', hidden: true, redirect: to => journalModal('edit', to), meta: { activeMenu: '/finance/journals' } },
-        { path: 'journals/:id', name: 'AccountingJournalDetail', hidden: true, redirect: to => journalModal('detail', to), meta: { activeMenu: '/finance/journals' } },
+        { path: 'journals/new', name: 'AccountingJournalCreate', hidden: true, redirect: to => journalModal('new', to), meta: { activeMenu: journalMenu } },
+        { path: 'journals/:id/edit', name: 'AccountingJournalEdit', hidden: true, redirect: to => journalModal('edit', to), meta: { activeMenu: journalMenu } },
+        { path: 'journals/:id', name: 'AccountingJournalDetail', hidden: true, redirect: to => journalModal('detail', to), meta: { activeMenu: journalMenu } },
         { path: 'reports', name: 'AccountingReports', component: () => import('./accounting/AccountingReports.vue'), meta: financeMenu('Reports') },
         { path: 'audit', name: 'AccountingAudit', component: () => import('./accounting/AccountingAudit.vue'), meta: financeMenu('Accounting audit') }
       ]

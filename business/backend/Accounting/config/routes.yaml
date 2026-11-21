@@ -13,7 +13,7 @@ business_accounting_store:
     defaults: { _api_audit_redact: true }
 
 business_accounting_finance:
-    prefix: /api/v1/finance
+    prefix: /api/v1/finance/accounting
     name_prefix: business_accounting_finance_
     resource: '../src/Controller/Manage/'
     type: attribute

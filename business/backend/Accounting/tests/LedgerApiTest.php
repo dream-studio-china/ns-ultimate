@@ -73,6 +73,7 @@ final class LedgerApiTest extends KernelTestCase
         $adminToken = $tokens->createAccessToken($admin);
         self::assertSame(401, $this->request('workspace')->getStatusCode());
         self::assertSame(401, $this->request('workspace', prefix: 'manage/accounting')->getStatusCode());
+        self::assertSame(404, $this->request('workspace', $adminToken, prefix: 'finance')->getStatusCode());
         self::assertSame(403, $this->request('workspace', $otherToken)->getStatusCode());
         self::assertSame(403, $this->request('workspace', $otherToken, prefix: 'manage/accounting')->getStatusCode());
         self::assertSame(403, $this->request('workspace', $writerToken, prefix: 'manage/accounting')->getStatusCode());
@@ -183,7 +184,7 @@ final class LedgerApiTest extends KernelTestCase
         self::assertSame([], $expected->getDatabasePlatform()->getAlterSchemaSQL($diff));
     }
 
-    private function ok(string $path, string $token, ?array $body = null, string $prefix = 'finance'): array
+    private function ok(string $path, string $token, ?array $body = null, string $prefix = 'finance/accounting'): array
     {
         $response = $this->request($path, $token, $body, $prefix);
         self::assertSame(200, $response->getStatusCode(), substr($response->getContent(), 0, 2000));
@@ -191,7 +192,7 @@ final class LedgerApiTest extends KernelTestCase
         return json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
     }
 
-    private function request(string $path, ?string $token = null, ?array $body = null, string $prefix = 'finance', ?string $method = null): Response
+    private function request(string $path, ?string $token = null, ?array $body = null, string $prefix = 'finance/accounting', ?string $method = null): Response
     {
         return self::$kernel->handle(Request::create(
             '/api/v1/'.$prefix.'/'.$path, $method ?? ($body === null ? 'GET' : 'POST'),

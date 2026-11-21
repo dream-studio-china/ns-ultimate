@@ -11,16 +11,18 @@ const finance = new URL('../../business/admin/accounting/', import.meta.url)
 const read = name => readFileSync(new URL(name, finance), 'utf8')
 const routeSource = source => source.replace(/^import .*$/gm, '').replace('export default', 'routes =')
 
-test('Finance navigation exposes separate pages without changing the original entry URL', () => {
+test('Accounting navigation leaves the Finance root free for other modules', () => {
   const core = { r: entity => [{ path: `/dummy/${entity}/list`, name: `${entity}List` }], t: x => x, Layout: {}, routes: null }
   runInNewContext(routeSource(read('../../../core/crud-admin/src/configs/routes.js')), core)
   const business = { ...core, coreRoutes: core.routes, routes: null, OrderRefundRecords: {} }
   runInNewContext(routeSource(read('../router.js')), business)
-  const route = mergeRoutes(core.routes, business.routes).find(route => route.path === '/finance')
-  assert.equal(route.redirect, '/finance/ledger')
+  const routes = mergeRoutes(core.routes, business.routes)
+  assert.ok(!routes.some(route => route.path === '/finance'))
+  const route = routes.find(route => route.path === '/finance/accounting')
+  assert.equal(route.redirect, '/finance/accounting/ledger')
   assert.deepEqual(Array.from(route.children.filter(child => !child.hidden), child => child.path), ['ledger', 'accounts', 'periods', 'journals', 'reports', 'audit'])
   assert.ok(route.children.filter(child => !child.hidden).every(child => child.meta.icon === 'el-icon-caret-right'))
-  assert.ok(route.children.filter(child => child.hidden).every(child => child.meta.activeMenu === '/finance/journals'))
+  assert.ok(route.children.filter(child => child.hidden).every(child => child.meta.activeMenu === '/finance/accounting/journals'))
   for (const [name, action] of [['AccountingJournalCreate', 'new'], ['AccountingJournalEdit', 'edit'], ['AccountingJournalDetail', 'detail']]) {
     const target = route.children.find(child => child.name === name).redirect({ params: { id: 'example' }, query: { origin: 'opening' } })
     assert.equal(target.name, 'AccountingJournals')
@@ -55,7 +57,8 @@ test('Finance views use native EasyAdmin create dialogs where resource endpoints
     assert.match(read(page), /prefix: resourcePrefix/)
     assert.doesNotMatch(read(page), /<el-dialog|<finance-command-form|#topButton/)
   }
-  assert.match(read('use-finance.js'), /\/api\/v1\/manage\/accounting/)
+  assert.match(read('use-finance.js'), /apiPath\(API_PREFIX, 'finance\/accounting'\)/)
+  assert.match(read('use-finance.js'), /apiPath\(API_PREFIX, 'manage\/accounting'\)/)
   assert.match(read('use-finance.js'), /\/commands\/\$\{action\}/)
 })
 

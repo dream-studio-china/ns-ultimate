@@ -1,10 +1,11 @@
 import { computed, onMounted, ref } from 'vue'
+import { API_PREFIX, apiPath } from '@/api/prefix'
 import request from '@/utils/request'
 import store from '@/store'
 import { commandIntent, minorToDecimal, newCommandId } from './ledger-ui.mjs'
 
-export const FINANCE_API = '/api/v1/finance'
-const MANAGE_ACCOUNTING_API = '/api/v1/manage/accounting'
+export const FINANCE_API = apiPath(API_PREFIX, 'finance/accounting')
+const MANAGE_ACCOUNTING_API = apiPath(API_PREFIX, 'manage/accounting')
 export const sides = ['debit', 'credit']
 export const classes = ['asset', 'liability', 'equity', 'revenue', 'expense']
 const retriable = new Set(['create-draft', 'void-draft', 'post', 'reverse', 'approve-zero-opening', 'lock-period', 'reopen-period'])
