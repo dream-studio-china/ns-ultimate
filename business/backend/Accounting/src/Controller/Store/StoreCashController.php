@@ -14,7 +14,6 @@ use NsUltimate\Business\Accounting\Service\LedgerInput;
 use NsUltimate\Business\Accounting\Service\StoreCashRegister;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
@@ -28,7 +27,8 @@ final class StoreCashController extends RestController
     #[Route('', name: 'list', methods: ['GET'])]
     public function list(Request $request): Response
     {
-        return $this->respond('list', function (Store $store) use ($request): array {
+        return $this->respond(function (Store $store) use ($request): array {
+            $this->authorizeApiAction('list');
             $parameters = $request->query->all();
             unset($parameters['_locale']);
             LedgerInput::fields($parameters, 'month', 'page');
@@ -45,7 +45,9 @@ final class StoreCashController extends RestController
     #[Route('', name: 'record', methods: ['POST'])]
     public function record(Request $request): Response
     {
-        return $this->respond('create', function (Store $store, User $user) use ($request): array {
+        return $this->respond(function (Store $store, User $user) use ($request): array {
+            $this->authorizeApiAction('list');
+            $this->authorizeApiAction('create');
             if ($request->getContentTypeFormat() !== 'json') {
                 throw new LedgerError('json_required', 415);
             }
@@ -66,31 +68,25 @@ final class StoreCashController extends RestController
         });
     }
 
-    private function respond(string $action, callable $operation): Response
+    private function respond(callable $operation): Response
     {
-        try {
-            $user = $this->getUser();
-            if (!$user instanceof User) {
-                throw new LedgerError('authentication_required', 401);
-            }
-            $store = $this->storeForAuthorization();
-            $this->denyAccessUnlessGranted('store:cash_entry:read', $store);
-            if ($action === 'create') {
-                $this->denyAccessUnlessGranted('store:cash_entry:create', $store);
-            }
-            // Return an object so the Core reply helper does not paginate the monthly envelope.
-            $response = $this->success((object) $operation($store, $user));
-        } catch (LedgerError $error) {
-            $response = $this->warning($error->getMessage(), $error->status, '', $error->status);
-        } catch (AccessDeniedException) {
-            $response = $this->warning('finance_access_required', 403, '', 403);
-        } catch (HttpExceptionInterface $error) {
-            $response = $this->warning($error->getMessage(), $error->getStatusCode(), '', $error->getStatusCode());
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            throw new LedgerError('authentication_required', 401);
         }
-        $response->headers->set('Cache-Control', 'private, no-store');
-        $response->setVary('Authorization');
+        try {
+            $store = $this->storeForAuthorization();
 
-        return $response;
+            // Return an object so the Core reply helper does not paginate the monthly envelope.
+            return $this->success((object) $operation($store, $user));
+        } catch (AccessDeniedException) {
+            throw new LedgerError('finance_access_required', 403);
+        }
+    }
+
+    protected function storeAuthorizationResource(): string
+    {
+        return 'cash_entry';
     }
 
     /** @return array{storeUuid: string} */

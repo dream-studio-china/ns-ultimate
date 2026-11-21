@@ -23,12 +23,31 @@ final class LedgerAccess
 
     public function __construct(private readonly AssignmentRepository $assignments) {}
 
+    /** @var \WeakMap<User, list<string>> */
+    private \WeakMap $cache;
+
     /**
      * System administrators have Finance access by default; other users need active global grants.
+     *
+     * Results are memoized per User instance so a single request that checks
+     * capabilities more than once queries the assignment store only once. The
+     * WeakMap keys on the request's User object, so it does not retain state
+     * across requests in a long-running worker.
      *
      * @return list<string>
      */
     public function capabilities(User $user): array
+    {
+        $this->cache ??= new \WeakMap();
+        if (isset($this->cache[$user])) {
+            return $this->cache[$user];
+        }
+
+        return $this->cache[$user] = $this->resolve($user);
+    }
+
+    /** @return list<string> */
+    private function resolve(User $user): array
     {
         if (in_array('ROLE_ADMIN', $user->getRoles(), true)) {
             return array_values(array_unique(array_merge(...array_values(self::ROLES))));

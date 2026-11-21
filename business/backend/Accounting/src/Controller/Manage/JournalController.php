@@ -17,7 +17,6 @@ use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
 use NsUltimate\Business\Accounting\Service\JournalEntryService;
 use NsUltimate\Business\Accounting\Service\LedgerAccess;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
@@ -82,24 +81,6 @@ final class JournalController extends RestController
         $evidence = $user instanceof User && in_array('audit', $this->access->capabilities($user), true);
 
         return (object) $this->readModel->journal($entity->getUuid(), $evidence);
-    }
-
-    protected function success(mixed $content = '', string $addition_message = 'SUCCESS', int $status = 200): Response
-    {
-        return $this->privateResponse(parent::success($content, $addition_message, $status));
-    }
-
-    protected function warning(string $error_msg = self::UNKNOWN_ERROR, int $error_code = -1, mixed $raw_data = '', int $status = 200): Response
-    {
-        return $this->privateResponse(parent::warning($error_msg, $error_code, $raw_data, $status));
-    }
-
-    private function privateResponse(Response $response): Response
-    {
-        $response->headers->set('Cache-Control', 'private, no-store');
-        $response->setVary('Authorization');
-
-        return $response;
     }
 
     /** @return array<string, mixed> */

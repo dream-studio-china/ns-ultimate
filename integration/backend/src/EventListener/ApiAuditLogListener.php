@@ -112,16 +112,17 @@ final class ApiAuditLogListener implements EventSubscriberInterface
         $response = $event->getResponse();
         $method = $request->getMethod();
         $isWrite = in_array($method, self::WRITE_METHODS, true);
-        // Finance records its own access-controlled command audit. Keep transport
-        // metadata here, but do not copy journal text or evidence into log files.
-        $isAccounting = str_starts_with((string) $request->attributes->get('_route'), 'business_accounting_')
-            || preg_match('~^/api/v1/(?:manage/accounting|accounting|finance|store/[0-9a-fA-F-]{36}/cash-register)(?:/|$)~', $request->getPathInfo()) === 1;
+        // A module can opt out of body/query capture via the `_api_audit_redact`
+        // route default when it owns an access-controlled, content-aware audit of
+        // its own (e.g. Finance). Transport metadata is still recorded; request
+        // and response payloads, query strings, and exceptions are not copied here.
+        $redactPayload = $request->attributes->getBoolean('_api_audit_redact');
         $status = $response->getStatusCode();
 
         $entry = [
             'method' => $method,
             'path' => $request->getPathInfo(),
-            'query' => $isAccounting ? null : $request->getQueryString(),
+            'query' => $redactPayload ? null : $request->getQueryString(),
             'route' => $request->attributes->get('_route'),
             'status' => $status,
             'durationMs' => (int) round((microtime(true) - $startedAt) * 1000),
@@ -130,9 +131,9 @@ final class ApiAuditLogListener implements EventSubscriberInterface
             'contentType' => $request->getContentTypeFormat(),
             'requestId' => $request->headers->get('X-Request-Id'),
             'requestHeaders' => $this->requestHeaders($request),
-            'requestBody' => $isWrite && !$isAccounting ? $this->requestBody($request) : null,
-            'responseBody' => !$isAccounting && ($isWrite || $status >= 400) ? $this->responseBody($response) : null,
-            'exception' => $isAccounting ? null : $request->attributes->get('_api_audit_exception'),
+            'requestBody' => $isWrite && !$redactPayload ? $this->requestBody($request) : null,
+            'responseBody' => !$redactPayload && ($isWrite || $status >= 400) ? $this->responseBody($response) : null,
+            'exception' => $redactPayload ? null : $request->attributes->get('_api_audit_exception'),
         ];
 
         // Audit logging must never change the response or fail the request.

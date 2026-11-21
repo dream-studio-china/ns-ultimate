@@ -171,8 +171,7 @@ final class LedgerController extends RestController
                 'Content-Type' => 'text/csv; charset=utf-8',
                 'Content-Disposition' => 'attachment; filename="accounting-'.$kind.'.csv"',
                 'X-Content-Type-Options' => 'nosniff',
-            ]);
-        });
+            ]);        });
     }
 
     #[Route('/reports/{kind}', name: 'report', methods: ['GET'])]
@@ -270,28 +269,21 @@ final class LedgerController extends RestController
 
     private function respond(?string $capability, callable $operation): Response
     {
-        try {
-            $user = $this->getUser();
-            if (!$user instanceof User) {
-                throw new LedgerError('authentication_required', 401);
-            }
-            if ($capability === null) {
-                throw new LedgerError('unknown_command', 404);
-            }
-            $capabilities = $this->access->capabilities($user);
-            if (!in_array('read', $capabilities, true) || !in_array($capability, $capabilities, true)) {
-                throw new LedgerError('finance_access_required', 403);
-            }
-            $result = $operation($user, $capabilities);
-            // Finance projections own their pagination; do not paginate their envelope again.
-            $response = $result instanceof Response ? $result : $this->success((object) $result);
-        } catch (LedgerError $error) {
-            $response = $this->warning($error->getMessage(), $error->status, '', $error->status);
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            throw new LedgerError('authentication_required', 401);
         }
-        $response->headers->set('Cache-Control', 'private, no-store');
-        $response->setVary('Authorization');
+        if ($capability === null) {
+            throw new LedgerError('unknown_command', 404);
+        }
+        $capabilities = $this->access->capabilities($user);
+        if (!in_array('read', $capabilities, true) || !in_array($capability, $capabilities, true)) {
+            throw new LedgerError('finance_access_required', 403);
+        }
+        $result = $operation($user, $capabilities);
 
-        return $response;
+        // Finance projections own their pagination; do not paginate their envelope again.
+        return $result instanceof Response ? $result : $this->success((object) $result);
     }
 
     /** @return array<string, mixed> */

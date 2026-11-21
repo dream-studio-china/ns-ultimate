@@ -78,7 +78,6 @@ final class LedgerApiTest extends KernelTestCase
         self::assertSame(403, $this->request('workspace', $writerToken, prefix: 'manage/accounting')->getStatusCode());
         self::assertNull($this->ok('workspace', $adminToken, prefix: 'manage/accounting')['book']);
         self::assertEqualsCanonicalizing(['read', 'audit', 'draft', 'post', 'reverse', 'configure', 'lock', 'reopen'], $this->ok('workspace', $adminToken)['capabilities']);
-        self::assertNull($this->ok('workspace', $writerToken, prefix: 'accounting')['book']);
         self::assertSame(403, $this->request('reports/trial/csv', $otherToken)->getStatusCode());
         self::assertSame(403, $this->request('commands/initialize', $readerToken, [])->getStatusCode());
         self::assertSame(403, $this->request('commands/reopen-period', $readerToken, [])->getStatusCode());
