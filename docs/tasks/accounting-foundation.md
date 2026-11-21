@@ -1,8 +1,10 @@
 # Accounting Foundation Implementation Plan
 
-**Status: proposed implementation backlog; no Accounting capability is implemented by this document.**
+**Status: M1 manual ledger implemented; production activation and M2 remain pending.**
 
 **Created: 2026-11-15.** Checkboxes describe future work, not verified guarantees. Recheck the pinned implementation before starting each integration phase.
+
+The [Accounting architecture](../design/accounting.md) owns design decisions and transaction semantics. This backlog owns delivery order and acceptance fixtures.
 
 ## 1. Objective and delivery boundaries
 
@@ -115,7 +117,7 @@ Record answers in the eventual module guide/design. Suggested starting choices b
 | Base currency and scale | CNY, scale 2, only if confirmed by the owner | Before money handling |
 | Initial chart | Small reviewed chart; account classifications and normal balance direction explicit | Before opening balances |
 | Permissions | Explicit read, draft, post/reverse, configuration, and period-management capabilities mapped to existing authorization | Before exposing writes |
-| Opening balances | Reviewed, balanced opening journal with complete equity/retained balance treatment | Before production use |
+| Opening balances | Reviewed, balanced opening journal with complete equity/retained balance treatment, or explicit approval of a zero opening | Before ordinary production posting |
 | Store/party meaning | Optional stable store and counterparty references; stores do not automatically become separate books | Before dimension implementation |
 | First settlement scenario | Select exactly one: internal store attribution, merchant settlement, or employee commission | Before M2 mapping |
 | Recognition point | Define when an enforceable obligation/revenue exists; a generated plan is not automatically that point | Before M2 journal generation |
@@ -132,7 +134,7 @@ Names below are proposed; prefer the smallest model that enforces these invarian
 | Concept | Minimum responsibilities |
 | --- | --- |
 | AccountingBook | Stable identity, accounting entity, base currency/scale, timezone, opening date. Currency/scale become immutable once posted entries exist. |
-| AccountingPeriod | Non-overlapping date range and open/locked state per book. Date assignment uses the book timezone. |
+| AccountingPeriod | One unique local calendar month and open/locked state per book. Date assignment uses the book timezone and respects the opening date. |
 | LedgerAccount | Book-scoped unique code, name, classification, normal balance direction, active/postable flags. Optional grouping; do not build an arbitrary hierarchy engine. |
 | JournalEntry | UUID, book, accounting date, summary, draft/posted/voided state, revision, posting number/time/actor, origin, and optional reversal-of reference. |
 | JournalLine | Ordered account, debit or credit minor-unit amount, description, optional store/counterparty dimensions. |
@@ -145,16 +147,16 @@ Names below are proposed; prefer the smallest model that enforces these invarian
 1. A journal has at least two lines, is non-zero, and balances exactly in the book currency.
 2. Each line has exactly one positive side; negative amounts, two-sided lines, floats, and unsupported scales are rejected.
 3. Use exact minor-unit integer arithmetic with checked limits. Serialize amounts without JavaScript precision loss. Reject overflow rather than truncate or silently round.
-4. All accounts and periods belong to the same book; posting accounts must be active and postable. Disabling an account must not hide historical lines.
+4. All accounts and periods belong to the same book. Posting accounts must be active and postable except for system-generated exact reversals of historical lines. Disabling an account must not hide historical lines.
 5. Do not expose unrestricted generic CRUD for posted journals, lines, source identities, audit records, or posting metadata. Validate nested/batch paths as well as dedicated actions.
 6. A draft is editable with optimistic concurrency. Draft voiding preserves source/deduplication history; it does not make an imported fact eligible for a duplicate draft.
-7. Posting locks/rechecks the journal, relevant period, accounts, and expected revision; balance checks, number allocation, state change, and audit append commit atomically.
+7. Posting takes the book lock and rechecks the journal, relevant period, accounts, and expected revision; balance checks, number allocation, state change, and audit append commit atomically.
 8. Posting number is unique within a documented book/year series. Assign on posting with concurrency-safe allocation; never use unprotected `MAX + 1`. No gap-free statutory numbering claim.
 9. Posted financial content is immutable. A correction creates a balanced opposite journal linked to the original, then a new corrected journal if needed. Keep the original posted entry visible.
 10. M1 supports only full reversal with at most one posted reversal per original. Do not reverse a reversal in M1; any required further correction is a separately explained journal.
-11. A reversal uses the same posting checks. Its date must be in an open period; preserve the original date and reason. Source reversal time and accounting date are distinct.
-12. Period locking and posting serialize against the same period boundary. Reopening requires explicit permission, reason, and audit evidence; no silent backdating into locked periods.
-13. Explicit journals establish opening balances. Reports must not read Wallet balances or mutable manual totals as accounting opening balances.
+11. A reversal uses the posting checks with the historical-account exception. Its date must be in an open period and no earlier than the original; preserve the original date and reason. Source reversal time and accounting date are distinct.
+12. Period locking and posting serialize against the same book lock. Reopening requires explicit permission, reason, and audit evidence; no silent backdating into locked periods.
+13. A posted opening journal or audited zero-opening approval establishes the opening position. Reports must not read Wallet balances or mutable manual totals as accounting opening balances.
 14. Journal lines are the authoritative ledger. M1 reports query posted lines; any later summary cache must be rebuildable and reconciled.
 15. Referenced accounts, books, and periods cannot be hard-deleted or semantically repurposed. Posted audit evidence does not contain secrets or raw provider payloads.
 
@@ -172,10 +174,10 @@ Drafts, voided drafts, and incomplete source facts never affect ledger totals. O
 
 Expose explicit business operations for draft creation/update/voiding, posting, full reversal, and period lock/reopen. Account and book configuration must enforce their historical-use restrictions. Do not publish final route/schema guarantees until implemented and tested.
 
-- Apply backend capability and book/dimension scope checks to lists, details, commands, source evidence, and exports. Deny by default. Frontend route metadata is not authorization.
+- Apply backend capability and book scope checks to lists, details, commands, source evidence, and exports. Deny by default. Store and party filters are not security scopes in the initial release. Frontend route metadata is not authorization.
 - Reuse existing authentication and permission infrastructure; no parallel finance login system.
 - Accept explicit idempotency keys for posting, reversal, and import commands; persist a payload fingerprint. Same request returns the original result; conflicting reuse fails visibly.
-- A repeated reversal must return the existing result rather than reverse twice. Protect concurrent callers with database uniqueness and locking, not only a preflight query.
+- An exact authorized reversal retry returns the existing result. A second request with different terms cannot reverse twice. Protect concurrent callers with database uniqueness and locking, not only a preflight query.
 - Reuse generic admin CRUD only where safe, such as constrained account maintenance and read-only journal lists.
 - Use a custom journal editor for ordered lines, totals, source evidence, and draft revision handling. Backend validation remains authoritative.
 - Provide account maintenance, journal list/editor/detail, period management, ledger/balance/trial-balance pages, and an M2 source queue.
@@ -188,7 +190,7 @@ Expose explicit business operations for draft creation/update/voiding, posting, 
 
 Use one accounting-owned normalized fact boundary rather than building the entire module around Wallet Voucher. A fact includes book, semantic fact type, stable source identifier, occurrence time, amount/scale/currency, business classification, evidence references, and fingerprint.
 
-Suggested identities include `settlement_allocation_booked:<allocationUuid>` and `settlement_allocation_reversed:<allocationUuid>:<reversalIdentity>`. Confirm actual source identifiers before finalizing the schema. Mapping version is evidence, not a new identity that permits recognizing the same business fact twice.
+Use `settlement_allocation_booked:<allocationUuid>` and `settlement_allocation_reversed:<allocationUuid>:<reversalTransactionUuid>` for the selected Wallet adapter, subject to verifying the pinned source during implementation. Mapping version is evidence, not a new identity that permits recognizing the same business fact twice.
 
 - Deduplicate on book plus business-fact identity with a database unique constraint.
 - Link Plan, Allocation, Voucher, and Transaction as evidence for one booking; do not create separate journals for each representation of that same booking.
@@ -239,7 +241,7 @@ Separate ingestion completeness from accounting-posting completeness. A matching
 ### Phase 0 — Confirm scope and contracts
 
 - [ ] Confirm the M1 decisions in section 4 with the owner; identify the reviewer for accounting policy.
-- [ ] Inventory authorization, controller/serialization conventions, decimal handling, file references, and project-owned test/build discovery before selecting implementations.
+- [x] Inventory authorization, controller/serialization conventions, decimal handling, file references, and project-owned test/build discovery before selecting implementations.
 - [ ] Record M2 scenario and unresolved policy questions without blocking manual bookkeeping unnecessarily.
 - [ ] Define journal lifecycle, exact amount limits, numbering, reversal semantics, period timezone, audit retention, and permission mapping.
 - [ ] Identify any missing Core seams; keep them as separate blockers rather than expanding this task's authorization.
@@ -248,34 +250,35 @@ Separate ingestion completeness from accounting-posting completeness. A matching
 
 ### Phase 1 — Backend module and persistence
 
-- [ ] Add the convention-discovered Accounting module, local service/routes configuration, and namespace.
-- [ ] Implement book, account, period, journal/line, source link, and audit persistence with constraints and indexes.
+- [x] Add the convention-discovered Accounting module, local routes configuration, and namespace.
+- [x] Implement book, account, period, journal/line, bounded manual evidence, and audit persistence with constraints and indexes. Structured source links are deferred to M2.
 - [ ] Create additive business-owned migrations; inspect generated SQL for accidental Core schema changes.
-- [ ] Provide explicit, repeatable initialization for the reviewed initial book/chart/periods. Do not seed production balances automatically.
-- [ ] Register Accounting tests in the integration suite and confirm CI actually discovers them.
+- [x] Provide explicit initialization for the reviewed initial book/chart/periods. Do not seed production balances automatically.
+- [x] Register Accounting tests in the integration suite and add a dedicated MySQL check to project CI.
 - [ ] Test namespace/container/routes/mappings/migrations through the integration entrypoints.
 
 **Gate:** a clean isolated database can install the module, and existing Core tables/behavior remain unchanged.
 
 ### Phase 2 — Accounting commands and safeguards
 
-- [ ] Implement draft lifecycle, revision checks, full line validation, and source/evidence restrictions.
-- [ ] Implement atomic, idempotent posting and number allocation with account/period revalidation.
-- [ ] Implement full reversal, uniqueness, reason, open-period date selection, and original linkage.
-- [ ] Implement lock/reopen and serialization against posting; audit all sensitive actions.
-- [ ] Enforce authorization and historical immutability across every API write path, including generic/batch/nested paths.
-- [ ] Implement and test the opening-journal workflow.
+- [x] Implement draft lifecycle, revision checks, full line validation, and evidence restrictions.
+- [x] Implement atomic, idempotent posting and number allocation with account/period revalidation.
+- [x] Implement full reversal, uniqueness, reason, open-period date selection, and original linkage.
+- [x] Implement lock/reopen and serialization against posting; audit sensitive commands.
+- [x] Enforce authorization and historical immutability across exposed API paths; do not publish generic/batch/nested ledger writes.
+- [x] Implement and test the opening-journal and explicit zero-opening workflows.
 
 **Gate:** concurrent retries cannot double-post/reverse, bypass locks, overwrite newer drafts, or mutate posted financial data.
 
 ### Phase 3 — Reports and admin workflow (M1)
 
-- [ ] Implement posted-line ledger queries, balances, trial balance, stable pagination, and safe bounded CSV export.
-- [ ] Add business-owned account, journal, period, and report routes/configuration/localization.
-- [ ] Build the custom journal editor and explicit posting/reversal confirmations; handle stale revisions clearly.
-- [ ] Show source/correction history and audit evidence with appropriate access controls.
+- [x] Implement posted-line ledger queries, balances, trial balance, cutoff-based financial pagination, and safe bounded CSV export.
+- [x] Add business-owned account, journal, period, and report routes/configuration/localization.
+- [x] Build the custom journal editor and explicit posting/reversal confirmations; handle stale revisions clearly.
+- [x] Show manual evidence, correction linkage, and audit with appropriate access controls.
 - [ ] Run the M1 end-to-end acceptance scenario and frontend composition/build checks.
-- [ ] Write module setup/operation instructions and promote only tested guarantees into a new Accounting contract.
+- [x] Validate additive migrations and posting/reversal/period races on isolated MySQL.
+- [x] Write [module setup/operation instructions](../../business/backend/Accounting/README.md) and publish the [M1 contract](../contracts/accounting.md).
 
 **M1 gate:** authorized users can establish opening balances, record and correct manual transactions, lock a month, and obtain reproducible balanced reports without Wallet or Settlement writes.
 
@@ -295,7 +298,7 @@ Separate ingestion completeness from accounting-posting completeness. A matching
 
 - [ ] Implement item-level discrepancy reads plus grouped counts/totals for source, Wallet evidence, and Accounting treatment.
 - [ ] Exercise partial booking, reversal-pending, stale source state, and post-before-Accounting-crash recovery scenarios.
-- [ ] Review migration SQL against an isolated MySQL instance, not only SQLite-generated test schemas.
+- [ ] Verify the additive M2 schema and concurrent import behavior on isolated MySQL.
 - [ ] Document explicit enablement, source cutoff, dry run, review, batch execution, optional scheduling, monitoring, and recovery.
 - [ ] Define import-disable behavior: stop new ingestion without deleting facts, journals, audit evidence, or source records.
 - [ ] Review security, source snapshot minimization, export limits, indexes, and report performance on a bounded representative dataset.
@@ -311,9 +314,9 @@ Separate ingestion completeness from accounting-posting completeness. A matching
 | Draft safety | Stale revisions, concurrent edits, voided imported draft, tampered source/audit fields, nested and batch writes. |
 | Posting | Double click, concurrent callers, same idempotency key with changed payload, duplicate numbering, rollback after number allocation, disabled account, and date outside configured periods. |
 | Periods | Lock racing with posting, locked-period backdate, unauthorized reopen, timezone/date boundaries, and overlapping periods. |
-| Corrections | Exactly one full reversal, concurrent reversal, immutable original, reversal into an open period, retry, and non-financial audit visibility. |
+| Corrections | Exactly one full reversal, concurrent reversal, immutable original, reversal into an open period, exact historical-account exception, retry, and non-financial audit visibility. |
 | Reports | Opening journal, date-filtered opening balance, deterministic running balance, balanced trial totals, reversal effects, draft exclusion, inactive-account history, pagination, and formula-safe export. |
-| Authorization | Unauthenticated and unauthorized list/detail/write/export/evidence access, book/dimension scope, and permission changes. |
+| Authorization | Unauthenticated and unauthorized list/detail/write/export/evidence access, book scope, no implicit grant from Store roles, and permission changes. |
 | Source processing | Same fact replay, changed fingerprint, mapping version change, missing/disabled account mapping, unsupported Wallet unit, and source amount mismatch. |
 | Settlement recovery | Plan-only fact, partial posting, Wallet success before Settlement receipt, already-reversed Voucher, pending/failed reversal, and source reversal before original accounting posting. |
 | Import recovery | Concurrent workers, crash before/after fact/draft persistence, old source changing lifecycle, progress recovery, cutoff handling, and locked historical periods. |

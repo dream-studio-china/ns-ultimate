@@ -1,0 +1,24 @@
+business_accounting_manage:
+    prefix: /api/v1/manage/accounting
+    name_prefix: business_accounting_manage_
+    resource: '../src/Controller/Manage/'
+    type: attribute
+
+business_accounting_store:
+    prefix: /api/v1
+    name_prefix: business_accounting_store_
+    resource: '../src/Controller/Store/'
+    type: attribute
+
+business_accounting_finance:
+    prefix: /api/v1/finance
+    name_prefix: business_accounting_finance_
+    resource: '../src/Controller/Manage/'
+    type: attribute
+
+business_accounting_legacy:
+    # Retain the original permission-only API for existing clients.
+    prefix: /api/v1/accounting
+    name_prefix: business_accounting_
+    resource: '../src/Controller/Manage/'
+    type: attribute

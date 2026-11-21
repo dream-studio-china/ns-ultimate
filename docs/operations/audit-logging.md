@@ -46,13 +46,16 @@ large payload cannot exhaust the disk.
 
 Credential fields are replaced with `[redacted]`, and `Authorization`, `Cookie`,
 `Proxy-Authorization` and `X-Api-Key` request headers are omitted. Repository
-policy forbids writing real secrets or tokens to logs. This is the only masking
-applied; other business fields and provider payloads are recorded verbatim.
+policy forbids writing real secrets or tokens to logs. Other business fields
+and provider payloads are normally recorded verbatim. Finance endpoints are an
+exception: the HTTP audit keeps transport metadata, not Finance query strings,
+bodies or exception details. Access-controlled ledger evidence is covered by the
+[Accounting contract](../contracts/accounting.md).
 
 The redaction list is known to be incomplete. It does not cover every credential
 field accepted by the project: administrator requests that store WeChat `secret`,
 `aesKey`/`aes_key`, or `apiV3Key` values are currently recorded verbatim in the
-request and response bodies. Query strings are also logged unchanged. Until the
+request and response bodies. Outside Finance, query strings are logged unchanged. Until the
 list is expanded, treat the audit file as containing credential material, restrict
 read access to operators, and avoid copying raw entries from credential-management
 or payment requests into tickets. Rotate a credential that is believed to have

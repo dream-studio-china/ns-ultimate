@@ -88,6 +88,9 @@ test('appearance joins System Options without changing existing routes or role r
   }
   runInNewContext(integrationSource, integration)
   const routes = integration.result.routes
+  const financeIndex = routes.findIndex(route => route.name === 'Finance')
+  assert.equal(routes[financeIndex].meta.icon, 'el-icon-money')
+  assert.equal(routes[financeIndex + 1].name, 'UserManage')
   const parent = routes.find(route => route.name === 'SystemOptionManage')
   assert.equal(parent.path, '/system-option')
   assert.equal(parent.meta, originalSystem.meta)

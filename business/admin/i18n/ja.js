@@ -2,6 +2,8 @@ import { designerMessages } from './printer-designer.js'
 
 export default {
   ...designerMessages('ja'),
+  'Finance management': '財務管理',
+  'General ledger': '総勘定元帳',
   'System Options': 'システム設定',
   'Dining mode': '注文方法',
   'Dining mode failed to load': '注文方法を読み込めませんでした',

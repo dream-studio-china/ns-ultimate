@@ -2,6 +2,8 @@ import { designerMessages } from './printer-designer.js'
 
 export default {
   ...designerMessages('zh-Hant'),
+  'Finance management': '財務管理',
+  'General ledger': '總帳',
   'System Options': '系統設定',
   'Dining mode': '點餐方式',
   'Dining mode failed to load': '點餐方式載入失敗',

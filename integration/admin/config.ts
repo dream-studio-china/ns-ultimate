@@ -34,6 +34,7 @@ routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
 routes = moveRouteAfter(routes, 'HuifuConfiguration', 'WechatConfiguration')
 routes = moveRouteAfter(routes, 'HuifuTransactions', 'HuifuConfiguration')
 routes = moveRouteAfter(routes, 'PrinterManage', 'ContentManage')
+routes = moveRouteBefore(routes, 'Finance', 'UserManage')
 
 export default {
   routes,
