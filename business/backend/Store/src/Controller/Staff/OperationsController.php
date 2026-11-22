@@ -247,12 +247,14 @@ final class OperationsController extends RestController
                 || !in_array($file->getMimeType(), ['image/png', 'image/jpeg', 'image/webp'], true)) throw new HttpException(422, 'invalid_image');
             $dimensions = @getimagesize($file->getPathname());
             if ($dimensions === false || max($dimensions[0], $dimensions[1]) > 8192) throw new HttpException(422, 'invalid_image');
-            $command = ['commandUuid' => $request->request->get('commandUuid'), 'digest' => hash_file('sha256', $file->getPathname())];
+            $storage = $request->request->get('storage', 'local');
+            if (!in_array($storage, ['local', 'qiniu'], true)) throw new HttpException(422, 'invalid_storage');
+            $command = ['commandUuid' => $request->request->get('commandUuid'), 'digest' => hash_file('sha256', $file->getPathname()), 'storage' => $storage];
             $created = null;
             try {
-                return $this->commands->run($store, $this->actor(), 'catalog_image.upload', $command, function () use ($store, $file, &$created): array {
+                return $this->commands->run($store, $this->actor(), 'catalog_image.upload', $command, function () use ($store, $file, $storage, &$created): array {
                     // Store-owned media is deliberately not owned/deletable by an individual app user.
-                    $created = $this->media->createFromUpload($file, 'local', [], null);
+                    $created = $this->media->createFromUpload($file, $storage, [], null);
                     $this->em->persist(new CatalogImage($store->getUuid(), $created));
                     return ['before' => [], 'result' => ['uuid' => $created->getUuid(), 'url' => $created->getPath()]];
                 });
