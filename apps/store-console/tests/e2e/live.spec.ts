@@ -70,6 +70,7 @@ async function mockApi(page: Page, options: { partialRefund?: boolean; readOnly?
     if (path === `/api/v1/app/stores/${storeId}`) return respond(store)
     if (path.endsWith('/membership')) return respond({ status: options.membership ?? 'active', role: 'manager' })
     if (path === '/api/v1/app/users/me') return respond({ uuid: storeId, username: 'contract-staff', roles: ['ROLE_USER'] })
+    if (path === '/api/v1/app/users/change-password' && method === 'POST') return respond(null)
     if (path === '/api/v1/app/authorization/me') {
       if (options.grants) return respond({ permissions: options.grants, storeScopes: Object.fromEntries(options.grants.map((code) => [code, [storeId]])) })
       const scopes: Record<string, string[]> = {}
@@ -227,6 +228,14 @@ test('table configuration downloads ordering QR codes with table names', async (
   const singleDownload = page.waitForEvent('download')
   await page.getByRole('dialog').getByRole('button', { name: '下载二维码', exact: true }).click()
   expect((await singleDownload).suggestedFilename()).toBe('Real A01.png')
+
+  const orderingUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/order/index.html?counterId=00000000-0000-4000-8000-000000000006&storeUuid=00000000-0000-4000-8000-000000000001'
+  await page.context().route('https://ns-ultimate.wscoffee.com.cn/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Customer ordering</title>' }))
+  const popupPromise = page.waitForEvent('popup')
+  await page.getByRole('dialog').getByRole('button', { name: '点餐', exact: true }).click()
+  const popup = await popupPromise
+  await expect(popup).toHaveURL(orderingUrl)
+  await popup.close()
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
 
   const batchDownload = page.waitForEvent('download')
@@ -290,6 +299,8 @@ test('kitchen-only staff toggle sold-out products with product edit permission',
   await expect(nav.getByRole('button', { name: '厨房', exact: true })).toHaveAttribute('aria-current', 'page')
   for (const name of ['新增商品', '删除', '管理规格', '分类管理', '确认结账']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
+  await expect(page.getByText('已上架', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.catalog-label-print-flag')).toHaveText('不打印标签')
   await expect(page.locator('.catalog-print-flag')).toHaveText('打印厨房联')
   await page.getByRole('button', { name: '售罄', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -340,6 +351,8 @@ test('kitchen product card toggles availability directly and shows every specifi
   await expect(card.getByRole('button', { name: '编辑', exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
   await expect(card.locator('.catalog-product-actions > button')).toHaveText(['编辑', '管理规格', '售罄'])
+  await expect(card.getByText('已上架', { exact: true })).toHaveCount(0)
+  await expect(card.locator('.catalog-label-print-flag')).toHaveText('打印标签')
   await expect(card.locator('.catalog-print-flag')).toHaveText('打印厨房联')
   await expect(card.locator('.catalog-product-price')).toHaveText([/大份\s*¥16\.90/, /小份\s*¥12\.90/])
   await expect(card.getByText('在售', { exact: true })).toHaveClass(/is-positive/)
@@ -424,13 +437,13 @@ test('catalog operating fields and raster image uploads save through one version
   const requests = await mockApi(page)
   await login(page)
   await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
-  const listedRecommendation = page.locator('.catalog-product-card .recommendation-thumbs')
+  const listedRecommendation = page.locator('.catalog-product-card .recommendation-thumbs-control')
   await expect(listedRecommendation.locator('svg')).toHaveCount(5)
   await expect(listedRecommendation.locator('svg.is-active')).toHaveCount(0)
   await page.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByLabel('商品副标题', { exact: true }).fill('Lunch special')
   await expect(page.getByLabel('商品描述', { exact: true })).toHaveCount(0)
-  await page.getByRole('group', { name: '推荐度', exact: true }).getByRole('button', { name: '推荐度 2/5', exact: true }).click()
+  await page.getByRole('dialog').getByRole('group', { name: '推荐度', exact: true }).getByRole('button', { name: '推荐度 2/5', exact: true }).click()
   await page.locator('.resource-editor input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64') })
   await page.getByRole('switch', { name: '打印小票', exact: true }).click()
   await page.getByRole('switch', { name: '不打印厨房联', exact: true }).click()
@@ -446,8 +459,63 @@ test('catalog operating fields and raster image uploads save through one version
   expect(imageUpload).toBeDefined()
   expect(imageUpload?.rawBody).toContain('name="storage"\r\n\r\nqiniu')
   await expect(page.locator('.catalog-product-info')).toContainText('Lunch special')
-  await expect(page.locator('.catalog-product-card .recommendation-thumbs')).toHaveAttribute('aria-label', '推荐度 2/5')
-  await expect(page.locator('.catalog-product-card .recommendation-thumbs svg.is-active')).toHaveCount(2)
+  await expect(page.locator('.catalog-product-card .recommendation-thumbs-control button.is-active')).toHaveCount(2)
+})
+
+test('store staff can change their password from account settings', async ({ page }) => {
+  const requests = await mockApi(page)
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '我的', exact: true }).click()
+  await page.getByRole('button', { name: '修改密码', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('当前密码', { exact: true }).fill('test-only-password')
+  await dialog.getByLabel('新密码', { exact: true }).fill('new-password')
+  await dialog.getByLabel('再次输入新密码', { exact: true }).fill('different-password')
+  await dialog.getByRole('button', { name: '修改密码', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('两次输入的新密码不一致')
+  await dialog.getByLabel('再次输入新密码', { exact: true }).fill('new-password')
+  await dialog.getByRole('button', { name: '修改密码', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: '密码已修改' })).toBeVisible()
+  expect(requests.find((request) => request.path === '/api/v1/app/users/change-password')?.body).toEqual({
+    currentPassword: 'test-only-password',
+    newPassword: 'new-password',
+  })
+})
+
+test('password changes report an incorrect current password without closing the form', async ({ page }) => {
+  await mockApi(page)
+  await page.route('**/api/v1/app/users/change-password', (route) => route.fulfill({ status: 400, json: { code: 400, message: 'Current password is incorrect.' } }))
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '我的', exact: true }).click()
+  await page.getByRole('button', { name: '修改密码', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('当前密码', { exact: true }).fill('wrong-password')
+  await dialog.getByLabel('新密码', { exact: true }).fill('new-password')
+  await dialog.getByLabel('再次输入新密码', { exact: true }).fill('new-password')
+  await dialog.getByRole('button', { name: '修改密码', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('当前密码不正确')
+  await expect(dialog).toBeVisible()
+})
+
+test('catalog recommendation thumbs update directly from the product list', async ({ page }) => {
+  const requests = await mockApi(page)
+  await login(page)
+  await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()
+  const recommendation = page.locator('.catalog-product-card .recommendation-thumbs-control')
+
+  await recommendation.getByRole('button', { name: '推荐度 3/5', exact: true }).click()
+  await expect.poll(() => requests.filter((request) => request.method === 'PUT').length).toBe(1)
+  const setLevel = requests.filter((request) => request.method === 'PUT')[0]!
+  expect(setLevel.body).toMatchObject({ recommendationLevel: 3, version, commandUuid: expect.any(String) })
+  await expect(recommendation.locator('button.is-active')).toHaveCount(3)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  await recommendation.getByRole('button', { name: '推荐度 3/5', exact: true }).click()
+  await expect.poll(() => requests.filter((request) => request.method === 'PUT').length).toBe(2)
+  const clearLevel = requests.filter((request) => request.method === 'PUT')[1]!
+  expect(clearLevel.body).toMatchObject({ recommendationLevel: 0, version, commandUuid: expect.any(String) })
+  await expect(recommendation.locator('button.is-active')).toHaveCount(0)
 })
 
 test('product editing remains compatible with a backend that omits the kitchen ticket setting', async ({ page }) => {

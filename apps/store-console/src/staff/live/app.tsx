@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, ChartNoAxesCombined, CircleHelp, CookingPot, Globe2, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, ChartNoAxesCombined, CircleHelp, CookingPot, Globe2, KeyRound, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
 import { ApiClient, ApiError } from '../adapters/api-client'
 import { can, StoreApi, StoreConnectionError, storeSchema, type StoreAccess, type ConnectionStep } from '../adapters/live'
 import { useI18n, type MessageKey } from '../../shared/i18n'
@@ -12,7 +12,7 @@ import { LiveReports } from './reports'
 import { LiveCashRegister } from './cash-register'
 import { LiveAccounting } from './accounting'
 import { readReportingDay, writeReportingDay } from '../reporting'
-import { errorKey, ListFeedback, Notice, PageControls, PageHeading, StatusPill, usePage, LiveSheet, WorkspaceRefreshProvider } from './ui'
+import { errorKey, ListFeedback, MessageError, MutationForm, Notice, PageControls, PageHeading, StatusPill, usePage, LiveSheet, WorkspaceRefreshProvider } from './ui'
 import { BrandArt } from './brand-art'
 import { defaultWorkspacePage, workspacePages, type WorkspacePage } from './navigation'
 import './workspace.css'
@@ -190,6 +190,8 @@ const actionLabels: Record<string, MessageKey> = { read: 'permissionRead', creat
 function LiveAccount({ api, access, logout }: { api: StoreApi; access: StoreAccess; logout: () => void }) {
   const { t, locale, setLocale } = useI18n()
   const [history, setHistory] = useState(false)
+  const [passwordSheet, setPasswordSheet] = useState(false)
+  const [passwordChanged, setPasswordChanged] = useState(false)
   const [reportingDay, setReportingDay] = useState(() => readReportingDay(access.store.uuid))
   const [reportingDaySaved, setReportingDaySaved] = useState(true)
   const updateReportingDay = (value: number) => {
@@ -205,13 +207,44 @@ function LiveAccount({ api, access, logout }: { api: StoreApi; access: StoreAcce
     <section className="workspace-profile"><div className="profile-monogram">{(access.profile.username ?? 'NS').slice(0, 1).toUpperCase()}<span><ShieldCheck size={13} /></span></div><div><h2>{access.profile.username ?? access.profile.uuid}</h2><p>{t(roleLabels[access.membership.role] ?? 'liveAccount')}</p></div><StatusPill>{t('liveMode')}</StatusPill></section>
     <section className="account-store-card"><span><Store size={25} strokeWidth={1.5} /></span><div><strong>{access.store.name}</strong><small>{access.store.code} · {access.store.currency}</small></div><MapPin size={17} /><p>{t('storeContextHint')}</p></section>
     <div className="account-section-title"><h2>{t('devicePreferences')}</h2><span>{t('preferences')}</span></div>
-    <section className="workspace-panel"><div className="account-setting"><span className="setting-symbol"><Globe2 size={19} /></span><div><h3>{t('language')}</h3><small>{locale === 'en' ? t('en') : t('zh')}</small></div><button onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}>{locale === 'en' ? t('zh') : t('en')}<ChevronRight size={16} /></button></div><div className="account-setting account-reporting-setting"><span className="setting-symbol"><CalendarDays size={19} /></span><div><h3>{t('reportingDay')}</h3><small>{reportingPeriod}</small></div><label><span className="sr-only">{t('reportingDay')}</span><select aria-label={t('reportingDay')} value={reportingDay} onChange={(event) => updateReportingDay(Number(event.target.value))}>{Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{t('reportingDayOption').replace('{day}', String(day))}</option>)}</select></label></div>{!reportingDaySaved && <p className="workspace-report-storage-error" role="alert">{t('reportingDayStorageFailed')}</p>}<ThemePicker /></section>
+    <section className="workspace-panel"><div className="account-setting"><span className="setting-symbol"><Globe2 size={19} /></span><div><h3>{t('language')}</h3><small>{locale === 'en' ? t('en') : t('zh')}</small></div><button onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}>{locale === 'en' ? t('zh') : t('en')}<ChevronRight size={16} /></button></div><div className="account-setting"><span className="setting-symbol"><KeyRound size={19} /></span><div><h3>{t('changePassword')}</h3><small>{t('changePasswordHint')}</small></div><button type="button" onClick={() => { setPasswordChanged(false); setPasswordSheet(true) }}>{t('changePassword')}<ChevronRight size={16} /></button></div><div className="account-setting account-reporting-setting"><span className="setting-symbol"><CalendarDays size={19} /></span><div><h3>{t('reportingDay')}</h3><small>{reportingPeriod}</small></div><label><span className="sr-only">{t('reportingDay')}</span><select aria-label={t('reportingDay')} value={reportingDay} onChange={(event) => updateReportingDay(Number(event.target.value))}>{Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{t('reportingDayOption').replace('{day}', String(day))}</option>)}</select></label></div>{!reportingDaySaved && <p className="workspace-report-storage-error" role="alert">{t('reportingDayStorageFailed')}</p>}<ThemePicker /></section>
+    {passwordChanged && <p className="workspace-success" role="status"><CheckCircle2 size={16} />{t('passwordChangeSuccess')}</p>}
     <div className="account-section-title"><h2>{t('profileAndAccess')}</h2><span>{t('scopedAccess')}</span></div>
     <section className="workspace-panel account-permissions">{Object.entries(resourceLabels).map(([resource, label]) => <div key={resource}><strong>{t(label)}</strong><span>{Object.entries(actionLabels).filter(([action]) => can(access, resource, action)).map(([action, label]) => <small key={action}>{t(label)}</small>)}{!Object.keys(actionLabels).some((action) => can(access, resource, action)) && <small className="no-grant">{t('noGrantedActions')}</small>}</span></div>)}</section>
     {can(access, 'operation', 'read') && <Button block className="account-history-button" onClick={() => setHistory(true)}>{t('operationHistory')}</Button>}
     {history && <LiveSheet open title={t('operationHistory')} onClose={() => setHistory(false)}><OperationHistory api={api} /></LiveSheet>}
+    {passwordSheet && <ChangePasswordSheet api={api} onClose={() => setPasswordSheet(false)} changed={() => { setPasswordSheet(false); setPasswordChanged(true) }} />}
     <section className="account-session"><h2>{t('sessionSettings')}</h2><p>{t('accountSessionHint')}</p><Button block className="logout-button" onClick={logout}><LogOut size={17} />{t('logout')}</Button><a href="?mode=demo">{t('demoModeLink')}<ArrowRight size={14} /></a></section>
   </>
+}
+
+function ChangePasswordSheet({ api, onClose, changed }: { api: StoreApi; onClose: () => void; changed: () => void }) {
+  const { t } = useI18n()
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  return <LiveSheet open title={t('changePassword')} onClose={onClose}>
+    <Notice subtle icon={ShieldCheck}>{t('changePasswordHint')}</Notice>
+    <MutationForm actions={false} submit={async () => {
+      if (!currentPassword) throw new MessageError('currentPasswordRequired')
+      if (newPassword.length < 6) throw new MessageError('newPasswordTooShort')
+      if (newPassword !== confirmation) throw new MessageError('passwordMismatch')
+      if (newPassword === currentPassword) throw new MessageError('passwordUnchanged')
+      try {
+        await api.changePassword(currentPassword, newPassword)
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 400) {
+          throw new MessageError(error.serverMessage?.includes('Current password') ? 'currentPasswordIncorrect' : 'passwordChangeRejected')
+        }
+        throw error
+      }
+    }} onDone={changed}>
+      <label className="field">{t('currentPassword')}<input required aria-label={t('currentPassword')} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+      <label className="field">{t('newPassword')}<input required aria-label={t('newPassword')} type="password" minLength={6} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /><small>{t('newPasswordHint')}</small></label>
+      <label className="field">{t('confirmPassword')}<input required aria-label={t('confirmPassword')} type="password" minLength={6} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
+      <Button block color="primary" type="submit" className="workspace-primary">{t('changePassword')}<CheckCircle2 size={16} /></Button>
+    </MutationForm>
+  </LiveSheet>
 }
 
 function OperationHistory({ api }: { api: StoreApi }) {

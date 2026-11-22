@@ -76,7 +76,14 @@ final class DispatchOrderPrintRequestsCommand extends Command
                 }
                 $copies = (int) ($configuration['copies'] ?? 1);
                 $requestKey = 'ord-'.substr(hash('sha256', $request->getRequestKey()), 0, 40);
-                $job = $this->jobs->submitSnapshot($device, $snapshot, $request->getPrintData(), $copies, $requestKey);
+                $job = $this->jobs->submitSnapshot(
+                    $device,
+                    $snapshot,
+                    $request->getPrintData(),
+                    $copies,
+                    $requestKey,
+                    $request->getCaseKey(),
+                );
                 // A submitted/unknown job is terminal for automatic dispatch; only an explicit reprint may send again.
                 if (!in_array($job->getStatus(), [PrinterJob::STATUS_SUBMITTED, PrinterJob::STATUS_PRINTED, PrinterJob::STATUS_FAILED, PrinterJob::STATUS_UNKNOWN], true)) {
                     throw new \RuntimeException('Printer job did not reach a dispatch result.');

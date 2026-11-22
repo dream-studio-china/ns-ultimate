@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import test from 'node:test'
+import { uuidFilter } from '../../business/admin/config/uuid-filter.mjs'
 
 const printerSampleData = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer-sample-data.json', import.meta.url), 'utf8'))
 
@@ -96,7 +97,7 @@ test('printer account admin shows provider identity but only enables configured 
 test('printer job detail resolves the store through the management prefix', () => {
   const source = readFileSync(new URL('../../business/admin/config/collections/printer/PrinterJob.js', import.meta.url), 'utf8')
   const context = {
-    t: key => key,
+    t: key => key, uuidFilter, loadRelationRecords: async () => [],
     PrinterJobAction: 'create', PrinterPaperAction: 'preview', PrinterJobReprintAction: 'reprint',
     globalThis: {}
   }
@@ -155,7 +156,10 @@ test('cancelling reprint confirmation does not submit another live job', async()
 test('printer job admin exposes detail and single delete but preserves immutable snapshots', () => {
   const source = readFileSync(new URL('../../business/admin/config/collections/printer/PrinterJob.js', import.meta.url), 'utf8')
   const moduleSource = source.replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
-  const context = { t: key => key, PrinterJobAction: 'create', PrinterPaperAction: 'preview', PrinterJobReprintAction: 'reprint', globalThis: {} }
+  const context = {
+    t: key => key, uuidFilter, loadRelationRecords: async () => [],
+    PrinterJobAction: 'create', PrinterPaperAction: 'preview', PrinterJobReprintAction: 'reprint', globalThis: {}
+  }
   runInNewContext(moduleSource, context)
   const config = context.globalThis.config.PrinterJob
   assert.deepEqual(JSON.parse(JSON.stringify(config.list.disabled_actions)), ['new', 'edit', 'batch_edit', 'batch_delete'])

@@ -4,6 +4,7 @@ import { uuidFilter } from '../../uuid-filter.mjs'
 import OrderPrintConditions from '../../components/OrderPrintConditions.vue'
 import OrderPrintEvents from '../../components/OrderPrintEvents.vue'
 import OrderPrintOutputSelect from '../../components/OrderPrintOutputSelect.vue'
+import PrinterRuleEnabledControl from '../../components/PrinterRuleEnabledControl.vue'
 import PrinterRuleStoreField from '../../components/PrinterRuleStoreField.vue'
 
 const field = (property, label) => ({ property, label: t(label) })
@@ -12,6 +13,12 @@ const storeField = {
   relation: { target: 'Store', plural: 'stores', prefix: '/api/v1/manage', valueKey: 'uuid' }
 }
 const options = values => values.map(([value, label]) => ({ value, label: t(label) }))
+const enabledField = {
+  property: 'enabled',
+  label: t('Enabled'),
+  component: PrinterRuleEnabledControl,
+  field_options: { width: 100, align: 'center', sortable: false }
+}
 
 export default {
   PrinterOrderRule: {
@@ -34,7 +41,7 @@ export default {
     list: {
       disabled_actions: ['batch_edit', 'batch_delete'],
       list_filter: { storeUuid: uuidFilter('storeUuid', t('Store'), () => loadRelationRecords({ name: 'Store', valueKey: 'uuid' })), name: t('Name'), enabled: t('Enabled') },
-      list_display: [field('uuid', 'UUID'), storeField, field('name', 'Name'), field('enabled', 'Enabled'), field('templateUuid', 'Printer template UUID')]
+      list_display: [field('uuid', 'UUID'), storeField, field('name', 'Name'), enabledField, field('templateUuid', 'Printer template UUID')]
     },
     detail: { detail_display: [storeField, '__all__'] }
   }

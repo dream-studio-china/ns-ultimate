@@ -35,7 +35,7 @@ final class PrinterJobService
      * @param array<string, mixed> $definition
      * @param array<string, mixed> $data
      */
-    public function submitSnapshot(PrinterDevice $device, array $definition, array $data, int $copies, string $idempotencyKey): PrinterJob
+    public function submitSnapshot(PrinterDevice $device, array $definition, array $data, int $copies, string $idempotencyKey, ?string $ruleUuid = null): PrinterJob
     {
         if (($definition['kind'] ?? null) !== $device->getKind() || !is_array($definition['nodes'] ?? null)) {
             throw new \InvalidArgumentException('Template snapshot must match the printer type and contain nodes.');
@@ -54,7 +54,7 @@ final class PrinterJobService
             return $existing;
         }
 
-        $job = new PrinterJob($device, $copies, $definition, $data, $document['content'], $idempotencyKey);
+        $job = new PrinterJob($device, $copies, $definition, $data, $document['content'], $idempotencyKey, $ruleUuid);
         return $this->dispatch($job);
     }
 
@@ -77,6 +77,7 @@ final class PrinterJobService
             $source->getDataSnapshot(),
             $source->getRenderedContent(),
             $idempotencyKey,
+            $source->getRuleUuid(),
         );
         return $this->dispatch($job);
     }

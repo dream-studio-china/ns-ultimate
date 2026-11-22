@@ -16,6 +16,9 @@ function loadProductConfig() {
     ProductSettingsSchema: {},
     ProductNameWithCover: {},
     ProductCategorySelect: { __testCategorySelector: true },
+    ProductCategoryFilterScope: { __testCategoryFilterScope: true },
+    ProductStoreFilterScope: { __testStoreFilterScope: true },
+    ProductSpecificationsWithPrices: {},
     SpecificationManager: {},
     CopyProductsAction: {},
     kitchenPrinterField: {},
@@ -23,6 +26,7 @@ function loadProductConfig() {
     recommendationLevelField: {},
     soldoutField: {},
     sortOrderField: {},
+    productFilterState: { storeUuid: '', data: [] },
     loadRelationRecords: async () => [
       { uuid: '550e8400-e29b-41d4-a716-446655440000', name: 'Main store' },
       { uuid: '550e8400-e29b-41d4-a716-446655440001', code: 'SECOND' },
@@ -70,8 +74,20 @@ test('Product management filters by the selected store UUID through the existing
   assert.equal(filter.label, 'Store')
   assert.equal(filter.type, 'select')
   assert.equal(filter.expression, "entity.getStore().getUuid() == ':value'")
+  assert.equal(filter.component.__testStoreFilterScope, true)
   assert.deepEqual(JSON.parse(JSON.stringify(filter.data)), [
     { value: '550e8400-e29b-41d4-a716-446655440000', label: 'Main store' },
     { value: '550e8400-e29b-41d4-a716-446655440001', label: 'SECOND' },
   ])
+})
+
+test('Product category filter depends on the selected store and uses category IDs', () => {
+  const config = loadProductConfig()
+  const filter = config.list.list_filter['category.id']
+
+  assert.equal(filter.label, 'Category')
+  assert.equal(filter.type, 'select')
+  assert.equal(filter.expression, "entity.getCategory().getId() == ':value'")
+  assert.equal(filter.component.__testCategoryFilterScope, true)
+  assert.ok(Array.isArray(filter.data))
 })

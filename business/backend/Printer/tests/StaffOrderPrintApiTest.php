@@ -88,6 +88,7 @@ final class StaffOrderPrintApiTest extends KernelTestCase
         $items = $this->data($options)['items'];
         self::assertCount(1, $items);
         self::assertSame($this->rule->getUuid(), $items[0]['ruleUuid']);
+        self::assertSame(['paid', 'manual'], $items[0]['events']);
         self::assertArrayNotHasKey('credentialsCipher', $items[0]);
         $payload = $this->payload();
         $response = $this->request('POST', $this->path(), $payload);
@@ -135,18 +136,22 @@ final class StaffOrderPrintApiTest extends KernelTestCase
         self::assertSame(2, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
     }
 
-    public function testRulesWithoutManualEventAreNotOfferedOrPrintable(): void
+    public function testManualAndConfirmedRulesAreOfferedButPaidOnlyRulesAreNot(): void
     {
+        $confirmed = (new PrinterOrderRule())->setStoreUuid($this->store->getUuid())->setName('Confirmed receipt')->setEnabled(true)
+            ->setEvents(['confirmed'])->setDeviceUuid($this->device->getUuid())->setTemplateUuid($this->template->getUuid());
         $automaticOnly = (new PrinterOrderRule())->setStoreUuid($this->store->getUuid())->setName('Automatic only')->setEnabled(true)
             ->setEvents(['paid'])->setDeviceUuid($this->device->getUuid())->setTemplateUuid($this->template->getUuid());
+        $this->em->persist($confirmed);
         $this->em->persist($automaticOnly);
         $this->em->flush();
         $items = $this->data($this->request('GET', '/print-options'))['items'];
-        self::assertSame([$this->rule->getUuid()], array_column($items, 'ruleUuid'));
-        $response = $this->request('POST', $this->path(), [...$this->payload(), 'ruleUuid' => $automaticOnly->getUuid()]);
-        self::assertSame(409, $response->getStatusCode());
-        self::assertSame('print_rule_not_manual', json_decode($response->getContent(), true)['message']);
-        self::assertSame(0, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
+        self::assertCount(2, $items);
+        self::assertSame([$this->rule->getUuid(), $confirmed->getUuid()], array_column($items, 'ruleUuid'));
+        self::assertSame(202, $this->request('POST', $this->path(), [...$this->payload(), 'ruleUuid' => $confirmed->getUuid()])->getStatusCode());
+        self::assertSame(1, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
+        self::assertSame(409, $this->request('POST', $this->path(), [...$this->payload(), 'ruleUuid' => $automaticOnly->getUuid()])->getStatusCode());
+        self::assertSame(1, $this->em->getRepository(PrinterOrderRequest::class)->count([]));
     }
 
     public function testManualPrintIgnoresAutomaticConditionsButRequiresManualEvent(): void

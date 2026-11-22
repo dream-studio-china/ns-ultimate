@@ -49,12 +49,16 @@ export default (configEnv: { mode: string; command: string }) => {
         { find: /^qrcode$/, replacement: coreRequire.resolve('qrcode/lib/browser.js') },
         { find: /^file-saver$/, replacement: coreRequire.resolve('file-saver') },
         { find: /^vue-router$/, replacement: path.join(coreRoot, 'node_modules/vue-router/dist/vue-router.mjs') },
+        { find: /^vuex$/, replacement: path.join(coreRoot, 'node_modules/vuex/dist/vuex.mjs') },
         // Business modules live outside the core package tree, so bare imports
         // of core-installed dependencies must resolve through the core package.
         { find: /^@element-plus\/icons-vue$/, replacement: coreRequire.resolve('@element-plus/icons-vue/dist/index.js') },
         { find: /^jsoneditor$/, replacement: coreRequire.resolve('jsoneditor') },
         { find: /^@\/i18n$/, replacement: path.join(integrationDir, 'i18n.js') },
         { find: /^@\/config$/, replacement: injectedConfig },
+        // Keep the dashboard route from core while replacing its page with the
+        // project-owned implementation. No upstream component is modified.
+        { find: /^@\/views\/dashboard\/index$/, replacement: path.join(businessAdmin, 'dashboard/index.vue') },
         ...aliases,
         { find: '@', replacement: coreSource }
       ]

@@ -460,7 +460,7 @@ function DiningDetail({ api, access, legacy, orderable, id, changed, onClose, on
       </div>
     </section>})}{replaceOrder && <DiningEditor api={api} access={access} mode="replace" table={replaceOrder.table} order={replaceOrder.order} onClose={() => setReplaceOrder(null)} done={done} />}
     {collectOrder && <OrderPaymentSheet api={api} access={access} table={collectOrder.table} order={collectOrder.order} onClose={() => setCollectOrder(null)} onSettled={() => { detail.reload(); changed() }} />}
-    {printOrder && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printOrder.tradeOrderUuid} orderLabel={`#${printOrder.uuid.slice(0, 8).toUpperCase()}`} onClose={() => setPrintOrder(null)} />}</>
+    {printOrder && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printOrder.tradeOrderUuid} orderLabel={`#${printOrder.uuid.slice(0, 8).toUpperCase()}`} purpose="reprint" onClose={() => setPrintOrder(null)} />}</>
 }
 
 function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
@@ -522,7 +522,7 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
         <div className="dining-payment-code"><QRCodeSVG className="dining-payment-qr" value={paymentUrl} size={208} level="M" marginSize={1} bgColor="#ffffff" fgColor="#201813" /><p>{t('paymentQrHint')}</p><a className="dining-payment-url" href={paymentUrl} target="_blank" rel="noreferrer">{paymentUrl}</a></div>
       </section>}
     {error && <Notice>{t(error)}</Notice>}
-  </LiveSheet>{printOpen && <ManualPrintSheet api={api} access={access} tradeOrderUuid={order.tradeOrderUuid} orderLabel={`#${order.uuid.slice(0, 8).toUpperCase()}`} onlyKind="receipt" onClose={() => setPrintOpen(false)} />}</>
+  </LiveSheet>{printOpen && <ManualPrintSheet api={api} access={access} tradeOrderUuid={order.tradeOrderUuid} orderLabel={`#${order.uuid.slice(0, 8).toUpperCase()}`} purpose="checkout" onClose={() => setPrintOpen(false)} />}</>
 }
 
 function CancelSelectedOrders({ api, access, legacy, table, selectedOrders, onDone }: { api: StoreApi; access: StoreAccess; legacy: boolean; table: CounterSessionView; selectedOrders: SessionOrder[]; onDone: () => void }) {
@@ -1277,7 +1277,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
     </section>
   </CenterPopup>
   {scanPaymentOpen && result && scanPaymentOrder && <OrderPaymentSheet api={api} access={access} table={result} order={scanPaymentOrder} onClose={() => setScanPaymentOpen(false)} onSettled={() => { void loadCounterSession(api, access, result.counter.uuid).then(setResult).catch(() => undefined) }} />}
-  {printOrder && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printOrder.tradeOrderUuid} orderLabel={`#${printOrder.uuid.slice(0, 8).toUpperCase()}`} onlyKind="receipt" onClose={() => setPrintOrder(null)} />}
+  {printOrder && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printOrder.tradeOrderUuid} orderLabel={`#${printOrder.uuid.slice(0, 8).toUpperCase()}`} purpose="checkout" onClose={() => setPrintOrder(null)} />}
   </>
 }
 

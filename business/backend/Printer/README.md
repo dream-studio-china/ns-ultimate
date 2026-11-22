@@ -40,9 +40,9 @@ snapshot before calling Xpyun; ambiguous transport outcomes are recorded as
 The Printer module enqueues requests for enabled store-owned order print rules.
 Use the order print rules page to select one or more events (order confirmed,
 payment completed, Store acceptance) and optionally **Manual print**, a device,
-template and copies. Every enabled rule is available to the store-scoped staff
-print API regardless of its configured events; the manual event never fires
-automatically. Manual printing ignores the rule's automatic conditions.
+template and copies. Rules with the manual or order-confirmed event are also
+available to the store-scoped staff print API. Staff printing never fires
+automatically and ignores the rule's automatic conditions.
 Conditions match order status or bounded metadata paths using strict scalar
 comparisons or existence checks, combined by one level of all/any. An empty all
 list is unconditional; an empty any list is invalid. A rule produces requests
@@ -194,10 +194,11 @@ Store employees can manually queue an order through the scoped
 `GET /api/v1/store/{storeUuid}/operations/print-options` and
 `POST /api/v1/store/{storeUuid}/operations/trade-orders/{tradeOrderUuid}/print`
 APIs with active membership and the separately assigned `store:order:print`
-grant. They select an enabled configured rule containing the `manual` event; the backend builds trusted
-order data and queues immutable requests under a durable command UUID. The
-existing dispatcher submits them; acceptance never proves physical output. See
-the [manual printing contract](../../../docs/contracts/store-console-operations.md#manual-order-printing)
+grant. They select a configured rule that includes the `manual` or `confirmed`
+event; the backend builds trusted order data and queues immutable requests under a durable
+command UUID. The existing dispatcher
+submits them; acceptance never proves physical output. See the
+[manual printing contract](../../../docs/contracts/store-console-operations.md#manual-order-printing)
 for payloads, limits, retry semantics and permission setup. This does not connect
 the Store Console UI or expose administrator/provider APIs to staff.
 

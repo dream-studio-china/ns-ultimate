@@ -2,12 +2,10 @@
 // business/admin/config/index.js `replace`). Adds category binding and
 // Product display fields, settings, and metadata-backed cover/subtitle.
 // List and specifications behavior mirror the core configuration.
-import { defineAsyncComponent, h } from 'vue'
+import { defineAsyncComponent, h, reactive } from 'vue'
 import { t } from '@/i18n'
-import axios from '@/utils/request'
 import { loadRelationRecords } from '@/utils/relation'
 import SIP from '@/utils/simple-image-process'
-import { API_PREFIX, apiPath } from '@/api/prefix'
 import { CopyProductsAction } from '../../components/copy-catalog-actions'
 import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin/src/configs/collections/helpers'
 // Lazily resolve the admin UI here: this config module is eagerly pulled into
@@ -22,6 +20,16 @@ import ProductMetadataSchema from './ProductMetadata.json'
 import ProductSettingsSchema from './ProductSettings.json'
 import ProductListControl from '../../components/ProductListControl.vue'
 import ProductCategorySelect from '../../components/ProductCategorySelect.vue'
+import ProductCategoryFilterScope from '../../components/ProductCategoryFilterScope.vue'
+import ProductStoreFilterScope from '../../components/ProductStoreFilterScope.vue'
+import { configureProductFilterState } from '../../components/product-filter-scope.mjs'
+import { formatProductSpecificationPrice, productSpecificationRows } from '../../components/product-list-updates.mjs'
+
+const productFilterState = reactive({
+  storeUuid: '',
+  data: []
+})
+configureProductFilterState(productFilterState)
 
 const listControlField = (property, options) => ({
   property,
@@ -81,6 +89,34 @@ const ProductNameWithCover = {
         {cover ? <el-image src={SIP.getPicture(cover)} fit={'cover'} style={{ width: '40px', height: '40px', borderRadius: '4px', flexShrink: 0 }} /> : null}
         <span>{this.data}</span>
       </span>
+    )
+  }
+}
+
+const ProductSpecificationsWithPrices = {
+  props: ['record'],
+  render() {
+    const specifications = productSpecificationRows(this.record)
+    if (!specifications.length) return <span style={{ color: '#909399' }}>—</span>
+    return (
+      <div style={{ display: 'grid', gap: '3px', minWidth: '180px' }}>
+        {specifications.map((specification) => (
+          <div
+            key={specification.id || `${specification.name}-${specification.price}`}
+            title={`${specification.name} ${formatProductSpecificationPrice(specification.price)}${specification.active ? '' : ` (${t('Inactive')})`}`}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: '16px',
+              color: specification.active ? '#606266' : '#a8abb2',
+              textDecoration: specification.active ? 'none' : 'line-through'
+            }}
+          >
+            <span>{specification.name}</span>
+            <strong style={{ color: specification.active ? '#303133' : '#a8abb2', fontVariantNumeric: 'tabular-nums' }}>{formatProductSpecificationPrice(specification.price)}</strong>
+          </div>
+        ))}
+      </div>
     )
   }
 }
@@ -277,7 +313,7 @@ export default {
       ]
     },
     list: {
-      query: orderByIdDesc,
+      query: { ...orderByIdDesc, '@expands': 'specifications' },
       actions: [
         { name: 'copy-products-from-store', position: 'top', component: CopyProductsAction }
       ],
@@ -288,14 +324,20 @@ export default {
           type: 'select',
           default: null,
           expression: "entity.getStore().getUuid() == ':value'",
+          component: ProductStoreFilterScope,
           data: stores.filter(store => typeof store.uuid === 'string' && store.uuid).map(store => ({
             value: store.uuid,
             label: store.__toString || store.name || store.code || store.uuid
           }))
         })),
-        'category.id': () => axios
-          .get(apiPath(API_PREFIX, 'manage/product-categories'))
-          .then(res => Object.assign({ __label: t('Category') }, ...res.data.map(category => ({ [category.id]: category.name })))),
+        'category.id': {
+          label: t('Category'),
+          type: 'select',
+          default: null,
+          expression: "entity.getCategory().getId() == ':value'",
+          component: ProductCategoryFilterScope,
+          data: productFilterState.data
+        },
         status: statusFilterLabel(),
         isDeleted: {
           label: t('Deleted'),
@@ -306,6 +348,7 @@ export default {
       list_display: [
         'id',
         { property: 'name', component: ProductNameWithCover },
+        { property: 'specifications', label: t('Specifications & prices'), component: ProductSpecificationsWithPrices, field_options: { width: 260, align: 'left', sortable: false } },
         'category', 'store', 'status', kitchenPrinterField, kitchenTicketDisabledField, sortOrderField,
         recommendationLevelField, soldoutField, 'isDeleted', 'createdAt', 'updatedAt'
       ]

@@ -28,7 +28,7 @@ final class PrinterJobServiceReprintTest extends TestCase
         $snapshot = ['kind' => 'receipt', 'widthMm' => 58, 'nodes' => [['type' => 'text', 'value' => 'Original template']]];
         $data = ['order' => ['number' => 'ORIGINAL-42']];
         $content = '<C>Frozen receipt<BR></C>';
-        $source = new PrinterJob($device, 2, $snapshot, $data, $content, 'source-idempotency-key');
+        $source = new PrinterJob($device, 2, $snapshot, $data, $content, 'source-idempotency-key', 'source-rule');
         $source->submitted('provider-original');
 
         $requests = [];
@@ -57,6 +57,7 @@ final class PrinterJobServiceReprintTest extends TestCase
         self::assertSame($content, $reprint->getRenderedContent());
         self::assertSame($snapshot, $reprint->getTemplateSnapshot());
         self::assertSame($data, $reprint->getDataSnapshot());
+        self::assertSame('source-rule', $reprint->getRuleUuid());
         self::assertSame(2, $reprint->getCopies());
         self::assertSame(PrinterJob::STATUS_SUBMITTED, $reprint->getStatus());
         self::assertSame('provider-reprint', $reprint->getProviderOrderId());

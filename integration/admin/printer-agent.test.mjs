@@ -6,6 +6,7 @@ import { buildAdminConfigProjection } from '../../apps/admin-agent/src/admin-con
 import { configuredCapabilities } from '../../apps/admin-agent/src/config-mutation-host.js'
 import { componentBindings } from '../../apps/admin-agent/adapters/ns-ultimate/admin/config-bindings.mjs'
 import { agentMutationPolicy } from '../../apps/admin-agent/adapters/ns-ultimate/admin/write-policy.mjs'
+import { uuidFilter } from '../../business/admin/config/uuid-filter.mjs'
 
 function load(relativePath, context = {}) {
   const source = readFileSync(new URL(`../../${relativePath}`, import.meta.url), 'utf8')
@@ -61,6 +62,8 @@ test('account and job configurations never become assistant writes', () => {
   const account = load('business/admin/config/collections/printer/PrinterAccount.js')
   assert.equal(capability(account.PrinterAccount, 'PrinterAccount', 'accounts'), undefined)
   const job = load('business/admin/config/collections/printer/PrinterJob.js', {
+    uuidFilter,
+    loadRelationRecords: async () => [],
     PrinterJobAction: { name: 'PrinterJobAction' },
     PrinterPaperAction: { name: 'PrinterPaperAction' },
     PrinterJobReprintAction: { name: 'PrinterJobReprintAction' }

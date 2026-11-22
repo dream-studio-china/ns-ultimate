@@ -171,6 +171,16 @@ describe('store-scoped permissions and adapters', () => {
     expect(uploaded).toEqual({ uuid: store, url: 'https://cdn.example.com/test.png' })
     expect(init.credentials).toBe('omit')
   })
+  it('changes the signed-in user password through the app identity endpoint', async () => {
+    const client = new ApiClient()
+    const request = vi.spyOn(client, 'request').mockResolvedValue({ code: 0, data: null })
+    const result = await new StoreApi(client, store).changePassword('current-secret', 'new-secret')
+    expect(request).toHaveBeenCalledWith('/api/v1/app/users/change-password', 'POST', {
+      currentPassword: 'current-secret',
+      newPassword: 'new-secret',
+    })
+    expect(result).toEqual({ code: 0, data: null })
+  })
   it('validates server-wide result pagination and sends bounded search parameters without query expressions', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(tokens())).mockResolvedValueOnce(json({ code: 0, data: { items: [], total: 0, page: 2, hasNext: false } })).mockResolvedValueOnce(json({ code: 0, data: { items: [], total: 0, page: 99, hasNext: false } }))
     const client = new ApiClient(fetcher)
