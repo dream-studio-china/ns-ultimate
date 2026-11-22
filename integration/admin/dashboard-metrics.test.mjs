@@ -3,8 +3,10 @@ import { describe, it } from 'node:test'
 import {
   buildDashboardSnapshot,
   dayBounds,
+  filterOrdersByStore,
   isTestStore,
   isTestStoreOrder,
+  orderStoreUuid,
   toDateInputValue
 } from '../../business/admin/dashboard/dashboard-metrics.js'
 
@@ -58,6 +60,20 @@ describe('dashboard metrics', () => {
     assert.equal(isTestStoreOrder({ storeCodeSnapshot: 'NS001' }), true)
     assert.equal(isTestStore({ code: 'NS001' }), true)
     assert.equal(isTestStoreOrder(orders[0]), false)
+  })
+
+  it('defaults to all stores and filters orders by the selected store UUID', () => {
+    const firstStoreUuid = '00000000-0000-4000-8000-000000000001'
+    const secondStoreUuid = '00000000-0000-4000-8000-000000000002'
+    const scopedOrders = [
+      { id: 1, metadata: { _store: { uuid: firstStoreUuid }}},
+      { id: 2, metadata: { _store: { uuid: secondStoreUuid }}},
+      { id: 3, metadata: { _store: { uuid: firstStoreUuid.toUpperCase() }}}
+    ]
+
+    assert.deepEqual(filterOrdersByStore(scopedOrders, '').map(order => order.id), [1, 2, 3])
+    assert.deepEqual(filterOrdersByStore(scopedOrders, firstStoreUuid).map(order => order.id), [1, 3])
+    assert.equal(orderStoreUuid(scopedOrders[2]), firstStoreUuid)
   })
 
   it('calculates daily amounts without NS001 or cancelled orders', () => {

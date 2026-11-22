@@ -21,6 +21,24 @@
           />
           <el-button text @click="selectToday">{{ $t('Today') }}</el-button>
         </div>
+        <div class="dashboard__store-filter">
+          <span>{{ $t('Store') }}</span>
+          <el-select
+            v-model="selectedStoreUuid"
+            filterable
+            clearable
+            :aria-label="$t('Store')"
+            @change="loadDashboard"
+          >
+            <el-option :label="$t('All stores')" value="" />
+            <el-option
+              v-for="store in storeOptions"
+              :key="store.uuid"
+              :label="store.label"
+              :value="store.uuid"
+            />
+          </el-select>
+        </div>
         <span class="dashboard__updated"><el-icon><el-icon-time /></el-icon> {{ $t('Updated {0}', updatedAt) }}</span>
         <el-button type="primary" icon="el-icon-refresh" :loading="loading" @click="loadDashboard">{{ $t('Refresh') }}</el-button>
       </div>
@@ -122,6 +140,7 @@ import AdminSkeleton from '@/components/AdminSkeleton.vue'
 import {
   buildDashboardSnapshot,
   dayBounds,
+  filterOrdersByStore,
   isTestStore,
   toDateInputValue
 } from './dashboard-metrics'
@@ -173,6 +192,8 @@ export default {
       loaded: false,
       updatedAt: '--:--',
       selectedDate: toDateInputValue(),
+      selectedStoreUuid: '',
+      storeOptions: [],
       loadRequestId: 0,
       totals: { ...EMPTY_TOTALS, paidByHour: [...EMPTY_TOTALS.paidByHour] },
       recentOrders: [],
@@ -188,6 +209,7 @@ export default {
       return 'Good evening'
     },
     metrics() {
+      const selectedStore = this.storeOptions.some(store => store.uuid === this.selectedStoreUuid)
       return [
         { label: this.$t('Total amount'), value: this.formatAmount(this.totals.totalAmount), hint: this.$t('Valid orders on selected day'), icon: 'el-icon-money', tone: 'blue' },
         { label: this.$t('Settled amount'), value: this.formatAmount(this.totals.settledAmount), hint: this.$t('Successfully collected'), icon: 'el-icon-wallet', tone: 'green' },
@@ -195,9 +217,9 @@ export default {
         { label: this.$t('Refunded amount'), value: this.formatAmount(this.totals.refundedAmount), hint: this.$t('Refunds on selected-day orders'), icon: 'el-icon-refresh-left', tone: 'rose' },
         { label: this.$t('Current order count'), value: this.totals.orders, hint: this.$t('Valid orders on selected day'), icon: 'el-icon-s-order', tone: 'teal' },
         { label: this.$t('Pending Orders'), value: this.totals.pendingOrders, hint: this.$t('Orders awaiting processing'), icon: 'el-icon-tickets', tone: 'amber' },
-        { label: this.$t('Total Stores'), value: this.totals.stores, hint: this.$t('Excluding NS001 test store'), icon: 'el-icon-goods', tone: 'green' },
-        { label: this.$t('Total Products'), value: this.totals.products, hint: this.$t('Current product catalog'), icon: 'el-icon-document', tone: 'blue' },
-        { label: this.$t('Total Materials'), value: this.totals.materials, hint: this.$t('Inventory materials'), icon: 'el-icon-box', tone: 'violet' }
+        { label: this.$t('Total Stores'), value: this.totals.stores, hint: selectedStore ? this.$t('Selected store') : this.$t('Excluding NS001 test store'), icon: 'el-icon-goods', tone: 'green' },
+        { label: this.$t('Total Products'), value: this.totals.products, hint: selectedStore ? this.$t('Store product catalog') : this.$t('Current product catalog'), icon: 'el-icon-document', tone: 'blue' },
+        { label: this.$t('Total Materials'), value: this.totals.materials, hint: this.$t('Shared inventory materials'), icon: 'el-icon-box', tone: 'violet' }
       ]
     },
     orderSeries() {
@@ -253,19 +275,38 @@ export default {
       })
 
       try {
-        const [orders, invoices, stores, products, materials] = await Promise.all([
+        const [orders, invoices, stores] = await Promise.all([
           this.listAll(entityManagers.orders, ordersQuery),
           this.listAll(entityManagers.invoices, invoicesQuery),
-          this.listAll(entityManagers.stores, compileCsqeQuery({})),
-          entityManagers.products.list({ page: 1, limit: 1 }).catch(() => ({ data: [], paginator: {}})),
+          this.listAll(entityManagers.stores, compileCsqeQuery({}))
+        ])
+        if (requestId !== this.loadRequestId) return
+
+        const visibleStores = stores.filter(store => !isTestStore(store))
+        this.storeOptions = visibleStores
+          .filter(store => typeof store.uuid === 'string' && store.uuid)
+          .map(store => ({
+            uuid: store.uuid,
+            label: [store.name, store.code].filter(Boolean).join(' · ') || store.__toString || store.uuid
+          }))
+          .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+
+        const storeUuid = this.storeOptions.some(store => store.uuid === this.selectedStoreUuid)
+          ? this.selectedStoreUuid
+          : ''
+        if (storeUuid !== this.selectedStoreUuid) this.selectedStoreUuid = ''
+
+        const productFilter = storeUuid ? `entity.getStore().getUuid() == "${storeUuid}"` : ''
+        const [products, materials] = await Promise.all([
+          entityManagers.products.list({ page: 1, limit: 1, ...(productFilter ? { '@filter': productFilter } : {}) }).catch(() => ({ data: [], paginator: {}})),
           entityManagers.materials.list({ page: 1, limit: 1 }).catch(() => ({ data: [], paginator: {}}))
         ])
         if (requestId !== this.loadRequestId) return
 
         const snapshot = buildDashboardSnapshot({
-          orders,
+          orders: filterOrdersByStore(orders, storeUuid),
           invoices,
-          storeCount: stores.filter(store => !isTestStore(store)).length,
+          storeCount: storeUuid ? 1 : visibleStores.length,
           productCount: this.totalOf(products),
           materialCount: this.totalOf(materials),
           dayStart: start,
@@ -353,12 +394,12 @@ export default {
 .dashboard__eyebrow, .panel__kicker { margin: 0 0 7px; color: #7f96bb; font-size: 11px; font-weight: 700; letter-spacing: 1.4px; }
 .dashboard__hero .dashboard__eyebrow { color: #a9c3e8; }
 h1, h2, p { margin-top: 0; } h1 { margin-bottom: 8px; font-size: 26px; font-weight: 600; } h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.dashboard__intro { margin: 0; color: #c7d5e9; font-size: 14px; }.dashboard__hero-actions { z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px 18px; }.dashboard__updated { color: #c7d5e9; font-size: 12px; }.dashboard__date-filter { display: flex; align-items: center; gap: 8px; padding: 5px 7px 5px 12px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.16); border-radius: 8px; }.dashboard__date-filter > span { color: #dce8f8; font-size: 12px; white-space: nowrap; }.dashboard__date-filter :deep(.el-date-editor) { width: 142px; }.dashboard__date-filter :deep(.el-input__wrapper) { background: #fff; box-shadow: none; }.dashboard__date-filter :deep(.el-button) { padding: 6px 4px; color: #fff; }.dashboard__date-filter :deep(.el-button:hover) { color: #fff; background: rgba(255,255,255,.12); }
+.dashboard__intro { margin: 0; color: #c7d5e9; font-size: 14px; }.dashboard__hero-actions { z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px 18px; }.dashboard__updated { color: #c7d5e9; font-size: 12px; }.dashboard__date-filter, .dashboard__store-filter { display: flex; align-items: center; gap: 8px; padding: 5px 7px 5px 12px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.16); border-radius: 8px; }.dashboard__date-filter > span, .dashboard__store-filter > span { color: #dce8f8; font-size: 12px; white-space: nowrap; }.dashboard__date-filter :deep(.el-date-editor) { width: 142px; }.dashboard__store-filter :deep(.el-select) { width: 190px; }.dashboard__date-filter :deep(.el-input__wrapper), .dashboard__store-filter :deep(.el-select__wrapper) { background: #fff; box-shadow: none; }.dashboard__date-filter :deep(.el-button) { padding: 6px 4px; color: #fff; }.dashboard__date-filter :deep(.el-button:hover) { color: #fff; background: rgba(255,255,255,.12); }
 .dashboard__metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin: 20px 0; }.metric-card { display: flex; align-items: center; gap: 15px; padding: 20px; background: #fff; border-radius: 12px; }.metric-card p { margin: 0 0 5px; color: #8190a5; font-size: 13px; }.metric-card strong { display: block; color: #24334b; font-size: 25px; line-height: 1.1; }.metric-card small { display: block; margin-top: 5px; color: #a6b1c0; font-size: 11px; }.metric-card__icon { display: grid; width: 43px; height: 43px; place-items: center; font-size: 20px; border-radius: 12px; }.metric-card--blue .metric-card__icon { color: #3d72c4; background: #eaf1ff; }.metric-card--amber .metric-card__icon { color: #b87b18; background: #fff3dc; }.metric-card--green .metric-card__icon { color: #228869; background: #e6f6ef; }.metric-card--teal .metric-card__icon { color: #2d8f86; background: #e6f6f5; }.metric-card--violet .metric-card__icon { color: #7657b6; background: #f0ebff; }.metric-card--rose .metric-card__icon { color: #c24f6e; background: #fdf0f3; }
 .dashboard__grid, .dashboard__lower-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .8fr); gap: 20px; }.dashboard__lower-grid { margin-top: 20px; grid-template-columns: minmax(0, 1fr); }.panel { min-height: 300px; padding: 23px 25px; background: #fff; border-radius: 14px; }.panel__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }.panel__header > a { color: #497bc6; font-size: 13px; }.panel__empty { display: grid; min-height: 190px; color: #a2adbd; font-size: 13px; place-items: center; }.panel__badge { padding: 4px 9px; color: #34785f; background: #e7f6ef; border-radius: 20px; font-size: 11px; }
 .chart__summary { display: flex; align-items: baseline; gap: 10px; margin-top: 20px; }.chart__summary strong { color: #244c42; font-size: 25px; }.chart__summary span { color: #92a39e; font-size: 12px; }.chart__svg { width: 100%; height: 175px; margin-top: 5px; overflow: visible; }.chart__grid-line { stroke: #edf1f4; stroke-dasharray: 3 5; }.chart__line { fill: none; stroke: #36a077; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }.chart__point { fill: #fff; stroke: #36a077; stroke-width: 3; }.chart__axis { display: flex; justify-content: space-between; color: #a4aebd; font-size: 11px; }
 .panel--weather { color: #fff; border: 0; background: linear-gradient(145deg, #438bd4, #315a9e); }.panel--weather .panel__kicker { color: #cde3fc; }.weather--sunny { background: linear-gradient(145deg, #4e9bdc, #28558f); }.weather--cloudy { background: linear-gradient(145deg, #6a87aa, #425977); }.weather--rainy { background: linear-gradient(145deg, #526f9e, #2e426b); }.weather__locate { padding: 5px; color: #fff; background: transparent; border: 0; cursor: pointer; font-size: 20px; }.weather__body { display: flex; align-items: center; gap: 16px; margin: 38px 0 33px; }.weather__symbol { font-size: 47px; }.weather__body > strong { font-size: 55px; font-weight: 400; letter-spacing: -3px; }.weather__body sup { font-size: 22px; }.weather__body b, .weather__body span { display: block; }.weather__body b { margin-bottom: 5px; font-size: 16px; }.weather__body span, .weather__footer { color: #d5e5f7; font-size: 12px; }.weather__footer { display: flex; justify-content: space-between; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.2); }
 .order-list { margin-top: 16px; }.order-row { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) 120px 90px; min-height: 58px; border-bottom: 1px solid #edf0f5; }.order-row:last-child { border-bottom: 0; }.order-row__identity { display: flex; align-items: center; gap: 10px; min-width: 0; }.order-row__avatar { display: grid; flex: 0 0 auto; width: 30px; height: 30px; color: #3769ad; background: #eaf1fb; border-radius: 50%; font-size: 14px; place-items: center; }.order-row b { display: block; color: #34425a; font-size: 13px; }.order-row small { display: block; max-width: 360px; margin-top: 3px; color: #9ca8b8; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.order-row > span { color: #46546a; font-size: 13px; }
 @media screen and (max-width: 1100px) { .dashboard__metrics { grid-template-columns: repeat(2, 1fr); }.dashboard__grid, .dashboard__lower-grid { grid-template-columns: 1fr; } }
-@media screen and (max-width: 640px) { .dashboard { padding: 14px; }.dashboard__hero { align-items: flex-start; flex-direction: column; padding: 24px; }.dashboard__hero-actions { width: 100%; justify-content: flex-start; }.dashboard__date-filter { width: 100%; }.dashboard__date-filter :deep(.el-date-editor) { flex: 1; width: auto; }.dashboard__metrics { grid-template-columns: 1fr; gap: 12px; }.panel { padding: 19px; }.dashboard__updated { display: none; }.order-row { grid-template-columns: minmax(0, 1fr) 88px 76px; }.chart__axis span:nth-child(2), .chart__axis span:nth-child(4) { display: none; } }
+@media screen and (max-width: 640px) { .dashboard { padding: 14px; }.dashboard__hero { align-items: flex-start; flex-direction: column; padding: 24px; }.dashboard__hero-actions { width: 100%; justify-content: flex-start; }.dashboard__date-filter, .dashboard__store-filter { width: 100%; }.dashboard__date-filter :deep(.el-date-editor), .dashboard__store-filter :deep(.el-select) { flex: 1; width: auto; }.dashboard__metrics { grid-template-columns: 1fr; gap: 12px; }.panel { padding: 19px; }.dashboard__updated { display: none; }.order-row { grid-template-columns: minmax(0, 1fr) 88px 76px; }.chart__axis span:nth-child(2), .chart__axis span:nth-child(4) { display: none; } }
 </style>

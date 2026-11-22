@@ -42,6 +42,17 @@ export function orderStore(order = {}) {
   return order.metadata?._store || order.store || {}
 }
 
+export function orderStoreUuid(order = {}) {
+  const store = orderStore(order)
+  return String(store.uuid || order.storeUuid || order.storeUuidSnapshot || '').trim().toLowerCase()
+}
+
+export function filterOrdersByStore(orders = [], storeUuid = '') {
+  const targetStoreUuid = String(storeUuid || '').trim().toLowerCase()
+  if (!targetStoreUuid) return orders
+  return orders.filter(order => orderStoreUuid(order) === targetStoreUuid)
+}
+
 export function orderStoreName(order = {}) {
   return orderStore(order).name || order.storeNameSnapshot || order.storeName || '-'
 }
