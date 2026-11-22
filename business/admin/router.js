@@ -64,7 +64,9 @@ export default {
         dialogPage('journals/new/:origin(opening)?', 'JournalEntryCreate', 'JournalEntry', 'create', 'journals', { beforeEnter: openingQuery }),
         dialogPage(`journals/${journalId}/edit`, 'JournalEntryUpdate', 'JournalEntry', 'update', 'journals'),
         dialogPage(`journals/${journalId}`, 'JournalEntryDetail', 'JournalEntry', 'detail', 'journals'),
-        { path: 'reports', name: 'AccountingReports', hidden: true, redirect: `${accountingPath}/reports/trial` },
+        // ListAdmin restores a title from any child whose redirect equals the
+        // current path, so this redirect route must carry meta.title.
+        { path: 'reports', name: 'AccountingReports', hidden: true, redirect: `${accountingPath}/reports/trial`, meta: financeMenu('trial') },
         financePage('reports/trial', 'AccountingTrialBalanceList', 'AccountingTrialBalance', 'list', 'trial'),
         financePage('reports/balances', 'AccountingBalanceReportList', 'AccountingBalanceReport', 'list', 'balances'),
         financePage('reports/ledger', 'AccountingLedgerReportList', 'AccountingLedgerReport', 'list', 'ledger'),
