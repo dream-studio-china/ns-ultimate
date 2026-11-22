@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { conditionValueType, initialConditionValue, changeConditionOperator, withConditionValueType } from '../../business/admin/config/components/order-print-conditions.mjs'
+import { conditionValueType, initialConditionValue, changeConditionOperator, withConditionValueType } from '../../business/admin/config/components/printer/order-print-conditions.mjs'
 
 test('condition value types retain strict JSON scalar types', () => {
   for (const type of ['string', 'integer', 'boolean', 'null']) {

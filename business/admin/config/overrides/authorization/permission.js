@@ -1,5 +1,5 @@
 import corePermissionConfig from '../../../../../core/crud-admin/src/configs/collections/authorization/Permission.js'
-import LocalizedPermissionName from '../../components/LocalizedPermissionName.js'
+import LocalizedPermissionName from '../../components/authorization/LocalizedPermissionName.js'
 
 const permission = corePermissionConfig.Permission
 const nameField = { property: 'name', component: LocalizedPermissionName }

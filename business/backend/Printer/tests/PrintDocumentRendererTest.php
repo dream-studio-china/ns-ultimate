@@ -121,7 +121,7 @@ final class PrintDocumentRendererTest extends TestCase
 
     public function testAdminDemoDataPopulatesLegacyFieldsAndQuantityLabels(): void
     {
-        $json = file_get_contents(__DIR__.'/../../../admin/config/components/printer-sample-data.json');
+        $json = file_get_contents(__DIR__.'/../../../admin/config/components/printer/printer-sample-data.json');
         self::assertIsString($json);
         $data = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         $renderer = new PrintDocumentRenderer();

@@ -3,7 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { uuidFilter } from '../../business/admin/config/uuid-filter.mjs'
-import { eligiblePrintOutputs, loadAllPrintOutputs, PRINT_OUTPUT_MAX_PAGES, PRINT_OUTPUT_PAGE_LIMIT } from '../../business/admin/config/components/order-print-output.mjs'
+import { eligiblePrintOutputs, loadAllPrintOutputs, PRINT_OUTPUT_MAX_PAGES, PRINT_OUTPUT_PAGE_LIMIT } from '../../business/admin/config/components/printer/order-print-output.mjs'
 import { buildAdminConfigProjection } from '../../apps/admin-agent/src/admin-config-policy.js'
 import { configuredCapabilities } from '../../apps/admin-agent/src/config-mutation-host.js'
 import { componentBindings } from '../../apps/admin-agent/adapters/ns-ultimate/admin/config-bindings.mjs'
@@ -70,7 +70,7 @@ test('print output choices follow the store and selected device kind without mut
 })
 
 test('rule store selector remains editable and retains the relation form context', () => {
-  const source = read('business/admin/config/components/PrinterRuleStoreField.vue')
+  const source = read('business/admin/config/components/printer/PrinterRuleStoreField.vue')
   assert.match(source, /:form="form"/)
   assert.match(source, /:field="field"/)
   assert.doesNotMatch(source, /disabled:\s*true|isEdit|\$parent/)
@@ -101,7 +101,7 @@ test('printer choices load with bounded paging and fail closed past the bound', 
 })
 
 test('output selector retains unavailable values and exposes load failures', () => {
-  const source = read('business/admin/config/components/OrderPrintOutputSelect.vue')
+  const source = read('business/admin/config/components/printer/OrderPrintOutputSelect.vue')
   assert.match(source, /v-if="unavailable"[^\n]*disabled/)
   assert.match(source, /Print rule output unavailable help/)
   assert.match(source, /Print rule output outputs|Print rule outputs failed to load/)
@@ -111,7 +111,7 @@ test('output selector retains unavailable values and exposes load failures', () 
 })
 
 test('output selector loads paged records, preserves hydrated values and can retry failures', async () => {
-  const source = read('business/admin/config/components/OrderPrintOutputSelect.vue')
+  const source = read('business/admin/config/components/printer/OrderPrintOutputSelect.vue')
     .split('<script>')[1].split('</script>')[0]
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.component =')
   let fail = true
@@ -182,12 +182,12 @@ test('rules no longer carry a print scene; templates own ticket granularity and 
 })
 
 test('manual print is an explicit rule event option', () => {
-  const source = read('business/admin/config/components/OrderPrintEvents.vue')
+  const source = read('business/admin/config/components/printer/OrderPrintEvents.vue')
   assert.match(source, /<el-option value="manual" :label="\$t\('Manual print'\)" \/>/)
 })
 
 test('condition editor warns about empty match modes and bounds field length', () => {
-  const source = read('business/admin/config/components/OrderPrintConditions.vue')
+  const source = read('business/admin/config/components/printer/OrderPrintConditions.vue')
   assert.match(source, /form\.match === 'any' \? 'Print rule any conditions help' : 'Print rule all conditions help'/)
   assert.match(source, /maxlength="128"/)
   assert.match(source, /conditions\.length >= 20/)

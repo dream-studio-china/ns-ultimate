@@ -1,4 +1,4 @@
-import { orderRefundHistoryPath } from './order-refund.mjs'
+import { orderRefundHistoryPath } from '../../components/order/order-refund.mjs'
 
 export const ORDER_REFUND_ORDERS_ENDPOINT = '/api/v1/manage/orders'
 export const ORDER_REFUND_ORDERS_PAGE_SIZE = 100

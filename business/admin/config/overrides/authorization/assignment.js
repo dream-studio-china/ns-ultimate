@@ -1,5 +1,5 @@
 import coreAssignmentConfig from '../../../../../core/crud-admin/src/configs/collections/authorization/Assignment.js'
-import LocalizedAssignmentRoleField from '../../components/LocalizedAssignmentRoleField.jsx'
+import LocalizedAssignmentRoleField from '../../components/authorization/LocalizedAssignmentRoleField.jsx'
 
 const assignment = coreAssignmentConfig.Assignment
 

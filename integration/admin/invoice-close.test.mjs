@@ -16,7 +16,7 @@ import {
   invoiceDetailPath,
   orderPaymentClosePath,
   preliminaryInvoiceCloseable
-} from '../../business/admin/config/components/invoice-close.mjs'
+} from '../../business/admin/config/components/payment/invoice-close.mjs'
 
 const invoiceUuid = '00000000-0000-4000-8000-000000000010'
 const orderUuid = '00000000-0000-4000-8000-000000000001'

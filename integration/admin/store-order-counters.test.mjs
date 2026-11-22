@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm'
 
 function loadComponent(list) {
   const source = readFileSync(new URL(
-    '../../business/admin/config/components/StoreOrderCounterNumbers.js', import.meta.url
+    '../../business/admin/config/components/order/StoreOrderCounterNumbers.js', import.meta.url
   ), 'utf8').replace(/^import .*$/gm, '')
     .replace('export default', 'globalThis.component =')
     .replace('export { loadCounterNumbers }', 'globalThis.load = loadCounterNumbers')

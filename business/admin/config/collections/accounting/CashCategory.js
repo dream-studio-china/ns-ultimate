@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import * as ledger from '../../../accounting/finance-config.js'
+import * as ledger from '../../features/accounting/finance-config.js'
 
 const required = [{ required: true, whitespace: true, message: t('This field is required') }]
 const column = (property, label, component) => ({

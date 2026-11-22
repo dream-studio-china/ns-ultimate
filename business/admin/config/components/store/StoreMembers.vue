@@ -175,7 +175,7 @@
 import { createUiFeedback } from '@/easyadmin/ui/vue/feedback'
 import { API_PREFIX, apiPath } from '@/api/prefix'
 import request from '@/utils/request'
-import { fetchAllPages } from './catalog-copy.mjs'
+import { fetchAllPages } from '../catalog/catalog-copy.mjs'
 import {
   STORE_MEMBER_ROLES,
   filterMemberRows,

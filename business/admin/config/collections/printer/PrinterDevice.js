@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import PrinterDeviceStatusAction from '../../components/PrinterDeviceStatusAction.js'
+import PrinterDeviceStatusAction from '../../components/printer/PrinterDeviceStatusAction.js'
 
 const field = (property, label) => ({ property, label: t(label) })
 export default {

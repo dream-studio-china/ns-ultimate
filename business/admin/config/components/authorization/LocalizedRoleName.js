@@ -1,6 +1,6 @@
 import { defineComponent, h } from 'vue'
 import { getLocale } from '@/i18n'
-import { localizedAuthorizationName } from '../../i18n/authorization.js'
+import { localizedAuthorizationName } from '../../../i18n/authorization.js'
 
 /**
  * Renders the role name in the current admin locale.

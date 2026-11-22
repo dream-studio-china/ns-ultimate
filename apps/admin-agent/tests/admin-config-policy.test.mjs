@@ -1262,7 +1262,7 @@ test('component identity falls back to the compiled SFC filename', () => {
             { property: 'name', required: true },
             {
               property: 'events', required: true,
-              component: { __file: '/workspace/business/admin/config/components/OrderPrintEvents.vue', props: ['form'] }
+              component: { __file: '/workspace/business/admin/config/components/printer/OrderPrintEvents.vue', props: ['form'] }
             }
           ]
         },

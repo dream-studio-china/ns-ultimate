@@ -3,8 +3,8 @@ import test from 'node:test'
 import {
   categoryBelongsToProductScope,
   productCategoryOptions
-} from '../../business/admin/config/components/product-category-scope.mjs'
-import { productCategoryFilterOptions } from '../../business/admin/config/components/product-filter-scope.mjs'
+} from '../../business/admin/config/components/catalog/product-category-scope.mjs'
+import { productCategoryFilterOptions } from '../../business/admin/config/components/catalog/product-filter-scope.mjs'
 
 const storeUuid = '00000000-0000-4000-8000-000000000001'
 const otherStoreUuid = '00000000-0000-4000-8000-000000000002'

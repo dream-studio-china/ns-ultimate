@@ -3,8 +3,8 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
-import * as scenarioHelpers from '../../business/admin/simulation/scenario.mjs'
-import { fetchAllPages } from '../../business/admin/config/components/catalog-copy.mjs'
+import * as scenarioHelpers from '../../business/admin/config/features/promotion-simulation/scenario.mjs'
+import { fetchAllPages } from '../../business/admin/config/components/catalog/catalog-copy.mjs'
 import en from '../../business/admin/i18n/en.js'
 import zh from '../../business/admin/i18n/zh.js'
 import zhHant from '../../business/admin/i18n/zh-Hant.js'
@@ -12,15 +12,15 @@ import ja from '../../business/admin/i18n/ja.js'
 import {
   BOUNDARY_KINDS, boundaryPlan, resultOverview, boundaryCases, buildMatrix, buildRunRequest, createScenario, formatMinor, importWorldSnapshot,
   localDateTime, newCampaign, newCase, normalizeScenario, scenarioExport, validateScenario
-} from '../../business/admin/simulation/scenario.mjs'
-import { storeOptions, filterStores } from '../../business/admin/simulation/stores.mjs'
+} from '../../business/admin/config/features/promotion-simulation/scenario.mjs'
+import { storeOptions, filterStores } from '../../business/admin/config/features/promotion-simulation/stores.mjs'
 
 const repository = new URL('../../../', import.meta.url)
 const require = createRequire(new URL('../../core/crud-admin/package.json', import.meta.url))
 
 function simulationModel(request) {
   const { parse } = require('@vue/compiler-sfc')
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   const script = parse(source).descriptor.script.content
     .replace(/^import '\.\/theme\.css'\n/m, '')
     .replace(/^import[\s\S]*?from '[^']+'\n/gm, '')
@@ -259,7 +259,7 @@ test('overview separates currencies, errors, failures and unverified results wit
 test('simulation store and chart components compile and their labels are localized', () => {
   const { parse, compileTemplate, compileScript } = require('@vue/compiler-sfc')
   for (const name of ['StoreSelect', 'SimulationCharts', 'PromotionSimulation']) {
-    const source = readFileSync(new URL(`../../business/admin/simulation/${name}.vue`, import.meta.url), 'utf8')
+    const source = readFileSync(new URL(`../../business/admin/config/features/promotion-simulation/${name}.vue`, import.meta.url), 'utf8')
     const { descriptor, errors } = parse(source)
     assert.deepEqual(errors, [])
     assert.doesNotThrow(() => compileScript(descriptor, { id: name }))
@@ -279,13 +279,13 @@ test('promotion simulation route is nested under the existing promotion menu', (
   assert.match(source, /route\.name === 'PromotionManage'/)
   assert.match(source, /name: 'PromotionSimulation'/)
   assert.match(source, /path: 'simulation'/)
-  assert.match(source, /import\('\.\/simulation\/PromotionSimulation\.vue'\)/)
+  assert.match(source, /import\('\.\/config\/features\/promotion-simulation\/PromotionSimulation\.vue'\)/)
   assert.match(source, /meta: \{ title: t\('Promotion simulation'\), icon: 'el-icon-caret-right' \}/)
 })
 
 test('promotion simulation Vue template and script compile', () => {
   const { parse, compileTemplate, compileScript } = require('@vue/compiler-sfc')
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   const { descriptor, errors } = parse(source, { filename: 'PromotionSimulation.vue' })
   assert.deepEqual(errors, [])
   assert.doesNotThrow(() => compileScript(descriptor, { id: 'promotion-simulation-test' }))
@@ -309,7 +309,7 @@ test('promotion simulation UI labels are localized in every business locale', ()
 })
 
 test('simulation controls use SVG icons instead of legacy Element UI icon names', () => {
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   assert.doesNotMatch(source, /icon="el-icon-/)
   for (const icon of ['VideoPlay', 'Download', 'Refresh', 'Tickets', 'Upload', 'Plus', 'Remove']) {
     assert.ok(source.includes(`:icon="icons.${icon}"`), icon)
@@ -318,7 +318,7 @@ test('simulation controls use SVG icons instead of legacy Element UI icon names'
 
 test('simulation dialog sizing survives teleport and JSON fields span the form grid', () => {
   const { parse, compileStyle } = require('@vue/compiler-sfc')
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   const { descriptor } = parse(source)
   const style = compileStyle({ source: descriptor.styles[0].content, filename: 'PromotionSimulation.vue', id: 'data-v-simulation-test', scoped: true })
   assert.deepEqual(style.errors, [])
@@ -330,7 +330,7 @@ test('simulation dialog sizing survives teleport and JSON fields span the form g
 
 test('simulation editors display validation errors inside each modal', () => {
   const { parse } = require('@vue/compiler-sfc')
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   const { descriptor } = parse(source)
   const dialogs = descriptor.template.content.match(/<el-dialog\b[\s\S]*?<\/el-dialog>/g)
   assert.equal(dialogs.length, 4)
@@ -344,7 +344,7 @@ test('simulation editors display validation errors inside each modal', () => {
 
 test('result matrix opens case detail in a vertically centered dialog', () => {
   const { parse } = require('@vue/compiler-sfc')
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   const { descriptor } = parse(source)
   const detail = descriptor.template.content.match(/<el-dialog\b[^>]*promotion-simulation__detail-dialog[\s\S]*?<\/el-dialog>/)[0]
   assert.match(detail, /v-model="detailDialog"/)
@@ -365,7 +365,7 @@ test('result matrix opens case detail in a vertically centered dialog', () => {
 
 test('centered simulation dialogs keep their body scrollable within the viewport', () => {
   const { parse, compileStyle } = require('@vue/compiler-sfc')
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   const { descriptor } = parse(source)
   const style = compileStyle({ source: descriptor.styles[0].content, filename: 'PromotionSimulation.vue', id: 'data-v-simulation-test', scoped: true })
   assert.deepEqual(style.errors, [])
@@ -375,8 +375,8 @@ test('centered simulation dialogs keep their body scrollable within the viewport
 
 test('simulation dark theme bridges host tokens without changing other pages or light themes', () => {
   const { compileStyle } = require('@vue/compiler-sfc')
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
-  const css = readFileSync(new URL('../../business/admin/simulation/theme.css', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const css = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/theme.css', import.meta.url), 'utf8')
   assert.match(source, /import '\.\/theme\.css'/)
   const style = compileStyle({ source: css, filename: 'simulation-theme.css', id: 'simulation-theme' })
   assert.deepEqual(style.errors, [])
@@ -398,7 +398,7 @@ test('simulation dark theme bridges host tokens without changing other pages or 
 })
 
 test('every simulation picker and select uses the namespaced teleported dark theme', () => {
-  const source = readFileSync(new URL('../../business/admin/simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/features/promotion-simulation/PromotionSimulation.vue', import.meta.url), 'utf8')
   const controls = source.match(/<el-(?:select|date-picker)\b[^>]*>/g)
   assert.ok(controls.length > 0)
   for (const control of controls) {

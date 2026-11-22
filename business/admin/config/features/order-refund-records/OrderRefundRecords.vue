@@ -84,7 +84,7 @@
 
 <script>
 import request from '@/utils/request'
-import { formatMoney, refundStatusLabel } from './order-refund.mjs'
+import { formatMoney, refundStatusLabel } from '../../components/order/order-refund.mjs'
 import {
   ORDER_REFUND_HISTORY_CONCURRENCY,
   ORDER_REFUND_ORDERS_ENDPOINT,

@@ -1,7 +1,7 @@
 import coreRoleConfig from '../../../../../core/crud-admin/src/configs/collections/authorization/Role.js'
-import LocalizedRoleName from '../../components/LocalizedRoleName.js'
-import LocalizedRolePermissionsDetail from '../../components/LocalizedRolePermissionsDetail.jsx'
-import LocalizedRolePermissionsAction from '../../components/LocalizedRolePermissionsAction.jsx'
+import LocalizedRoleName from '../../components/authorization/LocalizedRoleName.js'
+import LocalizedRolePermissionsDetail from '../../components/authorization/LocalizedRolePermissionsDetail.jsx'
+import LocalizedRolePermissionsAction from '../../components/authorization/LocalizedRolePermissionsAction.jsx'
 
 const role = coreRoleConfig.Role
 const propertyOf = field => typeof field === 'string' ? field : field?.property

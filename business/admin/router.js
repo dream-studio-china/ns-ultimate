@@ -2,7 +2,7 @@ import { r } from '@/router/generator'
 import { t } from '@/i18n'
 import Layout from '@/layout'
 import coreRoutes from '../../core/crud-admin/src/configs/routes'
-import OrderRefundRecords from './config/components/OrderRefundRecords.vue'
+import OrderRefundRecords from './config/features/order-refund-records/OrderRefundRecords.vue'
 
 const orderRoute = coreRoutes.find(route => route.name === 'OrderManage')
 if (!orderRoute) throw new Error('The admin core must expose the OrderManage route.')
@@ -12,7 +12,7 @@ const storeRoute = coreRoutes.find(route => route.name === 'StoreManage')
 if (!storeRoute) throw new Error('The admin core must expose the StoreManage route.')
 
 const accountingPath = '/finance/accounting'
-const FinanceResource = () => import('./accounting/FinanceResource.vue')
+const FinanceResource = () => import('./config/features/accounting/FinanceResource.vue')
 const financeMenu = title => ({ title: t(title), icon: 'el-icon-caret-right' })
 // Each page renders one Accounting collection config through the thin Finance adapter.
 const financePage = (path, name, entity, view, title) => ({
@@ -194,7 +194,7 @@ export default {
       {
         path: 'simulation',
         name: 'PromotionSimulation',
-        component: () => import('./simulation/PromotionSimulation.vue'),
+        component: () => import('./config/features/promotion-simulation/PromotionSimulation.vue'),
         meta: { title: t('Promotion simulation'), icon: 'el-icon-caret-right' }
       }
     ]

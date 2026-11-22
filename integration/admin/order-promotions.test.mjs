@@ -7,7 +7,7 @@ import {
   orderPromotionsFromMetadata,
   promotionPhaseLabel,
   promotionTypeLabel
-} from '../../business/admin/config/components/order-promotions.mjs'
+} from '../../business/admin/config/components/order/order-promotions.mjs'
 
 const recordedAt = '2026-11-12T10:30:00+08:00'
 
@@ -97,7 +97,7 @@ test('Order management wires the promotion fields into list and detail', () => {
   assert.match(source, /promotionsDetailField/)
 
   const factory = readFileSync(new URL(
-    '../../business/admin/config/components/OrderPromotions.js', import.meta.url
+    '../../business/admin/config/components/order/OrderPromotions.js', import.meta.url
   ), 'utf8')
   assert.match(factory, /label: t\('Promotions'\)/)
   assert.match(factory, /full_width: true/)

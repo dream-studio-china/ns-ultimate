@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
-import { changeNode, createDesignerState, designerHistory, labelBox, labelEntries, moveNode, moveNodeInto, newTemplateNode, nodeAt, parseDefinition, sampleFields, scopeForNode, setDesignerDraft, starterTemplate, templateFormValue, transformLabel } from '../../business/admin/config/components/printer-template-designer.mjs'
+import { changeNode, createDesignerState, designerHistory, labelBox, labelEntries, moveNode, moveNodeInto, newTemplateNode, nodeAt, parseDefinition, sampleFields, scopeForNode, setDesignerDraft, starterTemplate, templateFormValue, transformLabel } from '../../business/admin/config/components/printer/printer-template-designer.mjs'
 import { designerMessages } from '../../business/admin/i18n/printer-designer.js'
 
 const label = { kind: 'label', widthMm: 40, heightMm: 30, custom: { keep: true }, nodes: [{ type: 'labelText', value: 'Tea', x: 8, y: 16, font: 9, custom: 'preserve' }] }
@@ -89,14 +89,14 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http:
 for (const key of ['window', 'document', 'Element', 'HTMLElement', 'SVGElement', 'Node']) globalThis[key] = dom.window[key]
 const Vue = require('vue')
 const { parse, compileScript, compileTemplate } = require('@vue/compiler-sfc')
-const helpers = await import('../../business/admin/config/components/printer-template-designer.mjs')
-const paper = await import('../../business/admin/config/components/printer-paper.mjs')
-const sampleData = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer-sample-data.json', import.meta.url)))
+const helpers = await import('../../business/admin/config/components/printer/printer-template-designer.mjs')
+const paper = await import('../../business/admin/config/components/printer/printer-paper.mjs')
+const sampleData = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer/printer-sample-data.json', import.meta.url)))
 // Icon imports are stripped by the compiler harness, so bind inert stand-ins that still render markup.
 const iconStub = name => ({ name: `${name}Icon`, render() { return Vue.h('svg', { 'data-icon': name }) } })
 const designerIcons = Object.fromEntries(['ArrowDownBold', 'ArrowUpBold', 'Bottom', 'Brush', 'Connection', 'CopyDocument', 'Delete', 'Document', 'Edit', 'EditPen', 'Files', 'Grid', 'Histogram', 'Link', 'List', 'MagicStick', 'Memo', 'Menu', 'Minus', 'Plus', 'Refresh', 'RefreshLeft', 'RefreshRight', 'Switch', 'Tickets', 'View'].map(name => [name, iconStub(name)]))
 
-function compile(name, bindings, directory = '../../business/admin/config/components/') {
+function compile(name, bindings, directory = '../../business/admin/config/components/printer/') {
   const filename = `${name}.vue`
   const source = readFileSync(new URL(`${directory}${filename}`, import.meta.url), 'utf8')
   const { descriptor, errors } = parse(source, { filename })
@@ -119,7 +119,7 @@ function compile(name, bindings, directory = '../../business/admin/config/compon
 }
 
 const PrinterTemplateNode = compile('PrinterTemplateNode', { knownTypes: helpers.knownTypes })
-const paperSource = readFileSync(new URL('../../business/admin/config/components/PrinterPaper.js', import.meta.url), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'return')
+const paperSource = readFileSync(new URL('../../business/admin/config/components/printer/PrinterPaper.js', import.meta.url), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'return')
 const paperBindings = { ...paper, defineComponent: Vue.defineComponent, h: Vue.h, ref: Vue.ref, watch: Vue.watch, resolveComponent: Vue.resolveComponent, t: key => key, QRCode: require('qrcode') }
 const PrinterPaper = new Function(...Object.keys(paperBindings), paperSource)(...Object.values(paperBindings))
 function labelPreview(template, data) {
@@ -412,7 +412,7 @@ test('original JSON component adapter keeps raw drafts, tree updates and teardow
     destroy() { this.destroyed = true }
   }
   const JsonField = compile('json', { JSONEditor: FakeJSONEditor }, '../../core/crud-admin/src/easyadmin/ui/vue/plugins/form/')
-  const source = readFileSync(new URL('../../business/admin/config/components/PrinterTemplateJson.js', import.meta.url), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'return')
+  const source = readFileSync(new URL('../../business/admin/config/components/printer/PrinterTemplateJson.js', import.meta.url), 'utf8').replace(/^import .*$/gm, '').replace('export default', 'return')
   const Adapter = new Function('JsonField', 'JSONEditor', source)(JsonField, FakeJSONEditor)
   const raw = Vue.ref(JSON.stringify(label)), events = []
   const host = document.createElement('div'); document.body.append(host)
@@ -442,7 +442,7 @@ test('original JSON component adapter keeps raw drafts, tree updates and teardow
 })
 
 test('designer theme bridge and JSON palette stay scoped and keep printed paper light', () => {
-  const css = readFileSync(new URL('../../business/admin/config/components/printer-template-designer.css', import.meta.url), 'utf8')
+  const css = readFileSync(new URL('../../business/admin/config/components/printer/printer-template-designer.css', import.meta.url), 'utf8')
   assert.match(css, /--el-bg-color: var\(--surface/)
   assert.match(css, /html\[data-theme='dark'\] \.printer-designer\s*\{\s*color-scheme: dark/)
   assert.match(css, /\.printer-designer \.paper-edit-sheet \{ color-scheme: light/)

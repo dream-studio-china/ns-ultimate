@@ -3,7 +3,7 @@ import test from 'node:test'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
-import { paperElements, paperSize, printerFontMetrics, qrGeometry, receiptMetrics, receiptRows, textCells } from '../../business/admin/config/components/printer-paper.mjs'
+import { paperElements, paperSize, printerFontMetrics, qrGeometry, receiptMetrics, receiptRows, textCells } from '../../business/admin/config/components/printer/printer-paper.mjs'
 
 const normal = { bold: false, align: 'left', w: 1, h: 1 }
 
@@ -211,7 +211,7 @@ test('installed core QR encoder creates real matrices for receipt and label cont
 })
 
 function renderPaper(document) {
-  const source = readFileSync(new URL('../../business/admin/config/components/PrinterPaper.js', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/components/printer/PrinterPaper.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.component =')
   const context = {
     defineComponent: value => value, ref: value => ({ value }), resolveComponent: name => name, watch: () => {},

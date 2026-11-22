@@ -73,7 +73,7 @@ import { createUiFeedback } from '@/easyadmin/ui/vue/feedback'
 import { t } from '@/i18n'
 import { SwitchButton } from '@element-plus/icons-vue'
 import request from '@/utils/request'
-import { formatMoney, paymentStatusLabel } from './order-refund.mjs'
+import { formatMoney, paymentStatusLabel } from '../order/order-refund.mjs'
 import {
   buildInvoiceCloseRequest,
   createInvoiceCloseCommandUuid,

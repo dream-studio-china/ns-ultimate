@@ -2,7 +2,7 @@ import { defineComponent, h, ref, resolveComponent } from 'vue'
 import { getLocale, t } from '@/i18n'
 import request from '@/utils/request'
 import { apiPath, API_PREFIX } from '@/api/prefix'
-import { localizedAuthorizationName, translatedAuthorizationName } from '../../i18n/authorization.js'
+import { localizedAuthorizationName, translatedAuthorizationName } from '../../../i18n/authorization.js'
 
 /**
  * Localized variant of the core Role permissions action. Behavior mirrors

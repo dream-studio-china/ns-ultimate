@@ -1,8 +1,8 @@
 import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import StoreOrder from '../../../../../core/crud-admin/src/configs/collections/store/StoreOrder.js'
-import StoreOrderCounterNumbers from '../../components/StoreOrderCounterNumbers.js'
-import { createStoreOrderDiningModeField } from '../../components/StoreOrderDiningMode.js'
+import StoreOrderCounterNumbers from '../../components/order/StoreOrderCounterNumbers.js'
+import { createStoreOrderDiningModeField } from '../../components/order/StoreOrderDiningMode.js'
 
 const config = StoreOrder.StoreOrder
 const { storeCodeSnapshot: _storeCodeSnapshot, ...baseListFilter } = config.list.list_filter || {}

@@ -321,7 +321,7 @@
 import './theme.css'
 import { Download, Plus, Refresh, Remove, Tickets, Upload, VideoPlay } from '@element-plus/icons-vue'
 import request from '@/utils/request'
-import { fetchAllPages } from '../config/components/catalog-copy.mjs'
+import { fetchAllPages } from '../../components/catalog/catalog-copy.mjs'
 import { storeOptions } from './stores.mjs'
 import StoreSelect from './StoreSelect.vue'
 import SimulationCharts from './SimulationCharts.vue'

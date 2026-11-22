@@ -1,7 +1,7 @@
 import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collections/helpers'
-import MembershipStatusAction from '../../components/MembershipStatusAction.js'
+import MembershipStatusAction from '../../components/store/MembershipStatusAction.js'
 
 const roleOptions = [
   { value: 'owner', label: t('Owner') },

@@ -1,8 +1,8 @@
 import Order from '../../../../../core/crud-admin/src/configs/collections/trade/Order.js'
-import { createOrderDiningModeField } from '../../components/OrderDiningMode.js'
-import { createOrderPromotionsDetailField, createOrderPromotionsField } from '../../components/OrderPromotions.js'
-import OrderRefundAction from '../../components/OrderRefundAction.vue'
-import { createOrderPaymentStatusField } from '../../components/OrderPaymentStatus.js'
+import { createOrderDiningModeField } from '../../components/order/OrderDiningMode.js'
+import { createOrderPromotionsDetailField, createOrderPromotionsField } from '../../components/order/OrderPromotions.js'
+import OrderRefundAction from '../../components/order/OrderRefundAction.vue'
+import { createOrderPaymentStatusField } from '../../components/order/OrderPaymentStatus.js'
 import { t } from '@/i18n'
 
 const config = Order.Order

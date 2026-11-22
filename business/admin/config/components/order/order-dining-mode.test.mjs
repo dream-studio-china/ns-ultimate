@@ -62,12 +62,16 @@ test('adds a read-only dining mode field to the Order list and detail', () => {
   }
   const diningModeField = { property: 'diningModeUuid', component: 'OrderDiningMode' }
   const paymentStatusField = { property: 'paymentStatus', component: 'OrderPaymentStatus' }
-  const source = readFileSync(new URL('../overrides/trade/order.js', import.meta.url), 'utf8')
+  const promotionsField = { property: 'promotions', component: 'OrderPromotions' }
+  const promotionsDetailField = { property: 'promotions', component: 'OrderPromotionsDetail' }
+  const source = readFileSync(new URL('../../overrides/trade/order.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
   const context = {
     coreOrderConfig: core,
     createOrderDiningModeField: () => diningModeField,
     createOrderPaymentStatusField: () => paymentStatusField,
+    createOrderPromotionsField: () => promotionsField,
+    createOrderPromotionsDetailField: () => promotionsDetailField,
     OrderRefundAction: {},
     t: key => key,
     config: null
@@ -76,10 +80,10 @@ test('adds a read-only dining mode field to the Order list and detail', () => {
   runInNewContext(source, context)
 
   assert.deepEqual(plain(context.config.list.list_display), [
-    'id', 'user', 'totalAmount', 'currency', 'status', diningModeField, 'paymentMethod', 'createdAt', paymentStatusField
+    'id', 'user', 'totalAmount', 'currency', 'status', promotionsField, diningModeField, 'paymentMethod', 'createdAt', paymentStatusField
   ])
   assert.deepEqual(plain(context.config.detail.detail_display), [
-    'id', 'uuid', 'user', 'totalAmount', 'currency', 'status', diningModeField, 'paymentMethod', 'metadata', paymentStatusField,
+    'id', 'uuid', 'user', 'totalAmount', 'currency', 'status', diningModeField, promotionsDetailField, 'paymentMethod', 'metadata', paymentStatusField,
     { property: 'refundDetails', label: 'Refund details', component: {}, full_width: true }
   ])
   assert.equal(context.config.list.actions.at(-1).name, 'order-refund')
