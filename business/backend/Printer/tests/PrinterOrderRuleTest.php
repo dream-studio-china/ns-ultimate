@@ -23,6 +23,14 @@ final class PrinterOrderRuleTest extends TestCase
         $rule->setName('Updated kitchen');
         self::assertSame($uuid, $rule->getUuid());
         self::assertSame($uuid, $rule->toRule()['id']);
+        self::assertSame('Updated kitchen', (string) $rule);
         self::assertTrue(UUID::is_valid($uuid));
+    }
+
+    public function testStringRepresentationFallsBackToStableUuid(): void
+    {
+        $rule = new PrinterOrderRule();
+
+        self::assertSame($rule->getUuid(), (string) $rule);
     }
 }
