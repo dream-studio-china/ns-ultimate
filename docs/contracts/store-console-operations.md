@@ -2,7 +2,7 @@
 
 ## Status and ownership
 
-Implemented by `business/backend/Store/src/Controller/Staff/OperationsController.php` and consumed by `apps/store-console/`. Existing Core employee CRUD routes remain available and unchanged. Employee counter sessions and order entry have a separate [counter operations contract](store-console-counter-operations.md). A store-scoped order refund command and its Trade Orders UI are documented below. Employee manual order printing is connected through the rule-based API described below. No employee financial report contract is enabled.
+Implemented by `business/backend/Store/src/Controller/Staff/OperationsController.php` and `MediaController.php`, consumed by `apps/store-console/`. Existing Core employee CRUD routes remain available and unchanged. Employee counter sessions and order entry have a separate [counter operations contract](store-console-counter-operations.md). A store-scoped order refund command and its Trade Orders UI are documented below. Employee manual order printing is connected through the rule-based API described below. No employee financial report contract is enabled.
 
 Business code owns operational validation, DTOs, availability policy, command receipts and permissions. The app owns presentation and its authenticated adapter. Integration discovers the module normally; there is no Core controller replacement or generic CRUD allowlist expansion.
 
@@ -82,6 +82,12 @@ The initially introduced `/store/{storeUuid}/orders/{orderUuid}/refund` and `/re
 A process crash after receipt commit but before a provider attempt is persisted leaves a conservative pending reservation. Replays never automatically resubmit it. Operators must inspect the receipt's Invoice and provider/Core attempt records before resolving an abandoned reservation; never clear one solely because the caller timed out. A pre-submission rejection caught by the service is recorded as `failed` and releases the guard. This change does not add a background worker for abandoned unified reservations.
 
 The live UI derives Kitchen visibility from product or category read grants, Cashier visibility from counter-session or counter-configuration read grants, and Orders visibility from order read grants. Individual controls retain their own per-action checks. Counter-session readers default to Cashier; otherwise the first accessible module is used, falling back to Account with a no-business-access notice. `?view=kitchen|cashier` only selects an accessible preferred page. Store reconnection refreshes the permission snapshot and reevaluates that preference; it cannot preserve an unauthorized page from a prior store. These labels do not change API authorization or enable financial commands. The customer payment build remains isolated and demo-only; no employee payment role or live payment link is introduced.
+
+## Store-owned image uploads
+
+`POST /api/v1/store/{storeUuid}/media/upload` uploads a store-owned catalog image and requires active membership plus `store:catalog_image:create`. Send multipart fields `file` (required), `commandUuid` (required UUID for idempotent retry), and `storage` (`local` or `qiniu`, default `local`). The upload accepts PNG, JPEG and WebP images up to 2 MiB, with a maximum dimension of 8192 pixels. It returns the media UUID, file metadata, path, storage and URL. The resulting image is associated with the Store and can be selected as a product cover; it is not owned by an individual staff user's `/app/media` collection.
+
+The existing `POST /api/v1/store/{storeUuid}/operations/images` remains supported for the Store Console's catalog workflow. It uses the same image validation and idempotency behavior and now honors its multipart `storage` field (`local` by default, or `qiniu`).
 
 ## Manual order printing
 
