@@ -1,0 +1,6 @@
+/* The fixed navbar is out of flow. The main area's padding already reserves
+   its space, so record dialogs need the main area to reach the viewport bottom. */
+.main-container > .fixed-header + .app-main {
+  min-height: 100vh;
+  min-height: 100dvh;
+}

@@ -3,6 +3,7 @@ import businessRoutes from '../../business/admin/router'
 import businessConfig from '../../business/admin/config/index.js'
 import { mergeEntities, mergeRoutes, moveRouteAfter, moveRouteBefore } from './merge-config.mjs'
 import installMenuIcons from '../../business/admin/install-menu-icons.js'
+import './layout.css'
 import './menu-icons.css'
 import './printer-template-editor.css'
 import { initializePalette } from '../../business/admin/appearance/palette.mjs'
@@ -34,6 +35,7 @@ routes = moveRouteAfter(routes, 'WechatConfiguration', 'ContentManage')
 routes = moveRouteAfter(routes, 'HuifuConfiguration', 'WechatConfiguration')
 routes = moveRouteAfter(routes, 'HuifuTransactions', 'HuifuConfiguration')
 routes = moveRouteAfter(routes, 'PrinterManage', 'ContentManage')
+routes = moveRouteBefore(routes, 'Finance', 'UserManage')
 
 export default {
   routes,

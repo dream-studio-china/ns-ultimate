@@ -15,3 +15,7 @@ The employee catalog and order-fulfillment boundary is described in [`store-cons
 The anonymous, read-only order payment-page projection is described in [`public-order-payment.md`](public-order-payment.md). It exposes restricted order/Invoice information and Huifu channel configuration, not public payment initiation.
 
 The separate authenticated customer initiation path and its signed notification boundary are described in [`huifu-customer-payments.md`](huifu-customer-payments.md).
+
+The independent manual ledger and its authorization, posting, reversal, and reporting guarantees are described in [`accounting.md`](accounting.md).
+
+The Store Console's separate manual income, expense, and purchase price workflow is described in [`store-cash-register.md`](store-cash-register.md).

@@ -1,0 +1,20 @@
+business_accounting_manage:
+    prefix: /api/v1/manage/accounting
+    name_prefix: business_accounting_manage_
+    resource: '../src/Controller/Manage/'
+    type: attribute
+    defaults: { _api_audit_redact: true }
+
+business_accounting_store:
+    prefix: /api/v1
+    name_prefix: business_accounting_store_
+    resource: '../src/Controller/Store/'
+    type: attribute
+    defaults: { _api_audit_redact: true }
+
+business_accounting_finance:
+    prefix: /api/v1/finance/accounting
+    name_prefix: business_accounting_finance_
+    resource: '../src/Controller/Manage/'
+    type: attribute
+    defaults: { _api_audit_redact: true }

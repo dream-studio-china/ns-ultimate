@@ -38,8 +38,9 @@ case "$command" in
   test-agent) exec node --test apps/admin-agent/tests/*.test.mjs "$@" ;;
   test-admin)
     node --test apps/admin-agent/tests/*.test.mjs
-    node --test integration/admin/*.test.mjs
+    node --test integration/admin/*.test.mjs business/admin/accounting/*.test.mjs
     cd core/crud-admin
+    ./node_modules/.bin/vitest run --config ../../integration/admin/accounting.vitest.config.ts
     npm test -- "$@"
     ;;
   test-backend) exec php core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml "$@" ;;
