@@ -6,6 +6,7 @@ namespace NsUltimate\Business\Accounting\Repository;
 
 use Brick\Math\BigInteger;
 use Doctrine\DBAL\Connection;
+use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
 use NsUltimate\Business\Accounting\Service\LedgerPage;
@@ -14,22 +15,23 @@ final class LedgerReadRepository
 {
     private const MAX_EXPORT = 10000;
     private const FROM = ' FROM ns_accounting_line l JOIN ns_accounting_journal j ON j.book_id = l.book_id AND j.id = l.journal_id
-                           WHERE l.book_id = 1 AND j.state = \'posted\' AND j.posting_index <= CAST(? AS DECIMAL(19, 0))';
+                           WHERE l.book_id = ? AND j.state = \'posted\' AND j.posting_index <= CAST(? AS DECIMAL(19, 0))';
 
     public function __construct(private readonly Connection $db) {}
 
     /** @return array<string, mixed> */
-    public function journal(string $id, bool $evidence): array
+    public function journal(string $id, bool $evidence, int $bookId = AccountingBook::ID, ?string $storeUuid = null): array
     {
         $id = LedgerInput::uuid($id);
 
-        return $this->db->transactional(function () use ($id, $evidence): array {
+        return $this->db->transactional(function () use ($id, $evidence, $bookId, $storeUuid): array {
             // Fetch header and lines in one statement so a draft update cannot split the view.
             $rows = $this->db->fetchAllAssociative(
                 "SELECT j.*, r.id AS reversed_by, l.account_code, l.side, l.amount, l.description, l.position FROM ns_accounting_journal j
                  LEFT JOIN ns_accounting_line l ON l.book_id = j.book_id AND l.journal_id = j.id
                  LEFT JOIN ns_accounting_journal r ON r.book_id = j.book_id AND r.reversal_of = j.id AND r.state = 'posted'
-                 WHERE j.book_id = 1 AND j.id = ? ORDER BY l.position", [$id],
+                 WHERE j.book_id = ? AND j.id = ?".($storeUuid === null ? '' : ' AND j.store_uuid = ?').' ORDER BY l.position',
+                $storeUuid === null ? [$bookId, $id] : [$bookId, $id, $storeUuid],
             );
             if (!$rows) {
                 throw new LedgerError('journal_not_found', 404);
@@ -56,25 +58,25 @@ final class LedgerReadRepository
     }
 
     /** @param array<string, mixed> $parameters */
-    public function audit(array $parameters): LedgerPage
+    public function audit(array $parameters, int $bookId = AccountingBook::ID): LedgerPage
     {
         LedgerInput::fields($parameters, 'page', 'limit');
         [$page, $limit] = LedgerPage::window($parameters);
         $rows = $this->db->fetchAllAssociative(
-            'SELECT id, actor, action, target, occurred_at, correlation_id, detail FROM ns_accounting_audit WHERE book_id = 1 ORDER BY occurred_at DESC, id DESC'
-            .' LIMIT '.$limit.' OFFSET '.(($page - 1) * $limit),
+            'SELECT id, actor, action, target, occurred_at, correlation_id, detail FROM ns_accounting_audit WHERE book_id = ? ORDER BY occurred_at DESC, id DESC'
+            .' LIMIT '.$limit.' OFFSET '.(($page - 1) * $limit), [$bookId],
         );
-        $total = (int) $this->db->fetchOne('SELECT COUNT(*) FROM ns_accounting_audit WHERE book_id = 1');
+        $total = (int) $this->db->fetchOne('SELECT COUNT(*) FROM ns_accounting_audit WHERE book_id = ?', [$bookId]);
 
         return new LedgerPage(array_map($this->auditRow(...), $rows), $total, $page, $limit);
     }
 
     /** @return array<string, mixed> */
-    public function auditRecord(string $id): array
+    public function auditRecord(string $id, int $bookId = AccountingBook::ID): array
     {
         $record = $this->db->fetchAssociative(
-            'SELECT id, actor, action, target, occurred_at, correlation_id, detail FROM ns_accounting_audit WHERE book_id = 1 AND id = ?',
-            [LedgerInput::uuid($id)],
+            'SELECT id, actor, action, target, occurred_at, correlation_id, detail FROM ns_accounting_audit WHERE book_id = ? AND id = ?',
+            [$bookId, LedgerInput::uuid($id)],
         );
 
         return $this->auditRow($record ?: throw new LedgerError('audit_record_not_found', 404));
@@ -101,7 +103,7 @@ final class LedgerReadRepository
      * @param array<string, mixed> $parameters
      * @return array<string, mixed>
      */
-    public function report(string $kind, array $parameters, bool $export = false): array
+    public function report(string $kind, array $parameters, bool $export = false, int $bookId = AccountingBook::ID, ?string $storeUuid = null): array
     {
         if (!in_array($kind, ['ledger', 'balances', 'trial'], true)) {
             throw new LedgerError('unknown_report', 404);
@@ -120,38 +122,44 @@ final class LedgerReadRepository
             throw new LedgerError('account_required');
         }
         [$page, $limit] = LedgerPage::window($parameters);
-        return $this->db->transactional(function () use ($kind, $parameters, $export, $from, $to, $account, $page, $limit): array {
-            $book = $this->book() ?: throw new LedgerError('book_not_initialized', 409);
-            $cutoff = $parameters['cutoff'] ?? (string) $book['posting_count'];
+        return $this->db->transactional(function () use ($kind, $parameters, $export, $from, $to, $account, $page, $limit, $bookId, $storeUuid): array {
+            $book = $this->db->fetchAssociative('SELECT * FROM ns_accounting_book WHERE id = ?', [$bookId])
+                ?: throw new LedgerError('book_not_initialized', 409);
+            $latest = $storeUuid === null ? $book['posting_count'] : $this->db->fetchOne(
+                "SELECT COALESCE(MAX(posting_index), 0) FROM ns_accounting_journal WHERE book_id = ? AND store_uuid = ? AND state = 'posted'",
+                [$bookId, $storeUuid],
+            );
+            $cutoff = $parameters['cutoff'] ?? (string) $latest;
             if ($cutoff !== '0') {
                 LedgerInput::amount($cutoff);
             }
-            if (BigInteger::of($cutoff)->compareTo((string) $book['posting_count']) > 0) {
+            if (BigInteger::of($cutoff)->compareTo((string) $latest) > 0) {
                 throw new LedgerError('invalid_cutoff');
             }
             $result = $kind === 'ledger'
-                ? $this->ledger($account ?? throw new \LogicException('Missing account.'), $from, $to, $cutoff, $page, $limit, $export)
-                : $this->balances($account, $from, $to, $cutoff, $page, $limit, $export, $kind === 'trial');
+                ? $this->ledger($bookId, $account ?? throw new \LogicException('Missing account.'), $from, $to, $cutoff, $page, $limit, $export, $storeUuid)
+                : $this->balances($bookId, $account, $from, $to, $cutoff, $page, $limit, $export, $kind === 'trial', $storeUuid);
 
             return $result + ['cutoff' => $cutoff, 'currency' => $book['currency'], 'scale' => (int) $book['scale']];
         });
     }
 
     /** @return array<string, mixed> */
-    private function ledger(string $account, string $from, string $to, string $cutoff, int $page, int $limit, bool $export): array
+    private function ledger(int $bookId, string $account, string $from, string $to, string $cutoff, int $page, int $limit, bool $export, ?string $storeUuid): array
     {
-        $this->requireAccount($account);
+        $this->requireAccount($bookId, $account);
         $offset = ($page - 1) * $limit;
-        $base = self::FROM.' AND l.account_code = ?';
+        $base = self::FROM.($storeUuid === null ? '' : ' AND j.store_uuid = ?').' AND l.account_code = ?';
+        $scope = $storeUuid === null ? [$bookId, $cutoff] : [$bookId, $cutoff, $storeUuid];
         $opening = BigInteger::zero();
-        foreach ($this->db->iterateAssociative('SELECT l.side, l.amount'.$base.' AND j.accounting_date < ?', [$cutoff, $account, $from]) as $line) {
+        foreach ($this->db->iterateAssociative('SELECT l.side, l.amount'.$base.' AND j.accounting_date < ?', [...$scope, $account, $from]) as $line) {
             $opening = $this->apply($opening, $line);
         }
         $balance = $opening;
         $rows = [];
         $index = 0;
         $range = $base.' AND j.accounting_date >= ? AND j.accounting_date <= ?';
-        $arguments = [$cutoff, $account, $from, $to];
+        $arguments = [...$scope, $account, $from, $to];
         $sql = 'SELECT j.id, j.accounting_date, j.series_year, j.sequence_no, j.summary, l.position, l.side, l.amount, l.description'.$range
             .' ORDER BY j.accounting_date, j.sequence_no, j.id, l.position';
         // Running balances need every earlier line in the range, so read up to the end of the page.
@@ -172,13 +180,14 @@ final class LedgerReadRepository
     }
 
     /** @return array<string, mixed> */
-    private function balances(?string $account, string $from, string $to, string $cutoff, int $page, int $limit, bool $export, bool $trial): array
+    private function balances(int $bookId, ?string $account, string $from, string $to, string $cutoff, int $page, int $limit, bool $export, bool $trial, ?string $storeUuid): array
     {
         $zero = BigInteger::zero();
-        $args = [$cutoff, $to];
-        $sql = 'SELECT l.account_code, l.side, l.amount, j.accounting_date'.self::FROM.' AND j.accounting_date <= ?';
+        $args = $storeUuid === null ? [$bookId, $cutoff, $to] : [$bookId, $cutoff, $to, $storeUuid];
+        $sql = 'SELECT l.account_code, l.side, l.amount, j.accounting_date'.self::FROM.' AND j.accounting_date <= ?'
+            .($storeUuid === null ? '' : ' AND j.store_uuid = ?');
         if ($account !== null) {
-            $this->requireAccount($account);
+            $this->requireAccount($bookId, $account);
             $sql .= ' AND l.account_code = ?';
             $args[] = $account;
         }
@@ -190,7 +199,7 @@ final class LedgerReadRepository
         }
         $grand = [];
         $rows = [];
-        $accounts = $this->db->fetchAllAssociative('SELECT code, name FROM ns_accounting_account WHERE book_id = 1'.($account === null ? '' : ' AND code = ?').' ORDER BY code', $account === null ? [] : [$account]);
+        $accounts = $this->db->fetchAllAssociative('SELECT code, name FROM ns_accounting_account WHERE book_id = ?'.($account === null ? '' : ' AND code = ?').' ORDER BY code', $account === null ? [$bookId] : [$bookId, $account]);
         foreach ($accounts as $entry) {
             // Without an explicit account filter, only show accounts with activity
             // by the selected cutoff and end date. New account rows cannot shift
@@ -231,17 +240,11 @@ final class LedgerReadRepository
         return $line['side'] === 'debit' ? $balance->plus((string) $line['amount']) : $balance->minus((string) $line['amount']);
     }
 
-    private function requireAccount(string $account): void
+    private function requireAccount(int $bookId, string $account): void
     {
-        if (!$this->db->fetchOne('SELECT 1 FROM ns_accounting_account WHERE book_id = 1 AND code = ?', [$account])) {
+        if (!$this->db->fetchOne('SELECT 1 FROM ns_accounting_account WHERE book_id = ? AND code = ?', [$bookId, $account])) {
             throw new LedgerError('account_not_found', 404);
         }
-    }
-
-    /** @return array<string, mixed>|false */
-    private function book(): array|false
-    {
-        return $this->db->fetchAssociative('SELECT * FROM ns_accounting_book WHERE id = 1');
     }
 
     /**

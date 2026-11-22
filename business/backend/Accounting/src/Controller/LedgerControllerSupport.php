@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace NsUltimate\Business\Accounting\Controller;
 
+use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
 use NsUltimate\Business\Accounting\Service\LedgerPage;
@@ -18,6 +19,11 @@ use Symfony\Component\HttpFoundation\Response;
  */
 trait LedgerControllerSupport
 {
+    protected function headquartersBookId(): int
+    {
+        return (int) ($this->getRequestStack()->getCurrentRequest()?->attributes->get('bookId') ?? AccountingBook::ID);
+    }
+
     protected function success(mixed $content = '', string $addition_message = 'SUCCESS', int $status = 200): Response
     {
         if ($content instanceof LedgerPage) {

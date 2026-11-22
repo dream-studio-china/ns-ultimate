@@ -22,11 +22,14 @@ final class JournalEntryRepository extends ServiceEntityRepository
     }
 
     /** @param array<string, mixed> $parameters */
-    public function register(array $parameters): QueryBuilder
+    public function register(array $parameters, int $bookId = AccountingBook::ID, ?string $storeUuid = null): QueryBuilder
     {
         $query = $this->createQueryBuilder('entity')
-            ->andWhere('IDENTITY(entity.book) = :book')->setParameter('book', AccountingBook::ID)
+            ->andWhere('IDENTITY(entity.book) = :book')->setParameter('book', $bookId)
             ->orderBy('entity.accountingDate', 'DESC')->addOrderBy('entity.sequenceNo', 'DESC')->addOrderBy('entity.uuid', 'DESC');
+        if ($storeUuid !== null) {
+            $query->andWhere('entity.storeUuid = :store')->setParameter('store', $storeUuid);
+        }
         $from = isset($parameters['from']) ? LedgerInput::date($parameters['from']) : null;
         $to = isset($parameters['to']) ? LedgerInput::date($parameters['to']) : null;
         if ($from !== null) {

@@ -7,6 +7,7 @@ namespace NsUltimate\Business\Accounting\Repository;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
+use NsUltimate\Business\Accounting\Entity\AccountingBookStore;
 use NsUltimate\Business\Accounting\Entity\AccountingPeriod;
 use NsUltimate\Business\Accounting\Entity\CommandReceipt;
 use NsUltimate\Business\Accounting\Entity\JournalEntry;
@@ -53,19 +54,31 @@ final class LedgerWriteRepository
 
     public function flush(): void { $this->manager()->flush(); }
 
-    public function book(): ?AccountingBook
+    public function book(int $bookId): ?AccountingBook
     {
-        return $this->manager()->find(AccountingBook::class, AccountingBook::ID);
+        return $this->manager()->find(AccountingBook::class, $bookId);
     }
 
-    public function lockBook(): AccountingBook
+    public function storeBinding(string $uuid): ?AccountingBookStore
+    {
+        return $this->manager()->find(AccountingBookStore::class, $uuid);
+    }
+
+    /** @return list<string> */
+    public function bookStores(AccountingBook $book): array
+    {
+        return array_map(static fn (AccountingBookStore $binding) => $binding->getStoreUuid(),
+            $this->manager()->getRepository(AccountingBookStore::class)->findBy(['book' => $book], ['storeUuid' => 'ASC']));
+    }
+
+    public function lockBook(int $bookId): AccountingBook
     {
         // InnoDB takes the row lock; SQLite takes its writer lock before any read.
         $this->manager()->getConnection()->executeStatement(
-            'UPDATE ns_accounting_book SET posting_count = posting_count WHERE id = ?', [AccountingBook::ID],
+            'UPDATE ns_accounting_book SET posting_count = posting_count WHERE id = ?', [$bookId],
         );
 
-        return $this->book() ?? throw new LedgerError('book_not_initialized', 409);
+        return $this->book($bookId) ?? throw new LedgerError('book_not_initialized', 409);
     }
 
     public function account(AccountingBook $book, string $code): ?LedgerAccount

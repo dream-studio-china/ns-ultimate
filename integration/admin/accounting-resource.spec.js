@@ -7,6 +7,7 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 const api = vi.hoisted(() => {
   const journalId = '0f0e8a8e-2f7b-4b7a-9b1f-0d7c6b1e2a3c'
+  const store = { uuid: 'ab7e622b-157d-457b-a81e-f4124e7bb1e6', name: 'North Shop', code: 'NS01' }
   const state = { calls: [] }
   const workspace = {
     book: { id: 1, entity: 'Test', currency: 'CNY', scale: 2, timezone: 'UTC', opening_date: '2026-01-01', opening_state: 'pending' },
@@ -15,6 +16,7 @@ const api = vi.hoisted(() => {
       { code: 'EQUITY', name: 'Equity', classification: 'equity', normal_side: 'credit', active: 1, postable: 1 }
     ],
     periods: [{ month: '2026-01', state: 'open' }],
+    store_uuids: [],
     capabilities: ['read', 'audit', 'draft', 'post', 'reverse', 'configure', 'lock', 'reopen']
   }
   const detail = {
@@ -30,6 +32,8 @@ const api = vi.hoisted(() => {
   const routes = {
     'GET /api/v1/finance/accounting/workspace': () => ({ code: 0, data: workspace }),
     'GET /api/v1/finance/accounting/books': () => ({ code: 0, paginator: paginator(1), data: [workspace.book] }),
+    'GET /api/v1/finance/accounting/available-stores': params => ({ code: 0, data: { stores: params.q === 'north' ? [store] : [] } }),
+    'POST /api/v1/finance/accounting/commands/bind-store': () => ({ code: 0, data: { store_uuid: store.uuid } }),
     'GET /api/v1/finance/accounting/journals': () => ({
       code: 0, paginator: paginator(1),
       data: [{ id: journalId, accounting_date: '2026-01-02', summary: 'Stored draft', origin: 'manual', state: 'draft', revision: 3, number: null, reversal_of: null }]
@@ -54,7 +58,7 @@ const api = vi.hoisted(() => {
     if (!route) throw new Error(`Unexpected ${method} ${url}`)
     return route(params)
   }
-  return { state, journalId, request: { get: handle('GET'), post: handle('POST'), put: handle('PUT'), delete: handle('DELETE') } }
+  return { state, workspace, journalId, store, request: { get: handle('GET'), post: handle('POST'), put: handle('PUT'), delete: handle('DELETE') } }
 })
 
 vi.mock('@/utils/request', () => ({ __esModule: true, default: api.request }))
@@ -85,7 +89,9 @@ vi.mock('@/config', () => ({ __esModule: true, default: { get entities() { retur
 const collections = import.meta.glob('../../business/admin/config/collections/accounting/*.js', { eager: true })
 globalThis.accountingEntities = Object.assign({}, ...Object.values(collections).map(module => module.default))
 const { default: FinanceResource } = await import('../../business/admin/accounting/FinanceResource.vue')
+const { finance } = await import('../../business/admin/accounting/finance-context.js')
 const { default: JournalLinesField } = await import('../../business/admin/accounting/JournalLinesField.vue')
+const { default: AvailableStoreField } = await import('../../business/admin/accounting/AvailableStoreField.vue')
 
 const page = (path, name, entity, view) => ({ path, name, component: FinanceResource, props: { entity, view }, meta: { title: name } })
 const dialog = (path, name, open) => ({
@@ -173,7 +179,7 @@ describe('Accounting resources render from collection configs', () => {
     await settle()
     const [create] = calls('POST', '/api/v1/finance/accounting/journals')
     expect(create.body).toEqual({
-      origin: 'manual', accounting_date: '2026-01-01', summary: 'Manual entry', command_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      origin: 'manual', accounting_date: '2026-01-01', summary: 'Manual entry', store_uuid: '', command_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       lines: [
         { account_code: 'CASH', side: 'debit', amount: '150', description: '' },
         { account_code: 'EQUITY', side: 'credit', amount: '150', description: 'Owner' }
@@ -255,16 +261,56 @@ describe('Accounting resources render from collection configs', () => {
     wrapper.unmount()
   })
 
-  it('gates book actions by capability, record state, and the singleton book', async() => {
+  it('offers store book creation and binding while keeping the opening action', async() => {
     const { wrapper, router } = await open('/finance/accounting/ledger')
     expect(calls('GET', '/api/v1/finance/accounting/books')).toHaveLength(1)
     expect(wrapper.text()).toContain('Test')
-    // The book exists, so initialization (EasyAdmin "new") is not offered.
-    expect(wrapper.findAll('button').some(node => node.text().trim().startsWith('New AccountingBookList'))).toBe(false)
+    expect(wrapper.findAll('button').some(node => node.text().trim().startsWith('New AccountingBookList'))).toBe(true)
+    expect(button(wrapper, 'Add store to book')).toBeTruthy()
     await button(wrapper, 'New opening journal').trigger('click')
     await settle()
     expect(router.currentRoute.value).toMatchObject({ name: 'JournalEntryCreate', params: { origin: 'opening' } })
     wrapper.unmount()
+  })
+
+  it('hides book creation and binding without configure capability', async() => {
+    const capabilities = api.workspace.capabilities
+    api.workspace.capabilities = capabilities.filter(capability => capability !== 'configure')
+    try {
+      await finance.reload()
+      const { wrapper } = await open('/finance/accounting/ledger')
+      try {
+        expect(wrapper.findAll('button').some(node => node.text().trim().startsWith('New AccountingBookList'))).toBe(false)
+        expect(button(wrapper, 'Add store to book')).toBeUndefined()
+        expect(button(wrapper, 'New opening journal')).toBeTruthy()
+      } finally {
+        wrapper.unmount()
+      }
+    } finally {
+      api.workspace.capabilities = capabilities
+      await finance.reload()
+    }
+  })
+
+  it('searches available stores and binds the selected store without typing its UUID', async() => {
+    const { wrapper } = await open('/finance/accounting/ledger')
+    try {
+      await button(wrapper, 'Add store to book').trigger('click')
+      await settle()
+      const select = wrapper.findComponent(AvailableStoreField).findComponent({ name: 'ElSelect' })
+      expect(select.props('remote')).toBe(true)
+      await select.props('remoteMethod')(' north ')
+      await settle()
+      expect(calls('GET', '/api/v1/finance/accounting/available-stores').at(-1).params).toEqual({ q: 'north' })
+      expect(select.findAllComponents({ name: 'ElOption' }).map(option => option.props('label'))).toEqual(['North Shop (NS01)'])
+      select.vm.$emit('update:modelValue', api.store.uuid)
+      await settle()
+      bodyButton('Confirm').click()
+      await settle()
+      expect(calls('POST', '/api/v1/finance/accounting/commands/bind-store').map(call => call.body)).toEqual([{ store_uuid: api.store.uuid }])
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('pages a report on one posting cutoff', async() => {

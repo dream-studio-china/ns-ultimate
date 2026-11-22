@@ -59,6 +59,21 @@ export default {
           type_options: { fixed: form => form.origin === 'opening' ? finance.book?.opening_date ?? null : null }
         },
         input('summary', 'Summary', { rules: required, type_options: { maxlength: 240, showWordLimit: true } }),
+        {
+          property: 'store_uuid', field_options: { label: t('Journal store') }, type: 'select',
+          get default_value() {
+            const stores = finance.workspace?.store_uuids ?? []
+            return stores.length === 1 ? stores[0] : ''
+          },
+          type_options: {
+            clearable: false,
+            emptyValues: [null, undefined],
+            get options() {
+              return [{ value: '', label: t('Headquarters only') },
+                ...(finance.workspace?.store_uuids ?? []).map(uuid => ({ value: uuid, label: uuid }))]
+            }
+          }
+        },
         input('evidence', 'Evidence notes', {
           type: 'textarea', hidden: ledger.auditOnlyOnUpdate, type_options: { maxlength: 2000, showWordLimit: true }
         }),
@@ -91,6 +106,7 @@ export default {
         column('number', 'Journal number'),
         column('accounting_date', 'Accounting date'),
         column('summary', 'Summary'),
+        column('store_uuid', 'Journal store'),
         column('origin', 'Journal origin', { component: ledger.labelCell }),
         column('state', 'Status', { component: ledger.stateCell })
         // The register is a server page; sorting visible rows would not sort it.
@@ -102,6 +118,7 @@ export default {
         column('number', 'Journal number'),
         column('accounting_date', 'Accounting date'),
         column('summary', 'Summary', { full_width: true }),
+        column('store_uuid', 'Journal store'),
         column('state', 'Status', { component: ledger.stateCell }),
         column('origin', 'Journal origin', { component: ledger.labelCell }),
         column('revision', 'Revision'),

@@ -10,12 +10,15 @@ use NsUltimate\Business\Accounting\Service\LedgerInput;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'ns_accounting_book', options: ['engine' => 'InnoDB', 'charset' => 'utf8mb4'])]
+#[ORM\UniqueConstraint(name: 'uniq_acct_book_store', columns: ['store_uuid'])]
 class AccountingBook
 {
     public const ID = 1;
 
     #[ORM\Id, ORM\Column]
-    private int $id = self::ID;
+    private int $id;
+    #[ORM\Column(length: 36, nullable: true)]
+    private ?string $storeUuid;
     #[ORM\Column(length: 160)]
     private string $entity;
     #[ORM\Column(length: 3)]
@@ -31,8 +34,10 @@ class AccountingBook
     #[ORM\Column(type: 'bigint')]
     private int $postingCount = 0;
 
-    public function __construct(string $entity, string $currency, int $scale, string $timezone, \DateTimeImmutable $openingDate)
+    public function __construct(string $entity, string $currency, int $scale, string $timezone, \DateTimeImmutable $openingDate, int $id = self::ID, ?string $storeUuid = null)
     {
+        $this->id = $id;
+        $this->storeUuid = $storeUuid;
         if (!preg_match('/\A[A-Z]{3}\z/', $currency)) {
             throw new LedgerError('invalid_currency');
         }
@@ -51,6 +56,7 @@ class AccountingBook
     }
 
     public function getId(): int { return $this->id; }
+    public function getStoreUuid(): ?string { return $this->storeUuid; }
     public function getEntity(): string { return $this->entity; }
     public function getCurrency(): string { return $this->currency; }
     public function getScale(): int { return $this->scale; }

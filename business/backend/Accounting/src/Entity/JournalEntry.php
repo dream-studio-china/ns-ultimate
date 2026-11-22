@@ -16,6 +16,7 @@ use Symfony\Component\Serializer\Attribute\Ignore;
 #[ORM\UniqueConstraint(name: 'uniq_acct_series', columns: ['book_id', 'series_year', 'sequence_no'])]
 #[ORM\UniqueConstraint(name: 'uniq_acct_posting_index', columns: ['book_id', 'posting_index'])]
 #[ORM\UniqueConstraint(name: 'uniq_acct_reversal', columns: ['book_id', 'reversal_of'])]
+#[ORM\Index(name: 'idx_acct_journal_store', columns: ['book_id', 'store_uuid', 'accounting_date'])]
 #[ORM\Index(name: 'idx_acct_journal_date', columns: ['book_id', 'accounting_date', 'sequence_no', 'id'])]
 class JournalEntry
 {
@@ -34,6 +35,8 @@ class JournalEntry
     private int $revision = 1;
     #[ORM\Column(length: 240)]
     private string $summary;
+    #[ORM\Column(length: 36, nullable: true)]
+    private ?string $storeUuid = null;
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $evidence;
     /** @var list<string>|null */
@@ -68,13 +71,16 @@ class JournalEntry
     }
 
     /** @param list<string> $attachments */
-    public static function draft(AccountingBook $book, \DateTimeImmutable $date, string $origin, string $summary, ?string $evidence, array $attachments = [], ?\stdClass $metadata = null): self
+    public static function draft(AccountingBook $book, \DateTimeImmutable $date, string $origin, string $summary, ?string $evidence, array $attachments = [], ?\stdClass $metadata = null, ?string $storeUuid = null): self
     {
         if (!in_array($origin, ['manual', 'opening'], true)) {
             throw new LedgerError('invalid_option');
         }
 
-        return new self($book, $date, $origin, $summary, $evidence, $attachments, $metadata);
+        $entry = new self($book, $date, $origin, $summary, $evidence, $attachments, $metadata);
+        $entry->storeUuid = $storeUuid;
+
+        return $entry;
     }
 
     public function getBook(): AccountingBook { return $this->book; }
@@ -84,6 +90,13 @@ class JournalEntry
     public function getState(): string { return $this->state; }
     public function getRevision(): int { return $this->revision; }
     public function getSummary(): string { return $this->summary; }
+    public function getStoreUuid(): ?string { return $this->storeUuid; }
+
+    public function attributeDraft(int $revision, ?string $storeUuid): void
+    {
+        $this->requireDraft($revision);
+        $this->storeUuid = $storeUuid;
+    }
     #[Ignore]
     public function getEvidence(): ?string { return $this->evidence; }
     /** @return list<string> */
@@ -145,6 +158,7 @@ class JournalEntry
         $this->requireReversibleOn($date);
         $opposite = new self($this->book, $date, 'reversal', $this->summary, LedgerInput::text($reason, 1000));
         $opposite->reversalOf = $this->uuid;
+        $opposite->storeUuid = $this->storeUuid;
 
         return $opposite;
     }

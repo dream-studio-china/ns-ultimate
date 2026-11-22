@@ -15,6 +15,8 @@ use NsUltimate\Business\Accounting\Migrations\Version20261121100000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122100000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122110000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122120000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122130000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122140000;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
@@ -95,7 +97,19 @@ $db = connect();
 check((int) $db->fetchOne('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()') === 0, 'Refusing to run against a non-empty database.');
 AccountingTestManager::migrate($db, Version20261121100000::class);
 check((int) $db->fetchOne("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND engine = 'InnoDB'") === 8, 'Expected eight InnoDB tables.');
-AccountingTestManager::migrate($db, Version20261122100000::class, Version20261122110000::class, Version20261122120000::class);
+AccountingTestManager::migrate($db, Version20261122100000::class, Version20261122110000::class, Version20261122120000::class, Version20261122130000::class);
+$store = UUID::v4();
+$db->insert('ns_accounting_book', [
+    'id' => 2, 'store_uuid' => $store, 'entity' => 'Pre-upgrade book', 'currency' => 'CNY', 'scale' => 2,
+    'timezone' => 'UTC', 'opening_date' => '2026-01-01', 'opening_state' => 'pending', 'posting_count' => 0,
+]);
+$oldDraft = UUID::v4();
+$db->insert('ns_accounting_journal', ['book_id' => 2, 'id' => $oldDraft, 'accounting_date' => '2026-01-01',
+    'origin' => 'manual', 'state' => 'draft', 'revision' => 3, 'summary' => 'Pre-upgrade draft']);
+AccountingTestManager::migrate($db, Version20261122140000::class);
+check((int) $db->fetchOne('SELECT book_id FROM ns_accounting_book_store WHERE store_uuid = ?', [$store]) === 2, 'Existing store binding was not preserved.');
+$backfilled = $db->fetchAssociative('SELECT book_id, revision, store_uuid FROM ns_accounting_journal WHERE id = ?', [$oldDraft]);
+check($backfilled !== false && (int) $backfilled['book_id'] === 2 && (int) $backfilled['revision'] === 3 && $backfilled['store_uuid'] === $store, 'Existing journal was not attributed in place.');
 $em = AccountingTestManager::create($db);
 $ormSchema = (new SchemaTool($em))->getSchemaFromMetadata($em->getMetadataFactory()->getAllMetadata());
 $schemaManager = $db->createSchemaManager();

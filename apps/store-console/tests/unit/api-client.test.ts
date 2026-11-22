@@ -88,6 +88,19 @@ describe('staff API transport', () => {
     expect(await client.list('/api/items', z.string(), 2)).toEqual({ items: ['value'], hasNext: true })
     expect(fetcher.mock.calls[1][0]).toBe('/api/items?page=2&limit=30')
   })
+  it('keeps report context and downloads CSV through the authenticated transport', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(tokens()))
+      .mockResolvedValueOnce(json({ code: 0, data: [], report: { cutoff: '3' } }))
+      .mockResolvedValueOnce(new Response('code,amount\nCASH,1\n', { headers: { 'Content-Type': 'text/csv; charset=utf-8' } }))
+      .mockResolvedValueOnce(json({ code: 0, data: [] }))
+    const client = new ApiClient(fetcher)
+    await client.login('staff', 'test-only')
+    const path = `/api/v1/store/${store}/accounting/reports/trial`
+    await expect(client.request(path)).resolves.toMatchObject({ report: { cutoff: '3' } })
+    expect(await (await client.downloadCsv(`${path}/csv?cutoff=3`)).text()).toContain('CASH,1')
+    expect(fetcher.mock.calls[2][1]).toMatchObject({ headers: { Authorization: 'Bearer test-access-one', Accept: 'text/csv' } })
+    await expect(client.downloadCsv(`${path}/csv`)).rejects.toMatchObject({ kind: 'invalid' })
+  })
 })
 describe('store-scoped permissions and adapters', () => {
   it('accepts PHP empty product metadata without inventing a cover image', () => {

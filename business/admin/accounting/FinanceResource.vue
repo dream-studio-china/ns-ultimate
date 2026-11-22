@@ -1,6 +1,7 @@
 <template>
   <div class="app-container">
     <finance-feedback />
+    <p v-if="ready && finance.book" class="finance-current-book">{{ $t('Selected book') }}: {{ finance.book.entity }} ({{ finance.book.currency }})</p>
     <el-skeleton v-if="!ready" :rows="6" animated />
     <el-empty v-else-if="denied" :description="$t('finance_access_required')" />
     <el-empty v-else-if="needsBook" :description="$t('No accounting book configured')">

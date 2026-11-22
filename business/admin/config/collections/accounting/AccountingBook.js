@@ -4,7 +4,8 @@ import * as ledger from '../../../accounting/finance-config.js'
 const column = (property, label, extra = {}) => ({ property, label: t(label), ...extra })
 const input = (property, label, extra = {}) => ({ property, field_options: { label: t(label) }, ...extra })
 const required = ledger.required(t('This field is required'))
-const pending = record => record?.opening_state === 'pending'
+const availableStore = input('store_uuid', 'Store', { component: ledger.AvailableStoreField, rules: required })
+const pending = record => record?.opening_state === 'pending' && Number(record.id) === Number(ledger.finance.book?.id)
 
 const openingJournal = ledger.ledgerLink({
   label: 'New opening journal', capability: 'draft', when: pending,
@@ -14,9 +15,16 @@ const approveZeroOpening = ledger.ledgerCommand({
   action: 'approve-zero-opening', label: 'Approve zero opening', capability: 'post', type: 'warning', when: pending,
   fields: [input('reason', 'Reason', { type: 'textarea', rules: required, type_options: { maxlength: 1000, showWordLimit: true } })]
 })
+const bindStore = ledger.ledgerCommand({
+  action: 'bind-store', label: 'Add store to book', capability: 'configure',
+  when: record => Number(record?.id) === Number(ledger.finance.book?.id),
+  notice: 'Only stores without a book can join',
+  fields: [availableStore]
+})
 
 const display = [
   column('entity', 'Accounting entity'),
+  column('store_uuid', 'Initial store'),
   column('currency', 'Base currency code'),
   column('scale', 'Currency scale'),
   column('timezone', 'Book timezone'),
@@ -27,9 +35,10 @@ const display = [
 export default {
   AccountingBook: {
     entity: ledger.resource('AccountingBook', 'books'),
-    adapters: { finance: { allow: { new: finance => finance.can('configure') && !finance.book } } },
+    adapters: { finance: { allow: { new: ledger.can('configure') } } },
     form: {
       fields: [
+        availableStore,
         input('entity', 'Accounting entity', { rules: required, type_options: { maxlength: 160 } }),
         input('currency', 'Base currency code', {
           rules: [{ required: true, pattern: /^[A-Z]{3}$/, message: t('Base currency code') }], type_options: { maxlength: 3 }
@@ -44,8 +53,10 @@ export default {
     },
     list: {
       data_processor: ledger.financeList({ reloadWorkspace: true }),
-      disabled_actions: ['edit', 'delete', 'batch_edit', 'batch_delete', 'export', 'pager'],
+      disabled_actions: ['edit', 'delete', 'batch_edit', 'batch_delete', 'export'],
       actions: [
+        { name: 'accounting-select-book', position: 'list', component: ledger.bookSelection },
+        { name: 'accounting-bind-store', position: 'list', component: bindStore },
         { name: 'accounting-opening-journal', position: 'list', component: openingJournal },
         { name: 'accounting-approve-zero-opening', position: 'list', component: approveZeroOpening }
       ],
@@ -55,7 +66,8 @@ export default {
       disabled_actions: ['edit'],
       detail_display: [
         ...display,
-        column('operations', 'Actions', { component: ledger.ledgerOperations(openingJournal, approveZeroOpening), full_width: true })
+        column('store_uuids', 'Bound stores', { type: 'json', full_width: true }),
+        column('operations', 'Actions', { component: ledger.ledgerOperations(ledger.bookSelection, bindStore, openingJournal, approveZeroOpening), full_width: true })
       ]
     }
   }
