@@ -70,6 +70,7 @@ class PrinterOrderRule
     public function setTemplateUuid(string $value): self { $this->templateUuid = $value; return $this; }
     public function getCopies(): int { return $this->copies; }
     public function setCopies(int $value): self { $this->copies = $value; return $this; }
+    public function __toString(): string { return $this->name !== '' ? $this->name : $this->uuid; }
 
     /** @return array<string, mixed> */
     public function toRule(): array
