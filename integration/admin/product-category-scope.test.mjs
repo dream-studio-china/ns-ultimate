@@ -4,6 +4,7 @@ import {
   categoryBelongsToProductScope,
   productCategoryOptions
 } from '../../business/admin/config/components/product-category-scope.mjs'
+import { productCategoryFilterOptions } from '../../business/admin/config/components/product-filter-scope.mjs'
 
 const storeUuid = '00000000-0000-4000-8000-000000000001'
 const otherStoreUuid = '00000000-0000-4000-8000-000000000002'
@@ -37,4 +38,16 @@ test('filters categories without a UUID and marks global options', () => {
     { value: 'local', label: 'Lunch', name: 'Lunch', isGlobal: false },
     { value: 'global', label: 'Seasonal', name: 'Seasonal', isGlobal: true }
   ])
+})
+
+test('product list category filter is empty until a store is selected', () => {
+  const categories = [
+    { id: 1, name: 'Global category', store: null },
+    { id: 2, name: 'Local category', store: { uuid: storeUuid } },
+    { id: 3, name: 'Other category', store: { uuid: otherStoreUuid } }
+  ]
+
+  assert.deepEqual(productCategoryFilterOptions(categories, ''), [])
+  assert.deepEqual(productCategoryFilterOptions(categories, storeUuid).map(option => option.value), ['1', '2'])
+  assert.equal(productCategoryFilterOptions(categories, storeUuid)[1].isGlobal, false)
 })

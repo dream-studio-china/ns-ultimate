@@ -161,6 +161,7 @@ export const printOptionSchema = z.object({
   kind: z.enum(['receipt', 'label']),
   copies: z.number().int().min(1).max(100),
   ticketMode: z.enum(['single', 'per_unit']),
+  events: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
 })
 export type PrintOption = z.infer<typeof printOptionSchema>
 export const manualPrintResultSchema = z.object({
@@ -717,6 +718,9 @@ export class StoreApi {
     body.append('commandUuid', commandUuid)
     body.append('storage', storage)
     return this.client.data(`${this.base}/operations/images`, z.object({ uuid, url: z.string().max(2048).refine((value) => (/^https:\/\//.test(value) || /^\/(?!\/)/.test(value)) && !value.includes('\\')) }), 'POST', body)
+  }
+  changePassword(currentPassword: string, newPassword: string) {
+    return this.client.request('/api/v1/app/users/change-password', 'POST', { currentPassword, newPassword })
   }
   // Existing configuration CRUD stays separate from versioned product/order commands.
   save(resource: 'product-categories' | 'counters', id: string | null, body: Record<string, unknown>) {

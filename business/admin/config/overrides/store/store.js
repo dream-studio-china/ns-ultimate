@@ -4,6 +4,8 @@ import StoreContactSchema from '../../../../../core/crud-admin/src/configs/colle
 import StoreAddressSchema from './StoreAddress.json'
 import StoreSettingsSchema from './StoreSettings.json'
 import StoreDiningModesAction from '../../components/StoreDiningModesAction.vue'
+import StoreOnboardingGuideAction from '../../components/StoreOnboardingGuideAction.vue'
+import StoreSetupAuditAction from '../../components/StoreSetupAuditAction.vue'
 
 // Business override of the core Store entity (declared explicitly in
 // business/admin/config/index.js `replace`). Only code, name and status are
@@ -52,6 +54,8 @@ export default {
     query: orderByIdDesc,
     disabled_actions: ['delete'],
     actions: [
+      { name: 'store-onboarding-guide', position: 'top', component: StoreOnboardingGuideAction },
+      { name: 'store-setup-audit', position: 'top', component: StoreSetupAuditAction },
       { name: 'store-dining-modes', position: 'list', component: StoreDiningModesAction }
     ],
     list_filter: {

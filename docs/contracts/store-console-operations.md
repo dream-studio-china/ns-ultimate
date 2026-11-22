@@ -99,10 +99,10 @@ or order-operator grants do not silently acquire printing authority. No schema
 migration is required.
 
 - `GET /print-options` returns `data.items` with at most 50 enabled store-owned
-  rules containing the `manual` event whose device, account and matching template are enabled. Each option
-  exposes only `ruleUuid`, `name`, `deviceName`, `kind`, `copies` and
-  `ticketMode`. Credentials, raw templates and arbitrary provider settings are
-  not returned.
+  rules that include the `manual` or `confirmed` event and whose device, account
+  and matching template are enabled. Each option exposes only `ruleUuid`, `name`, `deviceName`,
+  `kind`, `copies`, `ticketMode` and the configured `events`. Credentials, raw
+  templates and arbitrary provider settings are not returned.
 - `POST /trade-orders/{tradeOrderUuid}/print` accepts exactly:
 
   ```json
@@ -112,15 +112,15 @@ migration is required.
 `tradeOrderUuid` is a Trade Order UUID, not a StoreOrder UUID. Its lifecycle must
 belong to the path Store; inaccessible orders/rules return 404 after Store
 authorization. Only `confirmed`, `paid` and `completed` orders accept a new
-command. Only enabled rules containing the `manual` event are offered and can be
-printed through this API; submission rechecks it and returns 409
-`print_rule_not_manual` when absent. The admin rule form exposes it as
-**Manual print**, but the event is not an automatic trigger: the matcher never
-treats it as confirmed/paid/accepted. The server builds data
+command. The rule must include the `manual` or `confirmed` event. The admin rule
+form exposes these as **Manual print** and **Order confirmed**. A rule without
+either event is not offered and cannot be printed through this API. Staff
+printing uses the `manual` trigger even when the selected rule normally responds
+to order confirmation. The server builds data
 from the persisted order and freezes the rule, template, item filter, ticket mode
 and device label dimensions. It applies the template's item filter and per-unit
 behavior, but deliberately does not evaluate the rule's automatic conditions:
-manual printing is an explicit employee decision. Automatic events still apply
+staff reprinting is an explicit employee decision. Automatic events still apply
 their configured conditions. The rule's configured copies apply; employees
 cannot override the device,
 template, copies, item data, amounts or print content. Reason is required,
@@ -139,14 +139,25 @@ apply. Neither this API nor a one-second scheduler guarantees physical output
 within five seconds.
 
 The Store Console loads the same rule options for order cards, order details,
-checkout receipts and payment receipts. Receipt-only entry points filter to
-`kind: "receipt"`; a multi-order checkout result exposes one explicit action per
-printable order rather than silently printing every order. The UI identifies a
-202 response as queued, retains the same command for an unchanged retry after an
-uncertain network result, and generates a new command only after a successful
-command or a deliberate new print. Employees without `store:order:print` do not
-see print controls. No enabled rule configured for the store produces a visible
-configuration guidance state instead of a synthetic template or print job.
+checkout receipts and payment receipts, then separates them by intent. Reprint
+only shows `confirmed` rules and excludes any rule that also enables `paid` or
+`manual`. Checkout receipt printing only shows receipt rules that enable
+`manual` without `confirmed` or `paid`; it selects all eligible rules by default
+and uses its own labels, reasons and result messages rather than the reprint
+sheet. Payment-success rules do not appear in either flow. There is no batch
+endpoint and no saved-job snapshot:
+the console submits one `POST /print` command per selected rule, with a distinct
+`commandUuid`, and the server rebuilds each job from the current order and that
+rule. A partial failure is therefore possible; successful rules are consumed
+while failed rules remain selected for a safe retry. Receipt-only entry points
+filter to `kind: "receipt"`; a multi-order checkout result exposes one explicit
+action per printable order rather than silently printing every order. The UI
+identifies a 202 response as queued, retains the same command for an unchanged
+retry after an uncertain network result, and generates a new command only after
+a successful command or a deliberate new print. Employees without
+`store:order:print` do not see print controls. No manual rule configured for the
+store produces a visible configuration guidance state instead of a synthetic
+template or print job.
 
 Unchanged retries by the same actor/store/command return the original receipt
 without more requests, even after dispatch or output reconfiguration. Changed

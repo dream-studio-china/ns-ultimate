@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
 import JSZip from 'jszip'
-import { ChevronDown, Clock3, Download, LayoutGrid, Minus, Pencil, Plus, Printer, QrCode, ReceiptText, RotateCcw, UsersRound, XCircle } from 'lucide-react'
+import { ChevronDown, Clock3, Download, ExternalLink, LayoutGrid, Minus, Pencil, Plus, Printer, QrCode, ReceiptText, RotateCcw, UsersRound, XCircle } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, type CounterSessionView, type StoreAccess, StoreApi, type LiveCounter, type SessionOrder } from '../adapters/live'
@@ -97,7 +97,7 @@ function CounterConfiguration({ api, access }: { api: StoreApi; access: StoreAcc
     </>}
     {editing && <CounterForm api={api} counter={editing} onClose={() => setEditing(null)} done={() => { setEditing(null); list.reload() }} />}
     {selectedQr && <Sheet open title={t('tableQrTitle')} onClose={() => { setSelectedQr(null); setQrFeedback(null) }} className="table-qr-sheet">
-      <div className="table-qr-dialog"><header><span>{t('tableNumber')}</span><h2>{selectedQr.name}</h2><small>{selectedQr.code}</small></header><div className="table-qr-code"><QRCodeCanvas data-table-qr={selectedQr.uuid} value={customerOrderingUrl(selectedQr.uuid, access.store.uuid)} size={220} level="M" marginSize={2} bgColor="#ffffff" fgColor="#201813" title={`${selectedQr.name || selectedQr.code} ${t('tableQrTitle')}`} /></div><p className="table-qr-hint">{t('tableQrScanHint')}</p><code className="table-qr-url" title={customerOrderingUrl(selectedQr.uuid, access.store.uuid)}>{customerOrderingUrl(selectedQr.uuid, access.store.uuid)}</code><Button block className="table-qr-download" loading={qrBusy} disabled={qrBusy} onClick={() => void downloadQrs([selectedQr], false)}><Download size={14} />{t('tableQrDownload')}</Button>{feedback}</div>
+      <div className="table-qr-dialog"><header><span>{t('tableNumber')}</span><h2>{selectedQr.name}</h2><small>{selectedQr.code}</small></header><div className="table-qr-code"><QRCodeCanvas data-table-qr={selectedQr.uuid} value={customerOrderingUrl(selectedQr.uuid, access.store.uuid)} size={220} level="M" marginSize={2} bgColor="#ffffff" fgColor="#201813" title={`${selectedQr.name || selectedQr.code} ${t('tableQrTitle')}`} /></div><p className="table-qr-hint">{t('tableQrScanHint')}</p><code className="table-qr-url" title={customerOrderingUrl(selectedQr.uuid, access.store.uuid)}>{customerOrderingUrl(selectedQr.uuid, access.store.uuid)}</code><div className="table-qr-actions"><Button block className="table-qr-download" loading={qrBusy} disabled={qrBusy} onClick={() => void downloadQrs([selectedQr], false)}><Download size={14} />{t('tableQrDownload')}</Button><Button block className="table-qr-order" disabled={qrBusy} onClick={() => { window.open(customerOrderingUrl(selectedQr.uuid, access.store.uuid), '_blank', 'noopener,noreferrer') }}><ExternalLink size={14} />{t('tableQrOrderNow')}</Button></div>{feedback}</div>
     </Sheet>}
   </>
 }
@@ -203,7 +203,7 @@ export function LiveOrders({ api, access }: { api: StoreApi; access: StoreAccess
     {selected && <Sheet open title={t('orderDetails')} onClose={() => setSelected(null)}><OrderDetail {...selected} canCancel={selected.order.status === 'confirmed'} cancelAllowed={canCancelOrders} onCancel={() => { setSelected(null); setCancelling(selected) }} canRefund={paidOrderCanRefund(selected.order)} refundAllowed={canRefundOrders} onRefund={() => openRefund(selected)} canPrint={canPrintOrders && canManuallyPrintOrderStatus(selected.order.status)} onPrint={() => { setPrinting(selected); setSelected(null) }} />{selected.order.hasInvoice && <OrderRefundDetails api={api} tradeOrderUuid={selected.order.tradeOrderUuid} historyAllowed={canRefundOrders} />}</Sheet>}
     {refunding && <OrderRefundSheet api={api} target={refunding} onClose={() => setRefunding(null)} onRefunded={list.reload} />}
     {cancelling && <CancelOrderSheet api={api} target={cancelling} onClose={() => setCancelling(null)} onCancelled={() => { setCancelling(null); list.reload() }} />}
-    {printing && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printing.order.tradeOrderUuid} orderLabel={`#${printing.order.uuid.slice(0, 8).toUpperCase()}`} onClose={() => setPrinting(null)} />}
+    {printing && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printing.order.tradeOrderUuid} orderLabel={`#${printing.order.uuid.slice(0, 8).toUpperCase()}`} purpose="reprint" onClose={() => setPrinting(null)} />}
   </>
 }
 function formatOrderAmount(order: SessionOrder, currency: string, locale: string) { return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(order.totalAmount / 100) }

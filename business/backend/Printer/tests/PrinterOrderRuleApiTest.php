@@ -285,6 +285,7 @@ final class PrinterOrderRuleApiTest extends KernelTestCase
         $result = $em->getRepository(PrinterJob::class)->findAll();
         self::assertCount(1, $result);
         self::assertSame(PrinterJob::STATUS_FAILED, $result[0]->getStatus());
+        self::assertSame($uuid, $result[0]->getRuleUuid());
     }
 
     public function testEventAdapterUsesTrustedStoreAndDeduplicatesAcrossEvents(): void

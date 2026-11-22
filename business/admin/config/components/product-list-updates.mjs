@@ -44,3 +44,29 @@ export function productSortOrderUpdate(value) {
   }
   return { sortOrder: value }
 }
+
+export function productSpecificationRows(record) {
+  const specifications = Array.isArray(record?.specifications) ? record.specifications : []
+  return specifications
+    .filter(specification => specification && specification.isDeleted !== true)
+    .map(specification => {
+      const metadata = specification.__metadata && typeof specification.__metadata === 'object'
+        ? specification.__metadata
+        : specification
+      return {
+        id: specification.id ?? metadata.id ?? null,
+        name: String(metadata.name ?? specification.name ?? specification.__toString ?? '').trim(),
+        price: Number(metadata.price ?? specification.price),
+        sort: Number(metadata.sort ?? specification.sort ?? 0),
+        active: metadata.active !== false && metadata.status !== 'inactive'
+      }
+    })
+    .filter(specification => specification.name && Number.isFinite(specification.price) && specification.price >= 0)
+    .sort((left, right) => left.sort - right.sort || Number(left.id || 0) - Number(right.id || 0))
+}
+
+export function formatProductSpecificationPrice(cents) {
+  const amount = Number(cents)
+  if (!Number.isFinite(amount) || amount < 0) return ''
+  return `¥${(amount / 100).toFixed(2)}`
+}

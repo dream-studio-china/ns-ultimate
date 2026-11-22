@@ -9,11 +9,14 @@ const categoryId = '10000000-0000-4000-8000-000000000006'
 const invoiceId = '10000000-0000-4000-8000-000000000007'
 const orderId = '10000000-0000-4000-8000-000000000009'
 const printRuleId = '10000000-0000-4000-8000-000000000010'
+const labelPrintRuleId = '10000000-0000-4000-8000-000000000011'
+const paidPrintRuleId = '10000000-0000-4000-8000-000000000012'
+const confirmedPrintRuleId = '10000000-0000-4000-8000-000000000013'
 const store = { uuid: storeId, name: 'Dining contract', code: 'D1', currency: 'USD', timezone: 'UTC' }
 const item = { specificationUuid: specId, productName: 'Soup', specificationName: 'Regular', quantity: 1, unitPrice: 1590, amount: 1590 }
 const stamp = '2026-10-31T10:00:00+00:00'
 
-async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; failedInvoice?: boolean; paymentClose?: 'success' | 'already-paid' | 'network'; paymentCloseAccess?: boolean; printAccess?: boolean; printOptions?: boolean; recommended?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; orderCount?: number; discountedOrder?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: boolean; conflict?: boolean; uncertain?: boolean; empty?: boolean; customerOrder?: boolean; pendingOrder?: boolean; payingOrder?: boolean; failedInvoice?: boolean; paymentClose?: 'success' | 'already-paid' | 'network'; paymentCloseAccess?: boolean; printAccess?: boolean; printOptions?: boolean; legacyPrintOptions?: boolean; recommended?: boolean; editOnly?: boolean; cancelOnly?: boolean; noReplace?: boolean; orderCount?: number; discountedOrder?: boolean } = {}) {
   const requests: { path: string; method: string; body: Record<string, unknown> | null }[] = []
   let revision = 0
   let session: { uuid: string; participantCount: number; notes: string; startedAt: string; revision: number } | null = options.empty ? null : { uuid: sessionId, participantCount: 3, notes: 'Birthday', startedAt: stamp, revision }
@@ -62,11 +65,23 @@ async function setup(page: Page, options: { readOnly?: boolean; sessionOnly?: bo
     if (path.endsWith('/counter-operations/catalog')) return list([{ uuid: specId, productName: 'Soup', name: 'Regular', price: 1590, available: true, recommendationLevel: options.recommended ? 2 : 0 }])
     if (path === '/api/v1/app/products') return route.fulfill({ json: { code: 0, data: [{ id: 1, uuid: productId, name: 'Soup', status: 'active', recommendationLevel: options.recommended ? 2 : 0, metadata: null, category: { id: 1, uuid: categoryId, name: 'Menu', enabled: true }, specifications: [{ id: 1, uuid: specId, name: 'Regular', price: 1590, status: 'active', sort: 0 }] }], paginator: { page: 1, has_next: false } } })
     if (method === 'GET' && path === `/api/v1/app/orders/${orderId}`) return respond({ uuid: orderId, invoiceUuid: invoiceId, paymentStatus: 'failed' })
-    if (method === 'GET' && path === `/api/v1/store/${storeId}/operations/print-options`) return respond({ items: options.printOptions === false ? [] : [{ ruleUuid: printRuleId, name: '手打结账小票', deviceName: '前台打印机', kind: 'receipt', copies: 1, ticketMode: 'single' }] })
+    if (method === 'GET' && path === `/api/v1/store/${storeId}/operations/print-options`) {
+      const printOptions = [
+        { ruleUuid: printRuleId, name: '手打结账小票', deviceName: '前台打印机', kind: 'receipt', copies: 1, ticketMode: 'single', events: ['manual'] },
+        { ruleUuid: labelPrintRuleId, name: '手打商品标签', deviceName: '后厨标签机', kind: 'label', copies: 2, ticketMode: 'per_unit', events: ['manual'] },
+        { ruleUuid: paidPrintRuleId, name: '付款成功小票', deviceName: '前台打印机', kind: 'receipt', copies: 1, ticketMode: 'single', events: ['paid', 'manual'] },
+        { ruleUuid: confirmedPrintRuleId, name: '下单成功小票', deviceName: '前台打印机', kind: 'receipt', copies: 1, ticketMode: 'single', events: ['confirmed'] },
+      ]
+      if (options.printOptions === false) return respond({ items: [] })
+      if (options.legacyPrintOptions) return respond({ items: printOptions.map(({ events: _events, ...option }) => option) })
+      return respond({ items: printOptions })
+    }
     const manualPrint = path.match(new RegExp(`^/api/v1/store/${storeId}/operations/trade-orders/([0-9a-f-]{36})/print$`))
     if (method === 'POST' && manualPrint) {
       const tradeOrderUuid = manualPrint[1]!
-      expect(body).toMatchObject({ ruleUuid: printRuleId, commandUuid: expect.stringMatching(/^[0-9a-f-]{36}$/), reason: '收银台手动打印' })
+      expect([printRuleId, labelPrintRuleId, paidPrintRuleId, confirmedPrintRuleId]).toContain(body!.ruleUuid)
+      expect(body).toMatchObject({ commandUuid: expect.stringMatching(/^[0-9a-f-]{36}$/) })
+      expect(['收银台重打', '收银台打印结账小票']).toContain(body!.reason)
       return respond({ commandUuid: body!.commandUuid, tradeOrderUuid, status: 'queued', requestUuids: [invoiceId] })
     }
     if (path === '/api/v1/app/orders' && method === 'POST') {
@@ -243,8 +258,8 @@ test('table details hide party and end-session actions', async ({ page }) => {
   expect(requests.some((request) => request.path.endsWith('/session/end'))).toBe(false)
 })
 
-test('payment QR and receipt printing use the customer entry and manual print command', async ({ page }) => {
-  const requests = await setup(page, { customerOrder: true })
+test('checkout receipt printing only targets the checkout receipt with a legacy options response', async ({ page }) => {
+  const requests = await setup(page, { customerOrder: true, legacyPrintOptions: true })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await page.getByRole('button', { name: '收款', exact: true }).click()
   const paymentDialog = page.getByRole('dialog', { name: '订单收款' })
@@ -257,16 +272,44 @@ test('payment QR and receipt printing use the customer entry and manual print co
   const printReceipt = page.getByRole('button', { name: '打印结账小票', exact: true })
   await expect(printReceipt).toBeVisible()
   await printReceipt.click()
-  const printDialog = page.getByRole('dialog', { name: '手动打印订单', exact: true })
+  const printDialog = page.getByRole('dialog', { name: '结账小票打印', exact: true })
   await expect(printDialog).toContainText('手打结账小票')
   await expect(printDialog).toContainText('前台打印机')
-  await printDialog.getByRole('button', { name: '发送打印任务', exact: true }).click()
-  await expect(printDialog).toContainText('打印任务已入队')
+  await expect(printDialog.getByRole('checkbox', { name: '手打商品标签', exact: true })).toHaveCount(0)
+  await expect(printDialog.getByRole('checkbox', { name: '付款成功小票', exact: true })).toHaveCount(0)
+  await expect(printDialog.getByRole('checkbox', { name: '下单成功小票', exact: true })).toHaveCount(0)
+  await expect(printDialog.getByRole('checkbox', { name: '手打结账小票', exact: true })).toHaveAttribute('aria-checked', 'true')
+  await printDialog.getByRole('button', { name: '打印结账小票（1）', exact: true }).click()
+  await expect(printDialog).toContainText('结账小票打印任务已提交')
   expect(await paymentDialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   await expect(page.getByRole('button', { name: '刷新支付状态', exact: true })).toBeVisible()
   expect(requests.some((request) => request.path.includes('huifu-payments') || request.path.includes('/app/orders'))).toBe(false)
   const print = requests.find((request) => request.method === 'POST' && request.path.endsWith(`/trade-orders/${orderId}/print`))
-  expect(print?.body).toMatchObject({ ruleUuid: printRuleId, commandUuid: expect.any(String), reason: '收银台手动打印' })
+  expect(print?.body).toMatchObject({ ruleUuid: printRuleId, commandUuid: expect.any(String), reason: '收银台打印结账小票' })
+})
+
+test('table order reprint only shows rules for order confirmation', async ({ page }) => {
+  const requests = await setup(page, { customerOrder: true })
+  await page.getByRole('button', { name: 'Window table', exact: true }).click()
+  await page.getByRole('button', { name: '重打', exact: true }).click()
+
+  const printDialog = page.getByRole('dialog', { name: '选择重打内容', exact: true })
+  await expect(printDialog.getByRole('checkbox', { name: '下单成功小票', exact: true })).toBeVisible()
+  await expect(printDialog.getByRole('checkbox', { name: '手打结账小票', exact: true })).toHaveCount(0)
+  await expect(printDialog.getByRole('checkbox', { name: '手打商品标签', exact: true })).toHaveCount(0)
+  await expect(printDialog.getByRole('checkbox', { name: '付款成功小票', exact: true })).toHaveCount(0)
+  await expect(printDialog).toContainText('下单成功小票')
+
+  await printDialog.getByRole('checkbox', { name: '下单成功小票', exact: true }).click()
+  await expect(printDialog).toContainText('已选 1 条')
+  await printDialog.getByRole('button', { name: '确认重打（1）', exact: true }).click()
+  await expect(printDialog).toContainText('重打任务已入队')
+
+  await expect.poll(() => requests.filter((request) => request.method === 'POST' && request.path.endsWith(`/trade-orders/${orderId}/print`)).length).toBe(1)
+  const prints = requests.filter((request) => request.method === 'POST' && request.path.endsWith(`/trade-orders/${orderId}/print`))
+  expect(prints.map((request) => request.body?.ruleUuid)).toEqual([confirmedPrintRuleId])
+  expect(new Set(prints.map((request) => request.body?.commandUuid)).size).toBe(1)
+  prints.forEach((request) => expect(request.body).toMatchObject({ commandUuid: expect.stringMatching(/^[0-9a-f-]{36}$/), reason: '收银台重打' }))
 })
 
 test('table and payment views show original price, discount method, discount amount and actual price', async ({ page }) => {
@@ -303,16 +346,16 @@ test('cashier product rows show a thumbs-up for recommended products', async ({ 
 test('manual print controls are hidden without the order print grant', async ({ page }) => {
   await setup(page, { customerOrder: true, printAccess: false })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
-  await expect(page.getByRole('button', { name: '手动打印', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重打', exact: true })).toHaveCount(0)
 })
 
 test('manual print explains when no print rule is available', async ({ page }) => {
   await setup(page, { customerOrder: true, printOptions: false })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
-  await page.getByRole('button', { name: '手动打印', exact: true }).click()
-  const printDialog = page.getByRole('dialog', { name: '手动打印订单', exact: true })
-  await expect(printDialog).toContainText('门店未配置可用的打印规则')
-  await expect(printDialog.getByRole('button', { name: '发送打印任务', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: '重打', exact: true }).click()
+  const printDialog = page.getByRole('dialog', { name: '选择重打内容', exact: true })
+  await expect(printDialog).toContainText('门店未配置可重打的下单成功规则')
+  await expect(printDialog.getByRole('button', { name: '确认重打', exact: true })).toBeDisabled()
 })
 
 test('opening a table releases a failed payment invoice before offering collection', async ({ page }) => {
@@ -371,6 +414,12 @@ test('checkout offers scan payment when the store returns no payment methods', a
 
   const methods = page.locator('.checkout-payment-methods')
   await expect(page.getByText('订单整理完成', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '打印小票', exact: true }).click()
+  const printDialog = page.getByRole('dialog', { name: '结账小票打印', exact: true })
+  await expect(printDialog.getByRole('checkbox', { name: '手打结账小票', exact: true })).toHaveAttribute('aria-checked', 'true')
+  await expect(printDialog.getByRole('checkbox', { name: '下单成功小票', exact: true })).toHaveCount(0)
+  await expect(printDialog.getByRole('checkbox', { name: '付款成功小票', exact: true })).toHaveCount(0)
+  await printDialog.getByLabel('关闭', { exact: true }).click()
   await expect(methods).toContainText('扫码支付')
   await expect(methods).not.toContainText('门店暂未返回可用的支付方式')
   await methods.getByRole('button', { name: '扫码支付', exact: true }).click()

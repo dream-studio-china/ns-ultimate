@@ -12,6 +12,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\UniqueConstraint(name: 'uniq_printer_job_uuid', columns: ['uuid'])]
 #[ORM\UniqueConstraint(name: 'uniq_printer_job_idempotency', columns: ['idempotency_key'])]
 #[ORM\Index(name: 'idx_printer_job_store_created', columns: ['store_uuid', 'created_at'])]
+#[ORM\Index(name: 'idx_printer_job_rule_created', columns: ['rule_uuid', 'created_at'])]
 class PrinterJob
 {
     public const STATUS_SUBMITTING = 'submitting';
@@ -32,6 +33,9 @@ class PrinterJob
 
     #[ORM\Column(name: 'store_uuid', type: 'string', length: 36, nullable: true)]
     private ?string $storeUuid;
+
+    #[ORM\Column(name: 'rule_uuid', type: 'string', length: 36, nullable: true)]
+    private ?string $ruleUuid;
 
     #[ORM\Column(type: 'string', length: 20)]
     private string $kind;
@@ -66,13 +70,15 @@ class PrinterJob
      * @param array<string, mixed> $templateSnapshot
      * @param array<string, mixed> $dataSnapshot
      */
-    public function __construct(PrinterDevice $device, int $copies, array $templateSnapshot, array $dataSnapshot, string $renderedContent, string $idempotencyKey)
+    public function __construct(PrinterDevice $device, int $copies, array $templateSnapshot, array $dataSnapshot, string $renderedContent, string $idempotencyKey, ?string $ruleUuid = null)
     {
         if ($copies < 1 || $copies > 100) { throw new \InvalidArgumentException('Copies must be between 1 and 100.'); }
         if ($idempotencyKey === '' || strlen($idempotencyKey) > 50) { throw new \InvalidArgumentException('Idempotency key must contain 1 to 50 characters.'); }
+        if ($ruleUuid !== null && strlen($ruleUuid) > 36) { throw new \InvalidArgumentException('Rule UUID cannot exceed 36 characters.'); }
         $this->uuid = UUID::v4();
         $this->device = $device;
         $this->storeUuid = $device->getStoreUuid();
+        $this->ruleUuid = $ruleUuid;
         $this->kind = $device->getKind();
         $this->copies = $copies;
         $this->templateSnapshot = $templateSnapshot;
@@ -89,6 +95,7 @@ class PrinterJob
     public function getUuid(): string { return $this->uuid; }
     public function getDevice(): PrinterDevice { return $this->device; }
     public function getStoreUuid(): ?string { return $this->storeUuid; }
+    public function getRuleUuid(): ?string { return $this->ruleUuid; }
     public function getKind(): string { return $this->kind; }
     public function getCopies(): int { return $this->copies; }
     public function getStatus(): string { return $this->status; }

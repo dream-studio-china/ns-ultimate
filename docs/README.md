@@ -7,6 +7,7 @@ Start with the task below. This page is a stable map, not a second copy of confi
 | I want to… | Start here | Continue with |
 | --- | --- | --- |
 | Set up and run the project | [Quickstart](../QUICKSTART.md) ([Simplified Chinese](../QUICKSTART.zh-cn.md)) | [Development and debugging](operations/development.md) |
+| Provision a new store | [New store onboarding](runbooks/new-store-onboarding.md) | [Simplified Chinese](runbooks/new-store-onboarding.zh-cn.md) |
 | Deploy the composed application | [Deployment](../DEPLOY.md) ([Simplified Chinese](../DEPLOY.zh-cn.md)) | [Docker deployment](../infra/docker/README.md) ([Simplified Chinese](../infra/docker/README.zh-cn.md)) or [production runbooks](runbooks/README.md) |
 | Release, roll back, or investigate an incident | [Production runbooks](runbooks/README.md) | Follow the procedure for your actual deployment topology |
 | Audit API calls, payments, and provider callbacks | [API audit logging](operations/audit-logging.md) | [Global audit implementation proposal](design/global-audit-implementation.md) ([Simplified Chinese](design/global-audit-implementation.zh-cn.md)) and [linked provider contract](contracts/huifu-customer-payments.md) |

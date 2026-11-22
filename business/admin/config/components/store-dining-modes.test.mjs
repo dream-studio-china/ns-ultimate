@@ -28,15 +28,19 @@ function loadStoreOverride() {
     StoreContactSchema: {},
     StoreAddressSchema: {},
     StoreSettingsSchema: {},
-    StoreDiningModesAction: { name: 'StoreDiningModesAction' }
+    StoreDiningModesAction: { name: 'StoreDiningModesAction' },
+    StoreOnboardingGuideAction: { name: 'StoreOnboardingGuideAction' },
+    StoreSetupAuditAction: { name: 'StoreSetupAuditAction' }
   }
   runInNewContext(source, context)
-  return context.config
+  return JSON.parse(JSON.stringify(context.config))
 }
 
 function loadMessages(locale) {
   const context = {}
   const source = readFileSync(new URL(`../../i18n/${locale}.js`, import.meta.url), 'utf8')
+    .replace(/^import .*$/gm, '')
+    .replace(/^\s*\.\.\.designerMessages\([^)]*\),\s*$/gm, '')
     .replace('export default', 'globalThis.messages =')
   runInNewContext(source, context)
   return context.messages
@@ -99,9 +103,12 @@ test('stores ordering and checkout rules in the Store settings contract', () => 
 
 test('adds a dedicated Store list action while keeping settings editing safe', () => {
   const config = loadStoreOverride()
-  assert.equal(config.list.actions.length, 1)
-  assert.equal(config.list.actions[0].name, 'store-dining-modes')
-  assert.equal(config.list.actions[0].position, 'list')
+  assert.equal(config.list.actions.length, 3)
+  assert.deepEqual(config.list.actions.map(action => [action.name, action.position]), [
+    ['store-onboarding-guide', 'top'],
+    ['store-setup-audit', 'top'],
+    ['store-dining-modes', 'list']
+  ])
 
   const settings = config.form.fields.find(field => field.property === 'settings')
   assert.equal(settings.type, 'json_schema')
