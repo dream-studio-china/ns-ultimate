@@ -17,6 +17,7 @@ use Symfony\Component\Serializer\Attribute\Ignore;
 #[ORM\UniqueConstraint(name: 'uniq_acct_posting_index', columns: ['book_id', 'posting_index'])]
 #[ORM\UniqueConstraint(name: 'uniq_acct_reversal', columns: ['book_id', 'reversal_of'])]
 #[ORM\Index(name: 'idx_acct_journal_store', columns: ['book_id', 'store_uuid', 'accounting_date'])]
+#[ORM\UniqueConstraint(name: 'uniq_acct_cash_source', columns: ['cash_source_uuid'])]
 #[ORM\Index(name: 'idx_acct_journal_date', columns: ['book_id', 'accounting_date', 'sequence_no', 'id'])]
 class JournalEntry
 {
@@ -37,6 +38,8 @@ class JournalEntry
     private string $summary;
     #[ORM\Column(length: 36, nullable: true)]
     private ?string $storeUuid = null;
+    #[ORM\Column(length: 36, nullable: true)]
+    private ?string $cashSourceUuid = null;
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $evidence;
     /** @var list<string>|null */
@@ -71,7 +74,7 @@ class JournalEntry
     }
 
     /** @param list<string> $attachments */
-    public static function draft(AccountingBook $book, \DateTimeImmutable $date, string $origin, string $summary, ?string $evidence, array $attachments = [], ?\stdClass $metadata = null, ?string $storeUuid = null): self
+    public static function draft(AccountingBook $book, \DateTimeImmutable $date, string $origin, string $summary, ?string $evidence, array $attachments = [], ?\stdClass $metadata = null, ?string $storeUuid = null, ?string $cashSourceUuid = null): self
     {
         if (!in_array($origin, ['manual', 'opening'], true)) {
             throw new LedgerError('invalid_option');
@@ -79,6 +82,7 @@ class JournalEntry
 
         $entry = new self($book, $date, $origin, $summary, $evidence, $attachments, $metadata);
         $entry->storeUuid = $storeUuid;
+        $entry->cashSourceUuid = $cashSourceUuid;
 
         return $entry;
     }
@@ -95,6 +99,9 @@ class JournalEntry
     public function attributeDraft(int $revision, ?string $storeUuid): void
     {
         $this->requireDraft($revision);
+        if ($this->cashSourceUuid !== null && $this->storeUuid !== $storeUuid) {
+            throw new LedgerError('cash_journal_store_fixed', 409);
+        }
         $this->storeUuid = $storeUuid;
     }
     #[Ignore]

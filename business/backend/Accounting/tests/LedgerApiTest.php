@@ -15,10 +15,13 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Accounting\Migrations\Version20261121100000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122100000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122110000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122120000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122130000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122140000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122150000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122160000;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -81,7 +84,8 @@ final class LedgerApiTest extends KernelTestCase
         self::assertSame(403, $this->request('workspace', $otherToken, prefix: 'manage/accounting')->getStatusCode());
         self::assertSame(403, $this->request('workspace', $writerToken, prefix: 'manage/accounting')->getStatusCode());
         self::assertNull($this->ok('workspace', $adminToken, prefix: 'manage/accounting')['book']);
-        self::assertEqualsCanonicalizing(['read', 'audit', 'draft', 'post', 'reverse', 'configure', 'lock', 'reopen'], $this->ok('workspace', $adminToken)['capabilities']);
+        self::assertEqualsCanonicalizing(['read', 'audit', 'draft', 'post', 'reverse', 'configure', 'lock', 'reopen', 'cash_record'], $this->ok('workspace', $adminToken)['capabilities']);
+        self::assertSame(403, $this->request('cash-entries', $writerToken, [])->getStatusCode());
         self::assertSame(403, $this->request('reports/trial/csv', $otherToken)->getStatusCode());
         self::assertSame(403, $this->request('commands/initialize', $readerToken, [])->getStatusCode());
         self::assertSame(403, $this->request('commands/reopen-period', $readerToken, [])->getStatusCode());
@@ -256,14 +260,17 @@ final class LedgerApiTest extends KernelTestCase
         $metadata = array_values(array_filter($em->getMetadataFactory()->getAllMetadata(), static fn ($class) => str_starts_with($class->getTableName(), 'ns_accounting_')));
         $expected = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         require_once __DIR__.'/AccountingTestManager.php';
-        AccountingTestManager::migrate($expected, Version20261121100000::class, Version20261122110000::class, Version20261122120000::class, Version20261122130000::class, Version20261122140000::class);
-        $from = $expected->createSchemaManager()->introspectSchema();
+        AccountingTestManager::migrate($expected, Version20261121100000::class, Version20261122100000::class, Version20261122110000::class, Version20261122120000::class, Version20261122130000::class, Version20261122140000::class, Version20261122150000::class, Version20261122160000::class);
+        $from = new Schema(array_values(array_filter(
+            $expected->createSchemaManager()->introspectSchema()->getTables(),
+            static fn ($table) => str_starts_with($table->getName(), 'ns_accounting_'),
+        )));
         $actual = new Schema(array_values(array_filter(
             $em->getConnection()->createSchemaManager()->introspectSchema()->getTables(),
             static fn ($table) => str_starts_with($table->getName(), 'ns_accounting_'),
         )));
-        self::assertCount(9, $metadata);
-        self::assertCount(9, array_filter($tool->getSchemaFromMetadata($metadata)->getTables(), static fn ($table) => str_starts_with($table->getName(), 'ns_accounting_')));
+        self::assertCount(10, $metadata);
+        self::assertCount(10, array_filter($tool->getSchemaFromMetadata($metadata)->getTables(), static fn ($table) => str_starts_with($table->getName(), 'ns_accounting_')));
         $diff = $expected->createSchemaManager()->createComparator()->compareSchemas($from, $actual);
         self::assertSame([], $expected->getDatabasePlatform()->getAlterSchemaSQL($diff));
     }

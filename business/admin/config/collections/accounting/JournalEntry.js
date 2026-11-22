@@ -119,6 +119,7 @@ export default {
         column('accounting_date', 'Accounting date'),
         column('summary', 'Summary', { full_width: true }),
         column('store_uuid', 'Journal store'),
+        column('cash_source_uuid', 'Source cash entry'),
         column('state', 'Status', { component: ledger.stateCell }),
         column('origin', 'Journal origin', { component: ledger.labelCell }),
         column('revision', 'Revision'),

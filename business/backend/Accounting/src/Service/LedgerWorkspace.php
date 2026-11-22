@@ -45,6 +45,26 @@ final class LedgerWorkspace
             $this->em->getRepository(AccountingBookStore::class)->findBy(['book' => $bookId], ['storeUuid' => 'ASC']));
     }
 
+    /** @return list<string> */
+    public function mappedCashCategories(int $bookId): array
+    {
+        return array_map(static fn (array $row) => (string) $row['category'],
+            $this->em->getConnection()->fetchAllAssociative('SELECT category FROM ns_accounting_cash_mapping WHERE book_id = ? ORDER BY category', [$bookId]));
+    }
+
+    /** @return list<array{uuid: string, code: string, name: string, currency: string}> */
+    public function cashStores(int $bookId): array
+    {
+        return array_map(static fn (array $row) => [
+            'uuid' => (string) $row['uuid'], 'code' => (string) $row['code'],
+            'name' => (string) $row['name'], 'currency' => (string) $row['currency'],
+        ], $this->em->getConnection()->fetchAllAssociative(
+            'SELECT s.uuid, s.code, s.name, s.currency FROM ns_accounting_book_store b
+             JOIN store s ON HEX(s.uuid) = HEX(b.store_uuid) WHERE b.book_id = ? ORDER BY s.name, s.uuid',
+            [$bookId],
+        ));
+    }
+
     /** @return list<array{uuid: string, code: string, name: string}> */
     public function availableStores(string $search): array
     {

@@ -10,6 +10,7 @@ use NsUltimate\Business\Accounting\Entity\AccountingAuditRecord;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Entity\AccountingBookStore;
 use NsUltimate\Business\Accounting\Entity\AccountingPeriod;
+use NsUltimate\Business\Accounting\Entity\CashJournalMapping;
 use NsUltimate\Business\Accounting\Entity\CommandReceipt;
 use NsUltimate\Business\Accounting\Entity\JournalEntry;
 use NsUltimate\Business\Accounting\Entity\JournalLine;
@@ -30,11 +31,13 @@ final class LedgerCommands
         if ($action === 'initialize') {
             return $this->initialize($actor, $data, $bookId, $storeUuid);
         }
-        if ($action === 'bind-store') {
+        if ($action === 'bind-store' || $action === 'create-cash-mapping') {
             try {
-                return $this->storage->transactional(fn () => $this->bindStore($this->storage->lockBook($bookId), $actor, $data['store_uuid']));
+                return $this->storage->transactional(fn () => $action === 'bind-store'
+                    ? $this->bindStore($this->storage->lockBook($bookId), $actor, $data['store_uuid'])
+                    : $this->createCashMapping($this->storage->lockBook($bookId), $actor, $data));
             } catch (UniqueConstraintViolationException) {
-                throw new LedgerError('store_already_bound', 409);
+                throw new LedgerError($action === 'bind-store' ? 'store_already_bound' : 'cash_mapping_exists', 409);
             }
         }
         for ($attempt = 1; ; ++$attempt) {
@@ -125,21 +128,213 @@ final class LedgerCommands
         }
 
         $result = match ($action) {
+            'unbind-store' => $this->unbindStore($book, $data['id']),
+            'correct-cash-entry' => $this->correctCashEntry($book, $actor, $data, $command),
             'save-account', 'create-account', 'update-account' => $this->saveAccount($book, $action, $data),
             'add-period', 'lock-period', 'reopen-period' => $this->period($book, $action, $data),
             'approve-zero-opening' => $this->approveZero($book),
             'create-draft', 'update-draft' => $this->saveDraft($book, $data),
+            'save-cash-mapping' => $this->saveCashMapping($book, $data),
+            'delete-cash-mapping' => $this->deleteCashMapping($book, $data['category']),
+            'void-cash-entry' => $this->voidCashEntry($book, $actor, $data, $command),
+            'draft-from-cash' => $this->draftFromCash($book, $data['source_uuid']),
             'void-draft' => $this->voidDraft($book, $data),
             'post' => $this->post($actor, $this->draft($book, $data)),
             'reverse' => $this->reverse($book, $actor, $data),
             default => throw new \LogicException('Unhandled normalized ledger command.'),
         };
-        $this->audit($book, $actor, $action, $result['id'], $command, array_intersect_key($data, array_flip(['reason', 'revision', 'active', 'postable', 'classification', 'normal_side'])) + array_intersect_key($result, array_flip(['number'])));
+        if (!in_array($action, ['correct-cash-entry', 'void-cash-entry'], true) && !($result['existing'] ?? false)) {
+            $this->audit($book, $actor, $action, $result['id'], $command, array_intersect_key($data, array_flip(['reason', 'revision', 'active', 'postable', 'classification', 'normal_side', 'source_uuid', 'category', 'debit_code', 'credit_code'])) + array_intersect_key($result, array_flip(['number'])));
+        }
         if ($command !== null) {
             $this->storage->add(new CommandReceipt($book, $actor, $action, $command, $fingerprint, $result));
         }
 
         return $result;
+    }
+
+    /** @return array{id: string} */
+    private function unbindStore(AccountingBook $book, string $uuid): array
+    {
+        $binding = $this->storage->storeBinding($uuid);
+        if ($binding === null || $binding->getBook()->getId() !== $book->getId()) {
+            throw new LedgerError('store_not_in_book', 409);
+        }
+        if ($this->storage->hasStoreJournals($book, $uuid)) {
+            throw new LedgerError('store_has_journals', 409);
+        }
+        $this->storage->removeStoreBinding($binding);
+
+        return ['id' => $uuid];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array{id: string}
+     */
+    private function correctCashEntry(AccountingBook $book, string $actor, array $data, ?string $command): array
+    {
+        $id = $data['id'];
+        $entry = $this->storage->cashEntry($id);
+        if ($entry === null || $this->storage->storeBinding($entry->getStoreUuid())?->getBook()->getId() !== $book->getId()) {
+            throw new LedgerError('cash_entry_not_found', 404);
+        }
+        if ($entry->isVoided()) {
+            throw new LedgerError('cash_entry_voided', 409);
+        }
+        if ($this->storage->journalForCash($book, $id) !== null) {
+            throw new LedgerError('cash_entry_has_journal', 409);
+        }
+        $before = $entry->correctionSnapshot();
+        if (!hash_equals(StoreCashMetadata::correctionVersion($before), $data['cash_version'])) {
+            throw new LedgerError('stale_cash_entry', 409);
+        }
+        $category = $data['category'];
+        $metadata = array_intersect_key($entry->getMetadata(), array_flip(['reference', 'extra']));
+        if ($category === 'purchase') {
+            $metadata += ['item' => $data['item'], 'quantity' => $data['quantity'], 'unit' => $data['unit']];
+        }
+        $entry->correct(self::date($data['date']), $category, $category === 'other_income' ? 'income' : 'expense',
+            (int) $data['amount'], $data['note'], StoreCashMetadata::normalize($category, $metadata));
+        $this->audit($book, $actor, 'correct-cash-entry', $id, $command, [
+            'reason' => $data['reason'], 'before' => $before, 'after' => $entry->correctionSnapshot(),
+        ]);
+
+        return ['id' => $id];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array{id: string}
+     */
+    private function voidCashEntry(AccountingBook $book, string $actor, array $data, ?string $command): array
+    {
+        $id = $data['id'];
+        $entry = $this->storage->cashEntry($id);
+        if ($entry === null || $this->storage->storeBinding($entry->getStoreUuid())?->getBook()->getId() !== $book->getId()) {
+            throw new LedgerError('cash_entry_not_found', 404);
+        }
+        if ($entry->isVoided()) {
+            throw new LedgerError('cash_entry_voided', 409);
+        }
+        $journal = $this->storage->journalForCash($book, $id);
+        if ($journal !== null && $journal->getState() !== 'voided') {
+            throw new LedgerError('cash_entry_has_journal', 409);
+        }
+        $before = $entry->correctionSnapshot();
+        $entry->void($actor, $data['reason']);
+        $this->audit($book, $actor, 'void-cash-entry', $id, $command, [
+            'reason' => $data['reason'], 'before' => $before,
+        ]);
+
+        return ['id' => $id];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @return array{id: string}
+     */
+    private function saveCashMapping(AccountingBook $book, array $data): array
+    {
+        $category = $data['category'];
+        [$debit, $credit] = $this->cashMappingAccounts($book, $data);
+        $mapping = $this->storage->cashMapping($book, $category);
+        if ($mapping === null) {
+            $mapping = new CashJournalMapping($book, $category, $debit, $credit);
+            $this->storage->add($mapping);
+        } else {
+            $mapping->changeAccounts($debit, $credit);
+        }
+
+        return ['id' => $mapping->getCategory()];
+    }
+
+    /** @param array<string, mixed> $data
+     * @return array{id: string}
+     */
+    private function createCashMapping(AccountingBook $book, string $actor, array $data): array
+    {
+        $category = $data['category'];
+        if ($this->storage->cashMapping($book, $category) !== null) {
+            throw new LedgerError('cash_mapping_exists', 409);
+        }
+        [$debit, $credit] = $this->cashMappingAccounts($book, $data);
+        $this->storage->add(new CashJournalMapping($book, $category, $debit, $credit));
+        $this->audit($book, $actor, 'create-cash-mapping', $category, null, ['category' => $category, 'debit_code' => $debit, 'credit_code' => $credit]);
+
+        return ['id' => $category];
+    }
+
+    /** @return array{id: string} */
+    private function deleteCashMapping(AccountingBook $book, string $category): array
+    {
+        $mapping = $this->storage->cashMapping($book, $category)
+            ?? throw new LedgerError('cash_mapping_not_found', 404);
+        $this->storage->remove($mapping);
+
+        return ['id' => $category];
+    }
+
+    /** @param array<string, mixed> $data
+     * @return array{string, string} debit and credit codes
+     */
+    private function cashMappingAccounts(AccountingBook $book, array $data): array
+    {
+        $debit = $data['debit_code'];
+        $credit = $data['credit_code'];
+        if ($debit === $credit) {
+            throw new LedgerError('cash_mapping_same_account');
+        }
+        foreach ([$debit, $credit] as $code) {
+            $account = $this->storage->account($book, $code);
+            if ($account === null || !$account->isActive() || !$account->isPostable()) {
+                throw new LedgerError('account_not_postable', 409);
+            }
+        }
+
+        return [$debit, $credit];
+    }
+
+    /** @return array{id: string, revision: int, existing: bool} */
+    private function draftFromCash(AccountingBook $book, string $uuid): array
+    {
+        $entry = $this->storage->cashEntry($uuid);
+        if ($entry === null || $this->storage->storeBinding($entry->getStoreUuid())?->getBook()->getId() !== $book->getId()) {
+            throw new LedgerError('cash_entry_not_found', 404);
+        }
+        if ($entry->isVoided()) {
+            throw new LedgerError('cash_entry_voided', 409);
+        }
+        $existing = $this->storage->journalForCash($book, $uuid);
+        if ($existing !== null) {
+            return ['id' => $existing->getUuid(), 'revision' => $existing->getRevision(), 'existing' => true];
+        }
+        $mapping = $this->storage->cashMapping($book, $entry->getCategory()) ?? throw new LedgerError('cash_mapping_required', 409);
+        if ($entry->getCurrency() !== $book->getCurrency()) {
+            throw new LedgerError('cash_currency_mismatch', 409);
+        }
+        // Store cash amounts always use two decimal places.
+        $amount = (string) $entry->getAmount();
+        $scale = $book->getScale();
+        if ($scale < 2) {
+            if ($entry->getAmount() % (10 ** (2 - $scale)) !== 0) {
+                throw new LedgerError('cash_amount_scale_mismatch', 409);
+            }
+            $amount = (string) intdiv($entry->getAmount(), 10 ** (2 - $scale));
+        } elseif ($scale > 2) {
+            $amount .= str_repeat('0', $scale - 2);
+        }
+        $amount = LedgerInput::amount($amount);
+        $result = $this->saveDraft($book, [
+            'origin' => 'manual', 'summary' => 'Store cash: '.$entry->getCategory(), 'accounting_date' => $entry->getEntryDate()->format('Y-m-d'),
+            'evidence' => '', 'attachments' => [], 'store_uuid' => $entry->getStoreUuid(),
+            'lines' => [
+                ['side' => 'debit', 'account_code' => $mapping->getDebitCode(), 'amount' => $amount, 'description' => ''],
+                ['side' => 'credit', 'account_code' => $mapping->getCreditCode(), 'amount' => $amount, 'description' => ''],
+            ],
+        ], $uuid);
+
+        return $result + ['existing' => false];
     }
 
     /**
@@ -206,7 +401,7 @@ final class LedgerCommands
      * @param array<string, mixed> $data
      * @return array{id: string, revision: int}
      */
-    private function saveDraft(AccountingBook $book, array $data): array
+    private function saveDraft(AccountingBook $book, array $data, ?string $cashSourceUuid = null): array
     {
         $date = self::date($data['accounting_date']);
         if (isset($data['id'])) {
@@ -223,7 +418,7 @@ final class LedgerCommands
             $uuid = array_key_exists('store_uuid', $data)
                 ? $this->journalStore($book, $data['store_uuid'])
                 : (count($stores) === 1 ? $stores[0] : null);
-            $journal = JournalEntry::draft($book, $date, $data['origin'], $data['summary'], $data['evidence'], $data['attachments'], $data['metadata'] ?? null, $uuid);
+            $journal = JournalEntry::draft($book, $date, $data['origin'], $data['summary'], $data['evidence'], $data['attachments'], $data['metadata'] ?? null, $uuid, $cashSourceUuid);
             $this->storage->add($journal);
         }
         $this->checkDate($journal);
@@ -374,6 +569,12 @@ final class LedgerCommands
             'lock-period', 'reopen-period' => ['month', 'reason', 'command_id'],
             'approve-zero-opening' => ['reason', 'command_id'],
             'bind-store' => ['store_uuid'],
+            'unbind-store' => ['id', 'reason', 'command_id'],
+            'correct-cash-entry' => ['id', 'cash_version', 'date', 'category', 'amount', 'note', 'item', 'quantity', 'unit', 'reason', 'command_id'],
+            'void-cash-entry' => ['id', 'reason', 'command_id'],
+            'save-cash-mapping', 'create-cash-mapping' => ['category', 'debit_code', 'credit_code'],
+            'delete-cash-mapping' => ['category'],
+            'draft-from-cash' => ['source_uuid'],
             'create-draft' => ['origin', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata', 'store_uuid', 'command_id'],
             'update-draft' => ['id', 'revision', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata', 'store_uuid'],
             'void-draft' => ['id', 'revision', 'reason', 'command_id'],
@@ -396,10 +597,14 @@ final class LedgerCommands
             }
             $value = $data[$key] ?? null;
             $normalized[$key] = match ($key) {
-                'id', 'command_id' => LedgerInput::uuid($value),
+                'id', 'command_id', 'source_uuid' => LedgerInput::uuid($value),
                 'store_uuid' => $action !== 'bind-store' && ($value === null || $value === '') ? null : LedgerInput::uuid($value),
                 'revision' => LedgerInput::revision($value),
-                'opening_date', 'accounting_date' => LedgerInput::date($value),
+                'opening_date', 'accounting_date', 'date' => LedgerInput::date($value),
+                'cash_version' => is_string($value) && preg_match('/\A[a-f0-9]{64}\z/', $value) ? $value : throw new LedgerError('stale_cash_entry', 409),
+                'amount' => LedgerInput::amount($value),
+                'note' => LedgerInput::text($value ?? '', 500, true),
+                'item', 'quantity', 'unit' => $value,
                 'month' => substr(LedgerInput::date(is_string($value) ? $value.'-01' : null), 0, 7),
                 'currency' => is_string($value) && preg_match('/\A[A-Z]{3}\z/', $value) ? $value : throw new LedgerError('invalid_currency'),
                 'scale' => is_int($value) && $value >= 0 && $value <= 6 ? $value : throw new LedgerError('invalid_scale'),
@@ -408,7 +613,8 @@ final class LedgerCommands
                 'summary' => LedgerInput::text($value, 240),
                 'reason' => LedgerInput::text($value, 1000),
                 'evidence' => LedgerInput::text($value ?? '', 2000, true),
-                'code' => LedgerInput::code($value),
+                'code', 'debit_code', 'credit_code' => LedgerInput::code($value),
+                'category' => self::choice($value, ...CashJournalMapping::CATEGORIES),
                 'origin' => self::choice($value, 'manual', 'opening'),
                 'classification' => self::choice($value, 'asset', 'liability', 'equity', 'revenue', 'expense'),
                 'normal_side' => self::choice($value, 'debit', 'credit'),

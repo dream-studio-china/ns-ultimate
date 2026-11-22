@@ -25,7 +25,7 @@ export function selectBook(id) {
   window.location.assign(`${import.meta.env.BASE_URL}finance/accounting/ledger`)
 }
 
-const RETRIABLE = new Set(['create-draft', 'void-draft', 'post', 'reverse', 'approve-zero-opening', 'lock-period', 'reopen-period'])
+const RETRIABLE = new Set(['create-draft', 'void-draft', 'post', 'reverse', 'approve-zero-opening', 'lock-period', 'reopen-period', 'record-cash-entry', 'correct-cash-entry', 'void-cash-entry', 'unbind-store'])
 
 const state = reactive({
   workspace: null,
@@ -58,7 +58,8 @@ async function load() {
 async function send(action, body, onSuccess) {
   let result
   try {
-    result = (await request.post(`${BOOK_API}/commands/${action}`, body)).data
+    const path = action === 'record-cash-entry' ? 'cash-entries' : `commands/${action}`
+    result = (await request.post(`${BOOK_API}/${path}`, body)).data
   } catch (failure) {
     // A definitive client error means the command was rejected; keep the
     // intent only when the outcome is unknown (network failure or 5xx).

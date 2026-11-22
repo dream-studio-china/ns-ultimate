@@ -5,7 +5,7 @@ import request from '@/utils/request'
 import { BOOK_API, finance, selectedBookId, selectBook } from './finance-context'
 import FinanceCommandDialog from './FinanceCommandDialog.vue'
 import FinanceRecordDialog from './FinanceRecordDialog.vue'
-import { reportFilters } from './ledger-ui.mjs'
+import { minorToDecimal, reportFilters } from './ledger-ui.mjs'
 
 /*
  * Small renderers referenced from the Accounting collection configs. They
@@ -23,6 +23,13 @@ export const moneyCell = markRaw(defineComponent({
   setup: props => () => h('span', { class: 'finance-money' }, finance.money(props.data) || '—')
 }))
 
+export const cashAmountCell = markRaw(defineComponent({
+  name: 'FinanceCashAmountCell',
+  inheritAttrs: false,
+  props: { ...cellProps, record: { type: Object, default: null } },
+  setup: props => () => h('span', `${minorToDecimal(props.data ?? '0', 2)} ${props.record?.currency ?? ''}`)
+}))
+
 /** Translated enum value (state, origin, side, classification, audit action). */
 export const labelCell = markRaw(defineComponent({
   name: 'FinanceLabelCell',
@@ -31,7 +38,10 @@ export const labelCell = markRaw(defineComponent({
   setup: props => () => h('span', props.data === null || props.data === '' ? '—' : t(String(props.data)))
 }))
 
-const TAG_TYPES = { posted: 'success', open: 'success', voided: 'info', locked: 'info', draft: 'warning', pending: 'warning', approved: 'success' }
+const TAG_TYPES = {
+  posted: 'success', open: 'success', voided: 'info', locked: 'info', draft: 'warning', pending: 'warning', approved: 'success',
+  cash_mapping_configured: 'success', cash_mapping_needs_review: 'warning', active: 'success'
+}
 
 export const stateCell = markRaw(defineComponent({
   name: 'FinanceStateCell',
@@ -85,6 +95,8 @@ export const bookSelection = markRaw(defineComponent({
  * @param {string} spec.capability Finance capability required to show it.
  * @param {(record, finance) => boolean} [spec.when] Record-state predicate.
  * @param {(record, finance) => object} [spec.input] Identity and revision sent with the command.
+ * @param {(values: object) => object} [spec.payload] Transform validated form values before sending.
+ * @param {(record) => object} [spec.initial] Prefill the command form from the displayed record.
  * @param {Array} [spec.fields] FormAdmin fields collected in the confirmation.
  * @param {string} [spec.notice] Warning shown in the confirmation (translation key).
  * @param {(result, record) => object|null} [spec.navigate] Route to open after success instead of refreshing.
@@ -98,8 +110,9 @@ export function ledgerCommand(spec) {
       const router = useRouter()
       const open = ref(false)
       const confirm = values => {
+        const data = spec.payload ? spec.payload(values) : values
         open.value = false
-        return finance.act(spec.action, { ...(spec.input?.(props.record, finance) ?? {}), ...values }, async result => {
+        return finance.act(spec.action, { ...(spec.input?.(props.record, finance) ?? {}), ...data }, async result => {
           const target = spec.navigate?.(result, props.record)
           if (target) await router.push(target)
           else props.refresh()
@@ -110,7 +123,9 @@ export function ledgerCommand(spec) {
           size: 'small', type: spec.type || 'primary', plain: true, disabled: blocked(), onClick: () => { open.value = true }
         }, () => t(spec.label)),
         open.value ? h(FinanceCommandDialog, {
-          title: t(spec.label), notice: spec.notice ? t(spec.notice) : '', fields: spec.fields ?? [],
+          title: spec.title?.(props.record) ?? t(spec.label), notice: spec.notice ? t(spec.notice) : '', fields: spec.fields ?? [],
+          initial: spec.initial?.(props.record) ?? {},
+          validate: spec.validate,
           busy: finance.state.busy, blocked: blocked(),
           onClose: () => { open.value = false }, onConfirm: confirm
         }) : null

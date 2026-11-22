@@ -6,13 +6,14 @@ namespace NsUltimate\Business\Accounting\Service;
 
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use NsUltimate\Business\Store\Service\StaffCommandService;
 
 final class StoreCashMetadata
 {
     private const UNITS = ['g' => ['g', 1], 'kg' => ['g', 1000], 'ml' => ['ml', 1], 'l' => ['ml', 1000], 'piece' => ['piece', 1]];
 
     /** @return array<string, mixed> */
-    public function normalize(string $category, mixed $metadata): array
+    public static function normalize(string $category, mixed $metadata): array
     {
         if (!is_array($metadata) || ($metadata !== [] && array_is_list($metadata))) {
             throw new LedgerError('invalid_metadata');
@@ -54,6 +55,12 @@ final class StoreCashMetadata
         }
 
         return $result;
+    }
+
+    /** @param array<string, mixed> $row */
+    public static function correctionVersion(array $row): string
+    {
+        return StaffCommandService::version(array_intersect_key($row, array_flip(['entry_date', 'category', 'direction', 'amount', 'note', 'metadata'])));
     }
 
     /** @param array<string, mixed> $metadata

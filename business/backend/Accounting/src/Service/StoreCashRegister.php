@@ -41,7 +41,7 @@ final class StoreCashRegister
             'date' => $date, 'direction' => $direction, 'category' => $category,
             'amount' => LedgerInput::amount($input['amount'] ?? null),
             'note' => LedgerInput::text($input['note'] ?? '', 500, true),
-            'metadata' => $this->metadata->normalize($category, $input['metadata'] ?? []),
+            'metadata' => StoreCashMetadata::normalize($category, $input['metadata'] ?? []),
         ];
 
         return $this->commands->run($store, $actor, 'cash_entry.record', $payload, function () use ($store, $actor, $payload): array {
@@ -66,7 +66,7 @@ final class StoreCashRegister
         LedgerInput::date($month.'-01');
         $from = $month.'-01';
         $to = (new \DateTimeImmutable($from))->format('Y-m-t');
-        $range = ' FROM ns_store_cash_entry WHERE store_uuid = ? AND entry_date BETWEEN ? AND ?';
+        $range = ' FROM ns_store_cash_entry WHERE store_uuid = ? AND entry_date BETWEEN ? AND ? AND voided_at IS NULL';
         $db = $this->em->getConnection();
         $args = [$store->getUuid(), $from, $to];
         $limit = self::PAGE_SIZE + 1;

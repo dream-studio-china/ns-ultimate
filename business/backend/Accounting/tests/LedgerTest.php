@@ -8,10 +8,13 @@ use App\Core\Utils\UUID;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use NsUltimate\Business\Accounting\Migrations\Version20261121100000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122100000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122110000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122120000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122130000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122140000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122150000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122160000;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
@@ -29,7 +32,7 @@ final class LedgerTest extends TestCase
         require_once __DIR__.'/AccountingTestManager.php';
         $this->db = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         $this->db->executeStatement('PRAGMA foreign_keys = ON');
-        AccountingTestManager::migrate($this->db, Version20261121100000::class, Version20261122110000::class, Version20261122120000::class, Version20261122130000::class, Version20261122140000::class);
+        AccountingTestManager::migrate($this->db, Version20261121100000::class, Version20261122100000::class, Version20261122110000::class, Version20261122120000::class, Version20261122130000::class, Version20261122140000::class, Version20261122150000::class, Version20261122160000::class);
         $this->commands = new LedgerCommands(new LedgerWriteRepository(AccountingTestManager::create($this->db)));
         $this->queries = new LedgerReadRepository($this->db);
         $this->runCommand('initialize', [
