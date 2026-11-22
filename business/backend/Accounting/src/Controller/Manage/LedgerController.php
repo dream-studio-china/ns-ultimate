@@ -11,7 +11,6 @@ use App\Store\Service\StoreServiceInterface;
 use NsUltimate\Business\Accounting\Controller\LedgerControllerSupport;
 use NsUltimate\Business\Accounting\Controller\LedgerCsv;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
-use NsUltimate\Business\Accounting\Entity\CashJournalMapping;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
 use NsUltimate\Business\Accounting\Repository\LedgerWriteRepository;
 use NsUltimate\Business\Accounting\Service\LedgerAccess;
@@ -43,6 +42,7 @@ final class LedgerController extends RestController
         'create-draft' => 'draft', 'update-draft' => 'draft', 'void-draft' => 'draft',
         'post' => 'post', 'reverse' => 'reverse',
         'save-cash-mapping' => 'configure', 'create-cash-mapping' => 'configure', 'delete-cash-mapping' => 'configure',
+        'create-cash-category' => 'configure', 'update-cash-category' => 'configure', 'delete-cash-category' => 'configure',
         'draft-from-cash' => 'draft', 'correct-cash-entry' => 'cash_record', 'void-cash-entry' => 'cash_record',
     ];
     private const ACCOUNT_CODE = '[A-Z0-9][A-Z0-9._-]{0,31}';
@@ -73,6 +73,7 @@ final class LedgerController extends RestController
 
             return $workspace + ['capabilities' => $capabilities, 'store_uuids' => $this->workspaceService->stores($id)]
                 + (array_intersect(['cash_record', 'configure'], $capabilities) !== [] ? ['cash_stores' => $this->workspaceService->cashStores($id)] : [])
+                + (array_intersect(['cash_record', 'configure'], $capabilities) !== [] ? ['cash_categories' => $this->workspaceService->cashCategories($id)] : [])
                 + (in_array('configure', $capabilities, true) ? ['mapped_cash_categories' => $this->workspaceService->mappedCashCategories($id)] : []);
         });
     }
@@ -109,12 +110,22 @@ final class LedgerController extends RestController
         });
     }
 
-    #[Route('/cash-mappings/{category}', name: 'cash_mappings_detail', requirements: ['category' => '[a-z_]{1,24}'], methods: ['GET'])]
+    #[Route('/cash-categories', name: 'cash_categories', methods: ['GET'])]
+    public function cashCategories(Request $request): Response
+    {
+        return $this->respond('read', function () use ($request): LedgerPage {
+            $params = $this->ledgerParameters($request);
+            LedgerInput::fields($params, 'page', 'limit');
+            [$page, $limit] = LedgerPage::window($params);
+
+            return $this->queries->cashCategories($this->headquartersBookId(), $page, $limit);
+        });
+    }
+
+    #[Route('/cash-mappings/{category}', name: 'cash_mappings_detail', requirements: ['category' => '[a-z][a-z0-9_]{0,23}'], methods: ['GET'])]
     public function cashMapping(string $category): Response
     {
         return $this->respond('read', function () use ($category): array {
-            $this->assertCashCategory($category);
-
             return $this->queries->cashMapping($this->headquartersBookId(), $category);
         });
     }
@@ -124,18 +135,16 @@ final class LedgerController extends RestController
     {
         return $this->respond('configure', function (User $user) use ($request): Response {
             $data = $this->ledgerPayload($request);
-            $this->assertCashCategory($data['category'] ?? null);
             $result = $this->commands->execute($user->getUuid(), 'create-cash-mapping', $data, $this->headquartersBookId());
 
             return $this->success((object) $this->queries->cashMapping($this->headquartersBookId(), $result['id']), status: 201);
         });
     }
 
-    #[Route('/cash-mappings/{category}', name: 'cash_mappings_update', requirements: ['category' => '[a-z_]{1,24}'], methods: ['PUT'])]
+    #[Route('/cash-mappings/{category}', name: 'cash_mappings_update', requirements: ['category' => '[a-z][a-z0-9_]{0,23}'], methods: ['PUT'])]
     public function updateCashMapping(string $category, Request $request): Response
     {
         return $this->respond('configure', function (User $user) use ($category, $request): array {
-            $this->assertCashCategory($category);
             $data = $this->ledgerPayload($request);
             if (array_key_exists('category', $data) && $data['category'] !== $category) {
                 throw new LedgerError('invalid_option');
@@ -146,15 +155,65 @@ final class LedgerController extends RestController
         });
     }
 
-    #[Route('/cash-mappings/{category}', name: 'cash_mappings_delete', requirements: ['category' => '[a-z_]{1,24}'], methods: ['DELETE'])]
+    #[Route('/cash-mappings/{category}', name: 'cash_mappings_delete', requirements: ['category' => '[a-z][a-z0-9_]{0,23}'], methods: ['DELETE'])]
     public function deleteCashMapping(string $category, Request $request): Response
     {
         return $this->respond('configure', function (User $user) use ($category): array {
-            $this->assertCashCategory($category);
             $this->commands->execute($user->getUuid(), 'delete-cash-mapping', ['category' => $category], $this->headquartersBookId());
 
             return ['id' => $category];
         });
+    }
+
+    #[Route('/cash-categories/{category}', name: 'cash_category', requirements: ['category' => '[a-z][a-z0-9_]{0,23}'], methods: ['GET'])]
+    public function cashCategory(string $category, Request $request): Response
+    {
+        return $this->respond('read', function () use ($category, $request): array {
+            LedgerInput::fields($this->ledgerParameters($request));
+            foreach ($this->workspaceService->cashCategories($this->headquartersBookId()) as $row) {
+                if ($row['id'] === $category) return $row;
+            }
+            throw new LedgerError('cash_category_not_found', 404);
+        });
+    }
+
+    #[Route('/cash-categories', name: 'cash_category_create', methods: ['POST'])]
+    public function createCashCategory(Request $request): Response
+    {
+        return $this->respond('configure', function (User $user) use ($request): Response {
+            $data = $this->ledgerPayload($request);
+            $data['category'] = 'c_'.bin2hex(random_bytes(11));
+            $result = $this->commands->execute($user->getUuid(), 'create-cash-category', $data, $this->headquartersBookId());
+            return $this->success((object) $this->cashCategoryRecord($result['id']), status: 201);
+        });
+    }
+
+    #[Route('/cash-categories/{category}', name: 'cash_category_update', requirements: ['category' => '[a-z][a-z0-9_]{0,23}'], methods: ['PUT'])]
+    public function updateCashCategory(string $category, Request $request): Response
+    {
+        return $this->respond('configure', function (User $user) use ($category, $request): array {
+            $data = $this->ledgerPayload($request);
+            if (isset($data['category']) && $data['category'] !== $category) throw new LedgerError('invalid_option');
+            $this->commands->execute($user->getUuid(), 'update-cash-category', ['category' => $category] + $data, $this->headquartersBookId());
+            return $this->cashCategoryRecord($category);
+        });
+    }
+
+    #[Route('/cash-categories/{category}', name: 'cash_category_delete', requirements: ['category' => '[a-z][a-z0-9_]{0,23}'], methods: ['DELETE'])]
+    public function deleteCashCategory(string $category): Response
+    {
+        return $this->respond('configure', function (User $user) use ($category): array {
+            return $this->commands->execute($user->getUuid(), 'delete-cash-category', ['category' => $category], $this->headquartersBookId());
+        });
+    }
+
+    /** @return array{id: string, name: string, direction: string} */
+    private function cashCategoryRecord(string $category): array
+    {
+        foreach ($this->workspaceService->cashCategories($this->headquartersBookId()) as $row) {
+            if ($row['id'] === $category) return $row;
+        }
+        throw new LedgerError('cash_category_not_found', 404);
     }
 
     #[Route('/cash-entries', name: 'cash_entries_create', methods: ['POST'])]
@@ -414,13 +473,6 @@ final class LedgerController extends RestController
         });
 
         return $rows;
-    }
-
-    private function assertCashCategory(mixed $category): void
-    {
-        if (!is_string($category) || !in_array($category, CashJournalMapping::CATEGORIES, true)) {
-            throw new LedgerError('cash_mapping_not_found', 404);
-        }
     }
 
     /** @return array<string, mixed> */

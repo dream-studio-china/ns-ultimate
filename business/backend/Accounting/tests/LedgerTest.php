@@ -15,6 +15,8 @@ use NsUltimate\Business\Accounting\Migrations\Version20261122130000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122140000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122150000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122160000;
+use NsUltimate\Business\Accounting\Migrations\Version20261123100000;
+use NsUltimate\Business\Accounting\Migrations\Version20261124100000;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
@@ -32,7 +34,7 @@ final class LedgerTest extends TestCase
         require_once __DIR__.'/AccountingTestManager.php';
         $this->db = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         $this->db->executeStatement('PRAGMA foreign_keys = ON');
-        AccountingTestManager::migrate($this->db, Version20261121100000::class, Version20261122100000::class, Version20261122110000::class, Version20261122120000::class, Version20261122130000::class, Version20261122140000::class, Version20261122150000::class, Version20261122160000::class);
+        AccountingTestManager::migrate($this->db, Version20261121100000::class, Version20261122100000::class, Version20261122110000::class, Version20261122120000::class, Version20261122130000::class, Version20261122140000::class, Version20261122150000::class, Version20261122160000::class, Version20261123100000::class, Version20261124100000::class);
         $this->commands = new LedgerCommands(new LedgerWriteRepository(AccountingTestManager::create($this->db)));
         $this->queries = new LedgerReadRepository($this->db);
         $this->runCommand('initialize', [
@@ -79,6 +81,22 @@ final class LedgerTest extends TestCase
         $this->runCommand('reopen-period', ['month' => '2026-01', 'reason' => 'Approved reopen', 'command_id' => UUID::v4()]);
         $this->assertError('account_not_postable', fn () => $this->post($backdated));
         self::assertSame('draft', $this->queries->journal($backdated['id'], false)['state']);
+    }
+
+    public function testCashCategoriesAreUserDefinedAndIndependentFromMappings(): void
+    {
+        self::assertSame(0, $this->queries->cashCategories(1, 1, 20)->total);
+        $category = ['category' => 'staff_meal', 'name' => 'Staff meals', 'direction' => 'expense'];
+        self::assertSame(['id' => 'staff_meal'], $this->runCommand('create-cash-category', $category));
+        $listed = $this->queries->cashCategories(1, 1, 20);
+        self::assertSame('Staff meals', $listed->items[0]['name']);
+        self::assertSame('expense', $listed->items[0]['direction']);
+        $this->runCommand('create-cash-mapping', [
+            'category' => 'staff_meal', 'debit_code' => 'EXPENSE', 'credit_code' => 'CASH',
+        ]);
+        $this->assertError('cash_category_in_use', fn () => $this->runCommand('delete-cash-category', ['category' => 'staff_meal']));
+        $this->runCommand('delete-cash-mapping', ['category' => 'staff_meal']);
+        self::assertSame(['id' => 'staff_meal'], $this->runCommand('delete-cash-category', ['category' => 'staff_meal']));
     }
 
     public function testExactMoneyValidationAndZeroOpening(): void

@@ -17,6 +17,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Accounting\Migrations\Version20261122100000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122160000;
+use NsUltimate\Business\Accounting\Service\LedgerCommands;
+use NsUltimate\Business\Accounting\Repository\LedgerWriteRepository;
 use NsUltimate\Integration\Backend\Kernel;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -76,6 +78,17 @@ final class StoreCashApiTest extends KernelTestCase
             $em->persist($record);
         }
         $em->flush();
+        $commands = new LedgerCommands(new LedgerWriteRepository($em));
+        $bookId = 20;
+        $commands->execute('cash-test-actor', 'initialize', [
+            'entity' => 'Cash Test Book', 'currency' => 'CNY', 'scale' => 2, 'timezone' => 'UTC', 'opening_date' => '2026-01-01',
+        ], $bookId, $store->getUuid());
+        foreach ([
+            ['category' => 'purchase', 'direction' => 'expense', 'name' => 'Purchase'],
+            ['category' => 'other_income', 'direction' => 'income', 'name' => 'Other income'],
+        ] as $category) {
+            $commands->execute('cash-test-actor', 'create-cash-category', $category, $bookId);
+        }
         $tokens = self::getContainer()->get(TokenManager::class);
         $token = $tokens->createAccessToken($staff);
         $readToken = $tokens->createAccessToken($readOnly);
@@ -92,6 +105,7 @@ final class StoreCashApiTest extends KernelTestCase
         self::assertSame(400, $this->call($storeId, $token, $purchase + ['storeUuid' => $other->getUuid()])->getStatusCode());
         self::assertSame(400, $this->call($storeId, $token, array_replace_recursive($purchase, ['metadata' => ['unit' => 'bad']]))->getStatusCode());
         self::assertSame(400, $this->call($storeId, $token, array_replace_recursive($purchase, ['metadata' => ['unitPrice' => '1']]))->getStatusCode());
+        self::assertSame(['purchase', 'other_income'], array_column($this->data($this->call($storeId, $readToken, null, '/categories'))['categories'], 'id'));
         $first = $this->data($this->call($storeId, $token, $purchase));
         self::assertSame($first, $this->data($this->call($storeId, $token, $purchase)));
         self::assertSame(409, $this->call($storeId, $token, array_replace($purchase, ['amount' => '1']))->getStatusCode());
@@ -107,10 +121,10 @@ final class StoreCashApiTest extends KernelTestCase
         self::assertSame(0, (int) $em->getConnection()->fetchOne('SELECT COUNT(*) FROM ns_accounting_journal'));
     }
 
-    private function call(string $store, ?string $token, ?array $body = null): Response
+    private function call(string $store, ?string $token, ?array $body = null, string $path = ''): Response
     {
         return self::$kernel->handle(Request::create(
-            '/api/v1/store/'.$store.'/cash-register'.($body === null ? '?month=2026-11' : ''),
+            '/api/v1/store/'.$store.'/cash-register'.$path.($body === null && $path === '' ? '?month=2026-11' : ''),
             $body === null ? 'GET' : 'POST', server: [
                 'CONTENT_TYPE' => 'application/json', ...($token === null ? [] : ['HTTP_AUTHORIZATION' => 'Bearer '.$token]),
             ],

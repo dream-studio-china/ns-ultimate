@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Accounting\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
+use App\Core\Utils\UUID;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'ns_accounting_series', options: ['engine' => 'InnoDB', 'charset' => 'utf8mb4'])]
 class PostingSeries
 {
+    #[ORM\Column(length: 36, unique: true)]
+    private string $uuid;
     #[ORM\Id, ORM\ManyToOne(targetEntity: AccountingBook::class)]
     #[ORM\JoinColumn(name: 'book_id', nullable: false)]
     private AccountingBook $book;
@@ -21,11 +24,13 @@ class PostingSeries
 
     public function __construct(AccountingBook $book, int $seriesYear)
     {
+        $this->uuid = UUID::v4();
         $this->book = $book;
         $this->seriesYear = $seriesYear;
     }
 
     public function getBook(): AccountingBook { return $this->book; }
+    public function getUuid(): string { return $this->uuid; }
     public function getSeriesYear(): int { return $this->seriesYear; }
     public function getLastNo(): int { return $this->lastNo; }
     public function __toString(): string { return (string) $this->seriesYear; }

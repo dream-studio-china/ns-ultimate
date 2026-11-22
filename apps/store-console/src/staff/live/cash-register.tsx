@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
 import { can, type StoreAccess, type StoreApi } from '../adapters/live'
 import { ApiError } from '../adapters/api-client'
-import { cashMinor, cashMoney, readCashMonth, recordCash, type CashCategory, type CashInput, type CashMonth, type CashUnit } from '../adapters/cash-register'
+import { cashMinor, cashMoney, readCashCategories, readCashMonth, recordCash, type CashCategoryOption, type CashInput, type CashMonth, type CashUnit } from '../adapters/cash-register'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { errorKey, Notice, PageHeading } from './ui'
 
-const categoryLabels: Record<CashCategory, MessageKey> = {
-  purchase: 'cashPurchase', transport: 'cashTransport', maintenance: 'cashMaintenance', other_expense: 'cashOtherExpense', other_income: 'cashOtherIncome',
+const legacyCategoryLabels: Record<string, MessageKey> = {
+  purchase: 'cashPurchase', transport: 'cashTransport', maintenance: 'cashMaintenance',
+  other_expense: 'cashOtherExpense', other_income: 'cashOtherIncome'
 }
 
 export function LiveCashRegister({ api, access }: { api: StoreApi; access: StoreAccess }) {
@@ -24,7 +25,8 @@ export function LiveCashRegister({ api, access }: { api: StoreApi; access: Store
   const [pending, setPending] = useState<CashInput | null>(null)
   const mutex = useRef(false)
   const [direction, setDirection] = useState<'income' | 'expense'>('expense')
-  const [category, setCategory] = useState<CashCategory>('other_expense')
+  const [category, setCategory] = useState('')
+  const [categoryOptions, setCategoryOptions] = useState<CashCategoryOption[]>([])
   const [date, setDate] = useState(today)
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
@@ -34,6 +36,27 @@ export function LiveCashRegister({ api, access }: { api: StoreApi; access: Store
   const [reference, setReference] = useState('')
 
   const request = useCallback(() => readCashMonth(api, month, page), [api, month, page])
+  useEffect(() => {
+    let active = true
+    void readCashCategories(api).then(({ categories }) => {
+      if (!active) return
+      setCategoryOptions(categories)
+      const nextDirection = categories.some(option => option.direction === direction)
+        ? direction
+        : categories[0]?.direction ?? direction
+      setDirection(nextDirection)
+      setCategory(current => categories.some(option => option.id === current && option.direction === nextDirection)
+        ? current
+        : categories.find(option => option.direction === nextDirection)?.id ?? '')
+    })
+      .catch(() => { if (active) setCategoryOptions([]) })
+    return () => { active = false }
+  }, [api, direction])
+  const categories = categoryOptions.filter(option => option.direction === direction)
+  const categoryName = (id: string) => {
+    const name = categoryOptions.find(option => option.id === id)?.name
+    return name === id && legacyCategoryLabels[id] ? t(legacyCategoryLabels[id]) : name ?? id
+  }
   useEffect(() => {
     let active = true
     setResult(null)
@@ -62,7 +85,6 @@ export function LiveCashRegister({ api, access }: { api: StoreApi; access: Store
     }
   }
 
-  const categories: CashCategory[] = direction === 'income' ? ['other_income'] : ['other_expense', 'purchase', 'transport', 'maintenance']
   return <>
     <PageHeading eyebrow="scopedAccess" title="cashRegister" subtitle="cashRegisterHint" />
     {can(access, 'cash_entry', 'create') && !editing && <Button color="primary" block onClick={() => setEditing(true)}>{t('cashAdd')}</Button>}
@@ -70,7 +92,7 @@ export function LiveCashRegister({ api, access }: { api: StoreApi; access: Store
       event.preventDefault()
       if (mutex.current || pending) return
       const minor = cashMinor(amount)
-      if (!minor || (category === 'purchase' && (!item.trim() || !/^(?:0|[1-9]\d{0,8})(?:\.\d{1,3})?$/.test(quantity) || !/[1-9]/.test(quantity) || (unit === 'piece' && quantity.includes('.'))))) {
+      if (!minor || !categories.some(option => option.id === category) || (category === 'purchase' && (!item.trim() || !/^(?:0|[1-9]\d{0,8})(?:\.\d{1,3})?$/.test(quantity) || !/[1-9]/.test(quantity) || (unit === 'piece' && quantity.includes('.'))))) {
         setWriteError('cashInvalid'); return
       }
       const bytes = crypto.getRandomValues(new Uint8Array(16))
@@ -85,9 +107,9 @@ export function LiveCashRegister({ api, access }: { api: StoreApi; access: Store
       <fieldset disabled={busy || !!pending} style={{ border: 0, padding: 0, margin: 0 }}>
         <label className="field">{t('cashDirection')}<select value={direction} onChange={event => {
           const value = event.target.value === 'income' ? 'income' : 'expense'
-          setDirection(value); setCategory(value === 'income' ? 'other_income' : 'other_expense')
+          setDirection(value); setCategory(categoryOptions.find(option => option.direction === value)?.id ?? '')
         }}><option value="expense">{t('cashExpense')}</option><option value="income">{t('cashIncome')}</option></select></label>
-        <label className="field">{t('cashCategory')}<select value={category} onChange={event => setCategory(event.target.value as CashCategory)}>{categories.map(value => <option key={value} value={value}>{t(categoryLabels[value])}</option>)}</select></label>
+        <label className="field">{t('cashCategory')}<select required value={category} onChange={event => setCategory(event.target.value)}>{categories.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}</select></label>
         <label className="field">{t('cashDate')}<input required type="date" value={date} onChange={event => setDate(event.target.value)} /></label>
         <label className="field">{t('cashAmount')} · {access.store.currency}<input required inputMode="decimal" value={amount} maxLength={22} onChange={event => setAmount(event.target.value)} /></label>
         {category === 'purchase' && <>
@@ -110,10 +132,10 @@ export function LiveCashRegister({ api, access }: { api: StoreApi; access: Store
       {result.totals.map(total => <section className="workspace-panel" key={total.currency}>
         <p>{t('cashIncome')} <strong>{cashMoney(total.income, total.currency)}</strong></p>
         <p>{t('cashExpense')} <strong>{cashMoney(total.expense, total.currency)}</strong></p>
-        {Object.entries(total.byCategory).map(([key, value]) => <p key={key}>{t(categoryLabels[key as CashCategory])} · {cashMoney(value, total.currency)}</p>)}
+        {Object.entries(total.byCategory).map(([key, value]) => <p key={key}>{categoryName(key)} · {cashMoney(value, total.currency)}</p>)}
       </section>)}
       {result.entries.length ? <ul className="operation-records">{result.entries.map(entry => <li key={entry.uuid}>
-        <strong>{t(categoryLabels[entry.category])} · {cashMoney(entry.amount, entry.currency)}</strong>
+         <strong>{categoryName(entry.category)} · {cashMoney(entry.amount, entry.currency)}</strong>
         <p>{entry.date} · {t('cashManual')}{entry.metadata.item ? ` · ${entry.metadata.item}` : ''}</p>
         {entry.purchaseCost && <p>{t('cashPrice')} · {entry.currency} {entry.purchaseCost.unitPrice}/{entry.purchaseCost.baseUnit === 'piece' ? t('cashPiece') : entry.purchaseCost.baseUnit}</p>}
         {entry.metadata.reference && <small>{entry.metadata.reference}</small>}

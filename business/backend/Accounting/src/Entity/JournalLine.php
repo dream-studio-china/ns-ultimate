@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Accounting\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
+use App\Core\Utils\UUID;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
 
@@ -13,6 +14,8 @@ use NsUltimate\Business\Accounting\Service\LedgerInput;
 #[ORM\Index(name: 'idx_acct_account_lines', columns: ['book_id', 'account_code', 'journal_id'])]
 class JournalLine
 {
+    #[ORM\Column(length: 36, unique: true)]
+    private string $uuid;
     #[ORM\Id, ORM\Column]
     private int $bookId;
     #[ORM\Id, ORM\Column(length: 36)]
@@ -30,6 +33,7 @@ class JournalLine
 
     public function __construct(JournalEntry $journal, int $position, string $accountCode, string $side, int $amount, string $description = '')
     {
+        $this->uuid = UUID::v4();
         if ($position < 1 || $amount < 1 || !in_array($side, ['debit', 'credit'], true)) {
             throw new LedgerError('invalid_lines');
         }
@@ -43,6 +47,7 @@ class JournalLine
     }
 
     public function getBookId(): int { return $this->bookId; }
+    public function getUuid(): string { return $this->uuid; }
     public function getJournalId(): string { return $this->journalId; }
     public function getPosition(): int { return $this->position; }
     public function getAccountCode(): string { return $this->accountCode; }

@@ -13,11 +13,6 @@ use NsUltimate\Business\Store\Service\StaffCommandService;
 final class StoreCashRegister
 {
     private const PAGE_SIZE = 50;
-    private const CATEGORIES = [
-        'income' => ['other_income'],
-        'expense' => ['purchase', 'transport', 'maintenance', 'other_expense'],
-    ];
-
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly StaffCommandService $commands,
@@ -32,7 +27,7 @@ final class StoreCashRegister
         LedgerInput::fields($input, 'commandUuid', 'date', 'direction', 'category', 'amount', 'note', 'metadata');
         $direction = $input['direction'] ?? null;
         $category = $input['category'] ?? null;
-        if (!is_string($direction) || !in_array($category, self::CATEGORIES[$direction] ?? [], true)) {
+        if (!is_string($direction) || !is_string($category) || !$this->categoryAvailable($store->getUuid(), $category, $direction)) {
             throw new LedgerError('invalid_cash_category');
         }
         $date = LedgerInput::date($input['date'] ?? null);
@@ -57,6 +52,30 @@ final class StoreCashRegister
 
             return ['before' => [], 'result' => ['uuid' => $entry->getUuid()]];
         });
+    }
+
+    /** @return list<array{id: string, name: string, direction: string}> */
+    public function categories(Store $store): array
+    {
+        $rows = $this->em->getConnection()->fetchAllAssociative(
+            'SELECT c.category AS id, c.name, c.direction FROM ns_accounting_cash_category c
+             JOIN ns_accounting_book_store b ON b.book_id = c.book_id
+             WHERE HEX(b.store_uuid) = HEX(?) ORDER BY c.direction, c.name, c.category',
+            [$store->getUuid()],
+        );
+
+        return array_map(static fn (array $row): array => [
+            'id' => (string) $row['id'], 'name' => (string) $row['name'], 'direction' => (string) $row['direction'],
+        ], $rows);
+    }
+
+    private function categoryAvailable(string $storeUuid, string $category, string $direction): bool
+    {
+        return (bool) $this->em->getConnection()->fetchOne(
+            'SELECT 1 FROM ns_accounting_cash_category c JOIN ns_accounting_book_store b ON b.book_id = c.book_id
+             WHERE HEX(b.store_uuid) = HEX(?) AND c.category = ? AND c.direction = ?',
+            [$storeUuid, $category, $direction],
+        );
     }
 
     /** @return array<string, mixed> */

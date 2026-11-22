@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Accounting\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
+use App\Core\Utils\UUID;
 
 #[ORM\Entity(readOnly: true)]
 #[ORM\Table(name: 'ns_accounting_receipt', options: ['engine' => 'InnoDB', 'charset' => 'utf8mb4'])]
 class CommandReceipt
 {
+    #[ORM\Column(length: 36, unique: true)]
+    private string $uuid;
     #[ORM\Id, ORM\ManyToOne(targetEntity: AccountingBook::class)]
     #[ORM\JoinColumn(name: 'book_id', nullable: false)]
     private AccountingBook $book;
@@ -27,6 +30,7 @@ class CommandReceipt
     /** @param array<string, mixed> $result */
     public function __construct(AccountingBook $book, string $actor, string $action, string $commandId, string $fingerprint, array $result)
     {
+        $this->uuid = UUID::v4();
         $this->book = $book;
         $this->actor = $actor;
         $this->action = $action;
@@ -36,6 +40,7 @@ class CommandReceipt
     }
 
     public function getBook(): AccountingBook { return $this->book; }
+    public function getUuid(): string { return $this->uuid; }
     public function getActor(): string { return $this->actor; }
     public function getAction(): string { return $this->action; }
     public function getCommandId(): string { return $this->commandId; }

@@ -113,6 +113,18 @@ final class StoreLedgerApiTest extends KernelTestCase
         self::assertSame(405, $this->call($own.'/journals', $managerToken, [])->getStatusCode());
 
         $shared = $books[0];
+        $sharedBookId = (int) basename($shared);
+        foreach ([
+            ['purchase', 'expense', 'Purchase'],
+            ['transport', 'expense', 'Transport'],
+            ['maintenance', 'expense', 'Maintenance'],
+            ['other_expense', 'expense', 'Other expense'],
+            ['other_income', 'income', 'Other income'],
+        ] as [$category, $direction, $name]) {
+            $em->getConnection()->insert('ns_accounting_cash_category', [
+                'uuid' => UUID::v4(), 'book_id' => $sharedBookId, 'category' => $category, 'direction' => $direction, 'name' => $name,
+            ]);
+        }
         $sharedReader = $tokens->createAccessToken($sharedManager);
         $sharedStore = '/store/'.$c->getUuid().'/accounting';
         self::assertSame(404, $this->call($sharedStore.'/workspace', $sharedReader)->getStatusCode());

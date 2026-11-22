@@ -52,6 +52,19 @@ final class LedgerWorkspace
             $this->em->getConnection()->fetchAllAssociative('SELECT category FROM ns_accounting_cash_mapping WHERE book_id = ? ORDER BY category', [$bookId]));
     }
 
+    /** @return list<array{id: string, name: string, direction: string}> */
+    public function cashCategories(int $bookId): array
+    {
+        $rows = $this->em->getConnection()->fetchAllAssociative(
+            'SELECT category AS id, name, direction FROM ns_accounting_cash_category WHERE book_id = ? ORDER BY name, category',
+            [$bookId],
+        );
+
+        return array_map(static fn (array $row): array => [
+            'id' => (string) $row['id'], 'name' => (string) $row['name'], 'direction' => (string) $row['direction'],
+        ], $rows);
+    }
+
     /** @return list<array{uuid: string, code: string, name: string, currency: string}> */
     public function cashStores(int $bookId): array
     {

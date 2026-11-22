@@ -3,7 +3,7 @@ import * as ledger from '../../../accounting/finance-config.js'
 
 const required = [{ required: true, message: t('This field is required') }]
 const configured = () => ledger.finance.workspace?.mapped_cash_categories ?? []
-const availableCategories = () => ledger.cashCategories.filter(category => !configured().includes(category))
+const availableCategories = () => ledger.cashCategories().filter(category => !configured().includes(category))
 const eligibleAccounts = () => ledger.finance.accounts.filter(row => Number(row.active) && Number(row.postable))
 const account = (property, label) => ({
   property, type: 'select', field_options: { label: t(label) }, rules: required,
@@ -47,7 +47,7 @@ export default {
       disabled_actions: ['detail', 'batch_edit', 'batch_delete', 'export'],
       actions: [{ name: 'cash-mapping-register', position: 'top', component: register }],
       list_display: [
-        column('category', 'Cash category', ledger.labelCell),
+        column('category_name', 'Cash category', ledger.labelCell),
         column('direction', 'Cash direction', ledger.labelCell),
         column('debit_account', 'Debit account'),
         column('credit_account', 'Credit account'),

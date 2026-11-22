@@ -7,7 +7,6 @@ namespace NsUltimate\Business\Accounting\Repository;
 use Brick\Math\BigInteger;
 use Doctrine\DBAL\Connection;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
-use NsUltimate\Business\Accounting\Entity\CashJournalMapping;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
 use NsUltimate\Business\Accounting\Service\LedgerPage;
@@ -26,6 +25,17 @@ final class LedgerReadRepository
         $rows = $this->savedCashMappings($bookId);
 
         return new LedgerPage(array_slice($rows, ($page - 1) * $limit, $limit), count($rows), $page, $limit);
+    }
+
+    public function cashCategories(int $bookId, int $page, int $limit): LedgerPage
+    {
+        $total = (int) $this->db->fetchOne('SELECT COUNT(*) FROM ns_accounting_cash_category WHERE book_id = ?', [$bookId]);
+        $rows = $this->db->fetchAllAssociative(
+            'SELECT category AS id, category, name, direction FROM ns_accounting_cash_category WHERE book_id = ? ORDER BY name, category LIMIT '.$limit.' OFFSET '.(($page - 1) * $limit),
+            [$bookId],
+        );
+
+        return new LedgerPage($rows, $total, $page, $limit);
     }
 
     /** @return array<string, mixed> */
@@ -53,14 +63,18 @@ final class LedgerReadRepository
             [$bookId],
         );
         $rows = [];
-        foreach (CashJournalMapping::CATEGORIES as $category) {
+        $categories = $this->db->fetchAllAssociativeIndexed(
+            'SELECT category, direction, name FROM ns_accounting_cash_category WHERE book_id = ? ORDER BY name, category',
+            [$bookId],
+        );
+        foreach ($categories as $category => $definition) {
             $mapping = $saved[$category] ?? null;
             if ($mapping === null) {
                 continue;
             }
             $rows[] = [
-                'id' => $category, 'category' => $category,
-                'direction' => $category === 'other_income' ? 'cash_income' : 'cash_expense',
+                'id' => $category, 'category' => $category, 'category_name' => $definition['name'],
+                'direction' => $definition['direction'] === 'income' ? 'cash_income' : 'cash_expense',
                 'debit_code' => $mapping['debit_code'], 'credit_code' => $mapping['credit_code'],
                 'debit_account' => $mapping['debit_code'].(isset($mapping['debit_name']) ? ' - '.$mapping['debit_name'] : ''),
                 'credit_account' => $mapping['credit_code'].(isset($mapping['credit_name']) ? ' - '.$mapping['credit_name'] : ''),
@@ -81,18 +95,16 @@ final class LedgerReadRepository
             LEFT JOIN store s ON HEX(s.uuid) = HEX(c.store_uuid)
             LEFT JOIN ns_accounting_journal j ON j.book_id = b.book_id AND HEX(j.cash_source_uuid) = HEX(c.uuid)
             LEFT JOIN ns_accounting_cash_mapping m ON m.book_id = b.book_id AND HEX(m.category) = HEX(c.category)
+            LEFT JOIN ns_accounting_cash_category d ON d.book_id = b.book_id AND HEX(d.category) = HEX(c.category)
             WHERE b.book_id = ?';
         $args = [$bookId];
         if (isset($parameters['category'])) {
-            if (!in_array($parameters['category'], CashJournalMapping::CATEGORIES, true)) {
-                throw new LedgerError('invalid_option');
-            }
             $from .= ' AND c.category = ?';
             $args[] = $parameters['category'];
         }
         $total = (int) $this->db->fetchOne('SELECT COUNT(*)'.$from, $args);
         $rows = $this->db->fetchAllAssociative(
-            'SELECT c.uuid AS id, c.store_uuid, s.name AS store_name, c.entry_date, c.category, c.direction, c.amount, c.currency, c.note, c.metadata,
+            'SELECT c.uuid AS id, c.store_uuid, s.name AS store_name, c.entry_date, c.category, d.name AS category_name, c.direction, c.amount, c.currency, c.note, c.metadata,
                 c.voided_at, c.void_reason, j.id AS journal_id, j.state AS journal_state, m.debit_code, m.credit_code'.$from
                 .' ORDER BY c.entry_date DESC, c.uuid DESC LIMIT '.$limit.' OFFSET '.(($page - 1) * $limit),
             $args,

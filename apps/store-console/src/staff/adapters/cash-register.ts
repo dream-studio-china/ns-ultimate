@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { StoreApi } from './live'
 
 const minor = z.string().regex(/^\d+$/)
-const categories = z.enum(['purchase', 'transport', 'maintenance', 'other_expense', 'other_income'])
+const categories = z.string().regex(/^[a-z][a-z0-9_]{0,23}$/)
 const units = z.enum(['g', 'kg', 'ml', 'l', 'piece'])
 const metadata = z.object({ version: z.literal(1), item: z.string().optional(), quantity: z.string().optional(), unit: units.optional(), reference: z.string().optional() })
 const monthSchema = z.object({
@@ -21,6 +21,11 @@ export type CashUnit = z.infer<typeof units>
 export type CashInput = {
   commandUuid: string; date: string; direction: 'income' | 'expense'; category: CashCategory
   amount: string; note: string; metadata: z.infer<typeof metadata>
+}
+const categorySchema = z.object({ id: categories, name: z.string(), direction: z.enum(['income', 'expense']) })
+export type CashCategoryOption = z.infer<typeof categorySchema>
+export function readCashCategories(api: StoreApi) {
+  return api.client.data(`${api.base}/cash-register/categories`, z.object({ categories: z.array(categorySchema) }))
 }
 export function readCashMonth(api: StoreApi, month: string, page: number) {
   const query = new URLSearchParams({ month, page: String(page) })

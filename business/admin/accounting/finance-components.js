@@ -38,6 +38,13 @@ export const labelCell = markRaw(defineComponent({
   setup: props => () => h('span', props.data === null || props.data === '' ? '—' : t(String(props.data)))
 }))
 
+export const cashDirectionCell = markRaw(defineComponent({
+  name: 'FinanceCashDirectionCell',
+  inheritAttrs: false,
+  props: cellProps,
+  setup: props => () => h('span', props.data === 'income' ? t('cash_income') : t('cash_expense'))
+}))
+
 const TAG_TYPES = {
   posted: 'success', open: 'success', voided: 'info', locked: 'info', draft: 'warning', pending: 'warning', approved: 'success',
   cash_mapping_configured: 'success', cash_mapping_needs_review: 'warning', active: 'success'

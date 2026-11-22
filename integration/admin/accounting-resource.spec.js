@@ -10,6 +10,14 @@ const api = vi.hoisted(() => {
   const cashId = 'ab7e622b-157d-457b-a81e-f4124e7bb1e7'
   const store = { uuid: 'ab7e622b-157d-457b-a81e-f4124e7bb1e6', name: 'North Shop', code: 'NS01' }
   const state = { calls: [] }
+  const initialCashCategories = [
+    { id: 'purchase', name: 'Purchase', direction: 'expense' },
+    { id: 'transport', name: 'Transport', direction: 'expense' },
+    { id: 'maintenance', name: 'Maintenance', direction: 'expense' },
+    { id: 'other_expense', name: 'Other expense', direction: 'expense' },
+    { id: 'other_income', name: 'Other income', direction: 'income' }
+  ]
+  let cashCategories = [...initialCashCategories]
   const workspace = {
     book: { id: 1, entity: 'Test', currency: 'CNY', scale: 2, timezone: 'UTC', opening_date: '2026-01-01', opening_state: 'pending' },
     accounts: [
@@ -19,6 +27,7 @@ const api = vi.hoisted(() => {
     periods: [{ month: '2026-01', state: 'open' }],
     store_uuids: [],
     cash_stores: [{ ...store, currency: 'CNY' }],
+    get cash_categories() { return cashCategories },
     get mapped_cash_categories() { return state.mapping ? [state.mapping.category] : [] },
     capabilities: ['read', 'audit', 'draft', 'post', 'reverse', 'configure', 'lock', 'reopen', 'cash_record']
   }
@@ -37,16 +46,24 @@ const api = vi.hoisted(() => {
     'GET /api/v1/finance/accounting/books': () => ({ code: 0, paginator: paginator(1), data: [workspace.book] }),
     'GET /api/v1/finance/accounting/cash-mappings': () => ({
       code: 0, paginator: paginator(state.mapping ? 1 : 0),
-      data: state.mapping ? [{ ...state.mapping, id: state.mapping.category, debit_account: 'EQUITY - Equity', credit_account: 'CASH - Cash', status: 'cash_mapping_configured' }] : []
+      data: state.mapping ? [{ ...state.mapping, id: state.mapping.category, category_name: 'Transport', debit_account: 'EQUITY - Equity', credit_account: 'CASH - Cash', status: 'cash_mapping_configured' }] : []
     }),
+    'GET /api/v1/finance/accounting/cash-categories': () => ({
+      code: 0, paginator: paginator(cashCategories.length), data: cashCategories
+    }),
+    'POST /api/v1/finance/accounting/cash-categories': (_params, body) => {
+      const row = { ...body, id: 'c_test001' }
+      cashCategories.push(row)
+      return { code: 0, data: row }
+    },
     'POST /api/v1/finance/accounting/cash-mappings': (_params, body) => {
       state.mapping = body
-      return { code: 0, data: { ...body, id: body.category, debit_account: 'EQUITY - Equity', credit_account: 'CASH - Cash', status: 'cash_mapping_configured' } }
+      return { code: 0, data: { ...body, id: body.category, category_name: 'Transport', debit_account: 'EQUITY - Equity', credit_account: 'CASH - Cash', status: 'cash_mapping_configured' } }
     },
-    'GET /api/v1/finance/accounting/cash-mappings/transport': () => ({ code: 0, data: { ...state.mapping, id: 'transport', debit_account: 'EQUITY - Equity', credit_account: 'CASH - Cash', status: 'cash_mapping_configured' } }),
+    'GET /api/v1/finance/accounting/cash-mappings/transport': () => ({ code: 0, data: { ...state.mapping, id: 'transport', category_name: 'Transport', debit_account: 'EQUITY - Equity', credit_account: 'CASH - Cash', status: 'cash_mapping_configured' } }),
     'PUT /api/v1/finance/accounting/cash-mappings/transport': (_params, body) => {
       state.mapping = { category: 'transport', ...body }
-      return { code: 0, data: { ...state.mapping, id: 'transport', debit_account: 'EQUITY - Equity', credit_account: 'CASH - Cash', status: 'cash_mapping_configured' } }
+      return { code: 0, data: { ...state.mapping, id: 'transport', category_name: 'Transport', debit_account: 'EQUITY - Equity', credit_account: 'CASH - Cash', status: 'cash_mapping_configured' } }
     },
     'DELETE /api/v1/finance/accounting/cash-mappings/transport': () => {
       state.mapping = null
@@ -56,7 +73,7 @@ const api = vi.hoisted(() => {
     'GET /api/v1/finance/accounting/cash-entries': () => ({
       code: 0, paginator: paginator(1),
       data: [{
-        id: cashId, store_name: store.name, entry_date: '2026-01-02', category: 'transport', amount: '12000', currency: 'CNY',
+        id: cashId, store_name: store.name, entry_date: '2026-01-02', category: 'transport', category_name: 'Transport', amount: '12000', currency: 'CNY',
         state: state.voided ? 'voided' : 'active', ...(state.voided ? {} : { cash_version: 'a'.repeat(64) }),
         debit_code: state.mapping?.debit_code, credit_code: state.mapping?.credit_code
       }]
@@ -98,7 +115,11 @@ const api = vi.hoisted(() => {
     if (!route) throw new Error(`Unexpected ${method} ${url}`)
     return route(params, body)
   }
-  return { state, workspace, journalId, cashId, store, request: { get: handle('GET'), post: handle('POST'), put: handle('PUT'), delete: handle('DELETE') } }
+  return {
+    state, workspace, journalId, cashId, store,
+    resetCashCategories: () => { cashCategories = [...initialCashCategories] },
+    request: { get: handle('GET'), post: handle('POST'), put: handle('PUT'), delete: handle('DELETE') }
+  }
 })
 
 vi.mock('@/utils/request', () => ({ __esModule: true, default: api.request }))
@@ -112,7 +133,7 @@ vi.mock('jsoneditor', () => ({
 }))
 vi.mock('@/store', () => {
   const entity = name => `NsUltimate\\Business\\Accounting\\Entity\\${name}`
-  const names = ['AccountingBook', 'AccountingPeriod', 'AccountingAuditRecord', 'CashJournalMapping', 'JournalEntry', 'LedgerAccount', 'StoreCashEntry']
+  const names = ['AccountingBook', 'AccountingPeriod', 'AccountingAuditRecord', 'CashCategory', 'CashJournalMapping', 'JournalEntry', 'LedgerAccount', 'StoreCashEntry']
   return {
     __esModule: true,
     default: {
@@ -140,6 +161,7 @@ const dialog = (path, name, open) => ({
 })
 const routes = [
   page('/finance/accounting/ledger', 'AccountingBookList', 'AccountingBook', 'list'),
+  page('/finance/accounting/cash-categories', 'CashCategoryList', 'CashCategory', 'list'),
   page('/finance/accounting/cash-mappings', 'CashJournalMappingList', 'CashJournalMapping', 'list'),
   page('/finance/accounting/cash-entries', 'StoreCashEntryList', 'StoreCashEntry', 'list'),
   page('/finance/accounting/journals', 'JournalEntryList', 'JournalEntry', 'list'),
@@ -190,6 +212,7 @@ beforeEach(() => {
   api.state.calls.length = 0
   api.state.mapping = null
   api.state.voided = false
+  api.resetCashCategories()
   document.body.innerHTML = ''
 })
 
@@ -252,7 +275,7 @@ describe('Accounting resources render from collection configs', () => {
     // ListAdmin refreshes after the dialog's leave transition completes.
     await new Promise(resolve => setTimeout(resolve, 400))
     await settle()
-    const transport = () => wrapper.findAll('.el-table__body tr').find(row => row.text().includes('transport'))
+    const transport = () => wrapper.findAll('.el-table__body tr').find(row => row.text().toLowerCase().includes('transport'))
     expect(transport().text()).toContain('EQUITY - Equity')
     await button(transport(), 'Edit').trigger('click')
     await settle()
@@ -274,6 +297,21 @@ describe('Accounting resources render from collection configs', () => {
     expect(calls('POST', '/api/v1/finance/accounting/commands/draft-from-cash')[0].body).toEqual({ source_uuid: api.cashId })
     expect(calls('POST', '/api/v1/finance/accounting/commands/post')).toHaveLength(0)
     expect(router.currentRoute.value.name).toBe('JournalEntryDetail')
+    wrapper.unmount()
+  })
+
+  it('creates a user-defined cash category separately from account mapping', async() => {
+    const { wrapper } = await open('/finance/accounting/cash-categories')
+    expect(wrapper.text()).toContain('Cash categories help')
+    await wrapper.findAll('button').find(node => node.text().trim().startsWith('New ')).trigger('click')
+    await settle()
+    Object.assign(formAdmin(wrapper).vm.form, { name: 'Staff meals', direction: 'expense' })
+    await settle()
+    dialogButton('Save').click()
+    await settle()
+    expect(calls('POST', '/api/v1/finance/accounting/cash-categories')[0].body).toEqual({
+      name: 'Staff meals', direction: 'expense'
+    })
     wrapper.unmount()
   })
 

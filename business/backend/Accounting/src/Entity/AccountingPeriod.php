@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Accounting\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
+use App\Core\Utils\UUID;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
 
@@ -12,6 +13,8 @@ use NsUltimate\Business\Accounting\Service\LedgerInput;
 #[ORM\Table(name: 'ns_accounting_period', options: ['engine' => 'InnoDB', 'charset' => 'utf8mb4'])]
 class AccountingPeriod
 {
+    #[ORM\Column(length: 36, unique: true)]
+    private string $uuid;
     #[ORM\Id, ORM\ManyToOne(targetEntity: AccountingBook::class)]
     #[ORM\JoinColumn(name: 'book_id', nullable: false)]
     private AccountingBook $book;
@@ -22,6 +25,7 @@ class AccountingPeriod
 
     public function __construct(AccountingBook $book, string $month)
     {
+        $this->uuid = UUID::v4();
         LedgerInput::date($month.'-01');
         if ($month < $book->getOpeningDate()->format('Y-m')) {
             throw new LedgerError('date_before_opening', 409);
@@ -31,6 +35,7 @@ class AccountingPeriod
     }
 
     public function getBook(): AccountingBook { return $this->book; }
+    public function getUuid(): string { return $this->uuid; }
     public function getMonth(): string { return $this->month; }
     public function getState(): string { return $this->state; }
     public function isOpen(): bool { return $this->state === 'open'; }
