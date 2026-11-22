@@ -18,17 +18,17 @@ final class LedgerAccountService extends BaseService
     }
 
     /** @return list<array<string, int|string>> */
-    public function chart(): array
+    public function chart(int $bookId = AccountingBook::ID): array
     {
-        $accounts = $this->list(['book' => AccountingBook::ID], ['entity.code' => 'ASC']);
+        $accounts = $this->list(['book' => $bookId], ['entity.code' => 'ASC']);
 
         return array_values(array_map($this->project(...), $accounts));
     }
 
     /** @return array<string, int|string>|null */
-    public function record(string $code): ?array
+    public function record(string $code, int $bookId = AccountingBook::ID): ?array
     {
-        $account = $this->get(['book' => AccountingBook::ID, 'code' => $code], false);
+        $account = $this->get(['book' => $bookId, 'code' => $code], false);
 
         return $account === null ? null : $this->project($account);
     }

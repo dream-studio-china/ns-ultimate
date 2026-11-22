@@ -50,6 +50,7 @@ describe('permission-based workspace navigation', () => {
       ['product_category', ['products', 'mine'], 'products'],
       ['counter', ['tables', 'mine'], 'tables'],
       ['order', ['reports', 'mine'], 'reports'],
+      ['accounting', ['accounting', 'mine'], 'accounting'],
     ] as const) {
       const employee = access([`store:${code}:read`])
       expect(workspacePages(employee)).toEqual(pages)

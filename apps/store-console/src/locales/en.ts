@@ -2,6 +2,10 @@ import type { zhCN } from './zh-CN'
 
 export const en: Record<keyof typeof zhCN, string> = {
   cashRegister: 'Store income and expenses', cashRegisterHint: 'Record store income and expenses. Enter purchase quantities to calculate the unit price.',
+  accountingBook: 'Store ledger', accountingReadOnly: 'Read-only accounting for this store.', accountingJournals: 'Journals',
+  accountingNoJournals: 'No journals yet', accountingDraft: 'Draft', accountingPosted: 'Posted', accountingVoided: 'Voided',
+  accountingDebit: 'Debit', accountingCredit: 'Credit', accountingTrial: 'Trial balance',
+  accountingFrom: 'From date', accountingTo: 'To date', accountingRun: 'Run report', accountingExport: 'Export CSV',
   cashAdd: 'Add entry', cashDirection: 'Direction', cashIncome: 'Income', cashExpense: 'Expense', cashCategory: 'Category',
   cashPurchase: 'Purchase', cashTransport: 'Transport', cashMaintenance: 'Maintenance', cashOtherExpense: 'Other expense', cashOtherIncome: 'Other income',
   cashDate: 'Date', cashAmount: 'Amount', cashItem: 'Purchased item', cashQuantity: 'Quantity', cashUnit: 'Unit', cashPiece: 'piece',

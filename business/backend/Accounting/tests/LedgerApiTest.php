@@ -17,6 +17,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Accounting\Migrations\Version20261121100000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122110000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122120000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122130000;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -90,7 +91,7 @@ final class LedgerApiTest extends KernelTestCase
         $bookSetup = ['entity' => 'Test', 'currency' => 'CNY', 'scale' => 2, 'timezone' => 'UTC', 'opening_date' => '2026-01-01'];
         $book = $this->request('books', $adminToken, $bookSetup, $manage);
         self::assertSame(201, $book->getStatusCode(), $book->getContent());
-        self::assertEquals(['id' => 1, 'opening_state' => 'pending'] + $bookSetup, json_decode($book->getContent(), true, flags: JSON_THROW_ON_ERROR)['data']);
+        self::assertEquals(['id' => 1, 'opening_state' => 'pending', 'store_uuid' => null] + $bookSetup, json_decode($book->getContent(), true, flags: JSON_THROW_ON_ERROR)['data']);
         // The original command stays compatible: an identical initialization is a no-op.
         $this->ok('commands/initialize', $adminToken, $bookSetup, $manage);
         $books = $this->body('books?page=1&limit=20', $readerToken);
@@ -254,7 +255,7 @@ final class LedgerApiTest extends KernelTestCase
         $metadata = array_values(array_filter($em->getMetadataFactory()->getAllMetadata(), static fn ($class) => str_starts_with($class->getTableName(), 'ns_accounting_')));
         $expected = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         require_once __DIR__.'/AccountingTestManager.php';
-        AccountingTestManager::migrate($expected, Version20261121100000::class, Version20261122110000::class, Version20261122120000::class);
+        AccountingTestManager::migrate($expected, Version20261121100000::class, Version20261122110000::class, Version20261122120000::class, Version20261122130000::class);
         $from = $expected->createSchemaManager()->introspectSchema();
         $actual = new Schema(array_values(array_filter(
             $em->getConnection()->createSchemaManager()->introspectSchema()->getTables(),

@@ -10,6 +10,7 @@ import { LiveCatalog } from './catalog'
 import { LiveTables, LiveOrders } from './tables'
 import { LiveReports } from './reports'
 import { LiveCashRegister } from './cash-register'
+import { LiveAccounting } from './accounting'
 import { readReportingDay, writeReportingDay } from '../reporting'
 import { errorKey, ListFeedback, Notice, PageControls, PageHeading, StatusPill, usePage, LiveSheet, WorkspaceRefreshProvider } from './ui'
 import { BrandArt } from './brand-art'
@@ -22,6 +23,7 @@ const navigation = [
   { key: 'orders', icon: ReceiptText, title: 'readOnlyOrders' },
   { key: 'reports', icon: ChartNoAxesCombined, title: 'reports' },
   { key: 'cash', icon: ReceiptText, title: 'cashRegister' },
+  { key: 'accounting', icon: ChartNoAxesCombined, title: 'accountingBook' },
   { key: 'mine', icon: UserRound, title: 'mine' },
 ] as const
 
@@ -99,6 +101,7 @@ export function LiveApp() {
           {page === 'orders' && <LiveOrders api={api.current!} access={access} />}
           {page === 'reports' && <LiveReports api={api.current!} access={access} />}
           {page === 'cash' && <LiveCashRegister api={api.current!} access={access} />}
+          {page === 'accounting' && <LiveAccounting api={api.current!} />}
            {page === 'mine' && <LiveAccount api={api.current!} access={access} logout={() => void logout()} />}
         </div>
         {page !== 'tables' && <details className="workspace-connection"><summary><ShieldCheck size={14} />{t('connectionDetails')}<ChevronDown size={14} /></summary><p>{t('operationalScopeHint')}</p></details>}

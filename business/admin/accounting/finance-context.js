@@ -13,6 +13,17 @@ import { commandIntent, minorToDecimal, newCommandId } from './ledger-ui.mjs'
  * The backend still authorizes every request.
  */
 export const FINANCE_API = apiPath(API_PREFIX, 'finance/accounting')
+const BOOK_KEY = 'accounting:selected-book'
+const selection = typeof window === 'undefined' ? null : window.sessionStorage.getItem(BOOK_KEY)
+export const selectedBookId = /^[1-9][0-9]{0,9}$/.test(selection ?? '') ? Number(selection) : 1
+export const BOOK_API = selectedBookId === 1 ? FINANCE_API : `${FINANCE_API}/book/${selectedBookId}`
+
+export function selectBook(id) {
+  if (state.pending || state.busy || !Number.isSafeInteger(id) || id < 1) return
+  window.sessionStorage.setItem(BOOK_KEY, String(id))
+  // Destroy old dialogs, snapshots, and repository instances before changing scope.
+  window.location.assign(`${import.meta.env.BASE_URL}finance/accounting/ledger`)
+}
 
 const RETRIABLE = new Set(['create-draft', 'void-draft', 'post', 'reverse', 'approve-zero-opening', 'lock-period', 'reopen-period'])
 
@@ -32,7 +43,7 @@ async function load() {
   const token = getToken()
   state.error = ''
   try {
-    const response = await request.get(`${FINANCE_API}/workspace`)
+    const response = await request.get(`${BOOK_API}/workspace`)
     state.workspace = response.data
     state.token = token
     return state.workspace
@@ -47,7 +58,7 @@ async function load() {
 async function send(action, body, onSuccess) {
   let result
   try {
-    result = (await request.post(`${FINANCE_API}/commands/${action}`, body)).data
+    result = (await request.post(`${BOOK_API}/commands/${action}`, body)).data
   } catch (failure) {
     // A definitive client error means the command was rejected; keep the
     // intent only when the outcome is unknown (network failure or 5xx).

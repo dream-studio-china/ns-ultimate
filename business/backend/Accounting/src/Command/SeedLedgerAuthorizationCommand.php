@@ -30,6 +30,7 @@ final class SeedLedgerAuthorizationCommand extends Command
             }
             $grants['store_cash_reader'] = [Role::SCOPE_STORE, ['store:cash_entry:read']];
             $grants['store_cash_recorder'] = [Role::SCOPE_STORE, ['store:cash_entry:read', 'store:cash_entry:create']];
+            $grants['store_accounting_reader'] = [Role::SCOPE_STORE, ['store:accounting:read']];
             foreach ($grants as $code => [$scope, $permissionCodes]) {
                 $role = $roles->findOneBy(['code' => $code]);
                 if ($role !== null && $role->getScopeType() !== $scope) {

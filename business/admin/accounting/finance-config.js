@@ -5,11 +5,11 @@
  * filters, detail, and actions; EasyAdmin renders them. These helpers only
  * bind those declarations to the Finance API, capabilities, and exact money.
  */
-import { FINANCE_API, finance } from './finance-context'
+import { BOOK_API, FINANCE_API, finance } from './finance-context'
 
 export { FINANCE_API, finance }
 export { accountFilter, bookToday, choiceFilter, dateFilter, financeList, openingDate, textFilter } from './finance-list'
-export { journalLinkCell, labelCell, ledgerCommand, ledgerLink, ledgerOperations, moneyCell, recordDialog, reportSummary, stateCell } from './finance-components'
+export { bookSelection, journalLinkCell, labelCell, ledgerCommand, ledgerLink, ledgerOperations, moneyCell, recordDialog, reportSummary, stateCell } from './finance-components'
 export { default as IsoDateField } from './IsoDateField.vue'
 export { default as JournalAttachmentsField } from './JournalAttachmentsField.vue'
 export { default as JournalLinesField } from './JournalLinesField.vue'
@@ -18,7 +18,7 @@ export const sides = ['debit', 'credit']
 export const classes = ['asset', 'liability', 'equity', 'revenue', 'expense']
 
 /** EasyAdmin entity identity for a Finance resource path. */
-export const resource = (name, plural) => ({ name, prefix: FINANCE_API, plural })
+export const resource = (name, plural) => ({ name, prefix: plural === 'books' ? FINANCE_API : BOOK_API, plural })
 
 export const can = capability => () => finance.can(capability)
 

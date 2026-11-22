@@ -6,7 +6,11 @@ namespace NsUltimate\Business\Accounting\Controller\Manage;
 
 use App\Core\Controller\RestController;
 use App\Identity\Entity\User;
+use App\Store\Entity\Store;
+use App\Store\Service\StoreServiceInterface;
 use NsUltimate\Business\Accounting\Controller\LedgerControllerSupport;
+use NsUltimate\Business\Accounting\Controller\LedgerCsv;
+use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
 use NsUltimate\Business\Accounting\Service\LedgerAccess;
 use NsUltimate\Business\Accounting\Service\LedgerAccountService;
@@ -45,6 +49,7 @@ final class LedgerController extends RestController
         private readonly LedgerReadRepository $queries,
         private readonly LedgerWorkspace $workspaceService,
         private readonly LedgerAccountService $accounts,
+        private readonly StoreServiceInterface $stores,
     ) {}
 
     #[Route('/workspace', name: 'workspace', methods: ['GET'])]
@@ -53,7 +58,13 @@ final class LedgerController extends RestController
         return $this->respond('read', function (User $user, array $capabilities) use ($request): array {
             LedgerInput::fields($this->ledgerParameters($request));
 
-            return $this->workspaceService->setup() + ['capabilities' => $capabilities];
+            $id = $this->headquartersBookId();
+            $workspace = $this->workspaceService->setup($id);
+            if ($id !== AccountingBook::ID && $workspace['book'] === null) {
+                throw new LedgerError('book_not_found', 404);
+            }
+
+            return $workspace + ['capabilities' => $capabilities];
         });
     }
 
@@ -64,10 +75,7 @@ final class LedgerController extends RestController
             $parameters = $this->ledgerParameters($request);
             LedgerInput::fields($parameters, 'page', 'limit');
             [$page, $limit] = LedgerPage::window($parameters);
-            $book = $this->workspaceService->book();
-            $rows = $book === null || $page > 1 ? [] : [$book];
-
-            return new LedgerPage($rows, $book === null ? 0 : 1, $page, $limit);
+            return $this->workspaceService->books($page, $limit);
         });
     }
 
@@ -85,7 +93,20 @@ final class LedgerController extends RestController
     public function createBook(Request $request): Response
     {
         return $this->respond('configure', function (User $user) use ($request): Response {
-            $result = $this->execute($user, 'initialize', $request);
+            $data = $this->ledgerPayload($request);
+            $id = AccountingBook::ID;
+            $uuid = null;
+            if (isset($data['store_uuid'])) {
+                $store = $this->stores->get(['uuid' => LedgerInput::uuid($data['store_uuid'])], false);
+                if (!$store instanceof Store || $store->getId() === null || $store->getId() >= 2147483647) {
+                    throw new LedgerError('store_not_found', 404);
+                }
+                // Book 1 is reserved for the unassigned legacy book.
+                $id = $store->getId() + 1;
+                $uuid = $store->getUuid();
+            }
+            unset($data['store_uuid']);
+            $result = $this->commands->execute($user->getUuid(), 'initialize', $data, $id, $uuid);
 
             return $this->success((object) $this->findBook($result['id']), status: 201);
         });
@@ -97,7 +118,7 @@ final class LedgerController extends RestController
         return $this->respond('read', function () use ($request): Response {
             $this->listParameters($request, 'q');
             $query = LedgerInput::text($request->query->all()['q'] ?? '', 160, true);
-            $rows = array_filter($this->accounts->chart(), static fn (array $row) =>
+            $rows = array_filter($this->accounts->chart($this->headquartersBookId()), static fn (array $row) =>
                 $query === '' || mb_stripos($row['code'].' '.$row['name'], $query) !== false);
 
             return $this->success($this->sortRows(array_map($this->accountRecord(...), $rows), $request, ['code', 'name', 'classification', 'normal_side', 'active', 'postable']));
@@ -132,7 +153,7 @@ final class LedgerController extends RestController
             if (array_key_exists('code', $data) && $data['code'] !== $code) {
                 throw new LedgerError('invalid_account_code');
             }
-            $this->commands->execute($user->getUuid(), 'update-account', ['code' => $code] + $data);
+            $this->commands->execute($user->getUuid(), 'update-account', ['code' => $code] + $data, $this->headquartersBookId());
 
             return $this->findAccount($code);
         });
@@ -144,7 +165,7 @@ final class LedgerController extends RestController
         return $this->respond('read', function () use ($request): Response {
             $this->listParameters($request);
 
-            $rows = array_map(static fn (array $row) => ['id' => $row['month']] + $row, $this->workspaceService->periods());
+            $rows = array_map(static fn (array $row) => ['id' => $row['month']] + $row, $this->workspaceService->periods($this->headquartersBookId()));
 
             return $this->success($this->sortRows($rows, $request, ['month', 'state']));
         });
@@ -155,7 +176,7 @@ final class LedgerController extends RestController
     {
         return $this->respond('read', function () use ($month, $request): array {
             LedgerInput::fields($this->ledgerParameters($request));
-            $period = $this->workspaceService->period($month) ?? throw new LedgerError('period_not_found', 404);
+            $period = $this->workspaceService->period($month, $this->headquartersBookId()) ?? throw new LedgerError('period_not_found', 404);
 
             return ['id' => $month] + $period;
         });
@@ -174,7 +195,7 @@ final class LedgerController extends RestController
     #[Route('/audit', name: 'audit', methods: ['GET'])]
     public function audit(Request $request): Response
     {
-        return $this->respond('audit', fn () => $this->queries->audit($this->ledgerParameters($request)));
+        return $this->respond('audit', fn () => $this->queries->audit($this->ledgerParameters($request), $this->headquartersBookId()));
     }
 
     #[Route('/audit/{id}', name: 'audit_detail', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['GET'])]
@@ -183,7 +204,7 @@ final class LedgerController extends RestController
         return $this->respond('audit', function () use ($id, $request): array {
             LedgerInput::fields($this->ledgerParameters($request));
 
-            return $this->queries->auditRecord($id);
+            return $this->queries->auditRecord($id, $this->headquartersBookId());
         });
     }
 
@@ -191,44 +212,9 @@ final class LedgerController extends RestController
     public function export(string $kind, Request $request): Response
     {
         return $this->respond('read', function () use ($kind, $request): Response {
-            $data = $this->queries->report($kind, $this->ledgerParameters($request), true);
-            $stream = fopen('php://temp', 'w+') ?: throw new \RuntimeException('Cannot allocate CSV stream.');
-            $rows = $data['rows'];
-            $columns = $kind === 'ledger'
-                ? ['id', 'accounting_date', 'number', 'summary', 'position', 'side', 'amount', 'description', 'balance']
-                : ['code', 'name', 'opening_debit', 'opening_credit', 'movement_debit', 'movement_credit', 'closing_debit', 'closing_credit'];
-            $context = ['currency' => $data['currency'], 'scale' => $data['scale'], 'cutoff' => $data['cutoff']];
-            if ($kind === 'ledger') {
-                $context['opening'] = $data['opening'];
-            }
-            fputcsv($stream, array_merge($columns, array_keys($context)), escape: '');
-            if (isset($data['totals'])) {
-                $rows[] = ['name' => 'TOTAL'] + $data['totals'];
-            }
-            if ($rows === []) {
-                $rows[] = [];
-            }
-            foreach ($rows as $row) {
-                $cells = array_map(static function (string $column) use ($row): string {
-                    $value = (string) ($row[$column] ?? '');
-                    if (in_array($column, ['summary', 'description', 'name'], true)
-                        && preg_match('/\A(?:[\t\r\n]|[\p{Z}\p{C}]*[=+\-@＝＋－＠])/u', $value)) {
-                        return "'".$value;
-                    }
+            $data = $this->queries->report($kind, $this->ledgerParameters($request), true, $this->headquartersBookId());
 
-                    return $value;
-                }, $columns);
-                fputcsv($stream, array_merge($cells, array_values($context)), escape: '');
-            }
-            rewind($stream);
-            $csv = stream_get_contents($stream);
-            fclose($stream);
-
-            return new Response($csv, 200, [
-                'Content-Type' => 'text/csv; charset=utf-8',
-                'Content-Disposition' => 'attachment; filename="accounting-'.$kind.'.csv"',
-                'X-Content-Type-Options' => 'nosniff',
-            ]);
+            return LedgerCsv::response($kind, $data);
         });
     }
 
@@ -241,13 +227,12 @@ final class LedgerController extends RestController
     public function report(string $kind, Request $request): Response
     {
         return $this->respond('read', function () use ($kind, $request): LedgerPage {
-            $data = $this->queries->report($kind, $this->ledgerParameters($request));
+            $data = $this->queries->report($kind, $this->ledgerParameters($request), bookId: $this->headquartersBookId());
             $context = array_intersect_key($data, array_flip(['cutoff', 'currency', 'scale', 'opening', 'totals']));
 
             return new LedgerPage($data['rows'], $data['total'], $data['page'], $data['limit'], ['report' => ['kind' => $kind] + $context]);
         });
     }
-
     #[Route('/commands/{action}', name: 'command', methods: ['POST'])]
     public function command(string $action, Request $request): Response
     {
@@ -257,7 +242,11 @@ final class LedgerController extends RestController
     /** @return array<string, mixed> */
     private function execute(User $user, string $action, Request $request): array
     {
-        return $this->commands->execute($user->getUuid(), $action, $this->ledgerPayload($request));
+        if ($action === 'initialize' && $request->attributes->has('bookId')) {
+            throw new LedgerError('unknown_command', 404);
+        }
+
+        return $this->commands->execute($user->getUuid(), $action, $this->ledgerPayload($request), $this->headquartersBookId());
     }
 
     private function listParameters(Request $request, string ...$extra): void
@@ -294,10 +283,10 @@ final class LedgerController extends RestController
         return $rows;
     }
 
-    /** @return array<string, int|string> */
+    /** @return array<string, int|string|null> */
     private function findBook(int|string $id): array
     {
-        $book = $this->workspaceService->book();
+        $book = $this->workspaceService->book((int) $id);
         if ($book === null || (string) $book['id'] !== (string) $id) {
             throw new LedgerError('book_not_found', 404);
         }
@@ -308,7 +297,7 @@ final class LedgerController extends RestController
     /** @return array<string, mixed> */
     private function findAccount(string $code): array
     {
-        $account = $this->accounts->record($code);
+        $account = $this->accounts->record($code, $this->headquartersBookId());
 
         return $this->accountRecord($account ?? throw new LedgerError('account_not_found', 404));
     }

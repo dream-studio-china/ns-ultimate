@@ -53,19 +53,19 @@ final class LedgerWriteRepository
 
     public function flush(): void { $this->manager()->flush(); }
 
-    public function book(): ?AccountingBook
+    public function book(int $bookId): ?AccountingBook
     {
-        return $this->manager()->find(AccountingBook::class, AccountingBook::ID);
+        return $this->manager()->find(AccountingBook::class, $bookId);
     }
 
-    public function lockBook(): AccountingBook
+    public function lockBook(int $bookId): AccountingBook
     {
         // InnoDB takes the row lock; SQLite takes its writer lock before any read.
         $this->manager()->getConnection()->executeStatement(
-            'UPDATE ns_accounting_book SET posting_count = posting_count WHERE id = ?', [AccountingBook::ID],
+            'UPDATE ns_accounting_book SET posting_count = posting_count WHERE id = ?', [$bookId],
         );
 
-        return $this->book() ?? throw new LedgerError('book_not_initialized', 409);
+        return $this->book($bookId) ?? throw new LedgerError('book_not_initialized', 409);
     }
 
     public function account(AccountingBook $book, string $code): ?LedgerAccount

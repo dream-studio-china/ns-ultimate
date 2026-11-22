@@ -13,7 +13,6 @@ use App\Core\View\ListApiViewMixin;
 use App\Identity\Entity\User;
 use Doctrine\ORM\QueryBuilder;
 use NsUltimate\Business\Accounting\Controller\LedgerControllerSupport;
-use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Entity\JournalEntry;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
 use NsUltimate\Business\Accounting\Service\JournalEntryService;
@@ -56,7 +55,7 @@ final class JournalController extends RestController
         // A client-supplied command_id makes an exact retry return the same draft.
         // Without one the request is an ordinary, non-replayable create.
         $data = $this->ledgerPayload($request) + ['command_id' => UUID::v4()];
-        $result = $this->commands->execute($user->getUuid(), 'create-draft', $data);
+        $result = $this->commands->execute($user->getUuid(), 'create-draft', $data, $this->headquartersBookId());
 
         return $this->success($this->projection($user, $result['id']), status: 201);
     }
@@ -70,7 +69,7 @@ final class JournalController extends RestController
         if (array_key_exists('id', $data) && $data['id'] !== $id) {
             throw new LedgerError('invalid_identifier');
         }
-        $result = $this->commands->execute($user->getUuid(), 'update-draft', ['id' => $id] + $data);
+        $result = $this->commands->execute($user->getUuid(), 'update-draft', ['id' => $id] + $data, $this->headquartersBookId());
 
         return $this->success($this->projection($user, $result['id']));
     }
@@ -89,7 +88,7 @@ final class JournalController extends RestController
     /** @return array{book: int} */
     protected function commonFilter(): array
     {
-        return ['book' => AccountingBook::ID];
+        return ['book' => $this->headquartersBookId()];
     }
 
     /** @return array{uuid: string} */
@@ -102,7 +101,7 @@ final class JournalController extends RestController
     protected function listFilter(array|QueryBuilder|DqlExpression|null $filter = null): QueryBuilder
     {
         // A fixed query whitelist keeps all of Core's dynamic query inputs off this view.
-        return $this->service->registerQuery($this->parameters());
+        return $this->service->registerQuery($this->parameters(), $this->headquartersBookId());
     }
 
     protected function listResponses(mixed $entities): LedgerPage
@@ -127,7 +126,7 @@ final class JournalController extends RestController
 
     private function projection(User $user, string $id): object
     {
-        return (object) $this->readModel->journal($id, in_array('audit', $this->access->capabilities($user), true));
+        return (object) $this->readModel->journal($id, in_array('audit', $this->access->capabilities($user), true), $this->headquartersBookId());
     }
 
     private function financeUser(string $capability): User

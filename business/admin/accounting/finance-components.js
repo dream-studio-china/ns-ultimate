@@ -2,7 +2,7 @@ import { defineComponent, h, inject, markRaw, ref, resolveComponent, Teleport } 
 import { useRouter } from 'vue-router'
 import { t } from '@/i18n'
 import request from '@/utils/request'
-import { FINANCE_API, finance } from './finance-context'
+import { BOOK_API, finance, selectedBookId, selectBook } from './finance-context'
 import FinanceCommandDialog from './FinanceCommandDialog.vue'
 import FinanceRecordDialog from './FinanceRecordDialog.vue'
 import { reportFilters } from './ledger-ui.mjs'
@@ -63,6 +63,18 @@ const actionProps = {
 
 const visible = (spec, record) => (!spec.capability || finance.can(spec.capability)) && (!spec.when || Boolean(spec.when(record, finance)))
 const blocked = () => finance.state.busy || Boolean(finance.state.pending)
+
+export const bookSelection = markRaw(defineComponent({
+  name: 'FinanceBookSelection',
+  props: actionProps,
+  setup(props) {
+    const ElButton = resolveComponent('ElButton')
+    return () => props.record ? h(ElButton, {
+      size: 'small', disabled: blocked() || Number(props.record.id) === selectedBookId,
+      onClick: () => selectBook(Number(props.record.id))
+    }, () => t(Number(props.record.id) === selectedBookId ? 'Selected book' : 'Select book')) : null
+  }
+}))
 
 /**
  * An explicit ledger command registered as a list/detail action.
@@ -193,7 +205,7 @@ export function reportSummary(kind) {
         exporting.value = true
         try {
           const params = { ...reportFilters(kind, snapshot.filters), cutoff: snapshot.cutoff }
-          const csv = (await request.get(`${FINANCE_API}/reports/${kind}/csv`, { params })).data
+          const csv = (await request.get(`${BOOK_API}/reports/${kind}/csv`, { params })).data
           const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
           const link = document.createElement('a')
           link.href = url

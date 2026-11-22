@@ -6,7 +6,7 @@ const errorBodySchema = z.object({
   message: z.string().min(1).max(300).optional(),
   class: z.string().min(1).max(200).optional(),
 }).passthrough()
-const envelopeSchema = errorBodySchema.extend({ code: z.number(), data: z.unknown().optional(), paginator: z.unknown().optional() })
+const envelopeSchema = errorBodySchema.extend({ code: z.number(), data: z.unknown().optional(), paginator: z.unknown().optional(), report: z.unknown().optional() })
 const paginatorSchema = z.object({ page: z.number().int().positive(), has_next: z.boolean() })
 export const STAFF_TOKEN_STORAGE_KEY = 'ns-store-console.auth.tokens'
 export const STAFF_STORE_STORAGE_KEY = 'ns-store-console.auth.store'
@@ -199,7 +199,7 @@ export class ApiClient {
     this.refreshTask = task
     try { await task } finally { if (this.refreshTask === task) this.refreshTask = null }
   }
-  async request(path: string, method = 'GET', body?: unknown, extraHeaders: Record<string, string> = {}): Promise<unknown> {
+  private async authenticatedResponse(path: string, method: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<Response> {
     const epoch = this.epoch
     const token = this.tokens?.access_token
     if (!token) throw new ApiError('unauthorized')
@@ -214,6 +214,20 @@ export class ApiClient {
       if (response.status === 401) this.expire()
     }
     await this.check(response)
+    if (epoch !== this.epoch) throw new ApiError('unauthorized')
+    return response
+  }
+  async downloadCsv(path: string): Promise<Blob> {
+    const epoch = this.epoch
+    const response = await this.authenticatedResponse(path, 'GET', undefined, { Accept: 'text/csv' })
+    if (!response.headers.get('Content-Type')?.startsWith('text/csv')) throw new ApiError('invalid')
+    const file = await response.blob()
+    if (epoch !== this.epoch) throw new ApiError('unauthorized')
+    return file
+  }
+  async request(path: string, method = 'GET', body?: unknown, extraHeaders: Record<string, string> = {}): Promise<unknown> {
+    const epoch = this.epoch
+    const response = await this.authenticatedResponse(path, method, body, extraHeaders)
     if (response.status === 204) return undefined
     const parsed = envelopeSchema.safeParse(await this.json(response))
     if (epoch !== this.epoch) throw new ApiError('unauthorized')

@@ -6,6 +6,7 @@ namespace NsUltimate\Business\Accounting\Service;
 
 use App\Core\Service\BaseService;
 use Doctrine\ORM\QueryBuilder;
+use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Entity\JournalEntry;
 use NsUltimate\Business\Accounting\Repository\JournalEntryRepository;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -19,11 +20,11 @@ final class JournalEntryService extends BaseService
     }
 
     /** @param array<string, mixed> $parameters */
-    public function registerQuery(array $parameters): QueryBuilder
+    public function registerQuery(array $parameters, int $bookId = AccountingBook::ID): QueryBuilder
     {
         LedgerInput::fields($parameters, 'from', 'to', 'state', 'account', 'page', 'limit');
 
-        return $this->journals->register($parameters);
+        return $this->journals->register($parameters, $bookId);
     }
 
     public function registerPage(QueryBuilder $query, int $page, int $limit): LedgerPage

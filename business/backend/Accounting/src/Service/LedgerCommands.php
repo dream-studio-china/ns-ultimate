@@ -17,23 +17,21 @@ use NsUltimate\Business\Accounting\Repository\LedgerWriteRepository;
 
 final class LedgerCommands
 {
-    private const BOOK = AccountingBook::ID;
-
     public function __construct(private readonly LedgerWriteRepository $storage) {}
 
     /**
      * @param array<string, mixed> $input
      * @return array<string, mixed>
      */
-    public function execute(string $actor, string $action, array $input): array
+    public function execute(string $actor, string $action, array $input, int $bookId = AccountingBook::ID, ?string $storeUuid = null): array
     {
         $data = $this->normalize($action, $input);
         if ($action === 'initialize') {
-            return $this->initialize($actor, $data);
+            return $this->initialize($actor, $data, $bookId, $storeUuid);
         }
         for ($attempt = 1; ; ++$attempt) {
             try {
-                return $this->storage->transactional(fn () => $this->apply($actor, $action, $data));
+                return $this->storage->transactional(fn () => $this->apply($actor, $action, $data, $bookId));
             } catch (RetryableException $e) {
                 if ($attempt === 3) {
                     throw new LedgerError('temporarily_unavailable', 503);
@@ -47,25 +45,25 @@ final class LedgerCommands
      * @param array<string, mixed> $data
      * @return array{id: int}
      */
-    private function initialize(string $actor, array $data): array
+    private function initialize(string $actor, array $data, int $bookId, ?string $storeUuid): array
     {
-        $book = new AccountingBook($data['entity'], $data['currency'], $data['scale'], $data['timezone'], self::date($data['opening_date']));
+        $book = new AccountingBook($data['entity'], $data['currency'], $data['scale'], $data['timezone'], self::date($data['opening_date']), $bookId, $storeUuid);
         try {
-            return $this->storage->transactional(function () use ($actor, $book): array {
+            return $this->storage->transactional(function () use ($actor, $book, $bookId): array {
                 $this->storage->add($book);
-                $this->audit($book, $actor, 'initialize', (string) self::BOOK, null, ['opening_date' => $book->getOpeningDate()->format('Y-m-d')]);
+                $this->audit($book, $actor, 'initialize', (string) $bookId, null, ['opening_date' => $book->getOpeningDate()->format('Y-m-d')]);
 
-                return ['id' => self::BOOK];
+                return ['id' => $bookId];
             });
         } catch (UniqueConstraintViolationException $e) {
-            $existing = $this->storage->transactional(fn () => $this->storage->book());
-            if ($existing === null || $existing->getEntity() !== $book->getEntity() || $existing->getCurrency() !== $book->getCurrency()
+            $existing = $this->storage->transactional(fn () => $this->storage->book($bookId));
+            if ($existing === null || $existing->getStoreUuid() !== $storeUuid || $existing->getEntity() !== $book->getEntity() || $existing->getCurrency() !== $book->getCurrency()
                 || $existing->getScale() !== $book->getScale() || $existing->getTimezone() !== $book->getTimezone()
                 || $existing->getOpeningDate()->format('Y-m-d') !== $book->getOpeningDate()->format('Y-m-d')) {
                 throw new LedgerError('book_already_initialized', 409);
             }
 
-            return ['id' => self::BOOK];
+            return ['id' => $bookId];
         }
     }
 
@@ -73,9 +71,9 @@ final class LedgerCommands
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */
-    private function apply(string $actor, string $action, array $data): array
+    private function apply(string $actor, string $action, array $data, int $bookId): array
     {
-        $book = $this->storage->lockBook();
+        $book = $this->storage->lockBook($bookId);
         $command = $data['command_id'] ?? null;
         unset($data['command_id']);
         $fingerprintData = $data;
@@ -175,7 +173,7 @@ final class LedgerCommands
     {
         $book->approveZeroOpening();
 
-        return ['id' => '1'];
+        return ['id' => (string) $book->getId()];
     }
 
     /**

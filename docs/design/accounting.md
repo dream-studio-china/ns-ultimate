@@ -4,7 +4,7 @@
 
 ## Scope and dependency direction
 
-**M1 is a standalone manual general ledger.** Authorized users configure a single book, post reviewed opening balances and manual journals, correct entries, lock periods, and run reports. M1 does not read Payment, Settlement, or Wallet data. It reuses the deployed Admin shell, identity, authorization infrastructure, and database; it is not a separate service.
+**M1 is a standalone manual general ledger.** Headquarters can configure one independent book per store and retains the unassigned legacy book. Each book supports reviewed opening balances, manual journals, corrections, period locks, and reports. M1 does not read Payment, Settlement, or Wallet data. It reuses the deployed Admin shell, identity, authorization infrastructure, and database; it is not a separate service.
 
 **M2 adds one explicitly enabled, read-only Settlement-to-Wallet import.** Accounting can observe source data; no source system calls Accounting or waits for its success. Payment collection, provider payout, tax, FX, full A/R and A/P workflows, and statutory reports are out of scope. Neither milestone requires Core changes.
 
@@ -28,7 +28,7 @@ Admin Finance UI ──> Accounting commands / queries ──> Accounting-owned 
 
 | Record | Ownership and integrity |
 | --- | --- |
-| Book | Stable ID, entity identifier, base currency and scale, IANA timezone, opening date. M1 exposes only one book and does not permit mutation of these fields after initialization. |
+| Book | Stable ID, optional unique Store UUID, entity identifier, base currency and scale, IANA timezone, opening date. Book ownership and configuration do not change after initialization. |
 | Period | Book and local calendar month, `open` or `locked`; unique `(book, month)`. The first month's usable range begins at the book opening date. No date outside a configured, open period can post. |
 | Account | Book-unique code, name, classification, normal balance, active/postable flags. Do not reuse codes or reclassify accounts with posted history; disabling an account does not hide it from reports. |
 | Journal and lines | Journal UUID, book, local accounting date, origin (`opening`, `manual`, `imported`, `reversal`), status, revision, summary, posting sequence/time/actor, optional reason and reversal link. Lines have a unique position per journal, a same-book account, a side and one positive minor-unit amount. Optional store/party fields are classifications, not security scopes. |
@@ -66,7 +66,7 @@ Full reversal copies the original lines and dimensions with debit and credit swa
 
 ## Access, evidence, and reporting
 
-Map distinct capabilities for book/report read, evidence/audit read, draft edit/void, post, reverse, configure, period lock, period reopen, and M2 import/review. Use existing identity and authorization and check access on every read, command, record lookup, and export. System administrators have all M1 capabilities by default; other users need explicit global Finance grants. The initial journal audience is **book-wide**, not store-scoped: a store filter is not access control, and store roles do not grant Finance access. Do not expose dimension-scoped access until there is an explicit policy covering mixed-dimension journals, summaries, and exports. Identify the accounting-policy reviewer and decide role separation for delegated users before enabling production writes.
+Use existing identity and authorization and check access on every read, command, record lookup, and export. Headquarters uses global Finance grants. Store readers use a separate read-only API and a Store grant; it resolves the book through the authorized store, not a client-selected dimension or book identifier. Identify the accounting-policy reviewer and decide role separation for delegated users before enabling production writes.
 
 Only the journal service writes the ledger. Imported source evidence and audit use allowlisted identifiers, amounts, timestamps, reasons and bounded notes, never credentials, raw provider payloads or arbitrary file URLs. A manual journal can keep separate attachment references and bounded JSON metadata for operators; neither is verified source evidence or a reporting dimension. The posted ledger, not audit logs or import state, is the authority for balances. Audit, diagnostics, and evidence have their own read permissions.
 
@@ -110,7 +110,7 @@ Never use matching aggregate totals as the only reconciliation test or compare t
 
 - **M1 gate:** demonstrate book setup, opening, draft exclusion, posting, lock/reopen, next-period reversal, permissions, and exact reports through the composed UI/API. Validate migrations and lock races on isolated MySQL before M1 release, including rollback after numbering, duplicate retries, locking versus posting, and reversal against an inactive historical account. SQLite is useful for fast checks but cannot prove MySQL locking. No source reads are necessary.
 - **M2 gate:** use synthetic Settlement and Wallet fixtures to exercise replay, concurrent imports, checkpoint crashes, receipt gaps, already reversed vouchers, cutover exceptions, and changed evidence. Reconcile item by item and confirm no source-writing path is callable. Roll out with a dry run and reviewed mappings; keep scheduling disabled unless separately approved.
-- **Owner decisions before M1 build/use:** identify the legal entity, opening date/timezone, currency and scale, reviewed chart, role assignments/separation, opening evidence, and record retention. Start with one book and no dimension-scoped access; do not assume CNY or a fiscal calendar without approval.
+- **Owner decisions before M1 use:** identify the accounting entity, opening date/timezone, currency and scale, reviewed chart, role assignments/separation, opening evidence, and record retention for each book. Do not assume CNY or a fiscal calendar without approval.
 - **Owner decisions before M2 enablement:** select the scenario, recognition point, principal/agent treatment where relevant, liability/control accounts, exact unit mappings, occurrence cutoff, and handling of pre-cutover activity. Missing accounting policy blocks M2 journal generation, not M1.
 
 The [implementation plan](../tasks/accounting-foundation.md) contains the ordered tasks and representative acceptance cases. The [module guide](../../business/backend/Accounting/README.md) covers M1 operation.

@@ -1,5 +1,9 @@
 export const zhCN = {
   cashRegister: '门店收支', cashRegisterHint: '记录本店手工收支。采购可填写数量，系统自动计算单位进价。',
+  accountingBook: '门店账簿', accountingReadOnly: '仅可查看本店账簿。', accountingJournals: '会计凭证',
+  accountingNoJournals: '暂无凭证', accountingDraft: '草稿', accountingPosted: '已过账', accountingVoided: '已作废',
+  accountingDebit: '借方', accountingCredit: '贷方', accountingTrial: '试算平衡',
+  accountingFrom: '起始日期', accountingTo: '结束日期', accountingRun: '生成报表', accountingExport: '导出 CSV',
   cashAdd: '记一笔', cashDirection: '收支方向', cashIncome: '收入', cashExpense: '支出', cashCategory: '分类',
   cashPurchase: '采购', cashTransport: '运输', cashMaintenance: '维修', cashOtherExpense: '其他支出', cashOtherIncome: '其他收入',
   cashDate: '日期', cashAmount: '金额', cashItem: '采购品名', cashQuantity: '数量', cashUnit: '单位', cashPiece: '件',
