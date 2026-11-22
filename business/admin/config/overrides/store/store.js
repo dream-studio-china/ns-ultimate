@@ -3,9 +3,9 @@ import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collec
 import StoreContactSchema from '../../../../../core/crud-admin/src/configs/collections/store/StoreContact.json'
 import StoreAddressSchema from './StoreAddress.json'
 import StoreSettingsSchema from './StoreSettings.json'
-import StoreDiningModesAction from '../../components/StoreDiningModesAction.vue'
-import StoreOnboardingGuideAction from '../../components/StoreOnboardingGuideAction.vue'
-import StoreSetupAuditAction from '../../components/StoreSetupAuditAction.vue'
+import StoreDiningModesAction from '../../components/store/StoreDiningModesAction.vue'
+import StoreOnboardingGuideAction from '../../components/store/StoreOnboardingGuideAction.vue'
+import StoreSetupAuditAction from '../../components/store/StoreSetupAuditAction.vue'
 
 // Business override of the core Store entity (declared explicitly in
 // business/admin/config/index.js `replace`). Only code, name and status are

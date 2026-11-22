@@ -1,11 +1,11 @@
 import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import { uuidFilter } from '../../uuid-filter.mjs'
-import OrderPrintConditions from '../../components/OrderPrintConditions.vue'
-import OrderPrintEvents from '../../components/OrderPrintEvents.vue'
-import OrderPrintOutputSelect from '../../components/OrderPrintOutputSelect.vue'
-import PrinterRuleEnabledControl from '../../components/PrinterRuleEnabledControl.vue'
-import PrinterRuleStoreField from '../../components/PrinterRuleStoreField.vue'
+import OrderPrintConditions from '../../components/printer/OrderPrintConditions.vue'
+import OrderPrintEvents from '../../components/printer/OrderPrintEvents.vue'
+import OrderPrintOutputSelect from '../../components/printer/OrderPrintOutputSelect.vue'
+import PrinterRuleEnabledControl from '../../components/printer/PrinterRuleEnabledControl.vue'
+import PrinterRuleStoreField from '../../components/printer/PrinterRuleStoreField.vue'
 
 const field = (property, label) => ({ property, label: t(label) })
 const storeField = {

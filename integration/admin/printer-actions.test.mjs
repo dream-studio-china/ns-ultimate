@@ -4,10 +4,10 @@ import { runInNewContext } from 'node:vm'
 import test from 'node:test'
 import { uuidFilter } from '../../business/admin/config/uuid-filter.mjs'
 
-const printerSampleData = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer-sample-data.json', import.meta.url), 'utf8'))
+const printerSampleData = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer/printer-sample-data.json', import.meta.url), 'utf8'))
 
 function mount(name, request, confirm = () => true, record = {}, storage = null) {
-  const source = readFileSync(new URL(`../../business/admin/config/components/${name}.js`, import.meta.url), 'utf8')
+  const source = readFileSync(new URL(`../../business/admin/config/components/printer/${name}.js`, import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.component =')
   const context = {
     defineComponent: value => value, ref: value => ({ value }), resolveComponent: name => name,

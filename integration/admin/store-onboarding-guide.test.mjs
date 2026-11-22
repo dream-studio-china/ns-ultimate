@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
-import { STORE_ONBOARDING_STEPS } from '../../business/admin/config/components/store-onboarding-guide.mjs'
+import { STORE_ONBOARDING_STEPS } from '../../business/admin/config/components/store/store-onboarding-guide.mjs'
 
 function loadStoreOverride() {
   const source = readFileSync(new URL(
@@ -49,7 +49,7 @@ test('Store list registers the onboarding guide beside the default list actions'
 
 test('Store onboarding button is ordered to the right of the default New button', () => {
   const source = readFileSync(new URL(
-    '../../business/admin/config/components/StoreOnboardingGuideAction.vue',
+    '../../business/admin/config/components/store/StoreOnboardingGuideAction.vue',
     import.meta.url
   ), 'utf8')
   assert.match(source, /class="store-onboarding-guide-action"/)

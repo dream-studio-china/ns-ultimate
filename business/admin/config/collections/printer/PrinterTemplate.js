@@ -1,6 +1,6 @@
 import { t } from '@/i18n'
-import PrinterPaperAction from '../../components/PrinterPaperAction.js'
-import PrinterTemplateDesigner from '../../components/PrinterTemplateDesigner.vue'
+import PrinterPaperAction from '../../components/printer/PrinterPaperAction.js'
+import PrinterTemplateDesigner from '../../components/printer/PrinterTemplateDesigner.vue'
 
 const field = (property, label) => ({ property, label: t(label) })
 export default {

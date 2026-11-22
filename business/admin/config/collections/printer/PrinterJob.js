@@ -1,9 +1,9 @@
 import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import { uuidFilter } from '../../uuid-filter.mjs'
-import PrinterJobAction from '../../components/PrinterJobAction.js'
-import PrinterPaperAction from '../../components/PrinterPaperAction.js'
-import PrinterJobReprintAction from '../../components/PrinterJobReprintAction.js'
+import PrinterJobAction from '../../components/printer/PrinterJobAction.js'
+import PrinterPaperAction from '../../components/printer/PrinterPaperAction.js'
+import PrinterJobReprintAction from '../../components/printer/PrinterJobReprintAction.js'
 
 const field = (property, label) => ({ property, label: t(label) })
 const storeField = {

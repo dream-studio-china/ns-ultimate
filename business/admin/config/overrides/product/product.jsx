@@ -6,7 +6,7 @@ import { defineAsyncComponent, h, reactive } from 'vue'
 import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import SIP from '@/utils/simple-image-process'
-import { CopyProductsAction } from '../../components/copy-catalog-actions'
+import { CopyProductsAction } from '../../components/catalog/copy-catalog-actions'
 import { orderByIdDesc, statusFilterLabel } from '../../../../../core/crud-admin/src/configs/collections/helpers'
 // Lazily resolve the admin UI here: this config module is eagerly pulled into
 // every FormAdmin through `@/configs/entities`, so static SFC imports would
@@ -18,12 +18,12 @@ const FormAdmin = defineAsyncComponent(() => import('@/easyadmin/ui/vue/FormAdmi
 import specificationConfig from '../../../../../core/crud-admin/src/configs/collections/trade/Specification'
 import ProductMetadataSchema from './ProductMetadata.json'
 import ProductSettingsSchema from './ProductSettings.json'
-import ProductListControl from '../../components/ProductListControl.vue'
-import ProductCategorySelect from '../../components/ProductCategorySelect.vue'
-import ProductCategoryFilterScope from '../../components/ProductCategoryFilterScope.vue'
-import ProductStoreFilterScope from '../../components/ProductStoreFilterScope.vue'
-import { configureProductFilterState } from '../../components/product-filter-scope.mjs'
-import { formatProductSpecificationPrice, productSpecificationRows } from '../../components/product-list-updates.mjs'
+import ProductListControl from '../../components/catalog/ProductListControl.vue'
+import ProductCategorySelect from '../../components/catalog/ProductCategorySelect.vue'
+import ProductCategoryFilterScope from '../../components/catalog/ProductCategoryFilterScope.vue'
+import ProductStoreFilterScope from '../../components/catalog/ProductStoreFilterScope.vue'
+import { configureProductFilterState } from '../../components/catalog/product-filter-scope.mjs'
+import { formatProductSpecificationPrice, productSpecificationRows } from '../../components/catalog/product-list-updates.mjs'
 
 const productFilterState = reactive({
   storeUuid: '',

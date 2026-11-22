@@ -38,7 +38,7 @@ case "$command" in
   test-agent) exec node --test apps/admin-agent/tests/*.test.mjs "$@" ;;
   test-admin)
     node --test apps/admin-agent/tests/*.test.mjs
-    node --test integration/admin/*.test.mjs business/admin/config/features/accounting/*.test.mjs
+    node --test integration/admin/*.test.mjs business/admin/config/components/*/*.test.mjs business/admin/config/features/*/*.test.mjs
     cd core/crud-admin
     ./node_modules/.bin/vitest run --config ../../integration/admin/accounting.vitest.config.ts
     npm test -- "$@"

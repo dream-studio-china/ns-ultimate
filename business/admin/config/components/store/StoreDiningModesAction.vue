@@ -146,7 +146,7 @@ import { API_PREFIX, apiPath } from '@/api/prefix'
 import { t } from '@/i18n'
 import request from '@/utils/request'
 import DiningModesEditor from './DiningModesEditor.vue'
-import { fetchAllPages } from './catalog-copy.mjs'
+import { fetchAllPages } from '../catalog/catalog-copy.mjs'
 import { copyDiningModesSettings, normalizeDiningModesConfig, validateDiningModesConfig } from './dining-modes.mjs'
 
 const storesEndpoint = apiPath(API_PREFIX, 'manage/stores')

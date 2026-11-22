@@ -1,5 +1,5 @@
-import { productSpecificationRows } from './product-list-updates.mjs'
-import { productStoreUuid, referenceUuid } from './catalog-copy.mjs'
+import { productSpecificationRows } from '../catalog/product-list-updates.mjs'
+import { productStoreUuid, referenceUuid } from '../catalog/catalog-copy.mjs'
 
 export const STORE_SETUP_AUDIT_STATUSES = Object.freeze({
   complete: 'complete',

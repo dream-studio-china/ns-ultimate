@@ -1,5 +1,5 @@
 import Invoice from '../../../../../core/crud-admin/src/configs/collections/payment/Invoice.js'
-import InvoiceCloseAction from '../../components/InvoiceCloseAction.vue'
+import InvoiceCloseAction from '../../components/payment/InvoiceCloseAction.vue'
 import { t } from '@/i18n'
 
 const config = Invoice.Invoice

@@ -4,8 +4,8 @@ import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { starterTemplate, templateFormValue, newTemplateNode, previewData, nodeAt, replaceNode, transformLabel } from '../../business/admin/config/components/printer-template-designer.mjs'
-import { paperElements, receiptRows, labelElementBox } from '../../business/admin/config/components/printer-paper.mjs'
+import { starterTemplate, templateFormValue, newTemplateNode, previewData, nodeAt, replaceNode, transformLabel } from '../../business/admin/config/components/printer/printer-template-designer.mjs'
+import { paperElements, receiptRows, labelElementBox } from '../../business/admin/config/components/printer/printer-paper.mjs'
 
 const require = createRequire(new URL('../../core/crud-admin/package.json', import.meta.url))
 const ts = require('typescript')
@@ -13,7 +13,7 @@ const saveSource = readFileSync(new URL('../../core/crud-admin/src/easyadmin/app
 const code = ts.transpileModule(saveSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
 const saveHelpers = {}
 new Function('exports', code)(saveHelpers)
-const sample = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer-sample-data.json', import.meta.url), 'utf8'))
+const sample = JSON.parse(readFileSync(new URL('../../business/admin/config/components/printer/printer-sample-data.json', import.meta.url), 'utf8'))
 const renderer = fileURLToPath(new URL('../../business/backend/Printer/src/Service/PrintDocumentRenderer.php', import.meta.url))
 const normalizer = fileURLToPath(new URL('../../business/backend/Printer/src/Service/TemplateDefinitionInput.php', import.meta.url))
 

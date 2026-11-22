@@ -2,7 +2,7 @@ import { defineComponent, h, onMounted, ref, resolveComponent } from 'vue'
 import { getLocale, t } from '@/i18n'
 import request from '@/utils/request'
 import { apiPath, API_PREFIX } from '@/api/prefix'
-import { localizedAuthorizationName } from '../../i18n/authorization.js'
+import { localizedAuthorizationName } from '../../../i18n/authorization.js'
 
 /**
  * Localized variant of the core Assignment role selector. Behavior mirrors

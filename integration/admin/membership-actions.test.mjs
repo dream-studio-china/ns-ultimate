@@ -4,7 +4,7 @@ import { runInNewContext } from 'node:vm'
 import test from 'node:test'
 
 function mount(record, request, confirm = () => true) {
-  const source = readFileSync(new URL('../../business/admin/config/components/MembershipStatusAction.js', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../business/admin/config/components/store/MembershipStatusAction.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.component =')
   const context = {
     defineComponent: value => value,

@@ -1,7 +1,7 @@
 import { defineComponent, h } from 'vue'
-import CoreRolePermissionsDetail from '../../../../core/crud-admin/src/configs/collections/authorization/RolePermissionsDetail.jsx'
+import CoreRolePermissionsDetail from '../../../../../core/crud-admin/src/configs/collections/authorization/RolePermissionsDetail.jsx'
 import { getLocale } from '@/i18n'
-import { translatedAuthorizationName } from '../../i18n/authorization.js'
+import { translatedAuthorizationName } from '../../../i18n/authorization.js'
 
 const localizePermission = (value, locale) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value

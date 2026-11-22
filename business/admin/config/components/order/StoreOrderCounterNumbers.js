@@ -1,7 +1,7 @@
 import { defineComponent, h, watch, ref } from 'vue'
 import { t } from '@/i18n'
 import CrudSkeletonAdapter from '@/easyadmin/adapters/crudskeleton/CrudSkeletonAdapter'
-import RelationToOne from '../../../../core/crud-admin/src/easyadmin/ui/vue/plugins/list/RelationToOne.vue'
+import RelationToOne from '../../../../../core/crud-admin/src/easyadmin/ui/vue/plugins/list/RelationToOne.vue'
 
 const counterNumbersByOrder = new Map()
 

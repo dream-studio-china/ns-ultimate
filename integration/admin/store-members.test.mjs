@@ -5,7 +5,7 @@ import {
   memberRows,
   storeMemberPayload,
   storeMembersPath
-} from '../../business/admin/config/components/store-members.mjs'
+} from '../../business/admin/config/components/store/store-members.mjs'
 
 const storeUuid = 'ed7e411c-e9b8-4228-b39d-48bc321d7210'
 const userUuid = '27fdb3f8-e282-4a61-bd58-de03f8f1a9e8'

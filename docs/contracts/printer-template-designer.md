@@ -2,7 +2,7 @@
 
 ## Ownership and storage
 
-`business/admin/config/components/PrinterTemplateDesigner.vue` is the custom
+`business/admin/config/components/printer/PrinterTemplateDesigner.vue` is the custom
 `PrinterTemplate.definition` control in the normal admin create/edit form. It
 uses the existing CRUD save lifecycle and preview renderer; it does not change
 routes, authorization, provider protocols or the persisted template language.

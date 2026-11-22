@@ -2,7 +2,7 @@ import { r } from '@/router/generator'
 import { t } from '@/i18n'
 import Layout from '@/layout'
 import coreRoutes from '../../core/crud-admin/src/configs/routes'
-import OrderRefundRecords from './config/components/OrderRefundRecords.vue'
+import OrderRefundRecords from './config/features/order-refund-records/OrderRefundRecords.vue'
 
 const orderRoute = coreRoutes.find(route => route.name === 'OrderManage')
 if (!orderRoute) throw new Error('The admin core must expose the OrderManage route.')

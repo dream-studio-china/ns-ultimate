@@ -20,7 +20,7 @@ function readJson(path) {
 }
 
 function loadStoreOverride() {
-  const source = readFileSync(new URL('../overrides/store/store.js', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../overrides/store/store.js', import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '').replace('export default', 'globalThis.config =')
   const context = {
     t: key => key,
@@ -38,7 +38,7 @@ function loadStoreOverride() {
 
 function loadMessages(locale) {
   const context = {}
-  const source = readFileSync(new URL(`../../i18n/${locale}.js`, import.meta.url), 'utf8')
+  const source = readFileSync(new URL(`../../../i18n/${locale}.js`, import.meta.url), 'utf8')
     .replace(/^import .*$/gm, '')
     .replace(/^\s*\.\.\.designerMessages\([^)]*\),\s*$/gm, '')
     .replace('export default', 'globalThis.messages =')
@@ -87,7 +87,7 @@ test('stores ordering and checkout rules in the Store settings contract', () => 
     'confirm_required_items'
   ])
 
-  const schema = readJson('../overrides/store/StoreSettings.json')
+  const schema = readJson('../../overrides/store/StoreSettings.json')
   const diningModeProperties = schema.properties.diningModes.properties.modes.items.properties
   assert.deepEqual(diningModeProperties.rules.items.properties.type.enum, [
     'fixed_item',

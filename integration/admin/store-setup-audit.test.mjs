@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm'
 import {
   auditStoreSetup,
   STORE_SETUP_AUDIT_STATUSES
-} from '../../business/admin/config/components/store-setup-audit.mjs'
+} from '../../business/admin/config/components/store/store-setup-audit.mjs'
 
 const storeUuid = '5c67fe8c-b31b-4e17-ad0f-739821bb9c14'
 const userUuid = '55a5d068-5b27-4b65-b2d2-f090e04aa6f0'
@@ -103,11 +103,11 @@ function loadMessages(locale) {
 
 function sourceTranslationKeys() {
   const moduleSource = readFileSync(new URL(
-    '../../business/admin/config/components/store-setup-audit.mjs',
+    '../../business/admin/config/components/store/store-setup-audit.mjs',
     import.meta.url
   ), 'utf8')
   const componentSource = readFileSync(new URL(
-    '../../business/admin/config/components/StoreSetupAuditAction.vue',
+    '../../business/admin/config/components/store/StoreSetupAuditAction.vue',
     import.meta.url
   ), 'utf8')
   const keys = new Set(['Enabled', 'Disabled'])

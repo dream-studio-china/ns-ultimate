@@ -2,7 +2,7 @@ import { t } from '@/i18n'
 import { loadRelationRecords } from '@/utils/relation'
 import { uuidFilter } from '../../uuid-filter.mjs'
 import { orderByIdDesc } from '../../../../../core/crud-admin/src/configs/collections/helpers'
-import CounterQrExportAction from '../../components/CounterQrExportAction.vue'
+import CounterQrExportAction from '../../components/counter/CounterQrExportAction.vue'
 
 export default {
   Counter: {

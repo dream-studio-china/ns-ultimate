@@ -15,7 +15,7 @@ import {
   rememberCategoryMapping,
   specificationCopyPayload,
   targetCategoriesBySlug
-} from '../../business/admin/config/components/catalog-copy.mjs'
+} from '../../business/admin/config/components/catalog/catalog-copy.mjs'
 
 function loadCategoryConfig() {
   const source = readFileSync(new URL(

@@ -1,5 +1,5 @@
 import coreConfig from '../../../../../core/crud-admin/src/configs/collections/trade/ProductCategory'
-import { CopyProductCategoriesAction } from '../../components/copy-catalog-actions'
+import { CopyProductCategoriesAction } from '../../components/catalog/copy-catalog-actions'
 
 const productCategory = coreConfig.ProductCategory
 

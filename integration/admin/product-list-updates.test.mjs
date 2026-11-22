@@ -7,7 +7,7 @@ import {
   productSettingUpdate,
   productSortOrderUpdate,
   productSoldoutUpdate
-} from '../../business/admin/config/components/product-list-updates.mjs'
+} from '../../business/admin/config/components/catalog/product-list-updates.mjs'
 
 test('product list settings merge with existing values and allow an empty settings object', () => {
   assert.deepEqual(productSettingUpdate({
