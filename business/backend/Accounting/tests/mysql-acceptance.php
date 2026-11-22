@@ -17,6 +17,8 @@ use NsUltimate\Business\Accounting\Migrations\Version20261122110000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122120000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122130000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122140000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122150000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122160000;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
@@ -106,7 +108,7 @@ $db->insert('ns_accounting_book', [
 $oldDraft = UUID::v4();
 $db->insert('ns_accounting_journal', ['book_id' => 2, 'id' => $oldDraft, 'accounting_date' => '2026-01-01',
     'origin' => 'manual', 'state' => 'draft', 'revision' => 3, 'summary' => 'Pre-upgrade draft']);
-AccountingTestManager::migrate($db, Version20261122140000::class);
+AccountingTestManager::migrate($db, Version20261122140000::class, Version20261122150000::class, Version20261122160000::class);
 check((int) $db->fetchOne('SELECT book_id FROM ns_accounting_book_store WHERE store_uuid = ?', [$store]) === 2, 'Existing store binding was not preserved.');
 $backfilled = $db->fetchAssociative('SELECT book_id, revision, store_uuid FROM ns_accounting_journal WHERE id = ?', [$oldDraft]);
 check($backfilled !== false && (int) $backfilled['book_id'] === 2 && (int) $backfilled['revision'] === 3 && $backfilled['store_uuid'] === $store, 'Existing journal was not attributed in place.');
@@ -185,4 +187,31 @@ try {
 [$reversed, $replayed] = array_map('result', $workers);
 check($reversed === $replayed && $reversed['number'] === '2026-3', 'Concurrent reversal did not replay.');
 check((int) $db->fetchOne("SELECT COUNT(*) FROM ns_accounting_journal WHERE state = 'posted'") === 3, 'Unexpected posted count.');
-fwrite(STDOUT, "MySQL migration, ORM schema parity, rollback, exact report, posting replay, closing race, and reversal replay passed.\n");
+
+$cashStore = UUID::v4();
+$cash = ['source_uuid' => UUID::v4()];
+// Simulate the Store table in the composed app with a different collation.
+$db->executeStatement('CREATE TABLE store (uuid VARCHAR(36) PRIMARY KEY, name VARCHAR(255) NOT NULL) COLLATE utf8mb4_unicode_ci');
+$db->insert('store', ['uuid' => $cashStore, 'name' => 'Synthetic store']);
+$db->insert('ns_store_cash_entry', [
+    'uuid' => $cash['source_uuid'], 'store_uuid' => $cashStore, 'actor_uuid' => UUID::v4(), 'entry_date' => '2026-02-02',
+    'currency' => 'CNY', 'direction' => 'expense', 'category' => 'transport', 'amount' => 12000, 'note' => 'Freight',
+    'metadata' => '{}', 'created_at' => '2026-02-02 12:00:00',
+]);
+$run('bind-store', ['store_uuid' => $cashStore]);
+$run('save-cash-mapping', ['category' => 'transport', 'debit_code' => 'EQUITY', 'credit_code' => 'CASH']);
+$mappingRows = $q->cashMappings(1, 1, 20)->items;
+check(count($mappingRows) === 1 && $mappingRows[0]['status'] === 'cash_mapping_configured' && $q->cashMapping(1, 'transport')['credit_code'] === 'CASH', 'Cash mapping list did not read the configured category.');
+$db->beginTransaction();
+try {
+    $db->executeStatement('UPDATE ns_accounting_book SET posting_count = posting_count WHERE id = 1');
+    $workers = [worker('draft-from-cash', $cash), worker('draft-from-cash', $cash)];
+    waitForLock($workers);
+} finally {
+    $db->commit();
+}
+[$fromCash, $duplicate] = array_map('result', $workers);
+check(isset($fromCash['id'], $duplicate['id']) && $fromCash['id'] === $duplicate['id'] && $fromCash['existing'] !== $duplicate['existing'], 'Concurrent cash conversion did not deduplicate.');
+$entries = $q->cashEntries(1, ['category' => 'transport'])->items;
+check(count($entries) === 1 && $entries[0]['journal_id'] === $fromCash['id'] && $entries[0]['journal_state'] === 'draft' && $entries[0]['store_name'] === 'Synthetic store', 'Cash register did not return its linked draft.');
+fwrite(STDOUT, "MySQL migration, ORM schema parity, rollback, exact report, posting replay, closing race, reversal replay, and concurrent cash draft generation passed.\n");

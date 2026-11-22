@@ -7,9 +7,11 @@ namespace NsUltimate\Business\Accounting\Repository;
 use Brick\Math\BigInteger;
 use Doctrine\DBAL\Connection;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
+use NsUltimate\Business\Accounting\Entity\CashJournalMapping;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
 use NsUltimate\Business\Accounting\Service\LedgerPage;
+use NsUltimate\Business\Accounting\Service\StoreCashMetadata;
 
 final class LedgerReadRepository
 {
@@ -18,6 +20,96 @@ final class LedgerReadRepository
                            WHERE l.book_id = ? AND j.state = \'posted\' AND j.posting_index <= CAST(? AS DECIMAL(19, 0))';
 
     public function __construct(private readonly Connection $db) {}
+
+    public function cashMappings(int $bookId, int $page, int $limit): LedgerPage
+    {
+        $rows = $this->savedCashMappings($bookId);
+
+        return new LedgerPage(array_slice($rows, ($page - 1) * $limit, $limit), count($rows), $page, $limit);
+    }
+
+    /** @return array<string, mixed> */
+    public function cashMapping(int $bookId, string $category): array
+    {
+        foreach ($this->savedCashMappings($bookId) as $row) {
+            if ($row['category'] === $category) {
+                return $row;
+            }
+        }
+
+        throw new LedgerError('cash_mapping_not_found', 404);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function savedCashMappings(int $bookId): array
+    {
+        $saved = $this->db->fetchAllAssociativeIndexed(
+            'SELECT m.category, m.debit_code, d.name AS debit_name, m.credit_code, c.name AS credit_name,
+                 CASE WHEN d.active = 1 AND d.postable = 1 AND c.active = 1 AND c.postable = 1 THEN 1 ELSE 0 END AS usable
+             FROM ns_accounting_cash_mapping m
+             LEFT JOIN ns_accounting_account d ON d.book_id = m.book_id AND HEX(d.code) = HEX(m.debit_code)
+             LEFT JOIN ns_accounting_account c ON c.book_id = m.book_id AND HEX(c.code) = HEX(m.credit_code)
+             WHERE m.book_id = ?',
+            [$bookId],
+        );
+        $rows = [];
+        foreach (CashJournalMapping::CATEGORIES as $category) {
+            $mapping = $saved[$category] ?? null;
+            if ($mapping === null) {
+                continue;
+            }
+            $rows[] = [
+                'id' => $category, 'category' => $category,
+                'direction' => $category === 'other_income' ? 'cash_income' : 'cash_expense',
+                'debit_code' => $mapping['debit_code'], 'credit_code' => $mapping['credit_code'],
+                'debit_account' => $mapping['debit_code'].(isset($mapping['debit_name']) ? ' - '.$mapping['debit_name'] : ''),
+                'credit_account' => $mapping['credit_code'].(isset($mapping['credit_name']) ? ' - '.$mapping['credit_name'] : ''),
+                'status' => (int) $mapping['usable'] === 1 ? 'cash_mapping_configured' : 'cash_mapping_needs_review',
+            ];
+        }
+
+        return $rows;
+    }
+
+    /** @param array<string, mixed> $parameters */
+    public function cashEntries(int $bookId, array $parameters, bool $canCorrect = false): LedgerPage
+    {
+        LedgerInput::fields($parameters, 'page', 'limit', 'category');
+        [$page, $limit] = LedgerPage::window($parameters);
+        $from = ' FROM ns_store_cash_entry c
+            JOIN ns_accounting_book_store b ON HEX(b.store_uuid) = HEX(c.store_uuid)
+            LEFT JOIN store s ON HEX(s.uuid) = HEX(c.store_uuid)
+            LEFT JOIN ns_accounting_journal j ON j.book_id = b.book_id AND HEX(j.cash_source_uuid) = HEX(c.uuid)
+            LEFT JOIN ns_accounting_cash_mapping m ON m.book_id = b.book_id AND HEX(m.category) = HEX(c.category)
+            WHERE b.book_id = ?';
+        $args = [$bookId];
+        if (isset($parameters['category'])) {
+            if (!in_array($parameters['category'], CashJournalMapping::CATEGORIES, true)) {
+                throw new LedgerError('invalid_option');
+            }
+            $from .= ' AND c.category = ?';
+            $args[] = $parameters['category'];
+        }
+        $total = (int) $this->db->fetchOne('SELECT COUNT(*)'.$from, $args);
+        $rows = $this->db->fetchAllAssociative(
+            'SELECT c.uuid AS id, c.store_uuid, s.name AS store_name, c.entry_date, c.category, c.direction, c.amount, c.currency, c.note, c.metadata,
+                c.voided_at, c.void_reason, j.id AS journal_id, j.state AS journal_state, m.debit_code, m.credit_code'.$from
+                .' ORDER BY c.entry_date DESC, c.uuid DESC LIMIT '.$limit.' OFFSET '.(($page - 1) * $limit),
+            $args,
+        );
+        foreach ($rows as &$row) {
+            $row['amount'] = (string) $row['amount'];
+            $row['state'] = $row['voided_at'] === null ? 'active' : 'voided';
+            if ($canCorrect && $row['journal_id'] === null && $row['state'] === 'active') {
+                $row['metadata'] = json_decode($row['metadata'], true, flags: JSON_THROW_ON_ERROR);
+                $row['cash_version'] = StoreCashMetadata::correctionVersion($row);
+                $row['purchase'] = array_intersect_key($row['metadata'], array_flip(['item', 'quantity', 'unit']));
+            }
+            unset($row['metadata']);
+        }
+
+        return new LedgerPage($rows, $total, $page, $limit);
+    }
 
     /** @return array<string, mixed> */
     public function journal(string $id, bool $evidence, int $bookId = AccountingBook::ID, ?string $storeUuid = null): array
@@ -39,6 +131,9 @@ final class LedgerReadRepository
             $lineKeys = array_flip(['account_code', 'side', 'amount', 'description', 'position']);
             $journal = array_diff_key($rows[0], $lineKeys, array_flip(['posting_index', 'book_id']));
             $journal['revision'] = (int) $journal['revision'];
+            if ($storeUuid !== null || $journal['cash_source_uuid'] === null) {
+                unset($journal['cash_source_uuid']);
+            }
             if ($evidence) {
                 $journal['attachments'] = json_decode((string) ($journal['attachments'] ?? '[]'), true, flags: JSON_THROW_ON_ERROR);
                 $journal['metadata'] = json_decode((string) ($journal['metadata'] ?? '{}'), flags: JSON_THROW_ON_ERROR);

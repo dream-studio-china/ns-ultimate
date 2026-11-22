@@ -9,13 +9,14 @@ import { BOOK_API, FINANCE_API, finance } from './finance-context'
 
 export { FINANCE_API, finance }
 export { accountFilter, bookToday, choiceFilter, dateFilter, financeList, openingDate, textFilter } from './finance-list'
-export { bookSelection, journalLinkCell, labelCell, ledgerCommand, ledgerLink, ledgerOperations, moneyCell, recordDialog, reportSummary, stateCell } from './finance-components'
+export { bookSelection, cashAmountCell, journalLinkCell, labelCell, ledgerCommand, ledgerLink, ledgerOperations, moneyCell, recordDialog, reportSummary, stateCell } from './finance-components'
 export { default as IsoDateField } from './IsoDateField.vue'
 export { default as AvailableStoreField } from './AvailableStoreField.vue'
 export { default as JournalAttachmentsField } from './JournalAttachmentsField.vue'
 export { default as JournalLinesField } from './JournalLinesField.vue'
 
 export const sides = ['debit', 'credit']
+export const cashCategories = ['purchase', 'transport', 'maintenance', 'other_expense', 'other_income']
 export const classes = ['asset', 'liability', 'equity', 'revenue', 'expense']
 
 /** EasyAdmin entity identity for a Finance resource path. */

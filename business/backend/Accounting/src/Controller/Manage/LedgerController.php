@@ -11,7 +11,9 @@ use App\Store\Service\StoreServiceInterface;
 use NsUltimate\Business\Accounting\Controller\LedgerControllerSupport;
 use NsUltimate\Business\Accounting\Controller\LedgerCsv;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
+use NsUltimate\Business\Accounting\Entity\CashJournalMapping;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
+use NsUltimate\Business\Accounting\Repository\LedgerWriteRepository;
 use NsUltimate\Business\Accounting\Service\LedgerAccess;
 use NsUltimate\Business\Accounting\Service\LedgerAccountService;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
@@ -19,6 +21,7 @@ use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
 use NsUltimate\Business\Accounting\Service\LedgerPage;
 use NsUltimate\Business\Accounting\Service\LedgerWorkspace;
+use NsUltimate\Business\Accounting\Service\StoreCashRegister;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -35,10 +38,12 @@ final class LedgerController extends RestController
     use LedgerControllerSupport;
 
     private const COMMANDS = [
-        'initialize' => 'configure', 'save-account' => 'configure', 'add-period' => 'configure', 'bind-store' => 'configure',
+        'initialize' => 'configure', 'save-account' => 'configure', 'add-period' => 'configure', 'bind-store' => 'configure', 'unbind-store' => 'configure',
         'lock-period' => 'lock', 'reopen-period' => 'reopen', 'approve-zero-opening' => 'post',
         'create-draft' => 'draft', 'update-draft' => 'draft', 'void-draft' => 'draft',
         'post' => 'post', 'reverse' => 'reverse',
+        'save-cash-mapping' => 'configure', 'create-cash-mapping' => 'configure', 'delete-cash-mapping' => 'configure',
+        'draft-from-cash' => 'draft', 'correct-cash-entry' => 'cash_record', 'void-cash-entry' => 'cash_record',
     ];
     private const ACCOUNT_CODE = '[A-Z0-9][A-Z0-9._-]{0,31}';
     private const MONTH = '[1-9][0-9]{3}-(?:0[1-9]|1[0-2])';
@@ -50,6 +55,8 @@ final class LedgerController extends RestController
         private readonly LedgerWorkspace $workspaceService,
         private readonly LedgerAccountService $accounts,
         private readonly StoreServiceInterface $stores,
+        private readonly StoreCashRegister $cash,
+        private readonly LedgerWriteRepository $writes,
     ) {}
 
     #[Route('/workspace', name: 'workspace', methods: ['GET'])]
@@ -64,7 +71,9 @@ final class LedgerController extends RestController
                 throw new LedgerError('book_not_found', 404);
             }
 
-            return $workspace + ['capabilities' => $capabilities, 'store_uuids' => $this->workspaceService->stores($id)];
+            return $workspace + ['capabilities' => $capabilities, 'store_uuids' => $this->workspaceService->stores($id)]
+                + (array_intersect(['cash_record', 'configure'], $capabilities) !== [] ? ['cash_stores' => $this->workspaceService->cashStores($id)] : [])
+                + (in_array('configure', $capabilities, true) ? ['mapped_cash_categories' => $this->workspaceService->mappedCashCategories($id)] : []);
         });
     }
 
@@ -77,6 +86,110 @@ final class LedgerController extends RestController
             $search = LedgerInput::text($params['q'] ?? '', 160, true);
 
             return $this->success((object) ['stores' => $this->workspaceService->availableStores($search)]);
+        });
+    }
+
+    #[Route('/cash-entries', name: 'cash_entries', methods: ['GET'])]
+    public function cashEntries(Request $request): Response
+    {
+        return $this->respond('read', fn (User $user, array $capabilities) => $this->queries->cashEntries(
+            $this->headquartersBookId(), $this->ledgerParameters($request), in_array('cash_record', $capabilities, true),
+        ));
+    }
+
+    #[Route('/cash-mappings', name: 'cash_mappings_list', methods: ['GET'])]
+    public function cashMappings(Request $request): Response
+    {
+        return $this->respond('read', function () use ($request): LedgerPage {
+            $params = $this->ledgerParameters($request);
+            LedgerInput::fields($params, 'page', 'limit');
+            [$page, $limit] = LedgerPage::window($params);
+
+            return $this->queries->cashMappings($this->headquartersBookId(), $page, $limit);
+        });
+    }
+
+    #[Route('/cash-mappings/{category}', name: 'cash_mappings_detail', requirements: ['category' => '[a-z_]{1,24}'], methods: ['GET'])]
+    public function cashMapping(string $category): Response
+    {
+        return $this->respond('read', function () use ($category): array {
+            $this->assertCashCategory($category);
+
+            return $this->queries->cashMapping($this->headquartersBookId(), $category);
+        });
+    }
+
+    #[Route('/cash-mappings', name: 'cash_mappings_create', methods: ['POST'])]
+    public function createCashMapping(Request $request): Response
+    {
+        return $this->respond('configure', function (User $user) use ($request): Response {
+            $data = $this->ledgerPayload($request);
+            $this->assertCashCategory($data['category'] ?? null);
+            $result = $this->commands->execute($user->getUuid(), 'create-cash-mapping', $data, $this->headquartersBookId());
+
+            return $this->success((object) $this->queries->cashMapping($this->headquartersBookId(), $result['id']), status: 201);
+        });
+    }
+
+    #[Route('/cash-mappings/{category}', name: 'cash_mappings_update', requirements: ['category' => '[a-z_]{1,24}'], methods: ['PUT'])]
+    public function updateCashMapping(string $category, Request $request): Response
+    {
+        return $this->respond('configure', function (User $user) use ($category, $request): array {
+            $this->assertCashCategory($category);
+            $data = $this->ledgerPayload($request);
+            if (array_key_exists('category', $data) && $data['category'] !== $category) {
+                throw new LedgerError('invalid_option');
+            }
+            $this->commands->execute($user->getUuid(), 'save-cash-mapping', ['category' => $category] + $data, $this->headquartersBookId());
+
+            return $this->queries->cashMapping($this->headquartersBookId(), $category);
+        });
+    }
+
+    #[Route('/cash-mappings/{category}', name: 'cash_mappings_delete', requirements: ['category' => '[a-z_]{1,24}'], methods: ['DELETE'])]
+    public function deleteCashMapping(string $category, Request $request): Response
+    {
+        return $this->respond('configure', function (User $user) use ($category): array {
+            $this->assertCashCategory($category);
+            $this->commands->execute($user->getUuid(), 'delete-cash-mapping', ['category' => $category], $this->headquartersBookId());
+
+            return ['id' => $category];
+        });
+    }
+
+    #[Route('/cash-entries', name: 'cash_entries_create', methods: ['POST'])]
+    public function recordCashEntry(Request $request): Response
+    {
+        return $this->respond('cash_record', function (User $user) use ($request): Response {
+            $data = $this->ledgerPayload($request);
+            LedgerInput::fields($data, 'store_uuid', 'command_id', 'date', 'direction', 'category', 'amount', 'note', 'metadata');
+            $uuid = LedgerInput::uuid($data['store_uuid'] ?? null);
+            if (array_key_exists('metadata', $data)) {
+                if (!$data['metadata'] instanceof \stdClass) {
+                    throw new LedgerError('invalid_metadata');
+                }
+                $data['metadata'] = get_object_vars($data['metadata']);
+                if (($data['metadata']['extra'] ?? null) instanceof \stdClass) {
+                    $data['metadata']['extra'] = get_object_vars($data['metadata']['extra']);
+                }
+            }
+            $data['commandUuid'] = LedgerInput::uuid($data['command_id'] ?? null);
+            unset($data['command_id'], $data['store_uuid']);
+            $bookId = $this->headquartersBookId();
+            $entry = $this->writes->transactional(function () use ($user, $data, $uuid, $bookId): array {
+                $this->writes->lockBook($bookId);
+                if ($this->writes->storeBinding($uuid)?->getBook()->getId() !== $bookId) {
+                    throw new LedgerError('store_not_in_book', 409);
+                }
+                $store = $this->stores->get(['uuid' => $uuid], false);
+                if (!$store instanceof Store) {
+                    throw new LedgerError('store_not_found', 404);
+                }
+
+                return $this->cash->record($store, $user->getUuid(), $data);
+            });
+
+            return $this->success((object) ['id' => $entry['uuid']], status: 201);
         });
     }
 
@@ -301,6 +414,13 @@ final class LedgerController extends RestController
         });
 
         return $rows;
+    }
+
+    private function assertCashCategory(mixed $category): void
+    {
+        if (!is_string($category) || !in_array($category, CashJournalMapping::CATEGORIES, true)) {
+            throw new LedgerError('cash_mapping_not_found', 404);
+        }
     }
 
     /** @return array<string, mixed> */

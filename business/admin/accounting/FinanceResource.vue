@@ -8,6 +8,7 @@
       <el-button type="primary" @click="router.push({ name: 'AccountingBookList' })">{{ $t('Book setup') }}</el-button>
     </el-empty>
     <template v-else-if="view === 'list'">
+      <el-alert v-if="listHelp" class="finance-list-help" :title="listHelp" type="info" :closable="false" show-icon />
       <list-admin
         ref="list"
         :key="entity"
@@ -100,6 +101,7 @@ const title = computed(() => route.meta.title || props.entity)
 const denied = computed(() => Boolean(policy.requires) && !finance.can(policy.requires))
 const needsBook = computed(() => Boolean(policy.requiresBook) && !finance.book)
 const disabled = computed(() => disabledActions(config))
+const listHelp = computed(() => typeof policy.listHelp === 'function' ? policy.listHelp() : '')
 const fields = computed(() => detailFields(config))
 const editable = computed(() => !(config.detail?.disabled_actions ?? []).includes('edit') && allowed(config, 'edit'))
 const dialogValues = linkValues(config, props.prefill)
@@ -121,5 +123,6 @@ onMounted(() => finance.ensure().catch(() => {}))
 </script>
 
 <style scoped>
+.finance-list-help { margin-bottom: 12px; }
 .finance-resource__title { font-size: 20px; }
 </style>

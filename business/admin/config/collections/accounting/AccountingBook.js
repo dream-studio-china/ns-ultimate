@@ -21,6 +21,26 @@ const bindStore = ledger.ledgerCommand({
   notice: 'Only stores without a book can join',
   fields: [availableStore]
 })
+const unbindStore = ledger.ledgerCommand({
+  action: 'unbind-store', label: 'Unbind store from book', capability: 'configure',
+  when: record => Number(record?.id) === Number(ledger.finance.book?.id) && ledger.finance.workspace?.cash_stores?.length > 0,
+  notice: 'Only stores without journals can be removed',
+  fields: [
+    input('id', 'Store', {
+      type: 'select', rules: required, type_options: {
+        filterable: true,
+        get options() {
+          return (ledger.finance.workspace?.cash_stores ?? []).map(store => ({ value: store.uuid, label: `${store.name} (${store.code})` }))
+        }
+      }
+    }),
+    input('reason', 'Reason', { type: 'textarea', rules: required, type_options: { maxlength: 1000 } })
+  ]
+})
+const mapping = ledger.ledgerLink({
+  label: 'Cash journal settings', when: () => Boolean(ledger.finance.book),
+  to: () => ({ name: 'CashJournalMappingList' })
+})
 
 const display = [
   column('entity', 'Accounting entity'),
@@ -55,8 +75,10 @@ export default {
       data_processor: ledger.financeList({ reloadWorkspace: true }),
       disabled_actions: ['edit', 'delete', 'batch_edit', 'batch_delete', 'export'],
       actions: [
+        { name: 'accounting-cash-mapping', position: 'top', component: mapping },
         { name: 'accounting-select-book', position: 'list', component: ledger.bookSelection },
         { name: 'accounting-bind-store', position: 'list', component: bindStore },
+        { name: 'accounting-unbind-store', position: 'list', component: unbindStore },
         { name: 'accounting-opening-journal', position: 'list', component: openingJournal },
         { name: 'accounting-approve-zero-opening', position: 'list', component: approveZeroOpening }
       ],
@@ -67,7 +89,7 @@ export default {
       detail_display: [
         ...display,
         column('store_uuids', 'Bound stores', { type: 'json', full_width: true }),
-        column('operations', 'Actions', { component: ledger.ledgerOperations(ledger.bookSelection, bindStore, openingJournal, approveZeroOpening), full_width: true })
+        column('operations', 'Actions', { component: ledger.ledgerOperations(ledger.bookSelection, bindStore, unbindStore, openingJournal, approveZeroOpening), full_width: true })
       ]
     }
   }

@@ -59,6 +59,8 @@ export default {
         hiddenPage('accounts/:id/edit', 'LedgerAccountUpdate', 'LedgerAccount', 'form', 'Accounts', 'accounts'),
         hiddenPage('accounts/:id', 'LedgerAccountDetail', 'LedgerAccount', 'detail', 'Accounts', 'accounts'),
         financePage('periods', 'AccountingPeriodList', 'AccountingPeriod', 'list', 'Accounting periods'),
+        financePage('cash-entries', 'StoreCashEntryList', 'StoreCashEntry', 'list', 'Store cash entries'),
+        financePage('cash-mappings', 'CashJournalMappingList', 'CashJournalMapping', 'list', 'Cash journal settings'),
         hiddenPage('periods/:id', 'AccountingPeriodDetail', 'AccountingPeriod', 'detail', 'Accounting periods', 'periods'),
         { ...financePage('journals', 'JournalEntryList', 'JournalEntry', 'list', 'Journals'), beforeEnter: legacyJournalLink },
         dialogPage('journals/new/:origin(opening)?', 'JournalEntryCreate', 'JournalEntry', 'create', 'journals', { beforeEnter: openingQuery }),

@@ -30,11 +30,12 @@ function businessRoutes() {
 // markers, so their declarations can be inspected and schema-validated.
 function stubLedger() {
   const marker = (kind, extra = {}) => ({ kind, render() {}, ...extra })
-  const finance = { book: null, can: () => false }
+  const finance = { book: null, accounts: [], workspace: {}, can: () => false }
   return {
     finance,
     FINANCE_API,
     sides: ['debit', 'credit'],
+    cashCategories: ['purchase', 'transport', 'maintenance', 'other_expense', 'other_income'],
     classes: ['asset', 'liability', 'equity', 'revenue', 'expense'],
     resource: (name, plural) => ({ name, prefix: FINANCE_API, plural }),
     can: capability => () => finance.can(capability),
@@ -94,7 +95,7 @@ test('Accounting navigation keeps every /finance/accounting link and names the E
   const finance = routes.find(route => route.path === '/finance/accounting')
   assert.equal(finance.redirect, '/finance/accounting/ledger')
   assert.deepEqual(plain(finance.children.filter(child => !child.hidden).map(child => child.path)),
-    ['ledger', 'accounts', 'periods', 'journals', 'reports/trial', 'reports/balances', 'reports/ledger', 'audit'])
+    ['ledger', 'accounts', 'periods', 'cash-entries', 'cash-mappings', 'journals', 'reports/trial', 'reports/balances', 'reports/ledger', 'audit'])
   for (const child of finance.children.filter(child => child.component)) {
     assert.equal(child.component.toString().includes('./accounting/FinanceResource.vue'), true, child.name)
   }
@@ -106,9 +107,11 @@ test('Accounting navigation keeps every /finance/accounting link and names the E
   const list = { entity: 'JournalEntry', view: 'list' }
   const expectations = {
     '/finance/accounting/ledger': ['AccountingBookList', { entity: 'AccountingBook', view: 'list' }],
+    '/finance/accounting/cash-mappings': ['CashJournalMappingList', { entity: 'CashJournalMapping', view: 'list' }],
     '/finance/accounting/accounts': ['LedgerAccountList', { entity: 'LedgerAccount', view: 'list' }],
     '/finance/accounting/accounts/CASH': ['LedgerAccountDetail', { entity: 'LedgerAccount', view: 'detail' }],
     '/finance/accounting/periods': ['AccountingPeriodList', { entity: 'AccountingPeriod', view: 'list' }],
+    '/finance/accounting/cash-entries': ['StoreCashEntryList', { entity: 'StoreCashEntry', view: 'list' }],
     '/finance/accounting/journals': ['JournalEntryList', list],
     // Journal record links show the register with the record dialog open.
     '/finance/accounting/journals/new': ['JournalEntryCreate', { ...list, open: 'create', prefill: { origin: '' } }],
@@ -148,7 +151,7 @@ test('Accounting collection configs are valid EasyAdmin entity configs', () => {
   const configs = loadConfigs()
   assert.deepEqual(Object.keys(configs).sort(), [
     'AccountingAuditRecord', 'AccountingBalanceReport', 'AccountingBook', 'AccountingLedgerReport',
-    'AccountingPeriod', 'AccountingTrialBalance', 'JournalEntry', 'LedgerAccount'
+    'AccountingPeriod', 'AccountingTrialBalance', 'CashJournalMapping', 'JournalEntry', 'LedgerAccount', 'StoreCashEntry'
   ])
   const validate = new Ajv({ allErrors: true, strict: false }).compile(schema)
   for (const [name, config] of Object.entries(configs)) {
@@ -156,8 +159,11 @@ test('Accounting collection configs are valid EasyAdmin entity configs', () => {
     assert.equal(config.entity.prefix, FINANCE_API, name)
     assert.ok(Array.isArray(config.form?.fields), `${name} needs form.fields for ListAdmin`)
     assert.equal(typeof config.list.data_processor, 'function', `${name} must use the whitelisted Finance list processor`)
-    for (const action of ['delete', 'batch_edit', 'batch_delete']) {
+    for (const action of ['batch_edit', 'batch_delete']) {
       assert.ok(config.list.disabled_actions.includes(action), `${name} must not expose ${action}`)
+    }
+    if (name !== 'CashJournalMapping') {
+      assert.ok(config.list.disabled_actions.includes('delete'), `${name} must not expose delete`)
     }
     for (const filter of Object.values(config.list.list_filter ?? {})) {
       if (typeof filter === 'object') assert.equal(filter.expression, '', `${name} filters must not build @filter expressions`)

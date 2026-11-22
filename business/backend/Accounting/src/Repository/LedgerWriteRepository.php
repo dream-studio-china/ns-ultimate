@@ -9,11 +9,13 @@ use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Entity\AccountingBookStore;
 use NsUltimate\Business\Accounting\Entity\AccountingPeriod;
+use NsUltimate\Business\Accounting\Entity\CashJournalMapping;
 use NsUltimate\Business\Accounting\Entity\CommandReceipt;
 use NsUltimate\Business\Accounting\Entity\JournalEntry;
 use NsUltimate\Business\Accounting\Entity\JournalLine;
 use NsUltimate\Business\Accounting\Entity\LedgerAccount;
 use NsUltimate\Business\Accounting\Entity\PostingSeries;
+use NsUltimate\Business\Accounting\Entity\StoreCashEntry;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 
 final class LedgerWriteRepository
@@ -51,6 +53,7 @@ final class LedgerWriteRepository
     }
 
     public function add(object $record): void { $this->manager()->persist($record); }
+    public function remove(object $record): void { $this->manager()->remove($record); }
 
     public function flush(): void { $this->manager()->flush(); }
 
@@ -62,6 +65,19 @@ final class LedgerWriteRepository
     public function storeBinding(string $uuid): ?AccountingBookStore
     {
         return $this->manager()->find(AccountingBookStore::class, $uuid);
+    }
+
+    public function removeStoreBinding(AccountingBookStore $binding): void
+    {
+        $this->manager()->remove($binding);
+    }
+
+    public function hasStoreJournals(AccountingBook $book, string $uuid): bool
+    {
+        return (bool) $this->manager()->getConnection()->fetchOne(
+            'SELECT 1 FROM ns_accounting_journal WHERE book_id = ? AND store_uuid = ? LIMIT 1',
+            [$book->getId(), $uuid],
+        );
     }
 
     /** @return list<string> */
@@ -84,6 +100,23 @@ final class LedgerWriteRepository
     public function account(AccountingBook $book, string $code): ?LedgerAccount
     {
         return $this->manager()->find(LedgerAccount::class, ['book' => $book, 'code' => $code]);
+    }
+
+    public function cashEntry(string $uuid): ?StoreCashEntry
+    {
+        return $this->manager()->find(StoreCashEntry::class, $uuid);
+    }
+
+    public function cashMapping(AccountingBook $book, string $category): ?CashJournalMapping
+    {
+        return $this->manager()->find(CashJournalMapping::class, ['book' => $book, 'category' => $category]);
+    }
+
+    public function journalForCash(AccountingBook $book, string $uuid): ?JournalEntry
+    {
+        return $this->manager()->createQuery(
+            'SELECT j FROM '.JournalEntry::class.' j WHERE j.book = :book AND j.cashSourceUuid = :source',
+        )->setParameter('book', $book)->setParameter('source', $uuid)->getOneOrNullResult();
     }
 
     public function accountHasPostedHistory(LedgerAccount $account): bool

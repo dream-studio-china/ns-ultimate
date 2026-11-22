@@ -14,6 +14,7 @@ final class LedgerAccess
         'accounting_reader' => ['read'],
         'accounting_auditor' => ['read', 'audit'],
         'accounting_drafter' => ['read', 'draft'],
+        'accounting_cash_recorder' => ['read', 'cash_record'],
         'accounting_poster' => ['read', 'audit', 'post'],
         'accounting_reverser' => ['read', 'reverse'],
         'accounting_configurator' => ['read', 'configure'],

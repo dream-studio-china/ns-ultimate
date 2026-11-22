@@ -16,6 +16,7 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Accounting\Migrations\Version20261122100000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122160000;
 use NsUltimate\Integration\Backend\Kernel;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -42,6 +43,12 @@ final class StoreCashApiTest extends KernelTestCase
         $migration = new Version20261122100000($schemaDb, new NullLogger());
         $migration->up(new Schema());
         foreach ($migration->getSql() as $sql) {
+            $schemaDb->executeStatement($sql->getStatement());
+        }
+        require_once dirname(__DIR__).'/migrations/Version20261122160000.php';
+        $voidMigration = new Version20261122160000($schemaDb, new NullLogger());
+        $voidMigration->up(new Schema());
+        foreach ($voidMigration->getSql() as $sql) {
             $schemaDb->executeStatement($sql->getStatement());
         }
         $table = 'ns_store_cash_entry';
