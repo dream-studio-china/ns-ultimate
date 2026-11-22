@@ -14,10 +14,16 @@ const approveZeroOpening = ledger.ledgerCommand({
   action: 'approve-zero-opening', label: 'Approve zero opening', capability: 'post', type: 'warning', when: pending,
   fields: [input('reason', 'Reason', { type: 'textarea', rules: required, type_options: { maxlength: 1000, showWordLimit: true } })]
 })
+const bindStore = ledger.ledgerCommand({
+  action: 'bind-store', label: 'Add store to book', capability: 'configure',
+  when: record => Number(record?.id) === Number(ledger.finance.book?.id),
+  notice: 'Only stores without a book can join',
+  fields: [input('store_uuid', 'Store UUID', { rules: required })]
+})
 
 const display = [
   column('entity', 'Accounting entity'),
-  column('store_uuid', 'Store'),
+  column('store_uuid', 'Initial store'),
   column('currency', 'Base currency code'),
   column('scale', 'Currency scale'),
   column('timezone', 'Book timezone'),
@@ -52,6 +58,7 @@ export default {
       disabled_actions: ['edit', 'delete', 'batch_edit', 'batch_delete', 'export'],
       actions: [
         { name: 'accounting-select-book', position: 'list', component: ledger.bookSelection },
+        { name: 'accounting-bind-store', position: 'list', component: bindStore },
         { name: 'accounting-opening-journal', position: 'list', component: openingJournal },
         { name: 'accounting-approve-zero-opening', position: 'list', component: approveZeroOpening }
       ],
@@ -61,7 +68,8 @@ export default {
       disabled_actions: ['edit'],
       detail_display: [
         ...display,
-        column('operations', 'Actions', { component: ledger.ledgerOperations(ledger.bookSelection, openingJournal, approveZeroOpening), full_width: true })
+        column('store_uuids', 'Bound stores', { type: 'json', full_width: true }),
+        column('operations', 'Actions', { component: ledger.ledgerOperations(ledger.bookSelection, bindStore, openingJournal, approveZeroOpening), full_width: true })
       ]
     }
   }

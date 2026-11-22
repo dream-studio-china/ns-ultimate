@@ -35,7 +35,7 @@ final class LedgerController extends RestController
     use LedgerControllerSupport;
 
     private const COMMANDS = [
-        'initialize' => 'configure', 'save-account' => 'configure', 'add-period' => 'configure',
+        'initialize' => 'configure', 'save-account' => 'configure', 'add-period' => 'configure', 'bind-store' => 'configure',
         'lock-period' => 'lock', 'reopen-period' => 'reopen', 'approve-zero-opening' => 'post',
         'create-draft' => 'draft', 'update-draft' => 'draft', 'void-draft' => 'draft',
         'post' => 'post', 'reverse' => 'reverse',
@@ -64,7 +64,7 @@ final class LedgerController extends RestController
                 throw new LedgerError('book_not_found', 404);
             }
 
-            return $workspace + ['capabilities' => $capabilities];
+            return $workspace + ['capabilities' => $capabilities, 'store_uuids' => $this->workspaceService->stores($id)];
         });
     }
 
@@ -246,7 +246,15 @@ final class LedgerController extends RestController
             throw new LedgerError('unknown_command', 404);
         }
 
-        return $this->commands->execute($user->getUuid(), $action, $this->ledgerPayload($request), $this->headquartersBookId());
+        $data = $this->ledgerPayload($request);
+        if ($action === 'bind-store') {
+            $uuid = LedgerInput::uuid($data['store_uuid'] ?? null);
+            if (!$this->stores->get(['uuid' => $uuid], false) instanceof Store) {
+                throw new LedgerError('store_not_found', 404);
+            }
+        }
+
+        return $this->commands->execute($user->getUuid(), $action, $data, $this->headquartersBookId());
     }
 
     private function listParameters(Request $request, string ...$extra): void
@@ -283,7 +291,7 @@ final class LedgerController extends RestController
         return $rows;
     }
 
-    /** @return array<string, int|string|null> */
+    /** @return array<string, mixed> */
     private function findBook(int|string $id): array
     {
         $book = $this->workspaceService->book((int) $id);
@@ -291,7 +299,7 @@ final class LedgerController extends RestController
             throw new LedgerError('book_not_found', 404);
         }
 
-        return $book;
+        return $book + ['store_uuids' => $this->workspaceService->stores((int) $id)];
     }
 
     /** @return array<string, mixed> */

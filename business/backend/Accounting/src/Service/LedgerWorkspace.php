@@ -6,6 +6,7 @@ namespace NsUltimate\Business\Accounting\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
+use NsUltimate\Business\Accounting\Entity\AccountingBookStore;
 use NsUltimate\Business\Accounting\Entity\AccountingPeriod;
 
 final class LedgerWorkspace
@@ -32,9 +33,16 @@ final class LedgerWorkspace
 
     public function forStore(string $uuid): int
     {
-        $book = $this->em->getRepository(AccountingBook::class)->findOneBy(['storeUuid' => $uuid]);
+        $binding = $this->em->find(AccountingBookStore::class, $uuid);
 
-        return $book?->getId() ?? throw new LedgerError('book_not_found', 404);
+        return $binding?->getBook()->getId() ?? throw new LedgerError('book_not_found', 404);
+    }
+
+    /** @return list<string> */
+    public function stores(int $bookId): array
+    {
+        return array_map(static fn (AccountingBookStore $binding) => $binding->getStoreUuid(),
+            $this->em->getRepository(AccountingBookStore::class)->findBy(['book' => $bookId], ['storeUuid' => 'ASC']));
     }
 
     public function books(int $page, int $limit): LedgerPage

@@ -24,6 +24,8 @@ The separate [Store cash register](../../../docs/contracts/store-cash-register.m
 
 For read-only Store Console access, rerun the Accounting seed after applying the store book migration, then assign `store_accounting_reader` to an active member at the intended store. This role grants no global Finance access or ledger writes.
 
+To share a book, select it in **Finance → Book setup** and use **Add store to book** with a Store UUID that is not bound elsewhere. On journal drafts choose the store or **Headquarters only**. Do not treat the binding as an opening balance transfer; if a store needs an opening balance, post reviewed, balanced entries with that store attribution.
+
 Use the optional **Journal metadata** field for structured references such as `{"source_id":"EXT-001"}`. Do not include personal data, secrets or raw provider payloads in finance notes, summaries, descriptions, metadata, or audit reasons. The UI preserves retry keys while the page remains open; after losing the page during a network failure, confirm the journal or period state before submitting a new command. Refresh a stale draft before editing again. CSV uses exact digits and escapes formula-like text; import amount columns as text when using spreadsheets.
 
 ## Verification

@@ -36,35 +36,39 @@ final class StoreLedgerController extends RestController
     #[Route('/workspace', name: 'workspace', methods: ['GET'])]
     public function workspace(Request $request): Response
     {
-        $id = $this->authorizedBook();
+        [$id, $uuid] = $this->authorizedScope();
         LedgerInput::fields($this->ledgerParameters($request));
 
-        return $this->success((object) $this->workspace->setup($id));
+        $workspace = $this->workspace->setup($id);
+        $workspace['book']['store_uuid'] = $uuid;
+
+        return $this->success((object) $workspace);
     }
 
     #[Route('/journals', name: 'journals', methods: ['GET'])]
     public function journals(Request $request): Response
     {
-        $id = $this->authorizedBook();
+        [$id, $uuid] = $this->authorizedScope();
         $params = $this->ledgerParameters($request);
         [$page, $limit] = LedgerPage::window($params);
 
-        return $this->success($this->journals->registerPage($this->journals->registerQuery($params, $id), $page, $limit));
+        return $this->success($this->journals->registerPage($this->journals->registerQuery($params, $id, $uuid), $page, $limit));
     }
 
     #[Route('/journals/{id}', name: 'journal', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['GET'])]
     public function journal(string $id, Request $request): Response
     {
-        $bookId = $this->authorizedBook();
+        [$bookId, $uuid] = $this->authorizedScope();
         LedgerInput::fields($this->ledgerParameters($request));
 
-        return $this->success((object) $this->queries->journal($id, false, $bookId));
+        return $this->success((object) $this->queries->journal($id, false, $bookId, $uuid));
     }
 
     #[Route('/reports/{kind}', name: 'report', methods: ['GET'])]
     public function report(string $kind, Request $request): Response
     {
-        $data = $this->queries->report($kind, $this->ledgerParameters($request), bookId: $this->authorizedBook());
+        [$id, $uuid] = $this->authorizedScope();
+        $data = $this->queries->report($kind, $this->ledgerParameters($request), bookId: $id, storeUuid: $uuid);
         $context = array_intersect_key($data, array_flip(['cutoff', 'currency', 'scale', 'opening', 'totals']));
 
         return $this->success(new LedgerPage($data['rows'], $data['total'], $data['page'], $data['limit'], ['report' => ['kind' => $kind] + $context]));
@@ -73,10 +77,13 @@ final class StoreLedgerController extends RestController
     #[Route('/reports/{kind}/csv', name: 'export', methods: ['GET'])]
     public function export(string $kind, Request $request): Response
     {
-        return LedgerCsv::response($kind, $this->queries->report($kind, $this->ledgerParameters($request), true, $this->authorizedBook()));
+        [$id, $uuid] = $this->authorizedScope();
+
+        return LedgerCsv::response($kind, $this->queries->report($kind, $this->ledgerParameters($request), true, $id, $uuid));
     }
 
-    private function authorizedBook(): int
+    /** @return array{int, string} */
+    private function authorizedScope(): array
     {
         try {
             $store = $this->storeForAuthorization();
@@ -85,9 +92,11 @@ final class StoreLedgerController extends RestController
             throw new LedgerError('finance_access_required', 403);
         }
 
-        return $this->workspace->forStore($store->getUuid());
+        $uuid = $store->getUuid();
+
+        return [$this->workspace->forStore($uuid), $uuid];
     }
 
-    protected function storeScopedFilter(Store $store): array { return ['book' => $this->workspace->forStore($store->getUuid())]; }
+    protected function storeScopedFilter(Store $store): array { return ['book' => $this->workspace->forStore($store->getUuid()), 'storeUuid' => $store->getUuid()]; }
     protected function storeService(): StoreServiceInterface { return $this->stores; }
 }

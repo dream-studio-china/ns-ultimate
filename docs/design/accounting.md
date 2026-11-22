@@ -4,7 +4,7 @@
 
 ## Scope and dependency direction
 
-**M1 is a standalone manual general ledger.** Headquarters can configure one independent book per store and retains the unassigned legacy book. Each book supports reviewed opening balances, manual journals, corrections, period locks, and reports. M1 does not read Payment, Settlement, or Wallet data. It reuses the deployed Admin shell, identity, authorization infrastructure, and database; it is not a separate service.
+**M1 is a standalone manual general ledger.** Headquarters can configure an independent book for a store or bind multiple stores to a shared book. Each book supports reviewed opening balances, manual journals, corrections, period locks, and reports. M1 does not read Payment, Settlement, or Wallet data. It reuses the deployed Admin shell, identity, authorization infrastructure, and database; it is not a separate service.
 
 **M2 adds one explicitly enabled, read-only Settlement-to-Wallet import.** Accounting can observe source data; no source system calls Accounting or waits for its success. Payment collection, provider payout, tax, FX, full A/R and A/P workflows, and statutory reports are out of scope. Neither milestone requires Core changes.
 
@@ -28,7 +28,7 @@ Admin Finance UI ──> Accounting commands / queries ──> Accounting-owned 
 
 | Record | Ownership and integrity |
 | --- | --- |
-| Book | Stable ID, optional unique Store UUID, entity identifier, base currency and scale, IANA timezone, opening date. Book ownership and configuration do not change after initialization. |
+| Book | Stable ID, initial Store UUID if created for a store, entity identifier, base currency and scale, IANA timezone, opening date. A separate binding table assigns each store to at most one book. Store reporting also requires immutable journal attribution after posting. |
 | Period | Book and local calendar month, `open` or `locked`; unique `(book, month)`. The first month's usable range begins at the book opening date. No date outside a configured, open period can post. |
 | Account | Book-unique code, name, classification, normal balance, active/postable flags. Do not reuse codes or reclassify accounts with posted history; disabling an account does not hide it from reports. |
 | Journal and lines | Journal UUID, book, local accounting date, origin (`opening`, `manual`, `imported`, `reversal`), status, revision, summary, posting sequence/time/actor, optional reason and reversal link. Lines have a unique position per journal, a same-book account, a side and one positive minor-unit amount. Optional store/party fields are classifications, not security scopes. |

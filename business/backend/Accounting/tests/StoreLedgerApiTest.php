@@ -37,10 +37,14 @@ final class StoreLedgerApiTest extends KernelTestCase
         $role = $em->getRepository(Role::class)->findOneBy(['code' => 'store_accounting_reader']);
         $a = new Store('ledger-a', 'Ledger A');
         $b = new Store('ledger-b', 'Ledger B');
+        $c = new Store('ledger-c', 'Ledger C');
         $manager = (new User())->setUsername('ledger-manager')->setEmail('ledger-manager@example.test');
+        $sharedManager = (new User())->setUsername('shared-manager')->setEmail('shared-manager@example.test');
         $head = (new User())->setUsername('ledger-head')->setEmail('ledger-head@example.test')->setRoles(['ROLE_ADMIN']);
-        foreach ([$a, $b, $manager, $head, new Membership($a, $manager->getUuid(), Membership::ROLE_MANAGER),
+        foreach ([$a, $b, $c, $manager, $sharedManager, $head, new Membership($a, $manager->getUuid(), Membership::ROLE_MANAGER),
             new Membership($b, $manager->getUuid(), Membership::ROLE_MANAGER),
+            new Membership($c, $sharedManager->getUuid(), Membership::ROLE_MANAGER),
+            new Assignment($role, $sharedManager->getUuid(), Assignment::SCOPE_STORE, $c->getUuid()),
             new Assignment($role, $manager->getUuid(), Assignment::SCOPE_STORE, $a->getUuid())] as $record) {
             $em->persist($record);
         }
@@ -52,11 +56,13 @@ final class StoreLedgerApiTest extends KernelTestCase
         $initial = ['entity' => 'Fixture ledger', 'currency' => 'CNY', 'scale' => 2, 'timezone' => 'UTC', 'opening_date' => '2026-01-01'];
         $this->data($this->call($finance.'/books', $headToken, $initial));
         $journals = [];
+        $books = [];
         foreach ([$a, $b] as $i => $store) {
             $params = $initial + ['store_uuid' => $store->getUuid()];
             $book = $this->data($this->call($finance.'/books', $headToken, $params));
             self::assertSame($book['id'], $this->data($this->call($finance.'/books', $headToken, $params))['id']);
             $path = $finance.'/book/'.$book['id'];
+            $books[] = $path;
             self::assertSame($store->getUuid(), $this->data($this->call($path.'/workspace', $headToken))['book']['store_uuid']);
             foreach (['CASH' => ['asset', 'debit'], 'EQUITY' => ['equity', 'credit']] as $code => [$class, $side]) {
                 $this->data($this->call($path.'/ledger-accounts', $headToken, [
@@ -99,6 +105,52 @@ final class StoreLedgerApiTest extends KernelTestCase
         self::assertStringContainsString($journals[0], $csv->getContent());
         self::assertStringNotContainsString($journals[1], $csv->getContent());
         self::assertSame(405, $this->call($own.'/journals', $managerToken, [])->getStatusCode());
+
+        $shared = $books[0];
+        $sharedReader = $tokens->createAccessToken($sharedManager);
+        $sharedStore = '/store/'.$c->getUuid().'/accounting';
+        self::assertSame(404, $this->call($sharedStore.'/workspace', $sharedReader)->getStatusCode());
+        self::assertSame(409, $this->call($shared.'/commands/bind-store', $headToken, ['store_uuid' => $b->getUuid()])->getStatusCode());
+        $binding = ['store_uuid' => $c->getUuid()];
+        self::assertSame($binding, $this->data($this->call($shared.'/commands/bind-store', $headToken, $binding)));
+        self::assertSame($binding, $this->data($this->call($shared.'/commands/bind-store', $headToken, $binding)));
+        self::assertSame(409, $this->call($finance.'/books', $headToken, $initial + $binding)->getStatusCode());
+        self::assertSame($c->getUuid(), $this->data($this->call($sharedStore.'/workspace', $sharedReader))['book']['store_uuid']);
+
+        $draft = ['origin' => 'manual', 'summary' => 'Shared ledger fixture', 'accounting_date' => '2026-01-05',
+            'lines' => [['account_code' => 'CASH', 'side' => 'debit', 'amount' => '7'], ['account_code' => 'EQUITY', 'side' => 'credit', 'amount' => '7']]];
+        self::assertSame(409, $this->call($shared.'/journals', $headToken, $draft + ['store_uuid' => $b->getUuid()])->getStatusCode());
+        $cJournal = $this->data($this->call($shared.'/journals', $headToken, $draft + $binding));
+        $hqJournal = $this->data($this->call($shared.'/journals', $headToken, $draft));
+        self::assertSame($c->getUuid(), $cJournal['store_uuid']);
+        self::assertNull($hqJournal['store_uuid']);
+        foreach ([$cJournal, $hqJournal] as $offset => $entry) {
+            self::assertSame('2026-'.($offset + 2), $this->data($this->call($shared.'/commands/post', $headToken, [
+                'id' => $entry['id'], 'revision' => $entry['revision'], 'command_id' => UUID::v4(),
+            ]))['number']);
+        }
+        self::assertCount(3, $this->data($this->call($shared.'/journals', $headToken)));
+        self::assertSame([$journals[0]], array_column($this->data($this->call($own.'/journals', $managerToken)), 'id'));
+        self::assertSame([$cJournal['id']], array_column($this->data($this->call($sharedStore.'/journals', $sharedReader)), 'id'));
+        self::assertSame(403, $this->call($sharedStore.'/reports/ledger/csv'.$range, $managerToken)->getStatusCode());
+        self::assertSame(404, $this->call($own.'/journals/'.$cJournal['id'], $managerToken)->getStatusCode());
+        self::assertSame(404, $this->call($sharedStore.'/journals/'.$hqJournal['id'], $sharedReader)->getStatusCode());
+        $later = '?from=2026-01-06&to=2026-01-31';
+        $trial = $this->data($this->call($own.'/reports/trial'.$later, $managerToken));
+        self::assertSame('1', $trial[0]['opening_debit']);
+        $trial = $this->data($this->call($sharedStore.'/reports/trial'.$later, $sharedReader));
+        self::assertSame('7', $trial[0]['opening_debit']);
+        $csv = $this->call($sharedStore.'/reports/ledger/csv'.$range, $sharedReader);
+        self::assertSame(200, $csv->getStatusCode());
+        self::assertStringContainsString($cJournal['id'], $csv->getContent());
+        self::assertStringNotContainsString($journals[0], $csv->getContent());
+        self::assertStringNotContainsString($hqJournal['id'], $csv->getContent());
+
+        $reversed = $this->data($this->call($shared.'/commands/reverse', $headToken, [
+            'id' => $cJournal['id'], 'accounting_date' => '2026-01-07', 'reason' => 'Fixture reversal', 'command_id' => UUID::v4(),
+        ]));
+        self::assertSame($c->getUuid(), $this->data($this->call($sharedStore.'/journals/'.$reversed['id'], $sharedReader))['store_uuid']);
+        self::assertSame(404, $this->call($own.'/journals/'.$reversed['id'], $managerToken)->getStatusCode());
     }
 
     private function call(string $path, string $token, ?array $body = null): Response

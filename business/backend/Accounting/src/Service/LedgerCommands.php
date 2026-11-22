@@ -8,6 +8,7 @@ use Doctrine\DBAL\Exception\RetryableException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use NsUltimate\Business\Accounting\Entity\AccountingAuditRecord;
 use NsUltimate\Business\Accounting\Entity\AccountingBook;
+use NsUltimate\Business\Accounting\Entity\AccountingBookStore;
 use NsUltimate\Business\Accounting\Entity\AccountingPeriod;
 use NsUltimate\Business\Accounting\Entity\CommandReceipt;
 use NsUltimate\Business\Accounting\Entity\JournalEntry;
@@ -28,6 +29,13 @@ final class LedgerCommands
         $data = $this->normalize($action, $input);
         if ($action === 'initialize') {
             return $this->initialize($actor, $data, $bookId, $storeUuid);
+        }
+        if ($action === 'bind-store') {
+            try {
+                return $this->storage->transactional(fn () => $this->bindStore($this->storage->lockBook($bookId), $actor, $data['store_uuid']));
+            } catch (UniqueConstraintViolationException) {
+                throw new LedgerError('store_already_bound', 409);
+            }
         }
         for ($attempt = 1; ; ++$attempt) {
             try {
@@ -51,6 +59,9 @@ final class LedgerCommands
         try {
             return $this->storage->transactional(function () use ($actor, $book, $bookId): array {
                 $this->storage->add($book);
+                if ($book->getStoreUuid() !== null) {
+                    $this->storage->add(new AccountingBookStore($book->getStoreUuid(), $book));
+                }
                 $this->audit($book, $actor, 'initialize', (string) $bookId, null, ['opening_date' => $book->getOpeningDate()->format('Y-m-d')]);
 
                 return ['id' => $bookId];
@@ -65,6 +76,21 @@ final class LedgerCommands
 
             return ['id' => $bookId];
         }
+    }
+
+    /** @return array{store_uuid: string} */
+    private function bindStore(AccountingBook $book, string $actor, string $uuid): array
+    {
+        $existing = $this->storage->storeBinding($uuid);
+        if ($existing !== null && $existing->getBook()->getId() !== $book->getId()) {
+            throw new LedgerError('store_already_bound', 409);
+        }
+        if ($existing === null) {
+            $this->storage->add(new AccountingBookStore($uuid, $book));
+            $this->audit($book, $actor, 'bind-store', $uuid, null, []);
+        }
+
+        return ['store_uuid' => $uuid];
     }
 
     /**
@@ -185,12 +211,19 @@ final class LedgerCommands
         $date = self::date($data['accounting_date']);
         if (isset($data['id'])) {
             $journal = $this->draft($book, $data);
+            if (array_key_exists('store_uuid', $data)) {
+                $journal->attributeDraft($data['revision'], $this->journalStore($book, $data['store_uuid']));
+            }
             $journal->updateDraft(
                 $data['revision'], $date, $data['summary'], $data['evidence'] ?? $journal->getEvidence(),
                 $data['attachments'] ?? null, $data['metadata'] ?? null,
             );
         } else {
-            $journal = JournalEntry::draft($book, $date, $data['origin'], $data['summary'], $data['evidence'], $data['attachments'], $data['metadata'] ?? null);
+            $stores = $this->storage->bookStores($book);
+            $uuid = array_key_exists('store_uuid', $data)
+                ? $this->journalStore($book, $data['store_uuid'])
+                : (count($stores) === 1 ? $stores[0] : null);
+            $journal = JournalEntry::draft($book, $date, $data['origin'], $data['summary'], $data['evidence'], $data['attachments'], $data['metadata'] ?? null, $uuid);
             $this->storage->add($journal);
         }
         $this->checkDate($journal);
@@ -202,6 +235,15 @@ final class LedgerCommands
         $this->storage->replaceDraftLines($journal, $lines);
 
         return ['id' => $journal->getUuid(), 'revision' => $journal->getRevision()];
+    }
+
+    private function journalStore(AccountingBook $book, ?string $uuid): ?string
+    {
+        if ($uuid !== null && $this->storage->storeBinding($uuid)?->getBook()->getId() !== $book->getId()) {
+            throw new LedgerError('store_not_in_book', 409);
+        }
+
+        return $uuid;
     }
 
     /**
@@ -331,8 +373,9 @@ final class LedgerCommands
             'add-period' => ['month'],
             'lock-period', 'reopen-period' => ['month', 'reason', 'command_id'],
             'approve-zero-opening' => ['reason', 'command_id'],
-            'create-draft' => ['origin', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata', 'command_id'],
-            'update-draft' => ['id', 'revision', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata'],
+            'bind-store' => ['store_uuid'],
+            'create-draft' => ['origin', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata', 'store_uuid', 'command_id'],
+            'update-draft' => ['id', 'revision', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata', 'store_uuid'],
             'void-draft' => ['id', 'revision', 'reason', 'command_id'],
             'post' => ['id', 'revision', 'command_id'],
             'reverse' => ['id', 'accounting_date', 'reason', 'command_id'],
@@ -341,6 +384,9 @@ final class LedgerCommands
         LedgerInput::fields($data, ...$fields);
         $normalized = [];
         foreach ($fields as $key) {
+            if ($key === 'store_uuid' && $action !== 'bind-store' && !array_key_exists($key, $data)) {
+                continue;
+            }
             if (!array_key_exists($key, $data) && ($key === 'metadata'
                 || ($action === 'update-draft' && in_array($key, ['evidence', 'attachments'], true)))) {
                 if ($key === 'metadata' && $action === 'create-draft') {
@@ -351,6 +397,7 @@ final class LedgerCommands
             $value = $data[$key] ?? null;
             $normalized[$key] = match ($key) {
                 'id', 'command_id' => LedgerInput::uuid($value),
+                'store_uuid' => $action !== 'bind-store' && ($value === null || $value === '') ? null : LedgerInput::uuid($value),
                 'revision' => LedgerInput::revision($value),
                 'opening_date', 'accounting_date' => LedgerInput::date($value),
                 'month' => substr(LedgerInput::date(is_string($value) ? $value.'-01' : null), 0, 7),

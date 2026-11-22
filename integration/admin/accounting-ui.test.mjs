@@ -179,7 +179,8 @@ test('journal resource declares fields, filters, and explicit ledger commands in
   assert.deepEqual(plain(reverse.navigate({ id: 'new-id' })), { name: 'JournalEntryDetail', params: { id: 'new-id' } })
 
   const form = journal.form.fields
-  assert.deepEqual(plain(form.map(property)), ['origin', 'accounting_date', 'summary', 'evidence', 'attachments', 'metadata', 'lines', 'revision'])
+  assert.deepEqual(plain(form.map(property)), ['origin', 'accounting_date', 'summary', 'store_uuid', 'evidence', 'attachments', 'metadata', 'lines', 'revision'])
+  assert.equal(fieldOf(form, 'store_uuid').type, 'select')
   assert.equal(fieldOf(form, 'metadata').type, 'json', 'metadata uses the built-in JSON field')
   assert.equal(fieldOf(form, 'lines').component.kind, 'journal-lines')
   assert.equal(fieldOf(form, 'attachments').component.kind, 'journal-attachments')
@@ -187,6 +188,14 @@ test('journal resource declares fields, filters, and explicit ledger commands in
   assert.equal(fieldOf(form, 'revision').hidden, 'create')
   assert.deepEqual(plain(journal.adapters.finance.fields), { evidence: 'audit', attachments: 'audit', metadata: 'audit' })
   assert.equal(journal.adapters.finance.commandId, true)
+})
+
+test('shared book binding is a configure-only collection action', () => {
+  const { AccountingBook: book } = loadConfigs()
+  const binding = book.list.actions.find(action => action.name === 'accounting-bind-store').component.spec
+  assert.equal(binding.action, 'bind-store')
+  assert.equal(binding.capability, 'configure')
+  assert.deepEqual(plain(binding.fields.map(property)), ['store_uuid'])
 })
 
 test('reports reuse the list renderer with a snapshot summary and export', () => {

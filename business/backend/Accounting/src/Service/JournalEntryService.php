@@ -20,11 +20,11 @@ final class JournalEntryService extends BaseService
     }
 
     /** @param array<string, mixed> $parameters */
-    public function registerQuery(array $parameters, int $bookId = AccountingBook::ID): QueryBuilder
+    public function registerQuery(array $parameters, int $bookId = AccountingBook::ID, ?string $storeUuid = null): QueryBuilder
     {
         LedgerInput::fields($parameters, 'from', 'to', 'state', 'account', 'page', 'limit');
 
-        return $this->journals->register($parameters, $bookId);
+        return $this->journals->register($parameters, $bookId, $storeUuid);
     }
 
     public function registerPage(QueryBuilder $query, int $page, int $limit): LedgerPage
@@ -36,6 +36,7 @@ final class JournalEntryService extends BaseService
             'id' => $entry->getUuid(), 'accounting_date' => $entry->getAccountingDate()->format('Y-m-d'),
             'summary' => $entry->getSummary(), 'origin' => $entry->getOrigin(), 'state' => $entry->getState(),
             'revision' => $entry->getRevision(), 'number' => $entry->getNumber(), 'reversal_of' => $entry->getReversalOf(),
+            'store_uuid' => $entry->getStoreUuid(),
         ], $entries)), $total, $page, $limit);
     }
 
