@@ -20,6 +20,7 @@ use NsUltimate\Business\Accounting\Migrations\Version20261122140000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122150000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122160000;
 use NsUltimate\Business\Accounting\Migrations\Version20261123100000;
+use NsUltimate\Business\Accounting\Migrations\Version20261124100000;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
@@ -109,7 +110,7 @@ $db->insert('ns_accounting_book', [
 $oldDraft = UUID::v4();
 $db->insert('ns_accounting_journal', ['book_id' => 2, 'id' => $oldDraft, 'accounting_date' => '2026-01-01',
     'origin' => 'manual', 'state' => 'draft', 'revision' => 3, 'summary' => 'Pre-upgrade draft']);
-AccountingTestManager::migrate($db, Version20261122140000::class, Version20261122150000::class, Version20261122160000::class, Version20261123100000::class);
+AccountingTestManager::migrate($db, Version20261122140000::class, Version20261122150000::class, Version20261122160000::class, Version20261123100000::class, Version20261124100000::class);
 check((int) $db->fetchOne('SELECT book_id FROM ns_accounting_book_store WHERE store_uuid = ?', [$store]) === 2, 'Existing store binding was not preserved.');
 $backfilled = $db->fetchAssociative('SELECT book_id, revision, store_uuid FROM ns_accounting_journal WHERE id = ?', [$oldDraft]);
 check($backfilled !== false && (int) $backfilled['book_id'] === 2 && (int) $backfilled['revision'] === 3 && $backfilled['store_uuid'] === $store, 'Existing journal was not attributed in place.');
