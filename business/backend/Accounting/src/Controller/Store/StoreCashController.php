@@ -24,6 +24,15 @@ final class StoreCashController extends RestController
 
     public function __construct(private readonly StoreServiceInterface $stores, private readonly StoreCashRegister $cash) {}
 
+    #[Route('/categories', name: 'categories', methods: ['GET'])]
+    public function categories(): Response
+    {
+        return $this->respond(function (Store $store): array {
+            $this->authorizeApiAction('list');
+            return ['categories' => $this->cash->categories($store)];
+        });
+    }
+
     #[Route('', name: 'list', methods: ['GET'])]
     public function list(Request $request): Response
     {

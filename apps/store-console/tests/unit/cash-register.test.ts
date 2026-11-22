@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cashMinor, cashMoney } from '../../src/staff/adapters/cash-register'
+import { cashMinor, cashMoney, readCashCategories, type CashCategoryOption } from '../../src/staff/adapters/cash-register'
 
 describe('cash register amount display', () => {
   it('preserves exact two-decimal amounts and rejects invalid input', () => {
@@ -9,5 +9,23 @@ describe('cash register amount display', () => {
     expect(cashMoney('9007199254740993', 'CNY')).toBe('CNY 90071992547409.93')
     expect(cashMoney('1', 'CNY')).toBe('CNY 0.01')
     for (const value of ['0.00', '-1', '1.001', '1e2', '92233720368547758.08']) expect(cashMinor(value)).toBeNull()
+  })
+})
+
+describe('cash register categories', () => {
+  it('loads user-defined category labels and directions from the store API', async() => {
+    const options: CashCategoryOption[] = [{ id: 'staff_meals', name: 'Staff meals', direction: 'expense' }]
+    let requested = ''
+    const api = {
+      base: '/api/v1/store/00000000-0000-4000-8000-000000000000',
+      client: {
+        data: async(path: string) => {
+          requested = path
+          return { categories: options }
+        }
+      }
+    }
+    await expect(readCashCategories(api as never)).resolves.toEqual({ categories: options })
+    expect(requested).toBe(`${api.base}/cash-register/categories`)
   })
 })

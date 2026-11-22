@@ -11,6 +11,7 @@ use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Entity\AccountingBookStore;
 use NsUltimate\Business\Accounting\Entity\AccountingPeriod;
 use NsUltimate\Business\Accounting\Entity\CashJournalMapping;
+use NsUltimate\Business\Accounting\Entity\CashCategory;
 use NsUltimate\Business\Accounting\Entity\CommandReceipt;
 use NsUltimate\Business\Accounting\Entity\JournalEntry;
 use NsUltimate\Business\Accounting\Entity\JournalLine;
@@ -136,6 +137,7 @@ final class LedgerCommands
             'create-draft', 'update-draft' => $this->saveDraft($book, $data),
             'save-cash-mapping' => $this->saveCashMapping($book, $data),
             'delete-cash-mapping' => $this->deleteCashMapping($book, $data['category']),
+            'create-cash-category', 'update-cash-category', 'delete-cash-category' => $this->cashCategory($book, $action, $data),
             'void-cash-entry' => $this->voidCashEntry($book, $actor, $data, $command),
             'draft-from-cash' => $this->draftFromCash($book, $data['source_uuid']),
             'void-draft' => $this->voidDraft($book, $data),
@@ -144,7 +146,7 @@ final class LedgerCommands
             default => throw new \LogicException('Unhandled normalized ledger command.'),
         };
         if (!in_array($action, ['correct-cash-entry', 'void-cash-entry'], true) && !($result['existing'] ?? false)) {
-            $this->audit($book, $actor, $action, $result['id'], $command, array_intersect_key($data, array_flip(['reason', 'revision', 'active', 'postable', 'classification', 'normal_side', 'source_uuid', 'category', 'debit_code', 'credit_code'])) + array_intersect_key($result, array_flip(['number'])));
+            $this->audit($book, $actor, $action, $result['id'], $command, array_intersect_key($data, array_flip(['reason', 'revision', 'active', 'postable', 'classification', 'normal_side', 'source_uuid', 'category', 'direction', 'name', 'debit_code', 'credit_code'])) + array_intersect_key($result, array_flip(['number'])));
         }
         if ($command !== null) {
             $this->storage->add(new CommandReceipt($book, $actor, $action, $command, $fingerprint, $result));
@@ -190,11 +192,13 @@ final class LedgerCommands
             throw new LedgerError('stale_cash_entry', 409);
         }
         $category = $data['category'];
+        $direction = $this->storage->cashCategoryDirection($book, $category)
+            ?? throw new LedgerError('invalid_cash_category');
         $metadata = array_intersect_key($entry->getMetadata(), array_flip(['reference', 'extra']));
         if ($category === 'purchase') {
             $metadata += ['item' => $data['item'], 'quantity' => $data['quantity'], 'unit' => $data['unit']];
         }
-        $entry->correct(self::date($data['date']), $category, $category === 'other_income' ? 'income' : 'expense',
+        $entry->correct(self::date($data['date']), $category, $direction,
             (int) $data['amount'], $data['note'], StoreCashMetadata::normalize($category, $metadata));
         $this->audit($book, $actor, 'correct-cash-entry', $id, $command, [
             'reason' => $data['reason'], 'before' => $before, 'after' => $entry->correctionSnapshot(),
@@ -237,6 +241,9 @@ final class LedgerCommands
     private function saveCashMapping(AccountingBook $book, array $data): array
     {
         $category = $data['category'];
+        if ($this->storage->cashCategory($book, $category) === null) {
+            throw new LedgerError('cash_category_not_found', 404);
+        }
         [$debit, $credit] = $this->cashMappingAccounts($book, $data);
         $mapping = $this->storage->cashMapping($book, $category);
         if ($mapping === null) {
@@ -255,6 +262,9 @@ final class LedgerCommands
     private function createCashMapping(AccountingBook $book, string $actor, array $data): array
     {
         $category = $data['category'];
+        if ($this->storage->cashCategory($book, $category) === null) {
+            throw new LedgerError('cash_category_not_found', 404);
+        }
         if ($this->storage->cashMapping($book, $category) !== null) {
             throw new LedgerError('cash_mapping_exists', 409);
         }
@@ -271,6 +281,35 @@ final class LedgerCommands
         $mapping = $this->storage->cashMapping($book, $category)
             ?? throw new LedgerError('cash_mapping_not_found', 404);
         $this->storage->remove($mapping);
+
+        return ['id' => $category];
+    }
+
+    /** @param array<string, mixed> $data
+     * @return array{id: string}
+     */
+    private function cashCategory(AccountingBook $book, string $action, array $data): array
+    {
+        $category = $data['category'];
+        $record = $this->storage->cashCategory($book, $category);
+        if ($action === 'create-cash-category') {
+            if ($record !== null) {
+                throw new LedgerError('cash_category_exists', 409);
+            }
+            $this->storage->add(new CashCategory($book, $category, $data['direction'], $data['name']));
+        } elseif ($action === 'update-cash-category') {
+            $record ??= throw new LedgerError('cash_category_not_found', 404);
+            if ($record->getDirection() !== $data['direction'] && $this->storage->cashCategoryInUse($book, $category)) {
+                throw new LedgerError('cash_category_in_use', 409);
+            }
+            $record->change($data['direction'], $data['name']);
+        } else {
+            $record ??= throw new LedgerError('cash_category_not_found', 404);
+            if ($this->storage->cashCategoryInUse($book, $category)) {
+                throw new LedgerError('cash_category_in_use', 409);
+            }
+            $this->storage->remove($record);
+        }
 
         return ['id' => $category];
     }
@@ -574,6 +613,9 @@ final class LedgerCommands
             'void-cash-entry' => ['id', 'reason', 'command_id'],
             'save-cash-mapping', 'create-cash-mapping' => ['category', 'debit_code', 'credit_code'],
             'delete-cash-mapping' => ['category'],
+            'create-cash-category' => ['category', 'direction', 'name'],
+            'update-cash-category' => ['category', 'direction', 'name'],
+            'delete-cash-category' => ['category'],
             'draft-from-cash' => ['source_uuid'],
             'create-draft' => ['origin', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata', 'store_uuid', 'command_id'],
             'update-draft' => ['id', 'revision', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata', 'store_uuid'],
@@ -609,12 +651,14 @@ final class LedgerCommands
                 'currency' => is_string($value) && preg_match('/\A[A-Z]{3}\z/', $value) ? $value : throw new LedgerError('invalid_currency'),
                 'scale' => is_int($value) && $value >= 0 && $value <= 6 ? $value : throw new LedgerError('invalid_scale'),
                 'timezone' => is_string($value) && in_array($value, \DateTimeZone::listIdentifiers(), true) ? $value : throw new LedgerError('invalid_timezone'),
-                'entity', 'name' => LedgerInput::text($value, 160),
+                'entity' => LedgerInput::text($value, 160),
+                'name' => LedgerInput::text($value, $action === 'create-cash-category' || $action === 'update-cash-category' ? 120 : 160),
                 'summary' => LedgerInput::text($value, 240),
                 'reason' => LedgerInput::text($value, 1000),
                 'evidence' => LedgerInput::text($value ?? '', 2000, true),
                 'code', 'debit_code', 'credit_code' => LedgerInput::code($value),
-                'category' => self::choice($value, ...CashJournalMapping::CATEGORIES),
+                'category' => is_string($value) && preg_match('/\A[a-z][a-z0-9_]{0,23}\z/', $value) ? $value : throw new LedgerError('invalid_option'),
+                'direction' => self::choice($value, 'income', 'expense'),
                 'origin' => self::choice($value, 'manual', 'opening'),
                 'classification' => self::choice($value, 'asset', 'liability', 'equity', 'revenue', 'expense'),
                 'normal_side' => self::choice($value, 'debit', 'credit'),

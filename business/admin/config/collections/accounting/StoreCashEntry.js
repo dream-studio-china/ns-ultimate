@@ -2,7 +2,10 @@ import { t } from '@/i18n'
 import * as ledger from '../../../accounting/finance-config.js'
 import { decimalToMinor, minorToDecimal } from '../../../accounting/ledger-ui.mjs'
 
-const categories = ledger.cashCategories
+const categoryFilterOptions = () => (ledger.finance.workspace?.cash_categories ?? [])
+  .map(category => ({ value: category.id, label: category.name }))
+const categoryFilter = () => ledger.finance.ensure().then(() =>
+  ledger.choiceFilter(t('Cash category'), categoryFilterOptions()))
 const required = [{ required: true, message: t('This field is required') }]
 const field = (property, label, extra = {}) => ({ property, field_options: { label: t(label) }, type: 'input', ...extra })
 const column = (property, label, extra = {}) => ({ property, label: t(label), field_options: { sortable: false }, ...extra })
@@ -24,7 +27,7 @@ const storeField = {
 }
 const entryFields = [
   field('date', 'Date', { component: ledger.IsoDateField, rules: required }),
-  field('category', 'Cash category', { type: 'select', rules: required, type_options: { options: ledger.options(categories, t) } }),
+  field('category', 'Cash category', { type: 'select', rules: required, type_options: { get options() { return (ledger.finance.workspace?.cash_categories ?? []).map(category => ({ value: category.id, label: category.name })) } } }),
   field('amount', 'Amount', { rules: [{ validator: amountRule }], type_options: { inputmode: 'decimal' } }),
   field('item', 'Cash purchase item', { hidden: notPurchase, rules: ledger.required(t('This field is required')), type_options: { maxlength: 160 } }),
   field('quantity', 'Quantity', {
@@ -47,7 +50,7 @@ const record = ledger.ledgerCommand({
   fields: [storeField, ...entryFields],
   payload: ({ store_uuid, date, category, amount, note, item, quantity, unit }) => ({
     store_uuid, date, category, amount: decimalToMinor(amount, 2), note: note || '',
-    direction: category === 'other_income' ? 'income' : 'expense',
+    direction: ledger.finance.workspace?.cash_categories?.find(item => item.id === category)?.direction,
     ...(category === 'purchase' ? { metadata: { item, quantity, unit } } : {})
   })
 })
@@ -108,10 +111,10 @@ export default {
         { name: 'cash-mapping-help', position: 'list', component: settings },
         { name: 'cash-open-journal', position: 'list', component: view }
       ],
-      list_filter: { category: ledger.choiceFilter(t('Cash category'), categories) },
+      list_filter: { category: categoryFilter },
       list_display: [
         column('entry_date', 'Date'), column('store_name', 'Store'),
-        column('category', 'Cash category', { component: ledger.labelCell }), column('amount', 'Amount', { component: ledger.cashAmountCell }),
+        column('category_name', 'Cash category', { component: ledger.labelCell }), column('amount', 'Amount', { component: ledger.cashAmountCell }),
         column('note', 'Note'), column('debit_code', 'Debit account'), column('credit_code', 'Credit account'),
         column('journal_state', 'Journal status', { component: ledger.stateCell }),
         column('state', 'Status', { component: ledger.stateCell })

@@ -35,7 +35,7 @@ function stubLedger() {
     finance,
     FINANCE_API,
     sides: ['debit', 'credit'],
-    cashCategories: ['purchase', 'transport', 'maintenance', 'other_expense', 'other_income'],
+     cashCategories: () => (finance.workspace?.cash_categories ?? []).map(category => category.id),
     classes: ['asset', 'liability', 'equity', 'revenue', 'expense'],
     resource: (name, plural) => ({ name, prefix: FINANCE_API, plural }),
     can: capability => () => finance.can(capability),
@@ -56,6 +56,7 @@ function stubLedger() {
     reportSummary: kind => marker('report-summary', { report: kind }),
     moneyCell: marker('money'),
     labelCell: marker('label'),
+    cashDirectionCell: marker('cash-direction'),
     stateCell: marker('state'),
     journalLinkCell: marker('journal-link'),
     IsoDateField: marker('iso-date'),
@@ -95,7 +96,7 @@ test('Accounting navigation keeps every /finance/accounting link and names the E
   const finance = routes.find(route => route.path === '/finance/accounting')
   assert.equal(finance.redirect, '/finance/accounting/ledger')
   assert.deepEqual(plain(finance.children.filter(child => !child.hidden).map(child => child.path)),
-    ['ledger', 'accounts', 'periods', 'cash-entries', 'cash-mappings', 'journals', 'reports/trial', 'reports/balances', 'reports/ledger', 'audit'])
+    ['ledger', 'accounts', 'periods', 'cash-entries', 'cash-categories', 'cash-mappings', 'journals', 'reports/trial', 'reports/balances', 'reports/ledger', 'audit'])
   for (const child of finance.children.filter(child => child.component)) {
     assert.equal(child.component.toString().includes('./accounting/FinanceResource.vue'), true, child.name)
   }
@@ -107,6 +108,7 @@ test('Accounting navigation keeps every /finance/accounting link and names the E
   const list = { entity: 'JournalEntry', view: 'list' }
   const expectations = {
     '/finance/accounting/ledger': ['AccountingBookList', { entity: 'AccountingBook', view: 'list' }],
+    '/finance/accounting/cash-categories': ['CashCategoryList', { entity: 'CashCategory', view: 'list' }],
     '/finance/accounting/cash-mappings': ['CashJournalMappingList', { entity: 'CashJournalMapping', view: 'list' }],
     '/finance/accounting/accounts': ['LedgerAccountList', { entity: 'LedgerAccount', view: 'list' }],
     '/finance/accounting/accounts/CASH': ['LedgerAccountDetail', { entity: 'LedgerAccount', view: 'detail' }],
@@ -151,7 +153,7 @@ test('Accounting collection configs are valid EasyAdmin entity configs', () => {
   const configs = loadConfigs()
   assert.deepEqual(Object.keys(configs).sort(), [
     'AccountingAuditRecord', 'AccountingBalanceReport', 'AccountingBook', 'AccountingLedgerReport',
-    'AccountingPeriod', 'AccountingTrialBalance', 'CashJournalMapping', 'JournalEntry', 'LedgerAccount', 'StoreCashEntry'
+    'AccountingPeriod', 'AccountingTrialBalance', 'CashCategory', 'CashJournalMapping', 'JournalEntry', 'LedgerAccount', 'StoreCashEntry'
   ])
   const validate = new Ajv({ allErrors: true, strict: false }).compile(schema)
   for (const [name, config] of Object.entries(configs)) {
@@ -162,7 +164,7 @@ test('Accounting collection configs are valid EasyAdmin entity configs', () => {
     for (const action of ['batch_edit', 'batch_delete']) {
       assert.ok(config.list.disabled_actions.includes(action), `${name} must not expose ${action}`)
     }
-    if (name !== 'CashJournalMapping') {
+    if (!['CashCategory', 'CashJournalMapping'].includes(name)) {
       assert.ok(config.list.disabled_actions.includes('delete'), `${name} must not expose delete`)
     }
     for (const filter of Object.values(config.list.list_filter ?? {})) {

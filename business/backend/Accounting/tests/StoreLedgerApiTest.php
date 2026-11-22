@@ -113,6 +113,18 @@ final class StoreLedgerApiTest extends KernelTestCase
         self::assertSame(405, $this->call($own.'/journals', $managerToken, [])->getStatusCode());
 
         $shared = $books[0];
+        $sharedBookId = (int) basename($shared);
+        foreach ([
+            ['purchase', 'expense', 'Purchase'],
+            ['transport', 'expense', 'Transport'],
+            ['maintenance', 'expense', 'Maintenance'],
+            ['other_expense', 'expense', 'Other expense'],
+            ['other_income', 'income', 'Other income'],
+        ] as [$category, $direction, $name]) {
+            $em->getConnection()->insert('ns_accounting_cash_category', [
+                'uuid' => UUID::v4(), 'book_id' => $sharedBookId, 'category' => $category, 'direction' => $direction, 'name' => $name,
+            ]);
+        }
         $sharedReader = $tokens->createAccessToken($sharedManager);
         $sharedStore = '/store/'.$c->getUuid().'/accounting';
         self::assertSame(404, $this->call($sharedStore.'/workspace', $sharedReader)->getStatusCode());
@@ -295,8 +307,9 @@ final class StoreLedgerApiTest extends KernelTestCase
         $updated = $this->data($this->call('/store/'.$c->getUuid().'/cash-register?month=2026-02', $sharedReader))['entries'][0];
         self::assertSame('10000', $updated['amount']);
         self::assertSame('2026-02-02', $updated['date']);
-        $audit = $this->data($this->call($shared.'/audit', $headToken));
-        $correctionAudit = array_values(array_filter($audit, static fn (array $row) => $row['action'] === 'correct-cash-entry'));
+        $audit = $this->data($this->call($shared.'/audit?limit=100', $headToken));
+        $correctionAudit = array_values(array_filter($audit, static fn (array $row) =>
+            $row['action'] === 'correct-cash-entry' && $row['correlation_id'] === $correction['command_id']));
         self::assertCount(1, $correctionAudit);
         $auditDetail = $this->data($this->call($shared.'/audit/'.$correctionAudit[0]['id'], $headToken));
         self::assertSame('12000', $auditDetail['detail']['before']['amount']);

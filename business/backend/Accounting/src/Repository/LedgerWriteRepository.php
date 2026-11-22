@@ -10,6 +10,7 @@ use NsUltimate\Business\Accounting\Entity\AccountingBook;
 use NsUltimate\Business\Accounting\Entity\AccountingBookStore;
 use NsUltimate\Business\Accounting\Entity\AccountingPeriod;
 use NsUltimate\Business\Accounting\Entity\CashJournalMapping;
+use NsUltimate\Business\Accounting\Entity\CashCategory;
 use NsUltimate\Business\Accounting\Entity\CommandReceipt;
 use NsUltimate\Business\Accounting\Entity\JournalEntry;
 use NsUltimate\Business\Accounting\Entity\JournalLine;
@@ -110,6 +111,31 @@ final class LedgerWriteRepository
     public function cashMapping(AccountingBook $book, string $category): ?CashJournalMapping
     {
         return $this->manager()->find(CashJournalMapping::class, ['book' => $book, 'category' => $category]);
+    }
+
+    public function cashCategoryDirection(AccountingBook $book, string $category): ?string
+    {
+        $direction = $this->manager()->getConnection()->fetchOne(
+            'SELECT direction FROM ns_accounting_cash_category WHERE book_id = ? AND category = ?',
+            [$book->getId(), $category],
+        );
+
+        return is_string($direction) ? $direction : null;
+    }
+
+    public function cashCategory(AccountingBook $book, string $category): ?CashCategory
+    {
+        return $this->manager()->find(CashCategory::class, ['book' => $book, 'category' => $category]);
+    }
+
+    public function cashCategoryInUse(AccountingBook $book, string $category): bool
+    {
+        return (bool) $this->manager()->getConnection()->fetchOne(
+            'SELECT 1 FROM ns_store_cash_entry e JOIN ns_accounting_book_store b ON HEX(b.store_uuid) = HEX(e.store_uuid)
+             WHERE b.book_id = ? AND e.category = ? UNION ALL
+             SELECT 1 FROM ns_accounting_cash_mapping WHERE book_id = ? AND category = ? LIMIT 1',
+            [$book->getId(), $category, $book->getId(), $category],
+        );
     }
 
     public function journalForCash(AccountingBook $book, string $uuid): ?JournalEntry

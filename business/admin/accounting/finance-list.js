@@ -57,7 +57,9 @@ const plain = (type, label, extra = {}) => ({ expression: '', type, label, defau
 export const textFilter = label => plain('input', label)
 
 export const choiceFilter = (label, values) => plain('select', label, {
-  data: values.map(value => ({ value, label: t(value) }))
+  data: values.map(option => typeof option === 'string'
+    ? { value: option, label: t(option) }
+    : { value: option.value, label: option.label })
 })
 
 export const accountFilter = label => () => finance.ensure().then(() => plain('select', label, {
