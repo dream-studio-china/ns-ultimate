@@ -88,4 +88,18 @@ final class MediaController extends RestController
         if (!$user instanceof User) throw new AccessDeniedException();
         return $user->getUuid();
     }
+
+    private function respond(callable $action, int $status = 200): JsonResponse
+    {
+        $headers = ['Cache-Control' => 'no-store, private', 'Vary' => 'Authorization'];
+        try { return new JsonResponse(['code' => 0, 'data' => $action()], $status, $headers); }
+        catch (HttpException $error) { return new JsonResponse(['code' => $error->getStatusCode(), 'message' => $error->getMessage()], $error->getStatusCode(), $headers); }
+        catch (AccessDeniedException $error) { throw $error; }
+        catch (\InvalidArgumentException|\Symfony\Component\Validator\Exception\ValidatorException) { return new JsonResponse(['code' => 422, 'message' => 'invalid_fields'], 422, $headers); }
+        catch (\LogicException) { return new JsonResponse(['code' => 409, 'message' => 'invalid_transition'], 409, $headers); }
+        catch (\Throwable $error) {
+            $this->logger->error('Store media upload failed.', ['exception' => $error]);
+            return new JsonResponse(['code' => 500, 'message' => 'operation_failed'], 500, $headers);
+        }
+    }
 }
