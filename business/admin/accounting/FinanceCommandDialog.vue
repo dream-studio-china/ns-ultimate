@@ -1,10 +1,17 @@
 <template>
-  <finance-modal :title="$t(intent.action)" width="min(520px, 94vw)" :locked="busy" @close="$emit('close')">
-    <el-alert v-if="intent.action === 'reverse'" :title="$t('Accounting reversal does not refund or move money')" type="warning" :closable="false" show-icon />
-    <el-alert v-if="intent.action === 'post'" :title="$t('Posted journals cannot be edited')" type="info" :closable="false" show-icon />
-    <finance-command-form v-if="fields.length" ref="form" v-model="data" entity-name="JournalEntry" :fields="fields" :dates="dates" />
+  <finance-modal :title="title" width="min(520px, 94vw)" :locked="busy" @close="$emit('close')">
+    <el-alert v-if="notice" :title="notice" type="warning" :closable="false" show-icon class="finance-command__notice" />
+    <form-admin
+      v-if="fields.length"
+      ref="renderer"
+      v-model="values"
+      :entity-conf="entity"
+      :fields="fields"
+      :structure-override="structure"
+      embedded
+    />
     <template #footer>
-      <el-button @click="$emit('close')">{{ $t('Cancel') }}</el-button>
+      <el-button :disabled="busy" @click="$emit('close')">{{ $t('Cancel') }}</el-button>
       <el-button type="primary" :loading="busy" :disabled="blocked" @click="submit">{{ $t('Confirm') }}</el-button>
     </template>
   </finance-modal>
@@ -12,27 +19,38 @@
 
 <script setup>
 import { ref } from 'vue'
-import { t } from '@/i18n'
-import FinanceCommandForm from './FinanceCommandForm.vue'
+import FormAdmin from '@/easyadmin/ui/vue/FormAdmin.vue'
 import FinanceModal from './FinanceModal.vue'
+import { FINANCE_API } from './finance-context'
 
-const props = defineProps({ intent: { type: Object, required: true }, busy: Boolean, blocked: Boolean })
-const emit = defineEmits(['close', 'confirm'])
-const form = ref()
-const data = ref({
-  ...(props.intent.action === 'reverse' ? { accounting_date: '' } : {}),
-  ...(props.intent.action === 'post' ? {} : { reason: '' }),
-  ...props.intent.data
+// Confirmation for an explicit ledger command. The command's input fields come
+// from its collection config and render through embedded FormAdmin.
+const props = defineProps({
+  title: { type: String, required: true },
+  notice: { type: String, default: '' },
+  fields: { type: Array, default: () => [] },
+  initial: { type: Object, default: () => ({}) },
+  busy: Boolean,
+  blocked: Boolean
 })
-const required = [{ required: true, whitespace: true, message: t('This field is required') }]
-const dates = props.intent.action === 'reverse' ? { accounting_date: 'date' } : {}
-const fields = [
-  ...(props.intent.action === 'reverse' ? [{ property: 'accounting_date', rules: required, field_options: { label: t('Accounting date') } }] : []),
-  ...(props.intent.action !== 'post' ? [{ property: 'reason', type: 'textarea', rules: required, field_options: { label: t('Reason') }, type_options: { maxlength: 1000, showWordLimit: true } }] : [])
-]
+const emit = defineEmits(['close', 'confirm'])
+const entity = { name: 'FinanceCommand', prefix: FINANCE_API }
+const structure = {}
+const renderer = ref()
+const values = ref({ ...props.initial })
+
+// Embedded FormAdmin has no save button; validate its form, then pass only
+// the declared fields to the command.
 async function submit() {
   if (props.busy || props.blocked) return
-  const values = fields.length ? await form.value?.validatedValues() : {}
-  if (values) emit('confirm', props.intent.action, { ...props.intent.data, ...values })
+  if (props.fields.length) {
+    const form = renderer.value?.$refs.form
+    if (!form || !await form.validate().catch(() => false)) return
+  }
+  emit('confirm', Object.fromEntries(props.fields.map(({ property }) => [property, renderer.value.form[property]])))
 }
 </script>
+
+<style scoped>
+.finance-command__notice { margin-bottom: 16px; }
+</style>

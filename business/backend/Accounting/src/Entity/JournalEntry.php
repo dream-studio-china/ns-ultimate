@@ -36,6 +36,11 @@ class JournalEntry
     private string $summary;
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $evidence;
+    /** @var list<string>|null */
+    #[ORM\Column(type: 'json', nullable: true)]
+    private ?array $attachments = null;
+    #[ORM\Column(type: 'json_object', nullable: true)]
+    private ?\stdClass $metadata = null;
     #[ORM\Column(length: 36, nullable: true)]
     private ?string $reversalOf = null;
     #[ORM\Column(nullable: true)]
@@ -49,7 +54,8 @@ class JournalEntry
     #[ORM\Column(length: 64, nullable: true)]
     private ?string $postedBy = null;
 
-    private function __construct(AccountingBook $book, \DateTimeImmutable $date, string $origin, string $summary, ?string $evidence)
+    /** @param list<string> $attachments */
+    private function __construct(AccountingBook $book, \DateTimeImmutable $date, string $origin, string $summary, ?string $evidence, array $attachments = [], ?\stdClass $metadata = null)
     {
         $this->book = $book;
         $this->uuid = UUID::v4();
@@ -57,15 +63,18 @@ class JournalEntry
         $this->origin = $origin;
         $this->summary = LedgerInput::text($summary, 240);
         $this->evidence = $evidence === null ? null : LedgerInput::text($evidence, 2000, true);
+        $this->attachments = $attachments;
+        $this->metadata = $metadata;
     }
 
-    public static function draft(AccountingBook $book, \DateTimeImmutable $date, string $origin, string $summary, ?string $evidence): self
+    /** @param list<string> $attachments */
+    public static function draft(AccountingBook $book, \DateTimeImmutable $date, string $origin, string $summary, ?string $evidence, array $attachments = [], ?\stdClass $metadata = null): self
     {
         if (!in_array($origin, ['manual', 'opening'], true)) {
             throw new LedgerError('invalid_option');
         }
 
-        return new self($book, $date, $origin, $summary, $evidence);
+        return new self($book, $date, $origin, $summary, $evidence, $attachments, $metadata);
     }
 
     public function getBook(): AccountingBook { return $this->book; }
@@ -77,6 +86,11 @@ class JournalEntry
     public function getSummary(): string { return $this->summary; }
     #[Ignore]
     public function getEvidence(): ?string { return $this->evidence; }
+    /** @return list<string> */
+    #[Ignore]
+    public function getAttachments(): array { return $this->attachments ?? []; }
+    #[Ignore]
+    public function getMetadata(): ?\stdClass { return $this->metadata; }
     public function getReversalOf(): ?string { return $this->reversalOf; }
     public function getSeriesYear(): ?int { return $this->seriesYear; }
     public function getSequenceNo(): ?int { return $this->sequenceNo; }
@@ -98,7 +112,8 @@ class JournalEntry
         }
     }
 
-    public function updateDraft(int $revision, \DateTimeImmutable $date, string $summary, ?string $evidence): void
+    /** @param list<string>|null $attachments */
+    public function updateDraft(int $revision, \DateTimeImmutable $date, string $summary, ?string $evidence, ?array $attachments = null, ?\stdClass $metadata = null): void
     {
         $this->requireDraft($revision);
         $summary = LedgerInput::text($summary, 240);
@@ -106,6 +121,8 @@ class JournalEntry
         $this->summary = $summary;
         $this->accountingDate = $date;
         $this->evidence = $evidence;
+        $this->attachments = $attachments ?? $this->attachments;
+        $this->metadata = $metadata ?? $this->metadata;
         ++$this->revision;
     }
 

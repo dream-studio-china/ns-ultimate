@@ -23,6 +23,39 @@ final class LedgerInput
         return $value;
     }
 
+    public static function metadata(mixed $value): \stdClass
+    {
+        if (!$value instanceof \stdClass) {
+            throw new LedgerError('invalid_journal_metadata');
+        }
+        try {
+            if (strlen(json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES, 12)) > 8192) {
+                throw new LedgerError('invalid_journal_metadata');
+            }
+        } catch (\JsonException) {
+            throw new LedgerError('invalid_journal_metadata');
+        }
+
+        return self::sortMetadataObject($value);
+    }
+
+    private static function sortMetadataObject(\stdClass $value): \stdClass
+    {
+        $fields = (array) $value;
+        ksort($fields, SORT_STRING);
+
+        return (object) array_map(self::sortMetadataValue(...), $fields);
+    }
+
+    private static function sortMetadataValue(mixed $value): mixed
+    {
+        return match (true) {
+            $value instanceof \stdClass => self::sortMetadataObject($value),
+            is_array($value) => array_map(self::sortMetadataValue(...), $value),
+            default => $value,
+        };
+    }
+
     public static function date(mixed $value): string
     {
         if (!is_string($value) || !preg_match('/\A([1-9][0-9]{3})-([0-9]{2})-([0-9]{2})\z/', $value, $m)

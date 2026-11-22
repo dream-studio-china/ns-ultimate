@@ -13,8 +13,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 /** @extends BaseService<JournalEntry> */
 final class JournalEntryService extends BaseService
 {
-    private const PAGE_SIZE = 100;
-
     public function __construct(ContainerInterface $container, private readonly JournalEntryRepository $journals)
     {
         parent::__construct($container, JournalEntry::class);
@@ -23,25 +21,21 @@ final class JournalEntryService extends BaseService
     /** @param array<string, mixed> $parameters */
     public function registerQuery(array $parameters): QueryBuilder
     {
-        LedgerInput::fields($parameters, 'from', 'to', 'state', 'account', 'page');
+        LedgerInput::fields($parameters, 'from', 'to', 'state', 'account', 'page', 'limit');
 
         return $this->journals->register($parameters);
     }
 
-    /** @return object{rows: list<array<string, int|string|null>>, page: int, has_more: bool} */
-    public function registerPage(QueryBuilder $query, int $page): object
+    public function registerPage(QueryBuilder $query, int $page, int $limit): LedgerPage
     {
-        $entries = $query->setFirstResult(($page - 1) * self::PAGE_SIZE)->setMaxResults(self::PAGE_SIZE + 1)->getQuery()->getResult();
+        $total = (int) (clone $query)->select('COUNT(entity.uuid)')->resetDQLPart('orderBy')->getQuery()->getSingleScalarResult();
+        $entries = $query->setFirstResult(($page - 1) * $limit)->setMaxResults($limit)->getQuery()->getResult();
 
-        return (object) [
-            'rows' => array_values(array_map(static fn (JournalEntry $entry) => [
-                'id' => $entry->getUuid(), 'accounting_date' => $entry->getAccountingDate()->format('Y-m-d'),
-                'summary' => $entry->getSummary(), 'origin' => $entry->getOrigin(), 'state' => $entry->getState(),
-                'number' => $entry->getNumber(), 'reversal_of' => $entry->getReversalOf(),
-            ], array_slice($entries, 0, self::PAGE_SIZE))),
-            'page' => $page,
-            'has_more' => count($entries) > self::PAGE_SIZE,
-        ];
+        return new LedgerPage(array_values(array_map(static fn (JournalEntry $entry) => [
+            'id' => $entry->getUuid(), 'accounting_date' => $entry->getAccountingDate()->format('Y-m-d'),
+            'summary' => $entry->getSummary(), 'origin' => $entry->getOrigin(), 'state' => $entry->getState(),
+            'revision' => $entry->getRevision(), 'number' => $entry->getNumber(), 'reversal_of' => $entry->getReversalOf(),
+        ], $entries)), $total, $page, $limit);
     }
 
     public function new(): never { throw new \LogicException('Use the ledger commands to create a journal.'); }

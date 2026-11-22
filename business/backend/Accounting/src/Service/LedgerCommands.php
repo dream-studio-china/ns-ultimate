@@ -78,7 +78,17 @@ final class LedgerCommands
         $book = $this->storage->lockBook();
         $command = $data['command_id'] ?? null;
         unset($data['command_id']);
-        $fingerprint = hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
+        $fingerprintData = $data;
+        if ($action === 'create-draft') {
+            // Empty extensions must not change receipts made before they existed.
+            if (!($data['attachments'] ?? [])) {
+                unset($fingerprintData['attachments']);
+            }
+            if ((array) ($data['metadata'] ?? null) === []) {
+                unset($fingerprintData['metadata']);
+            }
+        }
+        $fingerprint = hash('sha256', json_encode($fingerprintData, JSON_THROW_ON_ERROR));
         if ($command !== null) {
             $receipt = $this->storage->receipt($book, $actor, $action, $command);
             if ($receipt) {
@@ -177,9 +187,12 @@ final class LedgerCommands
         $date = self::date($data['accounting_date']);
         if (isset($data['id'])) {
             $journal = $this->draft($book, $data);
-            $journal->updateDraft($data['revision'], $date, $data['summary'], $data['evidence'] ?? $journal->getEvidence());
+            $journal->updateDraft(
+                $data['revision'], $date, $data['summary'], $data['evidence'] ?? $journal->getEvidence(),
+                $data['attachments'] ?? null, $data['metadata'] ?? null,
+            );
         } else {
-            $journal = JournalEntry::draft($book, $date, $data['origin'], $data['summary'], $data['evidence']);
+            $journal = JournalEntry::draft($book, $date, $data['origin'], $data['summary'], $data['evidence'], $data['attachments'], $data['metadata'] ?? null);
             $this->storage->add($journal);
         }
         $this->checkDate($journal);
@@ -320,8 +333,8 @@ final class LedgerCommands
             'add-period' => ['month'],
             'lock-period', 'reopen-period' => ['month', 'reason', 'command_id'],
             'approve-zero-opening' => ['reason', 'command_id'],
-            'create-draft' => ['origin', 'accounting_date', 'summary', 'lines', 'evidence', 'command_id'],
-            'update-draft' => ['id', 'revision', 'accounting_date', 'summary', 'lines', 'evidence'],
+            'create-draft' => ['origin', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata', 'command_id'],
+            'update-draft' => ['id', 'revision', 'accounting_date', 'summary', 'lines', 'evidence', 'attachments', 'metadata'],
             'void-draft' => ['id', 'revision', 'reason', 'command_id'],
             'post' => ['id', 'revision', 'command_id'],
             'reverse' => ['id', 'accounting_date', 'reason', 'command_id'],
@@ -330,7 +343,11 @@ final class LedgerCommands
         LedgerInput::fields($data, ...$fields);
         $normalized = [];
         foreach ($fields as $key) {
-            if ($action === 'update-draft' && $key === 'evidence' && !array_key_exists($key, $data)) {
+            if (!array_key_exists($key, $data) && ($key === 'metadata'
+                || ($action === 'update-draft' && in_array($key, ['evidence', 'attachments'], true)))) {
+                if ($key === 'metadata' && $action === 'create-draft') {
+                    $normalized[$key] = new \stdClass();
+                }
                 continue;
             }
             $value = $data[$key] ?? null;
@@ -352,10 +369,27 @@ final class LedgerCommands
                 'normal_side' => self::choice($value, 'debit', 'credit'),
                 'active', 'postable' => is_bool($value) ? (int) $value : throw new LedgerError('invalid_account_flag'),
                 'lines' => $this->normalizeLines($value),
+                'attachments' => $this->normalizeAttachments($value ?? []),
+                'metadata' => LedgerInput::metadata($value),
             };
         }
 
         return $normalized;
+    }
+
+    /** @return list<string> */
+    private function normalizeAttachments(mixed $attachments): array
+    {
+        if (!is_array($attachments) || !array_is_list($attachments) || count($attachments) > 20) {
+            throw new LedgerError('invalid_attachments');
+        }
+        return array_map(static function (mixed $url): string {
+            $url = LedgerInput::text($url, 2048);
+            if (!filter_var($url, FILTER_VALIDATE_URL) || !in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['https', 'http'], true)) {
+                throw new LedgerError('invalid_attachment');
+            }
+            return $url;
+        }, $attachments);
     }
 
     /** @return list<array{account_code: string, side: string, amount: string, description: string}> */

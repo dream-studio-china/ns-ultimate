@@ -7,14 +7,14 @@ namespace NsUltimate\Business\Accounting\Tests;
 use App\Core\Utils\UUID;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Schema\Schema;
 use NsUltimate\Business\Accounting\Migrations\Version20261121100000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122110000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122120000;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
 use NsUltimate\Business\Accounting\Repository\LedgerWriteRepository;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
 
 final class LedgerTest extends TestCase
 {
@@ -24,15 +24,10 @@ final class LedgerTest extends TestCase
 
     protected function setUp(): void
     {
-        require_once dirname(__DIR__).'/migrations/Version20261121100000.php';
         require_once __DIR__.'/AccountingTestManager.php';
         $this->db = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         $this->db->executeStatement('PRAGMA foreign_keys = ON');
-        $migration = new Version20261121100000($this->db, new NullLogger());
-        $migration->up(new Schema());
-        foreach ($migration->getSql() as $sql) {
-            $this->db->executeStatement($sql->getStatement());
-        }
+        AccountingTestManager::migrate($this->db, Version20261121100000::class, Version20261122110000::class, Version20261122120000::class);
         $this->commands = new LedgerCommands(new LedgerWriteRepository(AccountingTestManager::create($this->db)));
         $this->queries = new LedgerReadRepository($this->db);
         $this->runCommand('initialize', [
@@ -122,10 +117,24 @@ final class LedgerTest extends TestCase
         self::assertSame(2, $updated['revision']);
         $read = $this->queries->journal($draft['id'], true);
         self::assertSame('Fixture approval', $read['evidence']);
+        self::assertSame(['https://example.test/receipt/1', 'https://example.test/receipt/2'], $read['attachments']);
         self::assertSame(['EXPENSE', 'CASH'], array_column($read['lines'], 'account_code'));
         self::assertSame(['200', '200'], array_column($read['lines'], 'amount'));
         $this->runCommand('approve-zero-opening', ['reason' => 'Empty opening', 'command_id' => UUID::v4()]);
         self::assertSame('2026-1', $this->post($updated)['number']);
+    }
+
+    public function testCreateDraftMetadataIsPartOfTheRetryIntent(): void
+    {
+        $payload = [
+            'origin' => 'manual', 'accounting_date' => '2026-01-02', 'summary' => 'Synthetic journal',
+            'command_id' => UUID::v4(), 'lines' => [],
+        ];
+        $context = (object) ['batch' => 'X1', 'items' => [2, 1]];
+        $draft = $this->runCommand('create-draft', $payload + ['metadata' => (object) ['source_id' => '001', 'context' => $context]]);
+        self::assertSame($draft, $this->runCommand('create-draft', $payload + ['metadata' => (object) ['context' => $context, 'source_id' => '001']]));
+        self::assertSame('001', $this->queries->journal($draft['id'], true)['metadata']->source_id);
+        $this->assertError('command_key_conflict', fn () => $this->runCommand('create-draft', $payload + ['metadata' => (object) ['source_id' => '002']]));
     }
 
     private function account(string $code, string $class, string $side, bool $active = true): void
@@ -139,6 +148,7 @@ final class LedgerTest extends TestCase
     {
         return $this->runCommand('create-draft', [
             'origin' => $origin, 'accounting_date' => $date, 'summary' => 'Synthetic journal', 'evidence' => 'Fixture approval',
+            'attachments' => ['https://example.test/receipt/1', 'https://example.test/receipt/2'],
             'command_id' => UUID::v4(), 'lines' => [
                 ['account_code' => $debit, 'side' => 'debit', 'amount' => $amount],
                 ['account_code' => $credit, 'side' => 'credit', 'amount' => $amount],

@@ -4,24 +4,22 @@ declare(strict_types=1);
 
 // Run against a newly created, empty disposable accounting_m1_test database only.
 require dirname(__DIR__, 4).'/integration/backend/bootstrap.php';
-require_once dirname(__DIR__).'/migrations/Version20261121100000.php';
-require_once dirname(__DIR__).'/migrations/Version20261122100000.php';
 require_once __DIR__.'/AccountingTestManager.php';
 
 use App\Core\Utils\UUID;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\DriverException;
-use Doctrine\DBAL\Schema\Schema;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Accounting\Migrations\Version20261121100000;
 use NsUltimate\Business\Accounting\Migrations\Version20261122100000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122110000;
+use NsUltimate\Business\Accounting\Migrations\Version20261122120000;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
 use NsUltimate\Business\Accounting\Repository\LedgerWriteRepository;
 use NsUltimate\Business\Accounting\Tests\AccountingTestManager;
-use Psr\Log\NullLogger;
 
 function connect(): Connection
 {
@@ -95,17 +93,9 @@ function result(array $worker): array
 
 $db = connect();
 check((int) $db->fetchOne('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()') === 0, 'Refusing to run against a non-empty database.');
-$migration = new Version20261121100000($db, new NullLogger());
-$migration->up(new Schema());
-foreach ($migration->getSql() as $sql) {
-    $db->executeStatement($sql->getStatement());
-}
+AccountingTestManager::migrate($db, Version20261121100000::class);
 check((int) $db->fetchOne("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND engine = 'InnoDB'") === 8, 'Expected eight InnoDB tables.');
-$storeCashMigration = new Version20261122100000($db, new NullLogger());
-$storeCashMigration->up(new Schema());
-foreach ($storeCashMigration->getSql() as $sql) {
-    $db->executeStatement($sql->getStatement());
-}
+AccountingTestManager::migrate($db, Version20261122100000::class, Version20261122110000::class, Version20261122120000::class);
 $em = AccountingTestManager::create($db);
 $ormSchema = (new SchemaTool($em))->getSchemaFromMetadata($em->getMetadataFactory()->getAllMetadata());
 $schemaManager = $db->createSchemaManager();

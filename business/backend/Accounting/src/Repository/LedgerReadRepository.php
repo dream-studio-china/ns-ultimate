@@ -8,10 +8,10 @@ use Brick\Math\BigInteger;
 use Doctrine\DBAL\Connection;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
+use NsUltimate\Business\Accounting\Service\LedgerPage;
 
 final class LedgerReadRepository
 {
-    private const PAGE_SIZE = 100;
     private const MAX_EXPORT = 10000;
     private const FROM = ' FROM ns_accounting_line l JOIN ns_accounting_journal j ON j.book_id = l.book_id AND j.id = l.journal_id
                            WHERE l.book_id = 1 AND j.state = \'posted\' AND j.posting_index <= CAST(? AS DECIMAL(19, 0))';
@@ -37,8 +37,11 @@ final class LedgerReadRepository
             $lineKeys = array_flip(['account_code', 'side', 'amount', 'description', 'position']);
             $journal = array_diff_key($rows[0], $lineKeys, array_flip(['posting_index', 'book_id']));
             $journal['revision'] = (int) $journal['revision'];
-            if (!$evidence) {
-                unset($journal['evidence']);
+            if ($evidence) {
+                $journal['attachments'] = json_decode((string) ($journal['attachments'] ?? '[]'), true, flags: JSON_THROW_ON_ERROR);
+                $journal['metadata'] = json_decode((string) ($journal['metadata'] ?? '{}'), flags: JSON_THROW_ON_ERROR);
+            } else {
+                unset($journal['evidence'], $journal['attachments'], $journal['metadata']);
             }
             $journal['lines'] = [];
             foreach ($rows as $row) {
@@ -52,22 +55,49 @@ final class LedgerReadRepository
         });
     }
 
-    /**
-     * @param array<string, mixed> $parameters
-     * @return array<string, mixed>
-     */
-    public function audit(array $parameters): array
+    /** @param array<string, mixed> $parameters */
+    public function audit(array $parameters): LedgerPage
     {
-        LedgerInput::fields($parameters, 'page');
-        $page = LedgerInput::page($parameters['page'] ?? '1');
+        LedgerInput::fields($parameters, 'page', 'limit');
+        [$page, $limit] = LedgerPage::window($parameters);
         $rows = $this->db->fetchAllAssociative(
-            'SELECT id, actor, action, target, occurred_at, correlation_id, detail FROM ns_accounting_audit WHERE book_id = 1 ORDER BY occurred_at DESC, id DESC'.$this->slice($page),
+            'SELECT id, actor, action, target, occurred_at, correlation_id, detail FROM ns_accounting_audit WHERE book_id = 1 ORDER BY occurred_at DESC, id DESC'
+            .' LIMIT '.$limit.' OFFSET '.(($page - 1) * $limit),
+        );
+        $total = (int) $this->db->fetchOne('SELECT COUNT(*) FROM ns_accounting_audit WHERE book_id = 1');
+
+        return new LedgerPage(array_map($this->auditRow(...), $rows), $total, $page, $limit);
+    }
+
+    /** @return array<string, mixed> */
+    public function auditRecord(string $id): array
+    {
+        $record = $this->db->fetchAssociative(
+            'SELECT id, actor, action, target, occurred_at, correlation_id, detail FROM ns_accounting_audit WHERE book_id = 1 AND id = ?',
+            [LedgerInput::uuid($id)],
         );
 
-        return $this->paginate($rows, $page);
+        return $this->auditRow($record ?: throw new LedgerError('audit_record_not_found', 404));
     }
 
     /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function auditRow(array $row): array
+    {
+        $row['detail'] = json_decode((string) $row['detail'], true, flags: JSON_THROW_ON_ERROR);
+
+        return $row;
+    }
+
+    /**
+     * Read one report page, or every row for export, at a posting cutoff.
+     *
+     * The first request captures the book's current posting count as the
+     * cutoff. Later pages and the CSV export pass the same cutoff and filters so
+     * they read the same posted snapshot.
+     *
      * @param array<string, mixed> $parameters
      * @return array<string, mixed>
      */
@@ -76,7 +106,7 @@ final class LedgerReadRepository
         if (!in_array($kind, ['ledger', 'balances', 'trial'], true)) {
             throw new LedgerError('unknown_report', 404);
         }
-        LedgerInput::fields($parameters, 'from', 'to', 'account', 'cutoff', ...($export ? [] : ['page']));
+        LedgerInput::fields($parameters, 'from', 'to', 'account', 'cutoff', ...($export ? [] : ['page', 'limit']));
         if ($kind === 'trial' && isset($parameters['account'])) {
             throw new LedgerError('trial_requires_whole_book');
         }
@@ -89,8 +119,8 @@ final class LedgerReadRepository
         if ($kind === 'ledger' && $account === null) {
             throw new LedgerError('account_required');
         }
-        $page = LedgerInput::page($parameters['page'] ?? '1');
-        return $this->db->transactional(function () use ($kind, $parameters, $export, $from, $to, $account, $page): array {
+        [$page, $limit] = LedgerPage::window($parameters);
+        return $this->db->transactional(function () use ($kind, $parameters, $export, $from, $to, $account, $page, $limit): array {
             $book = $this->book() ?: throw new LedgerError('book_not_initialized', 409);
             $cutoff = $parameters['cutoff'] ?? (string) $book['posting_count'];
             if ($cutoff !== '0') {
@@ -100,18 +130,18 @@ final class LedgerReadRepository
                 throw new LedgerError('invalid_cutoff');
             }
             $result = $kind === 'ledger'
-                ? $this->ledger($account ?? throw new \LogicException('Missing account.'), $from, $to, $cutoff, $page, $export)
-                : $this->balances($account, $from, $to, $cutoff, $page, $export, $kind === 'trial');
+                ? $this->ledger($account ?? throw new \LogicException('Missing account.'), $from, $to, $cutoff, $page, $limit, $export)
+                : $this->balances($account, $from, $to, $cutoff, $page, $limit, $export, $kind === 'trial');
 
             return $result + ['cutoff' => $cutoff, 'currency' => $book['currency'], 'scale' => (int) $book['scale']];
         });
     }
 
     /** @return array<string, mixed> */
-    private function ledger(string $account, string $from, string $to, string $cutoff, int $page, bool $export): array
+    private function ledger(string $account, string $from, string $to, string $cutoff, int $page, int $limit, bool $export): array
     {
         $this->requireAccount($account);
-        $offset = ($page - 1) * self::PAGE_SIZE;
+        $offset = ($page - 1) * $limit;
         $base = self::FROM.' AND l.account_code = ?';
         $opening = BigInteger::zero();
         foreach ($this->db->iterateAssociative('SELECT l.side, l.amount'.$base.' AND j.accounting_date < ?', [$cutoff, $account, $from]) as $line) {
@@ -120,22 +150,29 @@ final class LedgerReadRepository
         $balance = $opening;
         $rows = [];
         $index = 0;
-        $sql = 'SELECT j.id, j.accounting_date, j.series_year, j.sequence_no, j.summary, l.position, l.side, l.amount, l.description'.$base
-            .' AND j.accounting_date >= ? AND j.accounting_date <= ? ORDER BY j.accounting_date, j.sequence_no, j.id, l.position';
-        $limit = $export ? self::MAX_EXPORT + 1 : $offset + self::PAGE_SIZE + 1;
-        foreach ($this->db->iterateAssociative($sql.' LIMIT '.$limit, [$cutoff, $account, $from, $to]) as $line) {
+        $range = $base.' AND j.accounting_date >= ? AND j.accounting_date <= ?';
+        $arguments = [$cutoff, $account, $from, $to];
+        $sql = 'SELECT j.id, j.accounting_date, j.series_year, j.sequence_no, j.summary, l.position, l.side, l.amount, l.description'.$range
+            .' ORDER BY j.accounting_date, j.sequence_no, j.id, l.position';
+        // Running balances need every earlier line in the range, so read up to the end of the page.
+        $end = $export ? self::MAX_EXPORT + 1 : $offset + $limit;
+        foreach ($this->db->iterateAssociative($sql.' LIMIT '.$end, $arguments) as $line) {
             $balance = $this->apply($balance, $line);
             if ($index++ >= $offset) {
                 $line['amount'] = (string) $line['amount'];
                 $rows[] = $this->journalNumber($line) + ['balance' => (string) $balance];
             }
         }
+        if ($export) {
+            return $this->export($rows) + ['opening' => (string) $opening];
+        }
+        $total = (int) $this->db->fetchOne('SELECT COUNT(*)'.$range, $arguments);
 
-        return ($export ? $this->export($rows) : $this->paginate($rows, $page)) + ['opening' => (string) $opening];
+        return ['rows' => $rows, 'total' => $total, 'page' => $page, 'limit' => $limit, 'opening' => (string) $opening];
     }
 
     /** @return array<string, mixed> */
-    private function balances(?string $account, string $from, string $to, string $cutoff, int $page, bool $export, bool $trial): array
+    private function balances(?string $account, string $from, string $to, string $cutoff, int $page, int $limit, bool $export, bool $trial): array
     {
         $zero = BigInteger::zero();
         $args = [$cutoff, $to];
@@ -179,7 +216,11 @@ final class LedgerReadRepository
             }
             $rows[] = $entry;
         }
-        $result = $export ? $this->export($rows) : $this->paginate(array_slice($rows, ($page - 1) * self::PAGE_SIZE, self::PAGE_SIZE + 1), $page);
+        if ($export) {
+            $result = $this->export($rows);
+        } else {
+            $result = ['rows' => array_slice($rows, ($page - 1) * $limit, $limit), 'total' => count($rows), 'page' => $page, 'limit' => $limit];
+        }
 
         return $trial ? $result + ['totals' => array_map('strval', $grand ?: array_fill_keys(['opening_debit', 'opening_credit', 'movement_debit', 'movement_credit', 'closing_debit', 'closing_credit'], $zero))] : $result;
     }
@@ -213,20 +254,6 @@ final class LedgerReadRepository
         unset($row['series_year'], $row['sequence_no']);
 
         return $row;
-    }
-
-    private function slice(int $page): string
-    {
-        return ' LIMIT '.(self::PAGE_SIZE + 1).' OFFSET '.(($page - 1) * self::PAGE_SIZE);
-    }
-
-    /**
-     * @param list<array<string, mixed>> $rows
-     * @return array{rows: list<array<string, mixed>>, page: int, has_more: bool}
-     */
-    private function paginate(array $rows, int $page): array
-    {
-        return ['rows' => array_slice($rows, 0, self::PAGE_SIZE), 'page' => $page, 'has_more' => count($rows) > self::PAGE_SIZE];
     }
 
     /**

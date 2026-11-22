@@ -110,6 +110,10 @@ jobs:
       - name: Run project workflow, assistant, and admin composition tests
         run: node --test scripts/*.test.mjs apps/admin-agent/tests/*.test.mjs integration/admin/*.test.mjs business/admin/accounting/*.test.mjs integration/backend/printer-designer-contract.test.mjs
 
+      - name: Mount composed Accounting admin resources
+        working-directory: core/crud-admin
+        run: ./node_modules/.bin/vitest run --config ../../integration/admin/accounting.vitest.config.ts
+
       - name: Run backend composition and business integration tests
         run: php core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml
 

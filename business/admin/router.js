@@ -12,16 +12,36 @@ const storeRoute = coreRoutes.find(route => route.name === 'StoreManage')
 if (!storeRoute) throw new Error('The admin core must expose the StoreManage route.')
 
 const accountingPath = '/finance/accounting'
-const journalMenu = `${accountingPath}/journals`
+const FinanceResource = () => import('./accounting/FinanceResource.vue')
 const financeMenu = title => ({ title: t(title), icon: 'el-icon-caret-right' })
-const journalModal = (mode, to) => ({
-  name: 'AccountingJournals',
-  query: {
-    ...to.query,
-    journal: mode === 'new' ? undefined : to.params.id,
-    journalAction: mode
-  }
+// Each page renders one Accounting collection config through the thin Finance adapter.
+const financePage = (path, name, entity, view, title) => ({
+  path, name, component: FinanceResource, props: { entity, view }, meta: financeMenu(title)
 })
+const hiddenPage = (path, name, entity, view, title, menu) => ({
+  ...financePage(path, name, entity, view, title), hidden: true, meta: { title: t(title), activeMenu: `${accountingPath}/${menu}` }
+})
+// Direct record links show the register with that record's dialog open. The
+// register's ListAdmin reads every query key as a filter, so link values
+// (the opening origin) travel as route params instead.
+const dialogPage = (path, name, entity, open, menu, extra = {}) => ({
+  path, name, component: FinanceResource, hidden: true,
+  props: route => ({ entity, view: 'list', open, prefill: { ...route.params } }),
+  meta: { title: t('Journals'), activeMenu: `${accountingPath}/${menu}` },
+  ...extra
+})
+const openingQuery = to => to.query.origin === 'opening' && !to.params.origin
+  ? { name: 'JournalEntryCreate', params: { origin: 'opening' }, query: {} }
+  : true
+const journalId = ':id([0-9a-fA-F-]{36})'
+// Older links opened journal dialogs through query parameters on the register.
+const legacyJournalLink = to => {
+  const { journalAction: action, journal: id, origin, ...query } = to.query
+  if (action === 'new') return { name: 'JournalEntryCreate', params: origin === 'opening' ? { origin } : {} }
+  if (typeof id === 'string' && id && action === 'edit') return { name: 'JournalEntryUpdate', params: { id } }
+  if (typeof id === 'string' && id && action === 'detail') return { name: 'JournalEntryDetail', params: { id } }
+  return action === undefined ? true : { name: 'JournalEntryList', query }
+}
 
 export default {
   add: [
@@ -33,15 +53,23 @@ export default {
       meta: { title: t('Finance management'), icon: 'el-icon-money' },
       alwaysShow: true,
       children: [
-        { path: 'ledger', name: 'AccountingWorkspace', component: () => import('./accounting/AccountingWorkspace.vue'), meta: financeMenu('Book setup') },
-        { path: 'accounts', name: 'AccountingAccounts', component: () => import('./accounting/AccountingAccounts.vue'), meta: financeMenu('Accounts') },
-        { path: 'periods', name: 'AccountingPeriods', component: () => import('./accounting/AccountingPeriods.vue'), meta: financeMenu('Accounting periods') },
-        { path: 'journals', name: 'AccountingJournals', component: () => import('./accounting/AccountingJournals.vue'), meta: financeMenu('Journals') },
-        { path: 'journals/new', name: 'AccountingJournalCreate', hidden: true, redirect: to => journalModal('new', to), meta: { activeMenu: journalMenu } },
-        { path: 'journals/:id/edit', name: 'AccountingJournalEdit', hidden: true, redirect: to => journalModal('edit', to), meta: { activeMenu: journalMenu } },
-        { path: 'journals/:id', name: 'AccountingJournalDetail', hidden: true, redirect: to => journalModal('detail', to), meta: { activeMenu: journalMenu } },
-        { path: 'reports', name: 'AccountingReports', component: () => import('./accounting/AccountingReports.vue'), meta: financeMenu('Reports') },
-        { path: 'audit', name: 'AccountingAudit', component: () => import('./accounting/AccountingAudit.vue'), meta: financeMenu('Accounting audit') }
+        financePage('ledger', 'AccountingBookList', 'AccountingBook', 'list', 'Book setup'),
+        hiddenPage('ledger/:id(\\d+)', 'AccountingBookDetail', 'AccountingBook', 'detail', 'Book setup', 'ledger'),
+        financePage('accounts', 'LedgerAccountList', 'LedgerAccount', 'list', 'Accounts'),
+        hiddenPage('accounts/:id/edit', 'LedgerAccountUpdate', 'LedgerAccount', 'form', 'Accounts', 'accounts'),
+        hiddenPage('accounts/:id', 'LedgerAccountDetail', 'LedgerAccount', 'detail', 'Accounts', 'accounts'),
+        financePage('periods', 'AccountingPeriodList', 'AccountingPeriod', 'list', 'Accounting periods'),
+        hiddenPage('periods/:id', 'AccountingPeriodDetail', 'AccountingPeriod', 'detail', 'Accounting periods', 'periods'),
+        { ...financePage('journals', 'JournalEntryList', 'JournalEntry', 'list', 'Journals'), beforeEnter: legacyJournalLink },
+        dialogPage('journals/new/:origin(opening)?', 'JournalEntryCreate', 'JournalEntry', 'create', 'journals', { beforeEnter: openingQuery }),
+        dialogPage(`journals/${journalId}/edit`, 'JournalEntryUpdate', 'JournalEntry', 'update', 'journals'),
+        dialogPage(`journals/${journalId}`, 'JournalEntryDetail', 'JournalEntry', 'detail', 'journals'),
+        { path: 'reports', name: 'AccountingReports', hidden: true, redirect: `${accountingPath}/reports/trial` },
+        financePage('reports/trial', 'AccountingTrialBalanceList', 'AccountingTrialBalance', 'list', 'trial'),
+        financePage('reports/balances', 'AccountingBalanceReportList', 'AccountingBalanceReport', 'list', 'balances'),
+        financePage('reports/ledger', 'AccountingLedgerReportList', 'AccountingLedgerReport', 'list', 'ledger'),
+        financePage('audit', 'AccountingAuditRecordList', 'AccountingAuditRecord', 'list', 'Accounting audit'),
+        hiddenPage('audit/:id', 'AccountingAuditRecordDetail', 'AccountingAuditRecord', 'detail', 'Accounting audit', 'audit')
       ]
     },
     {

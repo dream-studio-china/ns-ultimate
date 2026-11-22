@@ -6,25 +6,38 @@ namespace NsUltimate\Business\Accounting\Controller\Manage;
 
 use App\Core\Controller\RestController;
 use App\Identity\Entity\User;
+use NsUltimate\Business\Accounting\Controller\LedgerControllerSupport;
 use NsUltimate\Business\Accounting\Repository\LedgerReadRepository;
 use NsUltimate\Business\Accounting\Service\LedgerAccess;
 use NsUltimate\Business\Accounting\Service\LedgerAccountService;
 use NsUltimate\Business\Accounting\Service\LedgerCommands;
 use NsUltimate\Business\Accounting\Service\LedgerError;
 use NsUltimate\Business\Accounting\Service\LedgerInput;
+use NsUltimate\Business\Accounting\Service\LedgerPage;
 use NsUltimate\Business\Accounting\Service\LedgerWorkspace;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
+/**
+ * Finance resources other than journals, plus the explicit command endpoint.
+ *
+ * Book, account, period, audit, and report reads return the standard EasyAdmin
+ * list/detail envelopes. Resource writes call the ledger command service and
+ * keep its book lock and audit; state changes stay explicit commands.
+ */
 final class LedgerController extends RestController
 {
+    use LedgerControllerSupport;
+
     private const COMMANDS = [
         'initialize' => 'configure', 'save-account' => 'configure', 'add-period' => 'configure',
         'lock-period' => 'lock', 'reopen-period' => 'reopen', 'approve-zero-opening' => 'post',
         'create-draft' => 'draft', 'update-draft' => 'draft', 'void-draft' => 'draft',
         'post' => 'post', 'reverse' => 'reverse',
     ];
+    private const ACCOUNT_CODE = '[A-Z0-9][A-Z0-9._-]{0,31}';
+    private const MONTH = '[1-9][0-9]{3}-(?:0[1-9]|1[0-2])';
 
     public function __construct(
         private readonly LedgerAccess $access,
@@ -38,9 +51,43 @@ final class LedgerController extends RestController
     public function workspace(Request $request): Response
     {
         return $this->respond('read', function (User $user, array $capabilities) use ($request): array {
-            LedgerInput::fields($this->parameters($request));
+            LedgerInput::fields($this->ledgerParameters($request));
 
             return $this->workspaceService->setup() + ['capabilities' => $capabilities];
+        });
+    }
+
+    #[Route('/books', name: 'books_list', methods: ['GET'])]
+    public function books(Request $request): Response
+    {
+        return $this->respond('read', function () use ($request): LedgerPage {
+            $parameters = $this->ledgerParameters($request);
+            LedgerInput::fields($parameters, 'page', 'limit');
+            [$page, $limit] = LedgerPage::window($parameters);
+            $book = $this->workspaceService->book();
+            $rows = $book === null || $page > 1 ? [] : [$book];
+
+            return new LedgerPage($rows, $book === null ? 0 : 1, $page, $limit);
+        });
+    }
+
+    #[Route('/books/{id}', name: 'books_detail', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function book(int $id, Request $request): Response
+    {
+        return $this->respond('read', function () use ($id, $request): array {
+            LedgerInput::fields($this->ledgerParameters($request));
+
+            return $this->findBook($id);
+        });
+    }
+
+    #[Route('/books', name: 'books_create', methods: ['POST'])]
+    public function createBook(Request $request): Response
+    {
+        return $this->respond('configure', function (User $user) use ($request): Response {
+            $result = $this->execute($user, 'initialize', $request);
+
+            return $this->success((object) $this->findBook($result['id']), status: 201);
         });
     }
 
@@ -48,7 +95,7 @@ final class LedgerController extends RestController
     public function accounts(Request $request): Response
     {
         return $this->respond('read', function () use ($request): Response {
-            $this->listParameters($request, true);
+            $this->listParameters($request, 'q');
             $query = LedgerInput::text($request->query->all()['q'] ?? '', 160, true);
             $rows = array_filter($this->accounts->chart(), static fn (array $row) =>
                 $query === '' || mb_stripos($row['code'].' '.$row['name'], $query) !== false);
@@ -57,11 +104,11 @@ final class LedgerController extends RestController
         });
     }
 
-    #[Route('/ledger-accounts/{code}', name: 'accounts_detail', requirements: ['code' => '[A-Z0-9][A-Z0-9._-]{0,31}'], methods: ['GET'])]
+    #[Route('/ledger-accounts/{code}', name: 'accounts_detail', requirements: ['code' => self::ACCOUNT_CODE], methods: ['GET'])]
     public function account(string $code, Request $request): Response
     {
         return $this->respond('read', function () use ($code, $request): array {
-            LedgerInput::fields($this->parameters($request));
+            LedgerInput::fields($this->ledgerParameters($request));
 
             return $this->findAccount($code);
         });
@@ -77,11 +124,11 @@ final class LedgerController extends RestController
         });
     }
 
-    #[Route('/ledger-accounts/{code}', name: 'accounts_update', requirements: ['code' => '[A-Z0-9][A-Z0-9._-]{0,31}'], methods: ['PUT'])]
+    #[Route('/ledger-accounts/{code}', name: 'accounts_update', requirements: ['code' => self::ACCOUNT_CODE], methods: ['PUT'])]
     public function updateAccount(string $code, Request $request): Response
     {
         return $this->respond('configure', function (User $user) use ($code, $request): array {
-            $data = $this->payload($request);
+            $data = $this->ledgerPayload($request);
             if (array_key_exists('code', $data) && $data['code'] !== $code) {
                 throw new LedgerError('invalid_account_code');
             }
@@ -103,11 +150,11 @@ final class LedgerController extends RestController
         });
     }
 
-    #[Route('/accounting-periods/{month}', name: 'periods_detail', requirements: ['month' => '[1-9][0-9]{3}-(?:0[1-9]|1[0-2])'], methods: ['GET'])]
+    #[Route('/accounting-periods/{month}', name: 'periods_detail', requirements: ['month' => self::MONTH], methods: ['GET'])]
     public function period(string $month, Request $request): Response
     {
         return $this->respond('read', function () use ($month, $request): array {
-            LedgerInput::fields($this->parameters($request));
+            LedgerInput::fields($this->ledgerParameters($request));
             $period = $this->workspaceService->period($month) ?? throw new LedgerError('period_not_found', 404);
 
             return ['id' => $month] + $period;
@@ -127,14 +174,24 @@ final class LedgerController extends RestController
     #[Route('/audit', name: 'audit', methods: ['GET'])]
     public function audit(Request $request): Response
     {
-        return $this->respond('audit', fn () => $this->queries->audit($this->parameters($request)));
+        return $this->respond('audit', fn () => $this->queries->audit($this->ledgerParameters($request)));
+    }
+
+    #[Route('/audit/{id}', name: 'audit_detail', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['GET'])]
+    public function auditRecord(string $id, Request $request): Response
+    {
+        return $this->respond('audit', function () use ($id, $request): array {
+            LedgerInput::fields($this->ledgerParameters($request));
+
+            return $this->queries->auditRecord($id);
+        });
     }
 
     #[Route('/reports/{kind}/csv', name: 'export', methods: ['GET'])]
     public function export(string $kind, Request $request): Response
     {
         return $this->respond('read', function () use ($kind, $request): Response {
-            $data = $this->queries->report($kind, $this->parameters($request), true);
+            $data = $this->queries->report($kind, $this->ledgerParameters($request), true);
             $stream = fopen('php://temp', 'w+') ?: throw new \RuntimeException('Cannot allocate CSV stream.');
             $rows = $data['rows'];
             $columns = $kind === 'ledger'
@@ -171,13 +228,24 @@ final class LedgerController extends RestController
                 'Content-Type' => 'text/csv; charset=utf-8',
                 'Content-Disposition' => 'attachment; filename="accounting-'.$kind.'.csv"',
                 'X-Content-Type-Options' => 'nosniff',
-            ]);        });
+            ]);
+        });
     }
 
+    /**
+     * Report rows as a standard list page. The snapshot context (cutoff, book
+     * currency and scale, opening balance or trial totals) is returned in
+     * `report` so later pages and the CSV export can request the same cutoff.
+     */
     #[Route('/reports/{kind}', name: 'report', methods: ['GET'])]
     public function report(string $kind, Request $request): Response
     {
-        return $this->respond('read', fn () => $this->queries->report($kind, $this->parameters($request)));
+        return $this->respond('read', function () use ($kind, $request): LedgerPage {
+            $data = $this->queries->report($kind, $this->ledgerParameters($request));
+            $context = array_intersect_key($data, array_flip(['cutoff', 'currency', 'scale', 'opening', 'totals']));
+
+            return new LedgerPage($data['rows'], $data['total'], $data['page'], $data['limit'], ['report' => ['kind' => $kind] + $context]);
+        });
     }
 
     #[Route('/commands/{action}', name: 'command', methods: ['POST'])]
@@ -189,39 +257,14 @@ final class LedgerController extends RestController
     /** @return array<string, mixed> */
     private function execute(User $user, string $action, Request $request): array
     {
-        return $this->commands->execute($user->getUuid(), $action, $this->payload($request));
+        return $this->commands->execute($user->getUuid(), $action, $this->ledgerPayload($request));
     }
 
-    /** @return array<string, mixed> */
-    private function payload(Request $request): array
+    private function listParameters(Request $request, string ...$extra): void
     {
-        LedgerInput::fields($this->parameters($request));
-        if ($request->getContentTypeFormat() !== 'json') {
-            throw new LedgerError('json_required', 415);
-        }
-        $body = $request->getContent();
-        if (strlen($body) > 65536) {
-            throw new LedgerError('body_too_large', 413);
-        }
-        try {
-            $object = json_decode($body, false, 16, JSON_THROW_ON_ERROR);
-            if (!is_object($object) || (isset($object->lines) && !is_array($object->lines))) {
-                throw new LedgerError('invalid_body');
-            }
-            return json_decode($body, true, 16, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            throw new LedgerError('invalid_body');
-        }
-    }
-
-    private function listParameters(Request $request, bool $search = false): void
-    {
-        $params = $this->parameters($request);
-        LedgerInput::fields($params, ...($search ? ['page', 'limit', '@order', 'q'] : ['page', 'limit', '@order']));
-        LedgerInput::page($params['page'] ?? '1');
-        if (LedgerInput::page($params['limit'] ?? '20') > 300) {
-            throw new LedgerError('invalid_page');
-        }
+        $parameters = $this->ledgerParameters($request);
+        LedgerInput::fields($parameters, 'page', 'limit', '@order', ...$extra);
+        LedgerPage::window($parameters);
     }
 
     /** @param array<array<string, mixed>> $rows
@@ -249,6 +292,17 @@ final class LedgerController extends RestController
         });
 
         return $rows;
+    }
+
+    /** @return array<string, int|string> */
+    private function findBook(int|string $id): array
+    {
+        $book = $this->workspaceService->book();
+        if ($book === null || (string) $book['id'] !== (string) $id) {
+            throw new LedgerError('book_not_found', 404);
+        }
+
+        return $book;
     }
 
     /** @return array<string, mixed> */
@@ -282,16 +336,7 @@ final class LedgerController extends RestController
         }
         $result = $operation($user, $capabilities);
 
-        // Finance projections own their pagination; do not paginate their envelope again.
-        return $result instanceof Response ? $result : $this->success((object) $result);
-    }
-
-    /** @return array<string, mixed> */
-    private function parameters(Request $request): array
-    {
-        $all = $request->query->all();
-        unset($all['_locale']);
-
-        return $all;
+        // Command results and single records are objects so the Core reply helper does not paginate them.
+        return $result instanceof Response ? $result : $this->success($result instanceof LedgerPage ? $result : (object) $result);
     }
 }

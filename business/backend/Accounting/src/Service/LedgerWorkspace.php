@@ -15,15 +15,22 @@ final class LedgerWorkspace
     /** @return array<string, mixed> */
     public function setup(): array
     {
-        $book = $this->em->find(AccountingBook::class, AccountingBook::ID);
         return [
-            'book' => $book === null ? null : [
-                'id' => $book->getId(), 'entity' => $book->getEntity(), 'currency' => $book->getCurrency(),
-                'scale' => $book->getScale(), 'timezone' => $book->getTimezone(),
-                'opening_date' => $book->getOpeningDate()->format('Y-m-d'), 'opening_state' => $book->getOpeningState(),
-            ],
+            'book' => $this->book(),
             'accounts' => $this->accounts->chart(),
             'periods' => $this->periods(),
+        ];
+    }
+
+    /** @return array<string, int|string>|null */
+    public function book(): ?array
+    {
+        $book = $this->em->find(AccountingBook::class, AccountingBook::ID);
+
+        return $book === null ? null : [
+            'id' => $book->getId(), 'entity' => $book->getEntity(), 'currency' => $book->getCurrency(),
+            'scale' => $book->getScale(), 'timezone' => $book->getTimezone(),
+            'opening_date' => $book->getOpeningDate()->format('Y-m-d'), 'opening_state' => $book->getOpeningState(),
         ];
     }
 

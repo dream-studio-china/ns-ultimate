@@ -11,11 +11,8 @@
     :show-close="!locked"
     @close="$emit('close')"
   >
-    <div v-if="finance" v-loading="finance.busy.value">
-      <finance-feedback :finance="finance" />
-      <slot />
-    </div>
-    <slot v-else />
+    <finance-feedback />
+    <slot />
     <template v-if="$slots.footer" #footer><slot name="footer" /></template>
   </el-dialog>
 </template>
@@ -26,8 +23,7 @@ import FinanceFeedback from './FinanceFeedback.vue'
 defineProps({
   title: { type: String, required: true },
   width: { type: String, default: 'min(1080px, 94vw)' },
-  locked: Boolean,
-  finance: { type: Object, default: null }
+  locked: Boolean
 })
 defineEmits(['close'])
 </script>
