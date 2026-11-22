@@ -45,6 +45,28 @@ final class LedgerWorkspace
             $this->em->getRepository(AccountingBookStore::class)->findBy(['book' => $bookId], ['storeUuid' => 'ASC']));
     }
 
+    /** @return list<array{uuid: string, code: string, name: string}> */
+    public function availableStores(string $search): array
+    {
+        $db = $this->em->getConnection();
+        // Store and Accounting tables may use different MySQL collations.
+        // Compare the bytes of their canonical UUIDs, not their collations.
+        $query = $db->createQueryBuilder()->select('s.uuid', 's.code', 's.name')->from('store', 's')
+            ->where('NOT EXISTS (SELECT 1 FROM ns_accounting_book_store binding WHERE HEX(binding.store_uuid) = HEX(s.uuid))')
+            ->orderBy('s.name', 'ASC')->addOrderBy('s.uuid', 'ASC')->setMaxResults(30);
+        if ($search !== '') {
+            $platform = $db->getDatabasePlatform();
+            $name = $platform->getLocateExpression('LOWER(s.name)', ':search');
+            $code = $platform->getLocateExpression('LOWER(s.code)', ':search');
+            $query->andWhere('('.$name.' > 0 OR '.$code.' > 0)')
+                ->setParameter('search', mb_strtolower($search));
+        }
+
+        return array_values(array_map(static fn (array $row) => [
+            'uuid' => (string) $row['uuid'], 'code' => (string) $row['code'], 'name' => (string) $row['name'],
+        ], $query->fetchAllAssociative()));
+    }
+
     public function books(int $page, int $limit): LedgerPage
     {
         $repo = $this->em->getRepository(AccountingBook::class);

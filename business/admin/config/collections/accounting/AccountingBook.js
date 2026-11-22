@@ -4,6 +4,7 @@ import * as ledger from '../../../accounting/finance-config.js'
 const column = (property, label, extra = {}) => ({ property, label: t(label), ...extra })
 const input = (property, label, extra = {}) => ({ property, field_options: { label: t(label) }, ...extra })
 const required = ledger.required(t('This field is required'))
+const availableStore = input('store_uuid', 'Store', { component: ledger.AvailableStoreField, rules: required })
 const pending = record => record?.opening_state === 'pending' && Number(record.id) === Number(ledger.finance.book?.id)
 
 const openingJournal = ledger.ledgerLink({
@@ -18,7 +19,7 @@ const bindStore = ledger.ledgerCommand({
   action: 'bind-store', label: 'Add store to book', capability: 'configure',
   when: record => Number(record?.id) === Number(ledger.finance.book?.id),
   notice: 'Only stores without a book can join',
-  fields: [input('store_uuid', 'Store UUID', { rules: required })]
+  fields: [availableStore]
 })
 
 const display = [
@@ -37,10 +38,7 @@ export default {
     adapters: { finance: { allow: { new: ledger.can('configure') } } },
     form: {
       fields: [
-        input('store_uuid', 'Store UUID', {
-          required: true,
-          rules: [{ required: true, pattern: /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i, message: t('Enter a valid store UUID') }]
-        }),
+        availableStore,
         input('entity', 'Accounting entity', { rules: required, type_options: { maxlength: 160 } }),
         input('currency', 'Base currency code', {
           rules: [{ required: true, pattern: /^[A-Z]{3}$/, message: t('Base currency code') }], type_options: { maxlength: 3 }

@@ -15,7 +15,9 @@ final class Version20261122140000 extends AbstractMigration
     public function up(Schema $schema): void
     {
         $addition = new Schema();
-        $table = $addition->createTable('ns_accounting_book_store', ['engine' => 'InnoDB', 'charset' => 'utf8mb4']);
+        $table = $addition->createTable('ns_accounting_book_store');
+        $table->addOption('engine', 'InnoDB');
+        $table->addOption('charset', 'utf8mb4');
         $table->addColumn('store_uuid', 'string', ['length' => 36]);
         $table->addColumn('book_id', 'integer');
         $table->setPrimaryKey(['store_uuid']);

@@ -58,6 +58,7 @@ function stubLedger() {
     stateCell: marker('state'),
     journalLinkCell: marker('journal-link'),
     IsoDateField: marker('iso-date'),
+    AvailableStoreField: marker('available-store'),
     JournalLinesField: marker('journal-lines'),
     JournalAttachmentsField: marker('journal-attachments')
   }
@@ -196,6 +197,8 @@ test('shared book binding is a configure-only collection action', () => {
   assert.equal(binding.action, 'bind-store')
   assert.equal(binding.capability, 'configure')
   assert.deepEqual(plain(binding.fields.map(property)), ['store_uuid'])
+  assert.equal(binding.fields[0].component.kind, 'available-store')
+  assert.equal(fieldOf(book.form.fields, 'store_uuid').component.kind, 'available-store')
 })
 
 test('reports reuse the list renderer with a snapshot summary and export', () => {
@@ -216,8 +219,8 @@ test('reports reuse the list renderer with a snapshot summary and export', () =>
 
 test('Accounting has no hand-written pages: only the adapter, dialogs, and field plugins', () => {
   const allowed = [
-    'FinanceCommandDialog.vue', 'FinanceFeedback.vue', 'FinanceModal.vue', 'FinanceRecordDialog.vue', 'FinanceResource.vue',
-    'IsoDateField.vue', 'JournalAttachmentsField.vue', 'JournalLinesField.vue'
+    'AvailableStoreField.vue', 'FinanceCommandDialog.vue', 'FinanceFeedback.vue', 'FinanceModal.vue',
+    'FinanceRecordDialog.vue', 'FinanceResource.vue', 'IsoDateField.vue', 'JournalAttachmentsField.vue', 'JournalLinesField.vue'
   ]
   const files = readdirSync(accounting).filter(name => name.endsWith('.vue'))
   assert.deepEqual(files.sort(), allowed)

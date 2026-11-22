@@ -110,10 +110,15 @@ final class StoreLedgerApiTest extends KernelTestCase
         $sharedReader = $tokens->createAccessToken($sharedManager);
         $sharedStore = '/store/'.$c->getUuid().'/accounting';
         self::assertSame(404, $this->call($sharedStore.'/workspace', $sharedReader)->getStatusCode());
+        self::assertSame(403, $this->call($finance.'/available-stores', $managerToken)->getStatusCode());
+        $available = $this->data($this->call($finance.'/available-stores?q=LEDGER', $headToken));
+        self::assertSame([['uuid' => $c->getUuid(), 'code' => 'ledger-c', 'name' => 'Ledger C']], $available['stores']);
+        self::assertSame([], $this->data($this->call($finance.'/available-stores?q=%25', $headToken))['stores']);
         self::assertSame(409, $this->call($shared.'/commands/bind-store', $headToken, ['store_uuid' => $b->getUuid()])->getStatusCode());
         $binding = ['store_uuid' => $c->getUuid()];
         self::assertSame($binding, $this->data($this->call($shared.'/commands/bind-store', $headToken, $binding)));
         self::assertSame($binding, $this->data($this->call($shared.'/commands/bind-store', $headToken, $binding)));
+        self::assertSame([], $this->data($this->call($finance.'/available-stores?q=ledger-c', $headToken))['stores']);
         self::assertSame(409, $this->call($finance.'/books', $headToken, $initial + $binding)->getStatusCode());
         self::assertSame($c->getUuid(), $this->data($this->call($sharedStore.'/workspace', $sharedReader))['book']['store_uuid']);
 

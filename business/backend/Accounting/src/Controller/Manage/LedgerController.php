@@ -68,6 +68,18 @@ final class LedgerController extends RestController
         });
     }
 
+    #[Route('/available-stores', name: 'available_stores', methods: ['GET'])]
+    public function availableStores(Request $request): Response
+    {
+        return $this->respond('configure', function () use ($request): Response {
+            $params = $this->ledgerParameters($request);
+            LedgerInput::fields($params, 'q');
+            $search = LedgerInput::text($params['q'] ?? '', 160, true);
+
+            return $this->success((object) ['stores' => $this->workspaceService->availableStores($search)]);
+        });
+    }
+
     #[Route('/books', name: 'books_list', methods: ['GET'])]
     public function books(Request $request): Response
     {
