@@ -111,6 +111,8 @@ $oldDraft = UUID::v4();
 $db->insert('ns_accounting_journal', ['book_id' => 2, 'id' => $oldDraft, 'accounting_date' => '2026-01-01',
     'origin' => 'manual', 'state' => 'draft', 'revision' => 3, 'summary' => 'Pre-upgrade draft']);
 AccountingTestManager::migrate($db, Version20261122140000::class, Version20261122150000::class, Version20261122160000::class, Version20261123100000::class, Version20261124100000::class);
+$bookUuid = $db->fetchOne('SELECT uuid FROM ns_accounting_book WHERE id = 2');
+check(is_string($bookUuid) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D', $bookUuid) === 1, 'Existing book was not assigned a UUID.');
 check((int) $db->fetchOne('SELECT book_id FROM ns_accounting_book_store WHERE store_uuid = ?', [$store]) === 2, 'Existing store binding was not preserved.');
 $backfilled = $db->fetchAssociative('SELECT book_id, revision, store_uuid FROM ns_accounting_journal WHERE id = ?', [$oldDraft]);
 check($backfilled !== false && (int) $backfilled['book_id'] === 2 && (int) $backfilled['revision'] === 3 && $backfilled['store_uuid'] === $store, 'Existing journal was not attributed in place.');
@@ -192,18 +194,19 @@ check((int) $db->fetchOne("SELECT COUNT(*) FROM ns_accounting_journal WHERE stat
 
 $cashStore = UUID::v4();
 $cash = ['source_uuid' => UUID::v4()];
+$category = $run('create-cash-category', ['category' => 'transport', 'direction' => 'expense', 'name' => 'Transport'])['id'];
 // Simulate the Store table in the composed app with a different collation.
 $db->executeStatement('CREATE TABLE store (uuid VARCHAR(36) PRIMARY KEY, name VARCHAR(255) NOT NULL) COLLATE utf8mb4_unicode_ci');
 $db->insert('store', ['uuid' => $cashStore, 'name' => 'Synthetic store']);
 $db->insert('ns_store_cash_entry', [
     'uuid' => $cash['source_uuid'], 'store_uuid' => $cashStore, 'actor_uuid' => UUID::v4(), 'entry_date' => '2026-02-02',
-    'currency' => 'CNY', 'direction' => 'expense', 'category' => 'transport', 'amount' => 12000, 'note' => 'Freight',
+    'currency' => 'CNY', 'direction' => 'expense', 'category' => $category, 'amount' => 12000, 'note' => 'Freight',
     'metadata' => '{}', 'created_at' => '2026-02-02 12:00:00',
 ]);
 $run('bind-store', ['store_uuid' => $cashStore]);
-$run('save-cash-mapping', ['category' => 'transport', 'debit_code' => 'EQUITY', 'credit_code' => 'CASH']);
+$run('save-cash-mapping', ['category' => $category, 'debit_code' => 'EQUITY', 'credit_code' => 'CASH']);
 $mappingRows = $q->cashMappings(1, 1, 20)->items;
-check(count($mappingRows) === 1 && $mappingRows[0]['status'] === 'cash_mapping_configured' && $q->cashMapping(1, 'transport')['credit_code'] === 'CASH', 'Cash mapping list did not read the configured category.');
+check(count($mappingRows) === 1 && $mappingRows[0]['status'] === 'cash_mapping_configured' && $q->cashMapping(1, $category)['credit_code'] === 'CASH', 'Cash mapping list did not read the configured category.');
 $db->beginTransaction();
 try {
     $db->executeStatement('UPDATE ns_accounting_book SET posting_count = posting_count WHERE id = 1');
@@ -214,6 +217,6 @@ try {
 }
 [$fromCash, $duplicate] = array_map('result', $workers);
 check(isset($fromCash['id'], $duplicate['id']) && $fromCash['id'] === $duplicate['id'] && $fromCash['existing'] !== $duplicate['existing'], 'Concurrent cash conversion did not deduplicate.');
-$entries = $q->cashEntries(1, ['category' => 'transport'])->items;
+$entries = $q->cashEntries(1, ['category' => $category])->items;
 check(count($entries) === 1 && $entries[0]['journal_id'] === $fromCash['id'] && $entries[0]['journal_state'] === 'draft' && $entries[0]['store_name'] === 'Synthetic store', 'Cash register did not return its linked draft.');
 fwrite(STDOUT, "MySQL migration, ORM schema parity, rollback, exact report, posting replay, closing race, reversal replay, and concurrent cash draft generation passed.\n");

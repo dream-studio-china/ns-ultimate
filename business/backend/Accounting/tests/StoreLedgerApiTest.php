@@ -307,8 +307,9 @@ final class StoreLedgerApiTest extends KernelTestCase
         $updated = $this->data($this->call('/store/'.$c->getUuid().'/cash-register?month=2026-02', $sharedReader))['entries'][0];
         self::assertSame('10000', $updated['amount']);
         self::assertSame('2026-02-02', $updated['date']);
-        $audit = $this->data($this->call($shared.'/audit', $headToken));
-        $correctionAudit = array_values(array_filter($audit, static fn (array $row) => $row['action'] === 'correct-cash-entry'));
+        $audit = $this->data($this->call($shared.'/audit?limit=100', $headToken));
+        $correctionAudit = array_values(array_filter($audit, static fn (array $row) =>
+            $row['action'] === 'correct-cash-entry' && $row['correlation_id'] === $correction['command_id']));
         self::assertCount(1, $correctionAudit);
         $auditDetail = $this->data($this->call($shared.'/audit/'.$correctionAudit[0]['id'], $headToken));
         self::assertSame('12000', $auditDetail['detail']['before']['amount']);

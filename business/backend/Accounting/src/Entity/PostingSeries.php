@@ -10,9 +10,10 @@ use NsUltimate\Business\Accounting\Service\LedgerError;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'ns_accounting_series', options: ['engine' => 'InnoDB', 'charset' => 'utf8mb4'])]
+#[ORM\UniqueConstraint(name: 'uniq_accounting_series_uuid', columns: ['uuid'])]
 class PostingSeries
 {
-    #[ORM\Column(length: 36, unique: true)]
+    #[ORM\Column(length: 36)]
     private string $uuid;
     #[ORM\Id, ORM\ManyToOne(targetEntity: AccountingBook::class)]
     #[ORM\JoinColumn(name: 'book_id', nullable: false)]

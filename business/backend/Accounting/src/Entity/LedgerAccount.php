@@ -11,9 +11,10 @@ use NsUltimate\Business\Accounting\Service\LedgerInput;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'ns_accounting_account', options: ['engine' => 'InnoDB', 'charset' => 'utf8mb4'])]
+#[ORM\UniqueConstraint(name: 'uniq_accounting_account_uuid', columns: ['uuid'])]
 class LedgerAccount
 {
-    #[ORM\Column(length: 36, unique: true)]
+    #[ORM\Column(length: 36)]
     private string $uuid;
     #[ORM\Id, ORM\ManyToOne(targetEntity: AccountingBook::class)]
     #[ORM\JoinColumn(name: 'book_id', nullable: false)]

@@ -9,9 +9,10 @@ use App\Core\Utils\UUID;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'ns_accounting_cash_mapping', options: ['engine' => 'InnoDB', 'charset' => 'utf8mb4'])]
+#[ORM\UniqueConstraint(name: 'uniq_accounting_cash_mapping_uuid', columns: ['uuid'])]
 final class CashJournalMapping
 {
-    #[ORM\Column(length: 36, unique: true)]
+    #[ORM\Column(length: 36)]
     private string $uuid;
     public function __construct(
         #[ORM\Id, ORM\ManyToOne(targetEntity: AccountingBook::class)]

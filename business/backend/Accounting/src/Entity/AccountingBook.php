@@ -11,10 +11,11 @@ use NsUltimate\Business\Accounting\Service\LedgerInput;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'ns_accounting_book', options: ['engine' => 'InnoDB', 'charset' => 'utf8mb4'])]
+#[ORM\UniqueConstraint(name: 'uniq_accounting_book_uuid', columns: ['uuid'])]
 #[ORM\UniqueConstraint(name: 'uniq_acct_book_store', columns: ['store_uuid'])]
 class AccountingBook
 {
-    #[ORM\Column(length: 36, unique: true)]
+    #[ORM\Column(length: 36)]
     private string $uuid;
     public const ID = 1;
 
