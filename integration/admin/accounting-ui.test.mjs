@@ -11,7 +11,7 @@ const { createMemoryHistory, createRouter } = require('vue-router')
 const Ajv = require('ajv')
 const schema = require('./src/configs/schema/entity-config.schema.json')
 
-const accounting = new URL('../../business/admin/accounting/', import.meta.url)
+const accounting = new URL('../../business/admin/config/features/accounting/', import.meta.url)
 const collections = new URL('../../business/admin/config/collections/accounting/', import.meta.url)
 const read = (name, base = accounting) => readFileSync(new URL(name, base), 'utf8')
 const moduleSource = source => source.replace(/^import .*$/gm, '').replace('export default', 'globalThis.exported =')
@@ -19,10 +19,11 @@ const routeSource = source => source.replace(/^import .*$/gm, '').replace('expor
 const FINANCE_API = '/api/v1/finance/accounting'
 
 function businessRoutes() {
+  const root = new URL('../../', import.meta.url)
   const core = { r: entity => [{ path: `/dummy/${entity}/list`, name: `${entity}List` }], t: x => x, Layout: {}, routes: null }
-  runInNewContext(routeSource(read('../../../core/crud-admin/src/configs/routes.js')), core)
+  runInNewContext(routeSource(read('core/crud-admin/src/configs/routes.js', root)), core)
   const business = { ...core, coreRoutes: core.routes, routes: null, OrderRefundRecords: {} }
-  runInNewContext(routeSource(read('../router.js')), business)
+  runInNewContext(routeSource(read('business/admin/router.js', root)), business)
   return mergeRoutes(core.routes, business.routes)
 }
 
@@ -98,7 +99,7 @@ test('Accounting navigation keeps every /finance/accounting link and names the E
   assert.deepEqual(plain(finance.children.filter(child => !child.hidden).map(child => child.path)),
     ['ledger', 'accounts', 'periods', 'cash-entries', 'cash-categories', 'cash-mappings', 'journals', 'reports/trial', 'reports/balances', 'reports/ledger', 'audit'])
   for (const child of finance.children.filter(child => child.component)) {
-    assert.equal(child.component.toString().includes('./accounting/FinanceResource.vue'), true, child.name)
+    assert.equal(child.component.toString().includes('./config/features/accounting/FinanceResource.vue'), true, child.name)
   }
 
   // Navigation resolves lazy components; the matcher only needs the records.

@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import * as ledger from '../../../accounting/finance-config.js'
+import * as ledger from '../../features/accounting/finance-config.js'
 
 const required = [{ required: true, message: t('This field is required') }]
 const configured = () => ledger.finance.workspace?.mapped_cash_categories ?? []

@@ -149,10 +149,10 @@ vi.mock('@/config', () => ({ __esModule: true, default: { get entities() { retur
 
 const collections = import.meta.glob('../../business/admin/config/collections/accounting/*.js', { eager: true })
 globalThis.accountingEntities = Object.assign({}, ...Object.values(collections).map(module => module.default))
-const { default: FinanceResource } = await import('../../business/admin/accounting/FinanceResource.vue')
-const { finance } = await import('../../business/admin/accounting/finance-context.js')
-const { default: JournalLinesField } = await import('../../business/admin/accounting/JournalLinesField.vue')
-const { default: AvailableStoreField } = await import('../../business/admin/accounting/AvailableStoreField.vue')
+const { default: FinanceResource } = await import('../../business/admin/config/features/accounting/FinanceResource.vue')
+const { finance } = await import('../../business/admin/config/features/accounting/finance-context.js')
+const { default: JournalLinesField } = await import('../../business/admin/config/features/accounting/JournalLinesField.vue')
+const { default: AvailableStoreField } = await import('../../business/admin/config/features/accounting/AvailableStoreField.vue')
 
 const page = (path, name, entity, view) => ({ path, name, component: FinanceResource, props: { entity, view }, meta: { title: name } })
 const dialog = (path, name, open) => ({

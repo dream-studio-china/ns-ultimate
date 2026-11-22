@@ -2,7 +2,7 @@
 
 ## Ownership and scope
 
-The human workbench is owned by `business/admin/simulation/` and composed as `/promotion/simulation` in the existing Promotion menu by `business/admin/router.js`. Backend simulation is owned by `business/backend/Promotion/`; the integration Kernel discovers its controller and services by convention. No `core/` file, persistence mapping or migration changes.
+The human workbench is owned by `business/admin/config/features/promotion-simulation/` and composed as `/promotion/simulation` in the existing Promotion menu by `business/admin/router.js`. Backend simulation is owned by `business/backend/Promotion/`; the integration Kernel discovers its controller and services by convention. No `core/` file, persistence mapping or migration changes.
 
 The workbench is a **read-only verification surface**. It never creates, updates or deletes campaigns, templates, orders or users, and it does not call payment, print, catalog-write or external provider actions. It complements the ordinary campaign/template CRUD screens; saving remains a separate, explicitly confirmed operation.
 

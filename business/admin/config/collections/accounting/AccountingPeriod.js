@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import * as ledger from '../../../accounting/finance-config.js'
+import * as ledger from '../../features/accounting/finance-config.js'
 
 const column = (property, label, extra = {}) => ({ property, label: t(label), ...extra })
 const reason = {

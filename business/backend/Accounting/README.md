@@ -32,7 +32,7 @@ Use the optional **Journal metadata** field for structured references such as `{
 
 ```sh
 php core/crud-skeleton/vendor/bin/phpunit -c integration/backend/phpunit.xml --filter 'Ledger(Api|Entity)?Test'
-node --test business/admin/accounting/ledger-ui.test.mjs integration/admin/accounting-ui.test.mjs
+node --test business/admin/config/features/accounting/ledger-ui.test.mjs integration/admin/accounting-ui.test.mjs
 (cd core/crud-admin && ./node_modules/.bin/vitest run --config ../../integration/admin/accounting.vitest.config.ts)
 ```
 

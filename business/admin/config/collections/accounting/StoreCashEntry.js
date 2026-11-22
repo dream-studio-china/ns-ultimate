@@ -1,6 +1,6 @@
 import { t } from '@/i18n'
-import * as ledger from '../../../accounting/finance-config.js'
-import { decimalToMinor, minorToDecimal } from '../../../accounting/ledger-ui.mjs'
+import * as ledger from '../../features/accounting/finance-config.js'
+import { decimalToMinor, minorToDecimal } from '../../features/accounting/ledger-ui.mjs'
 
 const categoryFilterOptions = () => (ledger.finance.workspace?.cash_categories ?? [])
   .map(category => ({ value: category.id, label: category.name }))
