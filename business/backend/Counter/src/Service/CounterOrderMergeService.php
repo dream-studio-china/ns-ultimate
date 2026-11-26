@@ -19,6 +19,7 @@ use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
 use NsUltimate\Business\Inventory\Service\OrderInventoryAvailability;
 use NsUltimate\Business\Promotion\Service\OrderPromotionSnapshot;
+use NsUltimate\Business\Store\Service\SalesAvailabilityScope;
 use Symfony\Component\Workflow\WorkflowInterface;
 use Symfony\Component\DependencyInjection\Attribute\Target;
 
@@ -32,6 +33,7 @@ final class CounterOrderMergeService
         private readonly WorkflowInterface $orderWorkflow,
         private readonly CounterSessionService $sessions,
         private readonly OrderInventoryAvailability $inventory,
+        private readonly SalesAvailabilityScope $salesAvailabilityScope,
     ) {}
 
     public function merge(Counter $counter, User $user): Order
@@ -93,7 +95,9 @@ final class CounterOrderMergeService
             if ($store === null || $store->storeUuid !== $counter->getStoreUuid()) {
                 throw new \DomainException('The counter is not in the active store context.');
             }
-            $calculation = $this->orders->calculatePrices($items, $store->currency, $store->storeCode);
+            $calculation = $this->salesAvailabilityScope->forMerge(
+                fn () => $this->orders->calculatePrices($items, $store->currency, $store->storeCode),
+            );
             // Preserve the ordinary Store order flow, but do not reserve inventory
             // a second time for items already present in the source orders.
             $mergeStore = new StoreContext(

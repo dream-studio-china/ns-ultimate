@@ -23,6 +23,7 @@ use NsUltimate\Business\Counter\Entity\CounterSession;
 use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
 use NsUltimate\Business\Promotion\Service\OrderPromotionSnapshot;
+use NsUltimate\Business\Store\Service\SalesAvailabilityScope;
 use NsUltimate\Business\Store\Service\StaffCommandService;
 use NsUltimate\Business\Store\Service\StaffOrderPricing;
 use NsUltimate\Business\Store\Service\StaffOrderService;
@@ -46,6 +47,7 @@ final class CounterSessionOperations
         private readonly StoreOrderServiceInterface $storeOrders,
         #[Target('state_machine.order')] private readonly WorkflowInterface $workflow,
         #[Target('state_machine.store_order')] private readonly WorkflowInterface $storeOrderWorkflow,
+        private readonly SalesAvailabilityScope $salesAvailabilityScope,
     ) {}
 
     public function counter(Store $store, string $uuid, bool $lock = false): Counter
@@ -438,7 +440,9 @@ final class CounterSessionOperations
         ksort($quantities);
         $items = [];
         foreach ($quantities as $spec => $quantity) $items[] = ['specificationUuid' => $spec, 'quantity' => $quantity];
-        $calculation = $this->pricing->calculate($store, $items, $owner);
+        $calculation = $this->salesAvailabilityScope->forMerge(
+            fn () => $this->pricing->calculate($store, $items, $owner),
+        );
         $sourceUuids = array_map(static fn(Order $order): string => $order->getUuid(), $sources);
         $displayItems = array_map(static fn(array $item): array => ['specificationUuid' => $item['specificationUuid'], 'productName' => $item['productSnapshot']['name'],
             'specificationName' => $item['specificationName'], 'quantity' => $item['quantity'], 'unitPrice' => $item['unitPrice'], 'amount' => $item['price']], $calculation->items);

@@ -11,6 +11,7 @@ use App\Trade\Service\Catalog\CatalogResolverInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use NsUltimate\Business\Store\Entity\Product;
 use NsUltimate\Business\Store\Service\ProductAvailability;
+use NsUltimate\Business\Store\Service\SalesAvailabilityScope;
 use Symfony\Component\DependencyInjection\Attribute\AsDecorator;
 use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
 
@@ -22,12 +23,13 @@ final readonly class AvailableCatalogResolver implements CatalogResolverInterfac
         #[AutowireDecorated] private CatalogResolverInterface $inner,
         private EntityManagerInterface $em,
         private ProductAvailability $availability,
+        private SalesAvailabilityScope $salesAvailabilityScope,
     ) {}
 
     public function resolveForPricing(int|string $specificationId, ?string $storeCode): ?CatalogItem
     {
         $item = $this->inner->resolveForPricing($specificationId, $storeCode);
-        if ($item === null) return null;
+        if ($item === null || $this->salesAvailabilityScope->isMerging()) return $item;
         $product = $this->em->getRepository(CoreProduct::class)->findOneBy(['uuid' => $item->productUuid]);
         if ($product instanceof Product && !$this->availability->isAvailable($product, new \DateTimeImmutable())) return null;
         return $item;

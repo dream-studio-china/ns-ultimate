@@ -24,6 +24,8 @@ The read-only reservation check belongs to `business/backend/Inventory` and is s
 
 Merge requires at least two confirmed unpaid orders, including one owned by the caller. Orders bound to more than one counter are rejected rather than losing their other counter associations. Requests do not have an idempotency key, so a retry after new orders arrive may produce another merge.
 
+Customer and staff merges reprice existing items using current prices and rules, but ignore sold-out flags and sale windows. Product and specification status, deletion and store visibility checks still apply. New orders, staff additions and replacements still enforce normal sales availability.
+
 The `/api/v1` routes are the canonical API used by Admin. The earlier unprefixed Counter routes remain available for compatibility, with the same authorization requirements.
 
 The business Admin menu includes Counter management and immutable OrderCounter bindings. Collection files at `business/admin/config/collections/counter/*.js` export named entity maps. The composed Vite server watches the business Admin directory, including newly added glob matches outside the core root.

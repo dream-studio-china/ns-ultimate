@@ -27,6 +27,7 @@ use NsUltimate\Business\Payment\DTO\PaymentCloseResult;
 use NsUltimate\Business\Payment\Service\PaymentCloseGatewayRegistry;
 use NsUltimate\Business\Store\Entity\Product;
 use NsUltimate\Business\Store\Entity\StaffOperation;
+use NsUltimate\Business\Store\Service\SalesAvailabilityScope;
 use NsUltimate\Business\Store\Service\StaffOrderPricing;
 use NsUltimate\Business\Store\Service\StaffOrderService;
 use NsUltimate\Business\Store\Service\OrderPaymentCloseService;
@@ -167,21 +168,28 @@ final class CounterOperationsTest extends KernelTestCase
         $second = $this->place(); $this->project($second['orderUuid']);
         foreach ([$first, $second] as $source) $this->em->getConnection()->executeStatement('UPDATE trade_order SET status = ? WHERE uuid = ?', ['confirmed', $source['orderUuid']]);
         $owner = (new User())->setUsername('merge-owner')->setEmail('merge-owner@example.test');
-        $this->em->persist($owner); $this->em->flush(); $ownerUuid = $owner->getUuid();
+        $this->em->persist($owner); $ownerUuid = $owner->getUuid();
+        $spec = $this->em->getRepository(Specification::class)->findOneBy(['uuid' => $this->spec->getUuid()]);
+        $spec->getProduct()->setIsSoldout(true);
+        $spec->setPrice(1700);
+        $this->em->flush();
         $this->em->clear();
         $base = '/counters/'.$this->counter->getUuid().'/merge/';
         $input = ['version' => $this->view()['version'], 'user' => $ownerUuid];
         $quote = $this->data($this->request('POST', $base.'preview', $input));
         self::assertCount(2, $quote['sourceOrderUuids']);
-        self::assertSame(6360, $quote['totalAmount']);
+        self::assertSame(6800, $quote['totalAmount']);
         self::assertSame(6360, $quote['sourceTotalAmount']);
-        self::assertSame(0, $quote['differenceAmount']);
+        self::assertSame(440, $quote['differenceAmount']);
         $body = [...$input, 'quoteToken' => $quote['quoteToken'], 'commandUuid' => UUID::v4()];
         self::assertSame(409, $this->request('POST', $base.'confirm', [...$body, 'user' => $this->user->getUuid()])->getStatusCode());
         $result = $this->data($this->request('POST', $base.'confirm', $body));
         self::assertSame($result, $this->data($this->request('POST', $base.'confirm', $body)));
         $target = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $result['orderUuid']]);
         self::assertSame($ownerUuid, $target->getUser()->getUuid());
+        self::assertSame(6800, $target->getTotalAmount());
+        $add = $this->request('POST', '/counters/'.$this->counter->getUuid().'/orders/quote', $this->quoteInput());
+        self::assertSame(422, $add->getStatusCode(), (string) $add->getContent());
         foreach ([$first, $second] as $source) {
             self::assertSame('merged', $this->em->getRepository(Order::class)->findOneBy(['uuid' => $source['orderUuid']])->getStatus());
             self::assertSame('cancelled', $this->em->getRepository(\App\Store\Entity\StoreOrder::class)->findOneBy(['tradeOrderUuid' => $source['orderUuid']])->getOperationalStatus());
@@ -923,7 +931,8 @@ final class CounterOperationsTest extends KernelTestCase
             new StaffOrderService($container->get(OrderServiceInterface::class), $storeOrders, $container->get('state_machine.order')),
             $storeOrders,
             $container->get('state_machine.order'),
-            $container->get('state_machine.store_order'));
+            $container->get('state_machine.store_order'),
+            $container->get(SalesAvailabilityScope::class));
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->store->getUuid()]);
         $events = $this->em->getRepository(TradeOutboxMessage::class)->count([]);
         try {

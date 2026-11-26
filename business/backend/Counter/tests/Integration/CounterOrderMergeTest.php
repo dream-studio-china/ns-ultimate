@@ -51,6 +51,8 @@ use NsUltimate\Business\Printer\Entity\PrinterOrderRule;
 use NsUltimate\Business\Printer\Entity\PrinterAccount;
 use NsUltimate\Business\Printer\Entity\PrinterDevice;
 use NsUltimate\Business\Printer\Entity\PrinterTemplate;
+use NsUltimate\Business\Store\Entity\Product as StoreProduct;
+use NsUltimate\Business\Store\Service\SalesAvailabilityScope;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -103,7 +105,7 @@ final class CounterOrderMergeTest extends KernelTestCase
         $this->user->setRoles(['ROLE_ADMIN']);
         $store = $this->em->getRepository(Store::class)->findOneBy(['uuid' => $this->context->storeUuid]);
         $this->em->persist(new Membership($store, $this->user->getUuid(), Membership::ROLE_OWNER));
-        $product = (new Product($store))->setName('Integration coffee');
+        $product = (new StoreProduct($store))->setName('Integration coffee');
         $spec = (new Specification())->setProduct($product)->setName('Large')->setPrice(250);
         $this->em->persist($product);
         $this->em->persist($spec);
@@ -139,11 +141,26 @@ final class CounterOrderMergeTest extends KernelTestCase
             self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         }
 
+        $spec = $this->em->getRepository(Specification::class)->findOneBy(['uuid' => $spec->getUuid()]);
+        $storeTime = new \DateTimeImmutable('now', new \DateTimeZone($store->getTimezone()));
+        $hour = (int) $storeTime->format('G');
+        $spec->getProduct()->setSettings([
+            'startSaleTime' => sprintf('%02d:00', ($hour + 12) % 24),
+            'endSaleTime' => sprintf('%02d:00', ($hour + 13) % 24),
+        ]);
+        $spec->setPrice(300);
+        $this->em->flush();
+
         $response = $post('/api/v1/app/counters/'.$this->counter->getUuid().'/orders/merge');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         $target = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
         self::assertSame(Order::STATUS_CONFIRMED, $target['status']);
-        self::assertSame(750, $target['totalAmount']);
+        self::assertSame(900, $target['totalAmount']);
+        $newOrder = $post('/api/v1/app/orders', [
+            'items' => [['specificationId' => $spec->getUuid(), 'quantity' => 1]],
+            'metadata' => ['counterUuid' => $this->counter->getUuid()],
+        ]);
+        self::assertSame(400, $newOrder->getStatusCode(), (string) $newOrder->getContent());
         foreach ($sourceUuids as $sourceUuid) {
             $source = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $sourceUuid]);
             self::assertSame('merged', $source->getStatus());
@@ -710,6 +727,7 @@ final class CounterOrderMergeTest extends KernelTestCase
             $this->em, $orders, $resolver, self::getContainer()->get('state_machine.order'),
             self::getContainer()->get(CounterSessionService::class),
             self::getContainer()->get(OrderInventoryAvailability::class),
+            self::getContainer()->get(SalesAvailabilityScope::class),
         );
     }
 }
