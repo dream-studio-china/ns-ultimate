@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace NsUltimate\Business\Counter\Service;
 
 use App\Identity\Entity\User;
+use App\Payment\Entity\Invoice;
 use App\Trade\Entity\Order;
 use App\Trade\Entity\OrderItem;
 use App\Trade\DTO\StoreContext;
 use App\Trade\Service\OrderServiceInterface;
 use App\Trade\Service\StoreContextResolverInterface;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\DBAL\LockMode;
 use NsUltimate\Business\Counter\Entity\Counter;
@@ -25,6 +27,10 @@ use Symfony\Component\DependencyInjection\Attribute\Target;
 
 final class CounterOrderMergeService
 {
+    private const UNPAID_INVOICE_STATUSES = [
+        Invoice::STATUS_PENDING, Invoice::STATUS_PAYING, Invoice::STATUS_FAILED, Invoice::STATUS_CANCELLED,
+    ];
+
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly OrderServiceInterface $orders,
@@ -51,13 +57,13 @@ final class CounterOrderMergeService
             $bindings = $this->em->getRepository(OrderCounter::class)->findBy(['counterSession' => $session], ['tradeOrderUuid' => 'ASC']);
             $orders = [];
             $items = [];
+            $lock = $this->em->getConnection()->getDatabasePlatform() instanceof SQLitePlatform
+                ? LockMode::NONE : LockMode::PESSIMISTIC_WRITE;
             foreach ($bindings as $binding) {
                 $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $binding->getTradeOrderUuid()]);
                 if (!$order instanceof Order) {
                     throw new \LogicException('A counter order binding references a missing order.');
                 }
-                $lock = $this->em->getConnection()->getDatabasePlatform() instanceof SQLitePlatform
-                    ? LockMode::NONE : LockMode::PESSIMISTIC_WRITE;
                 $this->em->refresh($order, $lock);
                 if (isset($orders[$order->getUuid()])) {
                     continue;
@@ -68,9 +74,7 @@ final class CounterOrderMergeService
                 if (!$this->inventory->hasValidInventory($order)) {
                     throw new \DomainException('A valid inventory reservation is required for every source order.');
                 }
-                if ($order->getInvoiceId() !== null) {
-                    throw new \DomainException('An order with an existing payment invoice cannot be merged.');
-                }
+                $this->assertUnpaid($order, $lock);
                 if ($this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1) {
                     throw new \DomainException('Orders bound to multiple counters cannot be merged.');
                 }
@@ -127,6 +131,39 @@ final class CounterOrderMergeService
                 $this->em->getConnection()->rollBack();
             }
             throw $error;
+        }
+    }
+
+    private function assertUnpaid(Order $order, LockMode $lock): void
+    {
+        if ($order->getPaidAt() !== null || $order->getRefundedAt() !== null
+            || ($order->getPaymentStatus() !== null && !in_array($order->getPaymentStatus(), self::UNPAID_INVOICE_STATUSES, true))) {
+            throw new \DomainException('An order with a recorded payment or refund cannot be merged.');
+        }
+
+        // Match Core's lock order (source Order, then Invoice). A locking read also
+        // avoids using an earlier transaction snapshot of the source's invoices.
+        $query = $this->em->createQueryBuilder()->select('i')->from(Invoice::class, 'i')
+            ->where('i.sourceType = :type AND i.sourceId = :source')
+            ->setParameter('type', 'trade_order')->setParameter('source', $order->getUuid())
+            ->orderBy('i.id', 'ASC')->getQuery()->setHint(Query::HINT_REFRESH, true);
+        if ($lock !== LockMode::NONE) {
+            $query->setLockMode($lock);
+        }
+        $linkedInvoiceFound = $order->getInvoiceId() === null;
+        foreach ($query->getResult() as $invoice) {
+            if ($invoice->getUuid() === $order->getInvoiceId()) {
+                $linkedInvoiceFound = true;
+            }
+            if (!in_array($invoice->getStatus(), self::UNPAID_INVOICE_STATUSES, true)
+                || $invoice->getPaidAt() !== null || $invoice->getRefundedAmount() !== 0
+                || $invoice->getTransactionId() !== null
+                || isset($invoice->getExtraData()['payment_close_collection'])) {
+                throw new \DomainException('An order with a recorded payment or refund cannot be merged.');
+            }
+        }
+        if (!$linkedInvoiceFound) {
+            throw new \DomainException('An order with an inconsistent payment invoice link cannot be merged.');
         }
     }
 }
