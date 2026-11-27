@@ -36,6 +36,7 @@ final class WechatClientFactory
             'secret' => $resolved['credentials']['secret'] ?? '',
             'token' => $resolved['credentials']['token'] ?? '',
             'aes_key' => $resolved['credentials']['aes_key'] ?? '',
+            'oauth' => ['scopes' => ['snsapi_base']],
             'http' => ['throw' => true, 'timeout' => 5.0],
         ]);
     }

@@ -35,8 +35,11 @@ change Store ownership.
 Login continues to use
 Core's `/api/wechat/miniapp/login`, `/api/wechat/oauth/url`, and
 `/api/wechat/oauth/callback` endpoints; include `store_uuid` in the request
-body (or query for OAuth URL). Mini Program and Official Account OpenIDs remain
-separate naturally because WeChat issues them per AppID.
+body (or query for OAuth URL). Official Account web login uses `snsapi_base`:
+inside WeChat it redirects without a profile consent prompt and exchanges the
+callback code for the OpenID without requesting profile data. The endpoint and
+JWT response are unchanged. Existing profile fields are preserved. Mini Program
+login is unchanged; WeChat issues OpenIDs per AppID.
 
 Login identities are stored in Core `WechatUser` as `(AppID, OpenID)` mappings
 to Core Users; legacy rows without an AppID are retained and linked to the

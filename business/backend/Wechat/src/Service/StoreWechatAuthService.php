@@ -31,9 +31,9 @@ final class StoreWechatAuthService implements WechatAuthServiceInterface
         $application = $this->resolver->application($this->storeUuid(), WechatApplication::TYPE_MINIAPP)['profile'];
         $data = $this->wechatService->code2Session($jsCode);
 
-        return $this->findOrCreate($application->getAppId(), $data['openid'], WechatApplication::TYPE_MINIAPP, [
-            'unionid' => $data['unionid'] ?? null,
-        ]);
+        $unionid = $data['unionid'] ?? null;
+
+        return $this->findOrCreate($application->getAppId(), $data['openid'], WechatApplication::TYPE_MINIAPP, is_string($unionid) ? $unionid : null);
     }
 
     public function authenticateFromOfficialAccount(string $code): User
@@ -41,7 +41,9 @@ final class StoreWechatAuthService implements WechatAuthServiceInterface
         $application = $this->resolver->application($this->storeUuid(), WechatApplication::TYPE_OFFICIAL)['profile'];
         $data = $this->wechatService->getOAuthUser($code);
 
-        return $this->findOrCreate($application->getAppId(), $data['openid'], WechatApplication::TYPE_OFFICIAL, $data);
+        $unionid = $data['unionid'] ?? null;
+
+        return $this->findOrCreate($application->getAppId(), $data['openid'], WechatApplication::TYPE_OFFICIAL, is_string($unionid) ? $unionid : null);
     }
 
     public function bindPhone(User $user, string $code): void
@@ -56,8 +58,7 @@ final class StoreWechatAuthService implements WechatAuthServiceInterface
         $this->entityManager->flush();
     }
 
-    /** @param array<string, mixed> $profile */
-    private function findOrCreate(string $appId, string $openid, string $type, array $profile = []): User
+    private function findOrCreate(string $appId, string $openid, string $type, ?string $unionid): User
     {
         $wechatUser = $this->wechatUsers->findByAppIdAndOpenid($appId, $openid);
         if ($wechatUser === null) {
@@ -68,7 +69,9 @@ final class StoreWechatAuthService implements WechatAuthServiceInterface
             }
         }
         if ($wechatUser instanceof WechatUser) {
-            $this->applyProfile($wechatUser, $profile);
+            if ($unionid !== null) {
+                $wechatUser->setUnionid($unionid);
+            }
             $wechatUser->setLastLoginAt(new \DateTimeImmutable());
             $this->entityManager->flush();
 
@@ -82,37 +85,11 @@ final class StoreWechatAuthService implements WechatAuthServiceInterface
             ->setPassword(bin2hex(random_bytes(32)));
         $this->entityManager->persist($user);
         $wechatUser = new WechatUser($user, $openid, $type, $appId);
-        $this->applyProfile($wechatUser, $profile);
+        $wechatUser->setUnionid($unionid);
         $this->entityManager->persist($wechatUser);
         $this->entityManager->flush();
 
         return $user;
-    }
-
-    /** @param array<string, mixed> $profile */
-    private function applyProfile(WechatUser $wechatUser, array $profile): void
-    {
-        if (is_string($profile['unionid'] ?? null)) {
-            $wechatUser->setUnionid($profile['unionid']);
-        }
-        if (is_string($profile['nickname'] ?? null)) {
-            $wechatUser->setNickname($profile['nickname']);
-        }
-        if (is_string($profile['avatar'] ?? null)) {
-            $wechatUser->setAvatar($profile['avatar']);
-        }
-        if (is_string($profile['province'] ?? null)) {
-            $wechatUser->setProvince($profile['province']);
-        }
-        if (is_string($profile['city'] ?? null)) {
-            $wechatUser->setCity($profile['city']);
-        }
-        if (is_string($profile['country'] ?? null)) {
-            $wechatUser->setCountry($profile['country']);
-        }
-        if (is_int($profile['sex'] ?? null) && $profile['sex'] > 0) {
-            $wechatUser->setSex($profile['sex']);
-        }
     }
 
     private function storeUuid(): string

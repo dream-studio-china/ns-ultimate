@@ -184,9 +184,51 @@ final class WechatSettingsApiTest extends KernelTestCase
             parse_str(parse_url($payload['url'], PHP_URL_QUERY), $query);
             self::assertSame($official->getAppId(), $query['appid']);
             self::assertSame($callbackUrl, $query['redirect_uri']);
-            self::assertSame('snsapi_userinfo', $query['scope']);
+            self::assertSame('snsapi_base', $query['scope']);
             self::assertSame('code', $query['response_type']);
         }
+    }
+
+    public function testSilentOAuthCallbackReusesTheExistingUserAndPreservesProfileData(): void
+    {
+        $container = self::getContainer();
+        $em = $container->get(EntityManagerInterface::class);
+        $cipher = $container->get(WechatSecretCipher::class);
+        $store = new Store('wechat-silent-store', 'Silent OAuth Store');
+        $official = new WechatApplication(
+            'Silent OAuth Official',
+            WechatApplication::TYPE_OFFICIAL,
+            'wx-silent-oauth',
+            $cipher->encrypt(['secret' => 'oauth-test-secret']),
+        );
+        $user = (new User())->setEmail('existing-wechat@example.test')->setUsername('existing-wechat');
+        $identity = (new WechatUser($user, 'same-openid', WechatUser::APP_TYPE_OFFICIAL, $official->getAppId()))
+            ->setNickname('Existing nickname')
+            ->setAvatar('https://example.test/avatar.png')
+            ->setUnionid('existing-unionid');
+        foreach ([$store, $official, $user, $identity, new StoreWechatSetting($store->getUuid(), null, $official)] as $entity) {
+            $em->persist($entity);
+        }
+        $em->flush();
+        $userId = $user->getId();
+        $identityId = $identity->getId();
+
+        $container->set(WechatServiceInterface::class, new FakeWechatService());
+        $request = Request::create('/api/wechat/oauth/callback', 'POST', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+        ], json_encode(['store_uuid' => $store->getUuid(), 'code' => 'silent-code'], JSON_THROW_ON_ERROR));
+        $response = self::$kernel->handle($request);
+
+        self::assertSame(200, $response->getStatusCode(), $response->getContent());
+        $payload = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertNotEmpty($payload['refresh_token']);
+        $claims = $container->get(TokenManager::class)->decodeAccessToken($payload['access_token']);
+        self::assertSame((string) $userId, $claims['sub'] ?? null);
+        $em->clear();
+        $stored = $em->find(WechatUser::class, $identityId);
+        self::assertSame('Existing nickname', $stored->getNickname());
+        self::assertSame('https://example.test/avatar.png', $stored->getAvatar());
+        self::assertSame('existing-unionid', $stored->getUnionid());
     }
 
     public function testStoreWechatGatewayOverridesOnlyTheCoreWechatRegistration(): void
