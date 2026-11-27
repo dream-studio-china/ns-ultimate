@@ -284,7 +284,7 @@ test('reports summarize Trade Orders from the deployed counter query', async ({ 
   await expect(dailySummary.getByText('待收金额', { exact: true })).toHaveCount(1)
   await expect(dailySummary).toContainText('¥15.90')
   await expect(dailySummary).toContainText('¥0.00')
-  await page.getByRole('navigation').getByRole('button', { name: '统计', exact: true }).click()
+  await page.getByRole('navigation').getByRole('button', { name: '经营数据', exact: true }).click()
   await expect(page.locator('.report-hero')).toContainText('¥15.90')
   await expect(page.locator('.sales-ranking')).toContainText('API product')
   expect(requests.some((request) => request.path.endsWith('/counter-operations/counters'))).toBe(true)
@@ -378,7 +378,7 @@ test('cashier staff land on dining without product configuration, fulfillment or
   await page.route('**/counter-operations/counters?**', (route) => route.fulfill({ json: { code: 0, data: { items: [], total: 0, page: 1, hasNext: false } } }))
   await login(page, '/?view=kitchen', 'tables')
   const nav = page.getByRole('navigation')
-  await expect(nav.getByRole('button')).toHaveText(['收银', '交易订单', '统计', '我的'])
+  await expect(nav.getByRole('button')).toHaveText(['收银', '交易订单', '经营数据', '成本分析', '我的'])
   await expect(nav.getByRole('button', { name: '收银', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('heading', { name: '安排好每一张桌台', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '桌台配置', exact: true })).toHaveCount(0)
@@ -409,7 +409,7 @@ test('reconnecting a store discards the selected workspace and uses fresh grants
   const before = requests.length
   await page.getByRole('button', { name: 'Contract store S1', exact: true }).click()
   await expect(page.getByRole('navigation')).toBeVisible()
-  await expect(page.getByRole('navigation').getByRole('button')).toHaveText(['统计', '我的'])
+  await expect(page.getByRole('navigation').getByRole('button')).toHaveText(['经营数据', '成本分析', '我的'])
   await expect(page.locator('.report-hero')).toBeVisible()
   expect(requests.slice(before).some((request) => /products/.test(request.path))).toBe(false)
 })
@@ -1049,13 +1049,19 @@ test('redesigned workspace remains usable across phone, tablet and desktop layou
   await expect(page.getByRole('dialog')).toHaveCount(0)
   for (const width of [320, 390, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 })
-    for (const name of ['厨房', '收银', '门店订单（只读）', '统计', '我的']) {
-      await page.getByRole('navigation').getByRole('button', { name, exact: true }).click()
+    for (const name of ['厨房', '收银', '门店订单（只读）', '经营数据', '成本分析', '我的']) {
+      const navButton = page.getByRole('navigation').getByRole('button', { name, exact: true })
+      if (name === '我的') {
+        const box = await navButton.boundingBox()
+        await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2)
+      } else {
+        await navButton.click()
+      }
+      await expect(navButton).toHaveAttribute('aria-current', 'page')
       await expect(page.locator('.workspace-skeleton')).toHaveCount(0)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      const bounds = await page.getByRole('navigation').getByRole('button', { name, exact: true }).boundingBox()
-      expect(bounds!.height).toBeGreaterThanOrEqual(44)
-      if (width === 390) await page.screenshot({ path: `test-results/ui-${name === '收银' ? 'tables' : name === '我的' ? 'account' : name === '厨房' ? 'products' : 'orders'}.png`, fullPage: true })
+      expect((await navButton.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+      if (width === 390) await page.screenshot({ path: `test-results/ui-${name === '收银' ? 'tables' : name === '我的' ? 'account' : name === '厨房' ? 'products' : name === '成本分析' ? 'cost-analysis' : name === '经营数据' ? 'reports' : 'orders'}.png`, fullPage: true })
     }
   }
   await page.getByRole('navigation').getByRole('button', { name: '厨房', exact: true }).click()

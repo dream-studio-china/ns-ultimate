@@ -151,6 +151,7 @@
 .dining-confirm-bar .adm-button:not(.adm-button-primary) { flex: 0 0 auto; min-width: 92px; color: var(--ws-muted); background: var(--theme-paper); }
 .dining-confirm-bar .adm-button-primary { flex: 1; min-width: 0; }
 .dining-confirm-bar .adm-button:last-child { flex: 1 1 0; width: auto; min-width: 0; }
+.dining-confirm-bar.checkout-result-actions .adm-button { flex: 1 1 0; min-width: 0; }
 .checkout-footer-feedback { max-height: min(34dvh, 240px); margin-bottom: 10px; overflow-y: auto; overscroll-behavior: contain; }
 .checkout-footer-feedback .workspace-notice { border-color: color-mix(in srgb, #c44932 28%, var(--ws-line)); background: color-mix(in srgb, #c44932 5%, var(--theme-paper)); }
 .checkout-footer-feedback .checkout-merge-blockers { display: grid; gap: 4px; margin: 0; padding-left: 16px; color: #8f3928; text-align: left; }
@@ -334,7 +335,6 @@
   .dining-detail-sheet .dining-detail-scroll { overflow: visible; }
 }
 .dining-payment-scan > header { display: flex; align-items: center; gap: 10px; color: var(--ws-ink); }
-.dining-payment-scan > header svg { color: var(--brand); flex-shrink: 0; }
 .dining-payment-scan h3 { margin: 0; font-size: 16px; }
 .dining-payment-scan header p { margin: 3px 0 0; color: var(--ws-muted); font-size: 11px; }
 .dining-payment-loading { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 110px; color: var(--ws-muted); font-size: 12px; }

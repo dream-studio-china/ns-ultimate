@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from 'antd-mobile'
-import { ArrowRight, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, ChartNoAxesCombined, CircleHelp, CookingPot, Globe2, KeyRound, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
+import { ArrowRight, CalendarDays, Calculator, CheckCircle2, ChevronDown, ChevronRight, ChartNoAxesCombined, CircleHelp, CookingPot, Globe2, KeyRound, LayoutGrid, LockKeyhole, LogOut, MapPin, ReceiptText, ShieldCheck, Store, UserRound, WifiOff } from 'lucide-react'
 import { ApiClient, ApiError } from '../adapters/api-client'
 import { can, StoreApi, StoreConnectionError, storeSchema, type StoreAccess, type ConnectionStep } from '../adapters/live'
 import { useI18n, type MessageKey } from '../../shared/i18n'
@@ -11,6 +11,7 @@ import { LiveTables, LiveOrders } from './tables'
 import { LiveReports } from './reports'
 import { LiveCashRegister } from './cash-register'
 import { LiveAccounting } from './accounting'
+import { LiveCostAnalysis } from './cost-analysis'
 import { readReportingDay, writeReportingDay } from '../reporting'
 import { errorKey, ListFeedback, MessageError, MutationForm, Notice, PageControls, PageHeading, StatusPill, usePage, LiveSheet, WorkspaceRefreshProvider } from './ui'
 import { BrandArt } from './brand-art'
@@ -22,6 +23,7 @@ const navigation = [
   { key: 'products', icon: CookingPot, title: 'kitchenView' },
   { key: 'orders', icon: ReceiptText, title: 'readOnlyOrders' },
   { key: 'reports', icon: ChartNoAxesCombined, title: 'reports' },
+  { key: 'cost-analysis', icon: Calculator, title: 'costAnalysis' },
   { key: 'cash', icon: ReceiptText, title: 'cashRegister' },
   { key: 'accounting', icon: ChartNoAxesCombined, title: 'accountingBook' },
   { key: 'mine', icon: UserRound, title: 'mine' },
@@ -100,6 +102,7 @@ export function LiveApp() {
           {page === 'tables' && <LiveTables api={api.current!} access={access} />}
           {page === 'orders' && <LiveOrders api={api.current!} access={access} />}
           {page === 'reports' && <LiveReports api={api.current!} access={access} />}
+          {page === 'cost-analysis' && <LiveCostAnalysis api={api.current!} access={access} />}
           {page === 'cash' && <LiveCashRegister api={api.current!} access={access} />}
           {page === 'accounting' && <LiveAccounting api={api.current!} />}
            {page === 'mine' && <LiveAccount api={api.current!} access={access} logout={() => void logout()} />}

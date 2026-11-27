@@ -1,14 +1,16 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarDays, ChartNoAxesCombined, ReceiptText } from 'lucide-react'
 import { useI18n } from '../../shared/i18n'
 import type { StoreAccess, StoreApi } from '../adapters/live'
 import {
   loadTradeReportingOrders,
+  ordersForRefundReporting,
   readReportingDay,
   summarizeReport,
   type ReportPaymentMethod,
   type ReportRange,
 } from '../reporting'
+import { loadRefundSummary } from '../refund-summary'
 import { ListFeedback, PageHeading, usePage } from './ui'
 
 function formatDateKey(key: string, locale: string): string {
@@ -29,6 +31,23 @@ export function LiveReports({ api, access }: { api: StoreApi; access: StoreAcces
   }), [api])
   const list = usePage(load)
   const summary = useMemo(() => summarizeReport(list.items, range, reportingDay, new Date(), access.store.timezone), [access.store.timezone, list.items, range, reportingDay])
+  const refundOrders = useMemo(() => ordersForRefundReporting(list.items, range, reportingDay, new Date(), access.store.timezone), [access.store.timezone, list.items, range, reportingDay])
+  const [refunds, setRefunds] = useState<{ loading: boolean; amount: number; failed: number }>({ loading: true, amount: 0, failed: 0 })
+  const refundKey = refundOrders.map((order) => order.tradeOrderUuid ?? order.uuid).sort().join(',')
+  useEffect(() => {
+    let active = true
+    if (!refundOrders.length) {
+      setRefunds({ loading: false, amount: 0, failed: 0 })
+      return () => { active = false }
+    }
+    setRefunds({ loading: true, amount: 0, failed: 0 })
+    void loadRefundSummary(api, refundOrders).then((result) => {
+      if (active) setRefunds({ loading: false, amount: result.amount, failed: result.failed })
+    }).catch(() => {
+      if (active) setRefunds({ loading: false, amount: 0, failed: refundOrders.length })
+    })
+    return () => { active = false }
+  }, [api, refundKey])
   const money = (cents: number) => new Intl.NumberFormat(locale, { style: 'currency', currency: access.store.currency }).format(cents / 100)
   const payments = paymentOrder.flatMap((method) => {
     const row = summary.payments.find((payment) => payment.method === method)
@@ -47,9 +66,10 @@ export function LiveReports({ api, access }: { api: StoreApi; access: StoreAcces
         <div className="report-hero-metrics report-live-metrics">
           <div><ReceiptText size={18} /><p>{t('settledOrders')}</p><strong>{summary.settledOrders.length}</strong></div>
           <div><ChartNoAxesCombined size={18} /><p>{t('pendingOrders')}</p><strong>{summary.pendingOrders.length}</strong></div>
-          <div><ReceiptText size={18} /><p>{t('avgOrder')}</p><strong>{money(summary.averageOrder)}</strong></div>
+          <div><ReceiptText size={18} /><p>{t('refundAmount')}</p><strong>{refunds.loading ? '…' : money(refunds.amount)}</strong></div>
         </div>
       </section>
+      {refunds.failed > 0 && !refunds.loading && <p className="workspace-report-hint" role="status">{t('reportRefundPartial').replace('{count}', String(refunds.failed))}</p>}
       <p className="workspace-report-hint">{t('reportScopeHint')}</p>
       <section className="surface-card workspace-report-card"><div className="section-heading"><h2>{t('salesRanking')}</h2><span className="section-mark">TOP PRODUCTS</span></div>
         {summary.products.length ? <div className="sales-ranking">{summary.products.map((item, index) => <div key={item.name}><span className="rank-number">{String(index + 1).padStart(2, '0')}</span><div><h3>{item.name}</h3><div className="rank-track"><span style={{ width: `${item.quantity / summary.products[0]!.quantity * 100}%` }} /></div></div><strong>{item.quantity}<small>{t('portion')}</small></strong></div>)}</div>

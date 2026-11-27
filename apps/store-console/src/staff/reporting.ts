@@ -89,6 +89,7 @@ export interface ReportSummary {
 
 const excludedStatuses = new Set(['cancelled', 'rejected', 'refunded', 'merged'])
 const paidStatuses = new Set(['paid', 'fulfilled', 'completed'])
+const refundedStatuses = new Set(['refunded', 'partial_refunded', 'partially_refunded'])
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -211,6 +212,28 @@ export function isOrderInReportingWindow(order: ReportingOrder, window: Reportin
   if (orderDate < window.start || orderDate > window.end) return false
   if (excludedStatuses.has(order.status.toLowerCase()) || order.paymentStatus?.toLowerCase() === 'refunded') return false
   return orderDate === today || orderPaymentState(order).settled
+}
+
+/**
+ * Refund reporting follows the original order date. A refunded order can be
+ * excluded from the settled-income projection, so select it independently
+ * when it carries payment or refund evidence and ask the payment projection for
+ * the refunded amount.
+ */
+export function ordersForRefundReporting(orders: ReportingOrder[], range: ReportRange, reportingDay: number, now: Date, timeZone: string): ReportingOrder[] {
+  const window = reportWindow(range, reportingDay, now, timeZone)
+  return orders.filter((order) => {
+    const created = new Date(order.createdAt)
+    if (Number.isNaN(created.getTime())) return false
+    const orderDate = reportDateKey(created, timeZone)
+    if (orderDate < window.start || orderDate > window.end) return false
+    if (orderPaymentState(order).settled) return true
+    const { snapshot } = paymentSnapshot(order)
+    const status = order.status.toLowerCase()
+    const paymentStatus = (order.paymentStatus ?? stringValue(snapshot.paymentStatus))?.toLowerCase() ?? ''
+    const snapshotStatus = stringValue(snapshot.status)?.toLowerCase() ?? ''
+    return refundedStatuses.has(status) || refundedStatuses.has(paymentStatus) || refundedStatuses.has(snapshotStatus)
+  })
 }
 
 function snapshotProducts(order: ReportingOrder): { name: string; quantity: number; amount: number }[] {
