@@ -297,10 +297,13 @@ final class CounterOrderMergeTest extends KernelTestCase
         }
     }
 
-    public function testAuthenticatedMergeEndpointUsesCurrentUserAndReturnsTarget(): void
+    public function testAuthenticatedCustomerCanMergeOtherCustomerAndAnonymousOrders(): void
     {
-        $source = $this->source();
-        $this->source();
+        $other = (new User())->setEmail('other-merge@example.test')->setUsername('other-merge');
+        $this->em->persist($other);
+        $source = $this->source()->setUser($other);
+        $anonymous = $this->source()->setUser(null);
+        $this->em->flush();
         self::getContainer()->set(CounterOrderMergeService::class, $this->merger());
         $token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->user);
         $headers = ['HTTP_AUTHORIZATION' => 'Bearer '.$token, 'HTTP_X_STORE_CODE' => $this->context->storeCode];
@@ -310,11 +313,15 @@ final class CounterOrderMergeTest extends KernelTestCase
         $payload = json_decode((string) $response->getContent(), true, flags: JSON_THROW_ON_ERROR);
         self::assertSame(Order::STATUS_CONFIRMED, $payload['data']['status']);
         $targetUuid = $payload['data']['uuid'];
+        $target = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $targetUuid]);
+        self::assertInstanceOf(Order::class, $target);
+        self::assertSame($this->user->getId(), $target->getUser()?->getId());
         $listing = self::$kernel->handle(Request::create($path, 'GET', [], [], [], $headers));
         self::assertSame(200, $listing->getStatusCode(), (string) $listing->getContent());
         $items = json_decode((string) $listing->getContent(), true, flags: JSON_THROW_ON_ERROR)['data'];
         $byUuid = array_column($items, null, 'uuid');
         self::assertSame($targetUuid, $byUuid[$source->getUuid()]['mergedIntoOrderUuid']);
+        self::assertSame($targetUuid, $byUuid[$anonymous->getUuid()]['mergedIntoOrderUuid']);
         self::assertNull($byUuid[$targetUuid]['mergedIntoOrderUuid']);
     }
 
@@ -521,15 +528,14 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertEqualsCanonicalizing($ruleIds, array_map(static fn (PrinterOrderRequest $request): string => $request->getCaseKey(), $requests));
     }
 
-    public function testCallerOutsideSessionCannotMerge(): void
+    public function testCounterOutsideActiveStoreContextCannotBeMerged(): void
     {
         $this->source();
-        $other = (new User())->setEmail('other-merge@example.test')->setUsername('other-merge');
-        $this->em->persist($other);
-        $this->em->flush();
+        $this->source();
+        $this->context = new StoreContext(UUID::v4(), 'other-store', 'Other store');
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('eligible unpaid order');
-        $this->merger()->merge($this->counter, $other);
+        $this->expectExceptionMessage('not in the active store context');
+        $this->merger()->merge($this->counter, $this->user);
     }
 
     public function testSingleOrderCannotBeMergedAgain(): void
@@ -547,18 +553,19 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
     }
 
-    public function testClosedOrderDoesNotGrantMergePermission(): void
+    public function testClosedOrderIsNotIncludedInMerge(): void
     {
         $closed = $this->source();
         $closed->setStatus(Order::STATUS_CANCELLED);
-        $other = (new User())->setEmail('eligible-other@example.test')->setUsername('eligible-other');
-        $this->em->persist($other);
-        $this->source()->setUser($other);
-        $this->source()->setUser($other);
+        $this->source();
+        $this->source();
         $this->em->flush();
-        $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('eligible unpaid order');
-        $this->merger()->merge($this->counter, $this->user);
+
+        $target = $this->merger()->merge($this->counter, $this->user);
+
+        self::assertSame(Order::STATUS_CANCELLED, $closed->getStatus());
+        self::assertCount(2, $target->getItems());
+        self::assertNull($this->em->getRepository(OrderMerge::class)->findOneBy(['sourceOrderUuid' => $closed->getUuid()]));
     }
 
     public function testMultiCounterOrderCannotBeMerged(): void
