@@ -55,15 +55,15 @@ The admin merge helpers and independent assistant have Node tests. The backend h
 
 ## Payment evolution: multiple invoices and public checkout
 
-**Status: proposed follow-up, recorded on 2026-11-03; not an implemented payment guarantee.** This section records the intended behavior for a later change. It does not enable public payment initiation, introduce metadata fields, or change existing payment flows.
+Duplicate and unapplied collections now have an [Invoice follow-up and refund contract](../contracts/invoice-payment-followup.md). The remaining payment-history and public-checkout proposals below are not implemented guarantees.
 
 ### Current behavior and limitations
 
 - [Trade payment creation](../../core/crud-skeleton/src/Trade/Service/OrderService.php) requires a confirmed order, reuses a linked pending Invoice, and otherwise creates a new Invoice and changes the order's current Invoice reference. The previous Invoice retains its `sourceType = trade_order` and `sourceId = orderUuid`; changing the reference does not close its provider transaction.
 - An Invoice receives its UUID and `outTradeNo` at creation, not on each `pay` call. A new Invoice has new identifiers. Huifu additionally creates its own attempt UUID and request sequence for a permitted new attempt; unresolved attempts are blocked per Invoice, not across every Invoice for the same order. See the [Huifu adapter](../../business/backend/HuifuFin/README.md).
-- [Invoice event handling](../../core/crud-skeleton/src/Trade/EventListener/OrderInvoiceListener.php) resolves the order by the Invoice's source, not its current Invoice reference. An older Invoice can therefore settle a still-payable order if amount and currency match. A second success currently returns early when the order is already paid, without a dedicated duplicate-payment record. Failed and cancelled Invoice events currently overwrite the order's `paymentStatus` without checking whether the Invoice is current. Refund events also lack current/settled-Invoice isolation.
+- [Invoice event handling](../../core/crud-skeleton/src/Trade/EventListener/OrderInvoiceListener.php) resolves the order by the Invoice's source. An older Invoice can therefore settle a still-payable order if amount and currency match. Follow-up evidence and refund isolation are implemented for extra collections; failed and cancelled Invoice events do not yet have the stale-event isolation described below.
 
-The business-owned [explicit payment closure capability](../contracts/order-payment-closure.md) now verifies noncollection through a common channel interface before local cancellation/release. Older Invoices must have confirmed closure receipts; ambiguous multiple-Invoice sources remain blocked. It does not implement the multiple-Invoice settlement/isolation policy below or change ordinary payment initiation and reconciliation.
+The business-owned [explicit payment closure capability](../contracts/order-payment-closure.md) verifies noncollection through a common channel interface before local cancellation/release. Older Invoices must have confirmed closure receipts; ambiguous multiple-Invoice sources remain blocked. Neither closure nor the follow-up marker changes ordinary payment initiation or relaxes merge eligibility.
 
 ### Intended multiple-Invoice policy
 
@@ -75,7 +75,7 @@ Failure or cancellation of a superseded Invoice must update that Invoice's own h
 
 ### Proposed metadata evidence
 
-Initially, order metadata can hold the exception history rather than introducing a new exception entity. The following is illustrative, not a finalized schema or current API response:
+The implemented payment follow-up is stored on the affected Invoice. An order-wide history, including stale failure and cancellation events, is still proposed. The following is illustrative, not a current API response:
 
 ```json
 {

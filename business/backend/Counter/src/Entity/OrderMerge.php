@@ -32,4 +32,9 @@ class OrderMerge
         $this->targetOrderUuid = $targetOrderUuid;
         $this->createdAt = new \DateTimeImmutable();
     }
+
+    public function getTargetOrderUuid(): string
+    {
+        return $this->targetOrderUuid;
+    }
 }
