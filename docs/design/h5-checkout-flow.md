@@ -112,9 +112,10 @@ authorization or choose a trusted payment amount.
 | Other | Neither hint | Continue if authenticated and payment is supported | Show an unsupported-container message |
 
 For WeChat, the H5 is an Official Account page, not a Mini Program. It must use
-the Store's configured Official Account OAuth flow. The callback preserves the
-order UUID and returns to `/h5/payment/p.html?o=<orderUuid>`; the trusted Store scope
-is resolved again from the public order/store endpoint. The server must
+the Store's configured Official Account OAuth flow, which uses `snsapi_base`
+to obtain the OpenID without prompting for profile consent. The callback
+preserves the order UUID and returns to `/h5/payment/p.html?o=<orderUuid>`; the
+trusted Store scope is resolved again from the public order/store endpoint. The server must
 validate the callback host and return path before using them; an arbitrary
 user-supplied `redirect_uri` is an open-redirect risk.
 

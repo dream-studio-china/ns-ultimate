@@ -8,6 +8,8 @@ use App\Wechat\Service\WechatServiceInterface;
 use EasyWeChat\MiniApp\Application as MiniApp;
 use EasyWeChat\OfficialAccount\Application as OfficialAccount;
 use EasyWeChat\Pay\Application as Pay;
+use GuzzleHttp\Exception\GuzzleException;
+use Overtrue\Socialite\Exceptions\Exception as OAuthException;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 final class StoreAwareWechatService implements WechatServiceInterface
@@ -55,23 +57,27 @@ final class StoreAwareWechatService implements WechatServiceInterface
 
     public function getOAuthRedirectUrl(string $callbackUrl): string
     {
-        return $this->getOfficialAccount()->getOauth()->scopes(['snsapi_userinfo'])->redirect($callbackUrl);
+        return $this->getOfficialAccount()->getOAuth()->redirect($callbackUrl);
     }
 
     public function getOAuthUser(string $code): array
     {
-        $user = $this->getOfficialAccount()->getOauth()->userFromCode($code);
-        $raw = $user->getRaw();
+        try {
+            $user = $this->getOfficialAccount()->getOAuth()->userFromCode($code);
+        } catch (OAuthException|GuzzleException) {
+            throw new \RuntimeException('WeChat OAuth code exchange failed.');
+        }
 
+        // Keep the Core interface shape without fetching profile data.
         return [
             'openid' => (string) $user->getId(),
-            'unionid' => $raw['unionid'] ?? null,
-            'nickname' => (string) ($user->getNickname() ?? ''),
-            'avatar' => (string) ($user->getAvatar() ?? ''),
-            'sex' => (int) ($raw['sex'] ?? 0),
-            'province' => (string) ($raw['province'] ?? ''),
-            'city' => (string) ($raw['city'] ?? ''),
-            'country' => (string) ($raw['country'] ?? ''),
+            'unionid' => $user->getRaw()['unionid'] ?? null,
+            'nickname' => '',
+            'avatar' => '',
+            'sex' => 0,
+            'province' => '',
+            'city' => '',
+            'country' => '',
         ];
     }
 
