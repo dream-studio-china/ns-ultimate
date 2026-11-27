@@ -20,7 +20,7 @@ test('mobile workspace and tabs render without overflow or runtime errors', asyn
   page.on('pageerror', (error) => errors.push(error.message))
   await expect(page.getByRole('heading', { name: '把每一份用心，做好。' })).toBeVisible()
   await page.screenshot({ path: 'test-results/store-home.png', fullPage: true })
-  for (const name of ['商品', '桌台', '统计', '我的', '工作台']) {
+  for (const name of ['商品', '桌台', '经营数据', '我的', '工作台']) {
     await page.getByRole('link', { name, exact: true }).click()
     await expect(page.getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -90,7 +90,7 @@ test('table editing and cross-entry demo payment settle once and populate report
   await expect(page.getByRole('button', { name: 'A01 空闲', exact: true })).toBeVisible()
   await page.getByRole('button', { name: /已收款/ }).click()
   await expect(page.locator('.history-list')).toContainText('¥130.00')
-  await page.getByRole('link', { name: '统计', exact: true }).click()
+  await page.getByRole('link', { name: '经营数据', exact: true }).click()
   await expect(page.locator('.report-hero')).toContainText('¥130.00')
   await expect(page.locator('.sales-ranking')).toContainText('鲜切吊龙')
 })

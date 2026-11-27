@@ -1,6 +1,12 @@
 import { can, type StoreAccess } from '../adapters/live'
 
-export type WorkspacePage = 'products' | 'tables' | 'orders' | 'reports' | 'cash' | 'accounting' | 'mine'
+export type WorkspacePage = 'products' | 'tables' | 'orders' | 'reports' | 'cost-analysis' | 'cash' | 'accounting' | 'mine'
+
+export function canViewCostAnalysis(access: StoreAccess): boolean {
+  return access.membership.status === 'active'
+    && ['owner', 'manager'].includes(access.membership.role)
+    && (can(access, 'order', 'read') || can(access, 'counter_session', 'read'))
+}
 
 export function workspacePages(access: StoreAccess): WorkspacePage[] {
   const pages: WorkspacePage[] = []
@@ -8,6 +14,7 @@ export function workspacePages(access: StoreAccess): WorkspacePage[] {
   if (can(access, 'counter_session', 'read') || can(access, 'counter', 'read')) pages.push('tables')
   if (can(access, 'counter_order', 'read')) pages.push('orders')
   if (can(access, 'order', 'read') || can(access, 'counter_session', 'read')) pages.push('reports')
+  if (canViewCostAnalysis(access)) pages.push('cost-analysis')
   if (can(access, 'cash_entry', 'read')) pages.push('cash')
   if (can(access, 'accounting', 'read')) pages.push('accounting')
   return [...pages, 'mine']

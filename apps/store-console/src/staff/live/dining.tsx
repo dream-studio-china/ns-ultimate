@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button, CenterPopup } from 'antd-mobile'
-import { CheckCircle2, ChevronDown, Clock3, CreditCard, LayoutGrid, Minus, Pencil, Plus, Printer, QrCode, ReceiptText, UsersRound } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Clock3, CreditCard, LayoutGrid, Minus, Pencil, Plus, ReceiptText, UsersRound } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useI18n, type MessageKey } from '../../shared/i18n'
 import { can, legacyCounterSession, StoreApi, type StoreAccess, type CounterSessionView, type SessionOrder, type OrderQuote, type OrderCart, type CounterCommand, type LegacyCatalogItem, type LiveCounter } from '../adapters/live'
 import { availableDiningModes, diningModeLabel, isChoiceRuleCandidate, isChoiceSelectionBlocked, normalizeDiningModes, resolveRecordedDiningMode, resolveTableDiningModeDisplay, ruleQuantity, validateDiningRules, type ChoiceDiningRule, type DiningLine, type DiningMode, type DiningRule, type DiningRuleIssue, type FixedDiningRule, type PerGuestDiningRule } from '../dining-mode'
 import { reconcileCheckoutQuantities } from '../checkout-reconciliation'
-import { checkoutPaymentMethods, type CheckoutPaymentMethod } from '../checkout-payment'
 import { checkoutMergeBlockers, type CheckoutMergeBlocker } from '../checkout-merge'
 import { submitCheckoutReplacement } from '../checkout-replacement'
 import { waitForStoreOrderProjection } from '../checkout-store-order'
@@ -511,16 +510,16 @@ function OrderPaymentSheet({ api, access, table, order, onClose, onSettled }: {
   return <><LiveSheet open title={t('collectPaymentTitle')} className="dining-payment-sheet" onClose={onClose} footer={footer}>
     <section className="dining-payment-order" aria-label={t('collectPaymentTitle')}>
       <header><div><span>#{order.uuid.slice(0, 8).toUpperCase()}</span><h3>{table.counter.name}</h3><small>{order.diningModeName ?? t('diningModeNotRecorded')}</small></div><strong>{amount}</strong></header>
+      {paid ? <section className="dining-payment-success" role="status"><CheckCircle2 size={48} strokeWidth={1.35} /><h3>{t('paymentSuccess')}</h3><p>{t('paymentThanks')}</p><strong>{amount}</strong></section>
+        : <section className="dining-payment-scan">
+          <header><div><h3>{t('paymentScanTitle')}</h3><p>{t('paymentScanMethods')}</p></div></header>
+          <div className="dining-payment-code"><QRCodeSVG className="dining-payment-qr" value={paymentUrl} size={208} level="M" marginSize={1} bgColor="#ffffff" fgColor="#201813" /><p>{t('paymentQrHint')}</p><a className="dining-payment-url" href={paymentUrl} target="_blank" rel="noreferrer">{paymentUrl}</a></div>
+        </section>}
       <DiningLines items={order.items} currency={order.currency} />
       <OrderAmountSummary order={order} />
     </section>
 
     <Notice subtle>{t('paymentCustomerHint')}</Notice>
-    {paid ? <section className="dining-payment-success" role="status"><CheckCircle2 size={48} strokeWidth={1.35} /><h3>{t('paymentSuccess')}</h3><p>{t('paymentThanks')}</p><strong>{amount}</strong></section>
-      : <section className="dining-payment-scan">
-        <header><QrCode size={20} /><div><h3>{t('paymentScanTitle')}</h3><p>{t('paymentScanMethods')}</p></div></header>
-        <div className="dining-payment-code"><QRCodeSVG className="dining-payment-qr" value={paymentUrl} size={208} level="M" marginSize={1} bgColor="#ffffff" fgColor="#201813" /><p>{t('paymentQrHint')}</p><a className="dining-payment-url" href={paymentUrl} target="_blank" rel="noreferrer">{paymentUrl}</a></div>
-      </section>}
     {error && <Notice>{t(error)}</Notice>}
   </LiveSheet>{printOpen && <ManualPrintSheet api={api} access={access} tradeOrderUuid={order.tradeOrderUuid} orderLabel={`#${order.uuid.slice(0, 8).toUpperCase()}`} purpose="checkout" onClose={() => setPrintOpen(false)} />}</>
 }
@@ -1020,13 +1019,11 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<CheckoutProgressPhase | null>(null)
   const [error, setError] = useState<CheckoutError | null>(null)
-  const [paymentMethod, setPaymentMethod] = useState<string | null>(null)
   const [scanPaymentOpen, setScanPaymentOpen] = useState(false)
   const [paymentInProgressOpen, setPaymentInProgressOpen] = useState(false)
   const [printOrder, setPrintOrder] = useState<SessionOrder | null>(null)
   const originalLines = useMemo(() => checkoutCartLines(table), [table])
   const originalDisplayLines = useMemo(() => checkoutDisplayLines(table), [table])
-  const paymentMethods = useMemo(() => checkoutPaymentMethods(access.store), [access.store])
   const stage: CheckoutStage = result ? { kind: 'result' } : ruleIndex < checkoutRules.length ? { kind: 'rule', index: ruleIndex } : { kind: 'review' }
 
   useEffect(() => {
@@ -1163,6 +1160,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
   const finalOrders = result ? effectiveDiningOrders(result) : []
   const printableFinalOrders = finalOrders.filter((order) => canManuallyPrintOrderStatus(order.status))
   const scanPaymentOrder = result && finalOrders.length === 1 ? finalOrders[0]! : null
+  const printTarget = printableFinalOrders.length === 1 ? printableFinalOrders[0]! : null
   const checkoutError = error && <div className="checkout-footer-feedback" role="alert" aria-live="assertive">
     <Notice title={'title' in error ? error.title : undefined}>
       {'key' in error
@@ -1178,7 +1176,10 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
     replacing: 'checkoutReplacingOrder',
   }
   const footer = stage.kind === 'result'
-    ? <div className="dining-confirm-bar"><Button block onClick={onClose}>{t('close')}</Button></div>
+    ? <div className="dining-confirm-bar checkout-result-actions">
+        <Button disabled={!scanPaymentOrder} onClick={() => setScanPaymentOpen(true)}>{t('checkoutPaymentCode')}</Button>
+        <Button color="primary" disabled={!can(access, 'order', 'print') || !printTarget} onClick={() => { if (printTarget) setPrintOrder(printTarget) }}>{t('checkoutPrintReceipt')}</Button>
+      </div>
     : stage.kind === 'rule'
       ? <div className="dining-confirm-bar"><Button disabled={busy || ruleIndex === 0} onClick={() => setRuleIndex((current) => Math.max(0, current - 1))}>{t('back')}</Button><Button block color="primary" disabled={nextDisabled} onClick={proceed}>{t(stage.index === checkoutRules.length - 1 ? 'checkoutFinalReview' : 'checkoutNextRule')}</Button></div>
       : <>{checkoutError}<div className="dining-confirm-bar">{checkoutRules.length > 0 && <Button disabled={busy} onClick={() => setRuleIndex(checkoutRules.length - 1)}>{t('back')}</Button>}<Button block color="primary" loading={busy} disabled={busy} onClick={() => void submit()}>{t('checkoutConfirmAndProcess')}</Button></div></>
@@ -1236,12 +1237,6 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
         <ul>{finalLines.map((line) => <li key={line.key}><span>{line.productName}<small>{line.specificationName}</small><small>{t('unitPrice')} {money(line.unitPrice, finalCurrency)}</small></span><b>×{line.quantity}</b></li>)}</ul>
         <div className="dining-settlement-total"><span>{t('checkoutFinalAmount')}</span><strong>{money(finalAmount, finalCurrency)}</strong><small>{finalOrders.map((order) => `#${order.uuid.slice(0, 8).toUpperCase()}`).join(' · ')}</small></div>
       </div>
-      <section className="checkout-payment-methods"><header><CreditCard size={17} /><h4>{t('checkoutPaymentMethods')}</h4></header>
-        {paymentMethods.length > 0 ? <div>{paymentMethods.map((method: CheckoutPaymentMethod) => <button type="button" key={method.code} className={paymentMethod === method.code ? 'is-active' : ''} aria-pressed={paymentMethod === method.code} onClick={() => setPaymentMethod(method.code)}>{method.name}</button>)}</div>
-          : scanPaymentOrder ? <div className="checkout-scan-payment"><button type="button" aria-label={t('checkoutScanPayment')} onClick={() => setScanPaymentOpen(true)}><QrCode size={18} /><span><strong>{t('checkoutScanPayment')}</strong><small>{t('checkoutScanPaymentHint')}</small></span></button></div>
-            : <Notice subtle>{t('checkoutNoPaymentMethods')}</Notice>}
-      </section>
-      {can(access, 'order', 'print') && <div className="checkout-print-actions">{printableFinalOrders.map((order) => <Button key={order.uuid} block className="checkout-print-button" onClick={() => setPrintOrder(order)}><Printer size={17} />{t('checkoutPrintReceipt')}{printableFinalOrders.length > 1 ? ` · #${order.uuid.slice(0, 8).toUpperCase()}` : ''}</Button>)}</div>}
     </section>}
   </LiveSheet>
   <CenterPopup
@@ -1277,7 +1272,7 @@ function CheckoutFlow({ api, access, table, onClose }: { api: StoreApi; access: 
     </section>
   </CenterPopup>
   {scanPaymentOpen && result && scanPaymentOrder && <OrderPaymentSheet api={api} access={access} table={result} order={scanPaymentOrder} onClose={() => setScanPaymentOpen(false)} onSettled={() => { void loadCounterSession(api, access, result.counter.uuid).then(setResult).catch(() => undefined) }} />}
-  {printOrder && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printOrder.tradeOrderUuid} orderLabel={`#${printOrder.uuid.slice(0, 8).toUpperCase()}`} purpose="checkout" onClose={() => setPrintOrder(null)} />}
+  {printOrder && <ManualPrintSheet api={api} access={access} tradeOrderUuid={printOrder.tradeOrderUuid} orderLabel={`#${printOrder.uuid.slice(0, 8).toUpperCase()}`} purpose="checkout" onClose={() => setPrintOrder(null)} onQueued={() => { setPrintOrder(null); onClose() }} />}
   </>
 }
 

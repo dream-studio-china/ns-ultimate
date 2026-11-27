@@ -73,13 +73,14 @@ export function ManualPrintButton({ label, disabled = false, onClick }: { label:
   return <Button disabled={disabled} onClick={onClick}><Printer size={14} />{t(label)}</Button>
 }
 
-export function ManualPrintSheet({ api, access, tradeOrderUuid, orderLabel, purpose, onClose }: {
+export function ManualPrintSheet({ api, access, tradeOrderUuid, orderLabel, purpose, onClose, onQueued }: {
   api: StoreApi
   access: StoreAccess
   tradeOrderUuid: string
   orderLabel?: string
   purpose: ManualPrintPurpose
   onClose: () => void
+  onQueued?: (queued: number) => void
 }) {
   const { t } = useI18n()
   const copy = printCopy[purpose]
@@ -174,6 +175,7 @@ export function ManualPrintSheet({ api, access, tradeOrderUuid, orderLabel, purp
     setOutcome({ queued: queuedRuleUuids.length, failed: failedRuleUuids.length })
     lock.current = false
     setBusy(false)
+    if (queuedRuleUuids.length === selected.length && failedRuleUuids.length === 0) onQueued?.(queuedRuleUuids.length)
   }
 
   const emptyMessage: MessageKey | null = allowed && !loading && !loadError && available.length === 0 ? copy.noOptions : null

@@ -406,28 +406,46 @@ test('an uncertain failed invoice close is attempted once and leaves the order v
   expect(closings[1]!.body).toEqual(closings[0]!.body)
 })
 
-test('checkout offers scan payment when the store returns no payment methods', async ({ page }) => {
+test('checkout result offers payment code and closes after the receipt is queued', async ({ page }) => {
   const requests = await setup(page, { customerOrder: true })
   await page.getByRole('button', { name: 'Window table', exact: true }).click()
   await page.getByRole('button', { name: '结账', exact: true }).click()
   await page.getByRole('button', { name: '确认并处理订单', exact: true }).click()
 
-  const methods = page.locator('.checkout-payment-methods')
+  const resultDialog = page.getByRole('dialog', { name: '结账结果', exact: true })
   await expect(page.getByText('订单整理完成', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '打印小票', exact: true }).click()
+  const resultActions = resultDialog.locator('.checkout-result-actions')
+  await expect(resultActions.getByRole('button')).toHaveCount(2)
+  await expect(resultActions.getByRole('button', { name: '支付码', exact: true })).toBeVisible()
+  await expect(resultActions.getByRole('button', { name: '打印小票', exact: true })).toBeVisible()
+  await expect(resultActions.locator('svg')).toHaveCount(0)
+
+  await resultActions.getByRole('button', { name: '支付码', exact: true }).click()
+  const paymentDialog = page.getByRole('dialog', { name: '订单收款' })
+  await expect(paymentDialog).toBeVisible()
+  await expect(page.locator('.dining-payment-qr')).toBeVisible()
+  await expect(paymentDialog.locator('.dining-payment-scan > header svg')).toHaveCount(0)
+  expect(await paymentDialog.evaluate((dialog) => {
+    const tableName = dialog.querySelector('.dining-payment-order > header h3')
+    const qrCode = dialog.querySelector('.dining-payment-qr')
+    const orderLines = dialog.querySelector('.dining-payment-order .dining-lines')
+    const follows = (first: Element | null, second: Element | null) => Boolean(first && second && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING))
+    return { qrAfterTable: follows(tableName, qrCode), linesAfterQr: follows(qrCode, orderLines) }
+  })).toEqual({ qrAfterTable: true, linesAfterQr: true })
+  const paymentUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/payment/p.html?o=10000000-0000-4000-8000-000000000009'
+  await expect(page.locator('.dining-payment-url')).toHaveText(paymentUrl)
+  await paymentDialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(resultDialog).toBeVisible()
+
+  await resultActions.getByRole('button', { name: '打印小票', exact: true }).click()
   const printDialog = page.getByRole('dialog', { name: '结账小票打印', exact: true })
   await expect(printDialog.getByRole('checkbox', { name: '手打结账小票', exact: true })).toHaveAttribute('aria-checked', 'true')
   await expect(printDialog.getByRole('checkbox', { name: '下单成功小票', exact: true })).toHaveCount(0)
   await expect(printDialog.getByRole('checkbox', { name: '付款成功小票', exact: true })).toHaveCount(0)
-  await printDialog.getByLabel('关闭', { exact: true }).click()
-  await expect(methods).toContainText('扫码支付')
-  await expect(methods).not.toContainText('门店暂未返回可用的支付方式')
-  await methods.getByRole('button', { name: '扫码支付', exact: true }).click()
-
-  await expect(page.getByRole('dialog', { name: '订单收款' })).toBeVisible()
-  await expect(page.locator('.dining-payment-qr')).toBeVisible()
-  const paymentUrl = 'https://ns-ultimate.wscoffee.com.cn/h5/payment/p.html?o=10000000-0000-4000-8000-000000000009'
-  await expect(page.locator('.dining-payment-url')).toHaveText(paymentUrl)
+  await printDialog.getByRole('button', { name: '打印结账小票（1）', exact: true }).click()
+  await expect(printDialog).toHaveCount(0)
+  await expect(resultDialog).toHaveCount(0)
+  expect(requests.filter((request) => request.method === 'POST' && request.path.endsWith(`/trade-orders/${orderId}/print`))).toHaveLength(1)
   expect(requests.some((request) => request.path.includes('huifu-payments') || request.path.includes('/app/orders'))).toBe(false)
 })
 

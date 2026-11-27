@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { StoreAccess } from '../../src/staff/adapters/live'
-import { defaultWorkspacePage, workspacePages } from '../../src/staff/live/navigation'
+import { canViewCostAnalysis, defaultWorkspacePage, workspacePages } from '../../src/staff/live/navigation'
 
 const store = '00000000-0000-4000-8000-000000000001'
 function access(permissions: string[]): StoreAccess {
   return {
     store: { uuid: store, name: 'Store', code: 'S1', currency: 'CNY', timezone: 'UTC' },
-    membership: { status: 'active', role: 'manager' },
+    membership: { status: 'active', role: 'clerk' },
     profile: { uuid: store, username: 'staff', roles: ['ROLE_USER'] },
     authorization: { permissions, storeScopes: Object.fromEntries(permissions.map((code) => [code, [store]])) },
   }
@@ -75,5 +75,28 @@ describe('permission-based workspace navigation', () => {
     employee.store.uuid = store
     employee.membership.status = 'suspended'
     expect(workspacePages(employee)).toEqual(['mine'])
+  })
+
+  it('shows cost analysis only to active owners and managers', () => {
+    for (const role of ['owner', 'manager']) {
+      const manager = access(['store:counter_session:read', 'store:order:read'])
+      manager.membership.role = role
+      expect(canViewCostAnalysis(manager)).toBe(true)
+      expect(workspacePages(manager)).toContain('cost-analysis')
+    }
+    for (const role of ['clerk', 'fulfillment', 'unknown']) {
+      const employee = access(['store:counter_session:read', 'store:order:read'])
+      employee.membership.role = role
+      expect(canViewCostAnalysis(employee)).toBe(false)
+      expect(workspacePages(employee)).not.toContain('cost-analysis')
+    }
+    const suspended = access(['store:counter_session:read', 'store:order:read'])
+    suspended.membership.status = 'suspended'
+    expect(canViewCostAnalysis(suspended)).toBe(false)
+
+    const noRevenueAccess = access(['store:product:read'])
+    noRevenueAccess.membership.role = 'manager'
+    expect(canViewCostAnalysis(noRevenueAccess)).toBe(false)
+    expect(workspacePages(noRevenueAccess)).not.toContain('cost-analysis')
   })
 })
