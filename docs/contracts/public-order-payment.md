@@ -61,7 +61,7 @@ does not create an Alipay order or verify that Huifu has granted merchant access
 
 This projection neither decrypts nor validates stored credentials, contacts Huifu, checks the payer's WeChat identity, nor guarantees browser/device or currency compatibility. In particular, JSAPI can still require WeChat sign-in. These checks remain the responsibility of the future payment initiation flow.
 
-GET never creates/replaces an Invoice, generates an attempt/request sequence, recalculates prices, confirms an order, or initiates/retries payment. It does not return a QR code, JSAPI `payInfo`, or signing material. `outTradeNo` is an identifier, not a launch credential. Signed-in customers can use the separate [Huifu customer payment endpoint](huifu-customer-payments.md). Anonymous initiation and multiple-Invoice exception handling remain [proposed follow-ups](../design/architecture.md#payment-evolution-multiple-invoices-and-public-checkout).
+GET never creates/replaces an Invoice, generates an attempt/request sequence, recalculates prices, confirms an order, or initiates/retries payment. It does not return a QR code, JSAPI `payInfo`, or signing material. `outTradeNo` is an identifier, not a launch credential. Signed-in customers can use the separate [Huifu customer payment endpoint](huifu-customer-payments.md). [Invoice follow-up and refunds](invoice-payment-followup.md) are separate from this projection. Anonymous initiation remains a [proposed follow-up](../design/architecture.md#payment-evolution-multiple-invoices-and-public-checkout).
 
 ## Public order store lookup
 

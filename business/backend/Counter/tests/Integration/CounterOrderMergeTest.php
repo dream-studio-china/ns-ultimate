@@ -8,8 +8,12 @@ use App\Core\Utils\UUID;
 use App\Identity\Entity\User;
 use App\Identity\Security\TokenManager;
 use App\Inventory\Entity\Reservation;
+use App\Payment\DTO\CreateInvoiceRequest;
+use App\Payment\DTO\PaymentNotifyResult;
 use App\Payment\DTO\PaymentResult;
 use App\Payment\Entity\Invoice;
+use App\Payment\Exception\InvoiceAmountMismatchException;
+use App\Payment\Service\InvoiceServiceInterface;
 use App\Store\Entity\Store;
 use App\Store\Entity\Membership;
 use App\Store\Entity\Product;
@@ -54,6 +58,7 @@ use NsUltimate\Business\Printer\Entity\PrinterTemplate;
 use NsUltimate\Business\Store\Entity\Product as StoreProduct;
 use NsUltimate\Business\Store\Service\SalesAvailabilityScope;
 use NsUltimate\Integration\Backend\Kernel;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -338,6 +343,182 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertCount(1, $this->em->getRepository(Order::class)->findAll());
         self::assertSame([], $this->em->getRepository(OrderMerge::class)->findAll());
         self::assertFalse($this->em->getConnection()->isTransactionActive());
+    }
+
+    public function testDuplicateCollectionsAreRefundedWithoutChangingTheSettledOrder(): void
+    {
+        $order = $this->source();
+        $primary = $this->createSourceInvoice($order, [
+            Invoice::EXTRA_PAID_FOLLOWUP => ['reason' => 'untrusted_metadata'],
+        ]);
+        $extras = [$this->createSourceInvoice($order), $this->createSourceInvoice($order)];
+        $order->setInvoiceId($extras[1]->getUuid());
+        $this->em->flush();
+        $payments = self::getContainer()->get(InvoiceServiceInterface::class);
+        $this->notifyPaid($primary);
+        self::assertNull($primary->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP] ?? null);
+        self::assertSame($primary->getUuid(), $order->getInvoiceId(), 'An older invoice may settle the order first.');
+
+        foreach ($extras as $extra) {
+            $this->notifyPaid($extra);
+            $this->em->refresh($extra);
+            self::assertSame(Invoice::STATUS_PAID, $extra->getStatus());
+            $followup = $extra->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP];
+            self::assertSame('paid_followup_failed', $followup['status']);
+            self::assertSame('duplicate_collection', $followup['reason']);
+            self::assertSame($primary->getUuid(), $followup['linkedInvoiceUuid']);
+            $this->notifyPaid($extra);
+            self::assertSame($followup, $extra->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP]);
+
+            $payments->refund($extra, 40, 'Partial duplicate refund');
+            $payments->refund($extra, 60, 'Remaining duplicate refund');
+            $payments->refund($extra, 60, 'Remaining duplicate refund');
+            self::assertSame(Invoice::STATUS_REFUNDED, $extra->getStatus());
+            self::assertSame(100, $extra->getRefundedAmount());
+        }
+
+        $this->em->refresh($order);
+        self::assertSame(Order::STATUS_PAID, $order->getStatus());
+        self::assertSame(Invoice::STATUS_PAID, $order->getPaymentStatus());
+        self::assertSame($primary->getUuid(), $order->getInvoiceId());
+        self::assertNull($order->getRefundedAt());
+
+        $payments->refund($primary, 100, 'Refund the settlement');
+        self::assertSame(Order::STATUS_REFUNDED, $order->getStatus());
+    }
+
+    public function testLateCollectionForMergedSourceIsRecordedAndRefundsOnlyTheInvoice(): void
+    {
+        $source = $this->source();
+        $this->source();
+        $target = $this->merger()->merge($this->counter, $this->user);
+        $invoice = $this->createSourceInvoice($source);
+        // Restore a historical source link without changing the merge eligibility policy.
+        $source->setInvoiceId($invoice->getUuid())->setPaymentStatus(Invoice::STATUS_PENDING);
+        $this->em->flush();
+
+        $this->notifyPaid($invoice);
+        $this->em->refresh($invoice);
+        self::assertSame(Invoice::STATUS_PAID, $invoice->getStatus());
+        $followup = $invoice->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP];
+        self::assertSame('paid_followup_failed', $followup['status']);
+        self::assertSame('source_order_not_payable', $followup['reason']);
+        self::assertSame('merged', $followup['orderStatus']);
+        self::assertSame($source->getUuid(), $followup['orderUuid']);
+        self::assertSame($target->getUuid(), $followup['mergedIntoOrderUuid']);
+
+        $refund = function (int $amount) use ($invoice): \Symfony\Component\HttpFoundation\Response {
+            $token = self::getContainer()->get(TokenManager::class)->createAccessToken($this->user);
+
+            return self::$kernel->handle(Request::create('/api/v1/manage/invoices/'.$invoice->getId().'/refund', 'POST', [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+                'CONTENT_TYPE' => 'application/json',
+            ], json_encode(['amount' => $amount, 'reason' => 'Late collection after merge'], JSON_THROW_ON_ERROR)));
+        };
+        self::assertSame(403, $refund(100)->getStatusCode());
+        $this->user->setRoles(['ROLE_ADMIN']);
+        $this->em->flush();
+        self::assertSame(400, $refund(101)->getStatusCode());
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+        $persisted = $em->find(Invoice::class, $invoice->getId());
+        self::assertInstanceOf(Invoice::class, $persisted);
+        self::assertSame(Invoice::STATUS_PAID, $persisted->getStatus());
+        self::assertSame(0, $persisted->getRefundedAmount());
+        $response = $refund(100);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        $em->clear();
+        $invoice = $em->find(Invoice::class, $invoice->getId());
+        $source = $em->find(Order::class, $source->getId());
+        $target = $em->find(Order::class, $target->getId());
+        self::assertSame(Invoice::STATUS_REFUNDED, $invoice->getStatus());
+        self::assertSame($followup, $invoice->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP]);
+        self::assertSame('merged', $source->getStatus());
+        self::assertSame(Invoice::STATUS_PENDING, $source->getPaymentStatus());
+        self::assertNull($source->getRefundedAt());
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+        self::assertNull($target->getInvoiceId());
+    }
+
+    public static function settledOrderStatuses(): iterable
+    {
+        yield 'fulfilled' => [Order::STATUS_FULFILLED];
+        yield 'completed' => [Order::STATUS_COMPLETED];
+        yield 'refunded' => [Order::STATUS_REFUNDED];
+    }
+
+    #[DataProvider('settledOrderStatuses')]
+    public function testDuplicateCollectionAndRefundPreserveTerminalOrderState(string $status): void
+    {
+        $order = $this->source();
+        $primary = $this->createSourceInvoice($order);
+        $extra = $this->createSourceInvoice($order);
+        $this->notifyPaid($primary);
+        $paymentStatus = $status === Order::STATUS_REFUNDED ? Invoice::STATUS_REFUNDED : Invoice::STATUS_PAID;
+        $order->setStatus($status)->setPaymentStatus($paymentStatus);
+        $this->em->flush();
+
+        $this->notifyPaid($extra);
+        $this->em->refresh($extra);
+        self::assertSame('duplicate_collection', $extra->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP]['reason']);
+        self::getContainer()->get(InvoiceServiceInterface::class)->refund($extra, 100, 'Refund duplicate collection');
+        $this->em->refresh($order);
+        self::assertSame(Invoice::STATUS_REFUNDED, $extra->getStatus());
+        self::assertSame($status, $order->getStatus());
+        self::assertSame($paymentStatus, $order->getPaymentStatus());
+        self::assertSame($primary->getUuid(), $order->getInvoiceId());
+    }
+
+    public function testInvalidCollectionAmountIsRejectedWithoutRecordingFollowup(): void
+    {
+        $order = $this->source();
+        $invoice = $this->createSourceInvoice($order);
+        try {
+            $this->notifyPaid($invoice, 99);
+            self::fail('A mismatched collection amount must be rejected.');
+        } catch (InvoiceAmountMismatchException) {
+            $this->em->refresh($invoice);
+            $this->em->refresh($order);
+            self::assertSame(Invoice::STATUS_PENDING, $invoice->getStatus());
+            self::assertNull($invoice->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP] ?? null);
+            self::assertSame(Order::STATUS_CONFIRMED, $order->getStatus());
+        }
+    }
+
+    public function testCollectionWithMissingSourceIsRecordedButNormalRefundIsRejected(): void
+    {
+        $invoice = $this->createSourceInvoice((new Order())->setTotalAmount(100));
+        $this->notifyPaid($invoice);
+        $this->em->refresh($invoice);
+        self::assertSame(Invoice::STATUS_PAID, $invoice->getStatus());
+        self::assertSame('source_order_missing', $invoice->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP]['reason']);
+
+        $this->expectExceptionMessage('The linked order must be paid and linked to this invoice before refunding.');
+        self::getContainer()->get(InvoiceServiceInterface::class)->refund($invoice, 100, 'Missing source review');
+    }
+
+    /** @param array<string, mixed> $extraData */
+    private function createSourceInvoice(Order $order, array $extraData = []): Invoice
+    {
+        return self::getContainer()->get(InvoiceServiceInterface::class)->createInvoice(new CreateInvoiceRequest(
+            sourceType: 'trade_order',
+            sourceId: $order->getUuid(),
+            scene: Invoice::SCENE_ORDER,
+            amount: $order->getTotalAmount(),
+            currency: $order->getCurrency(),
+            payer: $this->user,
+            extraData: $extraData,
+        ));
+    }
+
+    private function notifyPaid(Invoice $invoice, ?int $amount = null): void
+    {
+        self::getContainer()->get(InvoiceServiceInterface::class)->handleNotifyResult(new PaymentNotifyResult(
+            payment: Invoice::PAYMENT_MOCK,
+            outTradeNo: $invoice->getOutTradeNo(),
+            status: Invoice::STATUS_PAID,
+            amount: $amount ?? $invoice->getAmount(),
+        ));
     }
 
     public function testUnacceptedStoreOrderCanBeMerged(): void
