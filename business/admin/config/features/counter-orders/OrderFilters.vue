@@ -3,7 +3,7 @@
     <label>{{ $t('Order search') }}<el-input v-model.trim="draft.order" clearable placeholder="#ID / Trade UUID / Store UUID" /></label>
     <label>{{ $t('Ordering user UUID') }}<el-input v-model.trim="draft.user" clearable placeholder="UUID" /></label>
     <label>{{ $t('Trade status') }}
-      <el-select v-model="draft.status" multiple collapse-tags clearable :aria-label="$t('Trade status')">
+      <el-select v-model="draft.status" multiple collapse-tags clearable popper-class="counter-orders-popper" :aria-label="$t('Trade status')">
         <el-option v-for="value in states.status" :key="value" :value="value" :label="$t(statusLabel(value))" />
       </el-select>
     </label>
@@ -11,7 +11,7 @@
     <label>{{ $t('Created through') }}<input v-model="draft.end" type="date" :min="draft.start || undefined" /></label>
     <template v-if="expanded">
       <label v-for="(label, key) in extra" :key="key">{{ $t(label) }}
-        <el-select v-model="draft[key]" clearable :aria-label="$t(label)">
+        <el-select v-model="draft[key]" clearable popper-class="counter-orders-popper" :aria-label="$t(label)">
           <el-option v-for="value in states[key]" :key="value" :value="value" :label="$t(statusLabel(value))" />
         </el-select>
       </label>

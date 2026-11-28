@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { counterRouteUuid, createGraphPan, createLatestRequest, graphFitScale, groupHistory, mergeLayout, orderParams, states, statusTone } from './counter-orders.mjs'
+import { counterRouteUuid, createGraphPan, createLatestRequest, graphFitScale, groupHistory, mergeLayout, orderParams, readCounterOverview, states, statusTone, writeCounterOverview } from './counter-orders.mjs'
 
 test('fits small overflows without shrinking wide graphs past the readable floor', () => {
   assert.equal(graphFitScale(1000, 900), 1)
@@ -14,6 +15,20 @@ test('each supported Trade status has its own badge tone, with cancelled in gray
   assert.equal(statusTone('cancelled'), 'gray')
   assert.equal(statusTone('refunded'), 'brick')
   assert.equal(statusTone('unknown'), 'slate')
+})
+
+test('every dark status badge meets the text contrast threshold', () => {
+  const css = readFileSync(new URL('./order-status-tones.css', import.meta.url), 'utf8')
+  const darkTones = new Map(Array.from(css.matchAll(/\[data-theme='dark'\] \.counter-order-tone\[data-tone='(\w+)'\] \{ --order-ink: (#\w+); --order-tint: (#\w+);/g),
+    ([, tone, ink, tint]) => [tone, [ink, tint]]))
+  const luminance = color => color.slice(1).match(/../g).map(byte => parseInt(byte, 16) / 255)
+    .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+  for (const tone of new Set(states.status.map(statusTone))) {
+    assert.ok(darkTones.has(tone), tone)
+    const [light, dark] = darkTones.get(tone).map(luminance).sort((a, b) => b - a)
+    assert.ok((light + 0.05) / (dark + 0.05) >= 4.5, tone)
+  }
 })
 
 test('pans the canvas on both axes without capturing receipts or touch gestures', () => {
@@ -45,6 +60,23 @@ test('counter deep links accept only a single UUID', () => {
   assert.equal(counterRouteUuid(uuid), uuid.toLowerCase())
   assert.equal(counterRouteUuid([uuid]), '')
   assert.equal(counterRouteUuid('not-a-uuid'), '')
+})
+
+test('counter overview filters and pagination survive a URL round trip', () => {
+  const overview = {
+    store: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    search: 'A 01',
+    filters: { status: ['confirmed', 'paid'], merged: 'yes', start: '2026-11-01' },
+    page: 2
+  }
+  const query = writeCounterOverview({ counter: 'detail', end: '2026-11-03' }, overview)
+  assert.equal(query.counter, 'detail')
+  assert.equal(query.end, undefined)
+  assert.deepEqual(readCounterOverview(Object.fromEntries(new URLSearchParams(query))), overview)
+  assert.deepEqual(readCounterOverview({ store: 'invalid', counterSearch: ['a', 'b'], status: 'paid,invalid,paid',
+    page: '-2', start: '2026-02-31', end: '9999-99-99' }),
+  { store: '', search: '', filters: { status: ['paid'] }, page: 1 })
+  assert.deepEqual(writeCounterOverview(query, readCounterOverview({})), { counter: 'detail' })
 })
 
 test('serializes combined filters with an exclusive end date', () => {

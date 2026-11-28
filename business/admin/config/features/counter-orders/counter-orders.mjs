@@ -14,6 +14,45 @@ export const states = {
   anonymous: ['yes', 'no']
 }
 
+const overviewFilterKeys = ['order', 'user', ...Object.keys(states), 'start', 'end']
+const queryText = value => typeof value === 'string' ? value.trim() : ''
+
+export function readCounterOverview(query) {
+  const filters = {}
+  for (const key of overviewFilterKeys) {
+    const value = queryText(query[key])
+    if (key in states) {
+      const accepted = [...new Set(value.split(',').filter(state => states[key].includes(state)))]
+      if (accepted.length) filters[key] = key === 'status' ? accepted : accepted[0]
+    } else if (key === 'start' || key === 'end') {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
+        && new Date(value).toISOString().startsWith(`${value}T`)) filters[key] = value
+    } else if (value) {
+      filters[key] = value
+    }
+  }
+  const page = Number(queryText(query.page))
+  return {
+    store: counterRouteUuid(query.store),
+    search: queryText(query.counterSearch),
+    filters,
+    page: Number.isSafeInteger(page) && page > 0 ? page : 1
+  }
+}
+
+export function writeCounterOverview(query, { store, search, filters, page }) {
+  const next = { ...query }
+  for (const key of ['store', 'counterSearch', 'page', ...overviewFilterKeys]) delete next[key]
+  if (store) next.store = store
+  if (search) next.counterSearch = search
+  if (page > 1) next.page = String(page)
+  for (const key of overviewFilterKeys) {
+    const value = Array.isArray(filters[key]) ? filters[key].join(',') : queryText(filters[key])
+    if (value) next[key] = value
+  }
+  return next
+}
+
 export function statusLabel(value) {
   if (!value) return 'Unknown'
   return value.replace(/_/g, ' ').replace(/^./, letter => letter.toUpperCase())
