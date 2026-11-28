@@ -4,6 +4,7 @@ import request from '@/utils/request'
 import router from '@/router'
 import { getToken } from '@/utils/auth'
 import { chatScopeFromToken } from './agent-chat-scope.mjs'
+import { mountAdminAgentLauncher } from './agent-toolbar.mjs'
 import CrudSkeletonAdapter from '@/easyadmin/adapters/crudskeleton/CrudSkeletonAdapter'
 import { resolveRelation } from '@/utils/relation'
 import { createSchemaForm } from '@/utils/json-schema-form'
@@ -143,6 +144,7 @@ export function createAdminAgentHost() {
     getCapabilityRevision() { return refreshProjection().revision },
     getAdminConfigProjection() { return refreshProjection() },
     onCapabilityChange(listener) { listeners.add(listener); return () => listeners.delete(listener) },
+    mountLauncher: mountAdminAgentLauncher,
     getCatalog,
     getMainAreaBounds() { return document.querySelector('.app-main')?.getBoundingClientRect() ?? null },
     getInspectionPolicy() { return recordInspectionPolicy },

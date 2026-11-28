@@ -81,7 +81,7 @@ See the [design](../../docs/design/admin-ai-assistant.md) and [contract](../../d
 
 ## Enable or disable
 
-Set `VITE_ADMIN_AGENT_ENABLED=false` in the integration admin environment, then restart Vite or rebuild. The launcher requires the existing authentication token. The integration session monitor disposes/remounts the assistant when the token changes or disappears.
+Set `VITE_ADMIN_AGENT_ENABLED=false` in the integration admin environment, then restart Vite or rebuild. On signed-in admin pages, use the robot icon in the top-right toolbar to open the assistant. The integration session monitor disposes the assistant on logout and remounts it when the signed-in account changes.
 
 ## Configure
 
