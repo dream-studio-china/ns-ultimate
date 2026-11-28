@@ -52,5 +52,10 @@ rules and refund idempotency still apply.
 No automatic refund, reassignment, or reconciliation is performed. The original
 follow-up record remains after refund; the Invoice's financial status and
 refund history show the resolution. The public checkout projection does not
-expose the follow-up record. The existing restriction on merging orders
-with a linked Invoice is unchanged.
+expose the follow-up record.
+
+Customer Counter merge can proceed with locally unpaid Invoices. It preserves
+the original Invoice and does not ask the provider to close it. The old
+provider payment can still collect; a verified late collection is recorded
+separately and does not reduce the new order's balance. Staff merge policy is
+unchanged.

@@ -330,15 +330,15 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertNull($byUuid[$targetUuid]['mergedIntoOrderUuid']);
     }
 
-    public function testInvoiceCreatedAfterEntityWasLoadedBlocksMerge(): void
+    public function testInconsistentInvoiceLinkAddedAfterEntityWasLoadedBlocksMerge(): void
     {
         $source = $this->source();
         $this->em->getConnection()->executeStatement('UPDATE trade_order SET invoice_id = ? WHERE id = ?', [UUID::v4(), $source->getId()]);
         try {
             $this->merger()->merge($this->counter, $this->user);
-            self::fail('An invoice must prevent merging even when the managed entity is stale.');
+            self::fail('An inconsistent invoice link must prevent merging even when the managed entity is stale.');
         } catch (\DomainException $error) {
-            self::assertStringContainsString('existing payment invoice', $error->getMessage());
+            self::assertStringContainsString('inconsistent payment invoice link', $error->getMessage());
         }
         self::assertCount(1, $this->em->getRepository(Order::class)->findAll());
         self::assertSame([], $this->em->getRepository(OrderMerge::class)->findAll());
@@ -391,11 +391,19 @@ final class CounterOrderMergeTest extends KernelTestCase
     {
         $source = $this->source();
         $this->source();
-        $target = $this->merger()->merge($this->counter, $this->user);
         $invoice = $this->createSourceInvoice($source);
-        // Restore a historical source link without changing the merge eligibility policy.
+        $unstarted = $this->createSourceInvoice($source);
         $source->setInvoiceId($invoice->getUuid())->setPaymentStatus(Invoice::STATUS_PENDING);
         $this->em->flush();
+        $target = $this->merger()->merge($this->counter, $this->user);
+        self::assertSame($invoice->getUuid(), $source->getInvoiceId());
+        self::assertSame(Invoice::STATUS_PENDING, $invoice->getStatus());
+        try {
+            self::getContainer()->get(InvoiceServiceInterface::class)->pay($unstarted, 'mock', ['autoPaid' => true]);
+            self::fail('An old invoice must not start a new collection after merge.');
+        } catch (\App\Payment\Exception\InvoiceInvalidTransitionException) {
+            self::assertSame(Invoice::STATUS_PENDING, $unstarted->getStatus());
+        }
 
         $this->notifyPaid($invoice);
         $this->em->refresh($invoice);
@@ -661,14 +669,42 @@ final class CounterOrderMergeTest extends KernelTestCase
         self::assertSame(Order::STATUS_CONFIRMED, $next->getStatus());
     }
 
-    public function testRealPaymentFlowCreatesInvoiceThatBlocksMerge(): void
+    public function testPayingInvoiceDoesNotBlockMergeOrLoseLateCollection(): void
     {
-        $paid = $this->source();
+        $source = $this->source();
         $this->source();
-        $payment = self::getContainer()->get(OrderServiceInterface::class)->createPayment($paid, 'mock');
-        self::assertSame($payment->invoice->getUuid(), $paid->getInvoiceId());
+        $payment = self::getContainer()->get(OrderServiceInterface::class)->createPayment($source, 'mock');
+        self::assertSame(Invoice::STATUS_PAYING, $payment->invoice->getStatus());
+        $target = $this->merger()->merge($this->counter, $this->user);
+        self::assertSame('merged', $source->getStatus());
+        self::assertSame($payment->invoice->getUuid(), $source->getInvoiceId());
+        self::assertSame(Invoice::STATUS_PAYING, $payment->invoice->getStatus());
+        $this->notifyPaid($payment->invoice);
+        self::assertSame(Invoice::STATUS_PAID, $payment->invoice->getStatus());
+        self::assertSame($target->getUuid(), $payment->invoice->getExtraData()[Invoice::EXTRA_PAID_FOLLOWUP]['mergedIntoOrderUuid']);
+        self::assertSame(Order::STATUS_CONFIRMED, $target->getStatus());
+    }
+
+    public static function collectedInvoiceStatuses(): iterable
+    {
+        yield 'paid' => [Invoice::STATUS_PAID];
+        yield 'partially refunded' => [Invoice::STATUS_PARTIAL_REFUNDED];
+        yield 'refunded' => [Invoice::STATUS_REFUNDED];
+    }
+
+    #[DataProvider('collectedInvoiceStatuses')]
+    public function testHistoricalCollectedInvoiceBlocksMergeEvenWhenCurrentInvoiceIsUnpaid(string $status): void
+    {
+        $source = $this->source();
+        $this->source();
+        $historical = $this->createSourceInvoice($source);
+        $current = $this->createSourceInvoice($source);
+        $source->setInvoiceId($current->getUuid())->setPaymentStatus(Invoice::STATUS_PENDING);
+        $this->em->flush();
+        // Simulate a collection whose financial state was persisted before order settlement.
+        $this->em->getConnection()->executeStatement('UPDATE payment_invoice SET status = ? WHERE id = ?', [$status, $historical->getId()]);
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('existing payment invoice');
+        $this->expectExceptionMessage('recorded payment or refund');
         $this->merger()->merge($this->counter, $this->user);
     }
 
