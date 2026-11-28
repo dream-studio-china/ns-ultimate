@@ -6,11 +6,6 @@ export function counterRouteUuid(value) {
     : ''
 }
 
-export function counterListQuery(query) {
-  const { counter: _counter, ...list } = query
-  return list
-}
-
 export const states = {
   status: ['draft', 'pending', 'confirmed', 'paid', 'fulfilled', 'completed', 'cancelled', 'refunded', 'merged'],
   payment: ['pending', 'paying', 'paid', 'failed', 'cancelled', 'partial_refunded', 'refunded'],

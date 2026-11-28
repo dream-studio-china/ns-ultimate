@@ -1,7 +1,6 @@
 <template>
   <section class="counter-orders">
     <template v-if="route.query.counter !== undefined && !active">
-      <el-button text @click="back">{{ $t('Back') }} · {{ $t('Counter orders') }}</el-button>
       <el-skeleton v-if="activeLoading" :rows="4" animated />
       <el-empty v-else :description="activeError || $t('No matching counters')" />
     </template>
@@ -45,7 +44,6 @@
     </template>
 
     <template v-else>
-      <el-button text @click="back">{{ $t('Back') }} · {{ $t('Counter orders') }}</el-button>
       <header class="detail-heading">
         <div><h1>{{ active.code }} · {{ active.storeName || active.storeUuid }}</h1><p>{{ active.name }}</p></div>
         <el-button type="primary" plain :aria-expanded="historyOpen" aria-controls="counter-order-history"
@@ -184,7 +182,7 @@ import OrderFilters from './OrderFilters.vue'
 import OrderReceipt from './OrderReceipt.vue'
 import OrderItemsDetail from './OrderItemsDetail.vue'
 import OrderStatusBadge from './OrderStatusBadge.vue'
-import { counterListQuery, counterRouteUuid, createGraphPan, createLatestRequest, endpoint, formatAmount, graphFitScale, groupHistory, mergeLayout, orderParams } from './counter-orders.mjs'
+import { counterRouteUuid, createGraphPan, createLatestRequest, endpoint, formatAmount, graphFitScale, groupHistory, mergeLayout, orderParams } from './counter-orders.mjs'
 
 const route = useRoute()
 const router = useRouter()
@@ -303,11 +301,6 @@ function applyFilters(next) {
 }
 function openCounter(counter) {
   router.push({ name: routeName, query: { ...route.query, counter: counter.uuid } })
-}
-function back() {
-  const target = { name: routeName, query: counterListQuery(route.query) }
-  if (router.options.history.state.back === router.resolve(target).fullPath) router.back()
-  else router.replace(target)
 }
 function resetActive() {
   channels.history.cancel()

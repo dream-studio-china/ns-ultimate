@@ -159,6 +159,7 @@ export default {
       path: '/counter-management',
       name: 'CounterManagement',
       component: Layout,
+      redirect: 'noRedirect',
       meta: {
         title: t('Counter management'),
         icon: 'counter',

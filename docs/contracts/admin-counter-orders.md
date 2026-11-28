@@ -17,7 +17,7 @@ The history panel opens by default. It inherits the overview's order filters ini
 
 History uses Previous and Next controls and shows the current page number. Each page replaces the visible history rows and focuses its newest order; changing history filters returns to page one. Session grouping applies to the rows on the current page.
 
-Opening a counter adds `?counter=<uuid>` to the admin URL as a browser history entry. Returning within the workspace preserves the current overview filters and page. For a directly opened counter URL, the workspace's own Back button falls back to the overview.
+Opening a counter adds `?counter=<uuid>` to the admin URL as a browser history entry. Going back to the overview via browser history preserves the current overview filters and page. The Counter Management breadcrumb is a noninteractive group label; the sidebar entry opens the overview.
 
 On entry the workspace focuses the newest matching history row, regardless of whether it is a merge result or an isolated order. The workspace requests a chain-only graph, so an isolated order shows just itself. Without `chainOnly`, the API also includes orders bound to the selected order's session. Only persisted `OrderMerge` rows produce arrows. Additional linked orders are followed in both directions when both endpoints have the same trusted store lifecycle. The selected order is always retained and the UI warns if the 200-node graph cap is exceeded. Trade `cancelled` is gray but selectable; `merged` is a separate state.
 

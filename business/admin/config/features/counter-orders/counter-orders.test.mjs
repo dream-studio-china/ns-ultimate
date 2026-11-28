@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { counterListQuery, counterRouteUuid, createGraphPan, createLatestRequest, graphFitScale, groupHistory, mergeLayout, orderParams, states, statusTone } from './counter-orders.mjs'
+import { counterRouteUuid, createGraphPan, createLatestRequest, graphFitScale, groupHistory, mergeLayout, orderParams, states, statusTone } from './counter-orders.mjs'
 
 test('fits small overflows without shrinking wide graphs past the readable floor', () => {
   assert.equal(graphFitScale(1000, 900), 1)
@@ -40,12 +40,11 @@ test('pans the canvas on both axes without capturing receipts or touch gestures'
   assert.deepEqual(changes, [true, false])
 })
 
-test('counter deep links accept only a single UUID and parent links retain other query values', () => {
+test('counter deep links accept only a single UUID', () => {
   const uuid = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE'
   assert.equal(counterRouteUuid(uuid), uuid.toLowerCase())
   assert.equal(counterRouteUuid([uuid]), '')
   assert.equal(counterRouteUuid('not-a-uuid'), '')
-  assert.deepEqual(counterListQuery({ counter: uuid, tab: 'history' }), { tab: 'history' })
 })
 
 test('serializes combined filters with an exclusive end date', () => {
