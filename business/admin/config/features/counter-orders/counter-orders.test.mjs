@@ -12,6 +12,7 @@ test('fits small overflows without shrinking wide graphs past the readable floor
 test('each supported Trade status has its own badge tone, with cancelled in gray', () => {
   assert.equal(new Set(states.status.map(statusTone)).size, states.status.length)
   assert.equal(statusTone('cancelled'), 'gray')
+  assert.equal(statusTone('refunded'), 'brick')
   assert.equal(statusTone('unknown'), 'slate')
 })
 
@@ -92,6 +93,22 @@ test('expanding a receipt reserves space and starts its arrow below the item lis
   assert.ok(expanded.positions.get('b').y > source.y + source.height)
   assert.ok(expanded.paths[0].startsWith(`M${source.x + expanded.width / 2} ${source.y + source.height} `))
   assert.equal(mergeLayout(nodes, edges, new Set(['b'])).positions.get('b').height, collapsed.positions.get('b').height)
+})
+
+test('each merge chain inherits its own terminal order tone along every arrow', () => {
+  const nodes = [
+    { uuid: 'a', status: 'merged' }, { uuid: 'b', status: 'merged' }, { uuid: 'c', status: 'cancelled' },
+    { uuid: 'd', status: 'merged' }, { uuid: 'e', status: 'paid' }, { uuid: 'f', status: 'merged' }
+  ]
+  const edges = [
+    { source: 'b', target: 'c' }, { source: 'd', target: 'e' }, { source: 'a', target: 'b' }, { source: 'f', target: 'b' }
+  ]
+  const layout = mergeLayout(nodes, edges)
+  assert.deepEqual(layout.pathTones, ['gray', 'green', 'gray', 'gray'])
+  assert.equal(layout.chainTones.get('a'), 'gray')
+  assert.equal(layout.chainTones.get('e'), 'green')
+  nodes.find(node => node.uuid === 'c').status = 'refunded'
+  assert.deepEqual(mergeLayout(nodes, edges).pathTones, ['brick', 'green', 'brick', 'brick'])
 })
 
 test('does not apply a response after the user selects a different order', async () => {

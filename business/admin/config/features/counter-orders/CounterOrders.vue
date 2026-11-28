@@ -73,10 +73,17 @@
                 <div class="graph-frame" :style="graphFrameStyle">
                   <div class="graph-canvas" :style="graphCanvasStyle">
                     <svg class="edges" :width="layout.canvasWidth" :height="layout.canvasHeight" aria-hidden="true">
-                      <defs><marker id="counter-merge-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" /></marker></defs>
-                      <path v-for="(path, index) in layout.paths" :key="index" :d="path" marker-end="url(#counter-merge-arrow)" />
+                      <defs>
+                        <marker v-for="tone in arrowTones" :id="`counter-merge-arrow-${tone}`" :key="tone"
+                          class="counter-order-tone" :data-tone="tone" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                          <path d="M0 0L8 4L0 8Z" />
+                        </marker>
+                      </defs>
+                      <path v-for="(path, index) in layout.paths" :key="index" :d="path" class="counter-order-tone"
+                        :data-tone="layout.pathTones[index]" :marker-end="`url(#counter-merge-arrow-${layout.pathTones[index]})`" />
                     </svg>
-                    <order-receipt v-for="node in linkedReceipts" :key="node.uuid" class="graph-receipt" compact
+                    <order-receipt v-for="node in linkedReceipts" :key="node.uuid" class="graph-receipt counter-order-tone" compact
+                      :data-tone="layout.chainTones.get(node.uuid)"
                       :selected="node.uuid === selected" :expanded="expandedItems.has(node.uuid)" :order="node"
                       :style="nodeStyle(node.uuid)" @click="openReceipt(node)">
                       <div v-if="node.itemCount > 1" v-show="expandedItems.has(node.uuid)" :id="`graph-items-${node.uuid}`" class="graph-item-list">
@@ -235,6 +242,7 @@ const graphCanvasStyle = computed(() => ({
   transform: `scale(${graphScale.value})`
 }))
 const linkedReceipts = computed(() => (graph.value?.nodes || []).filter(node => layout.value.positions.has(node.uuid)))
+const arrowTones = computed(() => [...new Set(layout.value.pathTones)])
 const orderIds = computed(() => new Map((graph.value?.nodes || []).map(node => [node.uuid, node.id])))
 const channels = Object.fromEntries(['stores', 'counters', 'active', 'history', 'graph'].map(key => [key, createLatestRequest()]))
 
@@ -410,9 +418,9 @@ summary { cursor: pointer; color: var(--text-secondary); margin: 6px 0; }
 .graph-frame { position: relative; overflow: clip; margin-inline: auto; }
 .graph-canvas { position: absolute; top: 0; left: 0; transform-origin: top left; }
 .standalone-receipts h3 { font-size: 13px; }
-.edges { position: absolute; pointer-events: none; color: var(--el-color-primary); }
-.edges > path { fill: none; stroke: currentColor; stroke-width: 2; }
-.edges marker path { fill: currentColor; }
+.edges { position: absolute; pointer-events: none; }
+.edges > path { fill: none; stroke: var(--order-line); stroke-width: 2; }
+.edges marker path { fill: var(--order-line); }
 .graph-receipt { position: absolute; grid-template-rows: 94px 26px minmax(0, 1fr); }
 .graph-receipt:not(:has(.graph-items-toggle)) { grid-template-rows: 1fr; }
 .graph-receipt:has(.graph-items-toggle[aria-expanded='true']) { grid-template-rows: 62px minmax(0, 1fr) 26px; }

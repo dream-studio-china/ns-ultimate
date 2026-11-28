@@ -27,12 +27,12 @@ const remaining = computed(() => Math.max(0, (props.order.itemCount || 0) - prev
 </script>
 
 <style scoped>
-.receipt { display: grid; width: 100%; min-width: 0; color: var(--text-primary); background: var(--surface); border: 1px solid var(--border); border-radius: 8px 8px 3px 3px; position: relative; }
+.receipt { display: grid; width: 100%; min-width: 0; color: var(--text-primary); background: var(--surface); border: 1px solid var(--order-line, var(--border)); border-radius: 8px 8px 3px 3px; position: relative; }
 .receipt-open { display: grid; gap: 7px; min-width: 0; min-height: 91px; width: 100%; padding: 9px 11px 13px; color: inherit; text-align: left; background: transparent; border: 0; border-radius: inherit; cursor: pointer; }
 .receipt-open.expanded { min-height: 0; align-content: start; }
 .receipt-open:focus-visible { outline-offset: -3px; }
 .receipt::after { content: ''; position: absolute; inset: auto 0 0; height: 5px; background: linear-gradient(135deg, transparent 50%, var(--border) 50%) 0 0 / 10px 5px, linear-gradient(225deg, transparent 50%, var(--border) 50%) 0 0 / 10px 5px; pointer-events: none; }
-.receipt.selected { border-color: var(--el-color-primary); box-shadow: inset 0 0 0 1px var(--el-color-primary); }
+.receipt.selected { border-color: var(--order-line, var(--el-color-primary)); box-shadow: inset 0 0 0 1px var(--order-line, var(--el-color-primary)); }
 .receipt.cancelled { color: var(--text-secondary); background: var(--el-fill-color-dark); }
 .receipt-head, .receipt-foot { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .receipt-middle { display: flex; min-width: 0; gap: 5px; color: var(--text-secondary); border-top: 1px dashed var(--border); padding-top: 6px; }

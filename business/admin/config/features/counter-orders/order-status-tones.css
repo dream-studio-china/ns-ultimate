@@ -1,0 +1,9 @@
+.counter-order-tone[data-tone='slate'] { --order-ink: #334155; --order-tint: #e2e8f0; --order-line: #64748b; }
+.counter-order-tone[data-tone='amber'] { --order-ink: #78350f; --order-tint: #fef3c7; --order-line: #b45309; }
+.counter-order-tone[data-tone='blue'] { --order-ink: #1e40af; --order-tint: #dbeafe; --order-line: #2563eb; }
+.counter-order-tone[data-tone='green'] { --order-ink: #14532d; --order-tint: #dcfce7; --order-line: #15803d; }
+.counter-order-tone[data-tone='cyan'] { --order-ink: #164e63; --order-tint: #cffafe; --order-line: #0e7490; }
+.counter-order-tone[data-tone='emerald'] { --order-ink: #064e3b; --order-tint: #a7f3d0; --order-line: #047857; }
+.counter-order-tone[data-tone='gray'] { --order-ink: #374151; --order-tint: #e5e7eb; --order-line: #6b7280; }
+.counter-order-tone[data-tone='brick'] { --order-ink: #8f2b23; --order-tint: #fde8e4; --order-line: #b9382c; }
+.counter-order-tone[data-tone='violet'] { --order-ink: #5b21b6; --order-tint: #ede9fe; --order-line: #7c3aed; }
