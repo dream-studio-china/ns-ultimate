@@ -24,6 +24,63 @@ export function statusLabel(value) {
   return value.replace(/_/g, ' ').replace(/^./, letter => letter.toUpperCase())
 }
 
+const statusTones = {
+  draft: 'slate',
+  pending: 'amber',
+  confirmed: 'blue',
+  paid: 'green',
+  fulfilled: 'cyan',
+  completed: 'emerald',
+  cancelled: 'gray',
+  refunded: 'rose',
+  merged: 'violet'
+}
+
+export function statusTone(status) {
+  return Object.hasOwn(statusTones, status) ? statusTones[status] : 'slate'
+}
+
+export function graphFitScale(viewportWidth, canvasWidth) {
+  if (viewportWidth <= 0 || canvasWidth <= 0) return 1
+  // Keep text legible when a large graph needs scrolling instead of shrinking indefinitely.
+  return Math.max(0.8, Math.min(1, viewportWidth / canvasWidth))
+}
+
+export function createGraphPan(setDragging) {
+  let drag
+  return {
+    start(event) {
+      if (drag || event.pointerType === 'touch' || event.button !== 0 || event.target.closest('button, a, .graph-item-list')) return
+      const viewport = event.currentTarget
+      if (viewport.scrollWidth <= viewport.clientWidth && viewport.scrollHeight <= viewport.clientHeight) return
+      // Scrollbar clicks target the viewport itself and should retain native behavior.
+      if (event.target === viewport) {
+        const rect = viewport.getBoundingClientRect()
+        if (event.clientX >= rect.left + viewport.clientLeft + viewport.clientWidth ||
+            event.clientY >= rect.top + viewport.clientTop + viewport.clientHeight) return
+      }
+      viewport.setPointerCapture(event.pointerId)
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop }
+      setDragging(true)
+    },
+    move(event) {
+      if (event.pointerId !== drag?.id) return
+      event.preventDefault()
+      event.currentTarget.scrollLeft = drag.left + drag.x - event.clientX
+      event.currentTarget.scrollTop = drag.top + drag.y - event.clientY
+    },
+    end(event) {
+      if (event.pointerId !== drag?.id) return
+      drag = undefined
+      setDragging(false)
+    },
+    reset() {
+      drag = undefined
+      setDragging(false)
+    }
+  }
+}
+
 export function orderParams(filters) {
   const params = {}
   for (const key of ['order', 'user', ...Object.keys(states)]) {
@@ -78,52 +135,79 @@ export function groupHistory(rows) {
   return [...groups.values()]
 }
 
-export function mergeLayout(nodes, edges) {
+export function mergeLayout(nodes, edges, expanded = new Set()) {
   const positions = new Map()
   const pending = new Map(nodes.map(node => [node.uuid, 0]))
-  const columns = new Map(nodes.map(node => [node.uuid, 0]))
+  const levels = new Map(nodes.map(node => [node.uuid, 0]))
   const outgoing = new Map(nodes.map(node => [node.uuid, []]))
   const links = edges.filter(({ source, target }) => pending.has(source) && pending.has(target))
   for (const { source, target } of links) {
     outgoing.get(source).push(target)
     pending.set(target, pending.get(target) + 1)
   }
-  const queue = nodes.map(node => node.uuid).filter(uuid => pending.get(uuid) === 0)
+  const linked = new Set(links.flatMap(({ source, target }) => [source, target]))
+  const queue = [...linked].filter(uuid => pending.get(uuid) === 0)
   for (const source of queue) {
     for (const target of outgoing.get(source)) {
-      columns.set(target, Math.max(columns.get(target), columns.get(source) + 1))
+      levels.set(target, Math.max(levels.get(target), levels.get(source) + 1))
       pending.set(target, pending.get(target) - 1)
       if (pending.get(target) === 0) queue.push(target)
     }
   }
-  const counts = new Map()
-  const width = 178
-  for (const node of nodes) {
-    const col = columns.get(node.uuid)
-    const row = counts.get(col) || 0
-    positions.set(node.uuid, { x: 20 + col * 256, y: 20 + row * 118 })
-    counts.set(col, row + 1)
+  // Align a late-added source with the other inputs to its immediate merge.
+  const ordered = new Set(queue)
+  for (const source of queue.reverse()) {
+    const targets = outgoing.get(source)
+    if (targets.length && targets.every(target => ordered.has(target))) {
+      levels.set(source, Math.min(...targets.map(target => levels.get(target))) - 1)
+    }
   }
-  // Draw long-span or corrupt back-edges in separate lanes below the cards.
-  const bottom = 22 + Math.max(1, ...counts.values()) * 118
+
+  const rows = new Map()
+  const width = 178
+  const height = 124
+  const receiptHeights = new Map(nodes.map(({ uuid, itemCount = 0 }) => [
+    uuid, itemCount <= 1 ? 96 : expanded.has(uuid) ? Math.min(304, 108 + itemCount * 22) : height
+  ]))
+  const columnStep = 202
+  const rowGap = 56
+  for (const node of nodes) {
+    if (!linked.has(node.uuid)) continue
+    const level = levels.get(node.uuid)
+    if (!rows.has(level)) rows.set(level, [])
+    rows.get(level).push(node.uuid)
+  }
+  const widest = Math.max(1, ...[...rows.values()].map(row => row.length))
+  const bodyWidth = (widest - 1) * columnStep + width
+  let nextY = 20
+  for (const [level, row] of [...rows.entries()].sort(([a], [b]) => a - b)) {
+    const inset = (widest - row.length) * columnStep / 2
+    const rowHeight = Math.max(...row.map(uuid => receiptHeights.get(uuid)))
+    row.forEach((uuid, index) => positions.set(uuid, {
+      x: 20 + inset + index * columnStep, y: nextY, height: receiptHeights.get(uuid)
+    }))
+    nextY += rowHeight + rowGap
+  }
+  // Keep unexpected long-span or cyclic links outside intermediate rows.
   let lanes = 0
   const paths = links.map(({ source, target }) => {
     const a = positions.get(source)
     const b = positions.get(target)
-    const x = a.x + width
-    const y = a.y + 47
-    const endX = b.x - 5
-    const endY = b.y + 47
-    if (b.x - a.x !== 256) {
-      const lane = bottom + 12 * ++lanes
-      return `M${x} ${y} H${x + 10} V${lane} H${endX - 10} V${endY} H${endX}`
+    const x = a.x + width / 2
+    const y = a.y + a.height
+    const endX = b.x + width / 2
+    const endY = b.y - 4
+    if (levels.get(target) - levels.get(source) !== 1) {
+      const lane = bodyWidth + 26 + 12 * ++lanes
+      return `M${x} ${y} V${y + 10} H${lane} V${endY - 8} H${endX} V${endY}`
     }
-    const mid = (x + endX) / 2
-    return `M${x} ${y} H${mid} V${endY} H${endX}`
+    const mid = (y + endY) / 2
+    return `M${x} ${y} V${mid} H${endX} V${endY}`
   })
   return {
     positions, paths, width,
-    canvasWidth: Math.max(0, ...columns.values()) * 256 + width + 40,
-    canvasHeight: bottom + 12 * lanes + (lanes ? 12 : 0)
+    standalone: nodes.filter(node => !linked.has(node.uuid)),
+    canvasWidth: bodyWidth + 40 + 12 * lanes,
+    canvasHeight: rows.size ? nextY - rowGap + 20 : height + 40
   }
 }

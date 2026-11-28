@@ -45,6 +45,9 @@ final class AdminCounterOrdersTest extends KernelTestCase
         $middle = (new Order())->setStatus('merged');
         $target = (new Order())->setStatus('cancelled');
         $standalone = (new Order())->setStatus('pending');
+        foreach (range(1, 13) as $line) {
+            $standalone->addItem((new OrderItem())->setSpecificationTitle('Item '.$line)->setUnitPrice(250)->setPrice(250));
+        }
         $other = (new Order())->setStatus('paid');
         $legacy = (new Order())->setStatus('completed');
         $projection = new StoreOrder($store, $source->getUuid(), 'front', 'Front_Store', $guest->getUuid(), 'CNY', 0, []);
@@ -94,8 +97,18 @@ final class AdminCounterOrdersTest extends KernelTestCase
         $graph = $get($path.'/'.$source->getUuid().'/graph');
         self::assertSame([$standalone->getUuid(), $target->getUuid(), $middle->getUuid(), $source->getUuid()], array_column($graph['nodes'], 'uuid'));
         self::assertCount(2, $graph['edges']);
+        self::assertCount(12, $graph['nodes'][0]['items']);
+        self::assertSame(13, $graph['nodes'][0]['itemCount']);
         self::assertSame([['name' => 'Coffee', 'quantity' => 2]], $graph['nodes'][3]['items']);
         self::assertFalse($graph['truncated']);
         self::assertSame([$legacy->getUuid()], array_column($get($path.'/'.$legacy->getUuid().'/graph')['nodes'], 'uuid'));
+
+        $itemsPath = '/api/v1/manage/orders/'.$standalone->getUuid().'/items';
+        $response = self::$kernel->handle(Request::create($itemsPath, 'GET', [], [], [], $headers));
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $items = json_decode((string) $response->getContent(), true, 512, JSON_THROW_ON_ERROR)['data'];
+        self::assertCount(13, $items);
+        self::assertContains('Item 13', array_column($items, 'specificationTitle'));
+        self::assertSame(250, $items[0]['unitPrice']);
     }
 }

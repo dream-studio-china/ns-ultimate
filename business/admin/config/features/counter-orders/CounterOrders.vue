@@ -61,19 +61,41 @@
             <el-empty v-if="!historyLoading && !historyError && !history.length" :description="$t('No matching orders')" />
           </section>
           <section v-if="selected" class="panel graph-section" v-loading="graphLoading">
-            <h2>{{ $t('Merge relationships') }} <small>{{ $t('Source order → Target order') }}</small></h2>
+            <h2>{{ $t('Merge relationships') }} <small>{{ $t('Source orders above, merge results below') }}</small></h2>
             <p v-if="graphError" role="alert">{{ graphError }} <el-button text @click="selectOrder(selected)">{{ $t('Retry') }}</el-button></p>
             <template v-else-if="graph">
               <p v-if="graph.truncated" role="status">{{ $t('This graph is too large to show all related orders.') }}</p>
               <p v-else-if="!graph.edges.length">{{ $t('No merge links to display.') }}</p>
-              <div ref="graphScroll" class="graph-scroll" tabindex="0" :aria-label="$t('Merge relationships')">
-                <div class="graph-canvas" :style="{ width: `${layout.canvasWidth}px`, height: `${layout.canvasHeight}px` }">
-                  <svg class="edges" :width="layout.canvasWidth" :height="layout.canvasHeight" aria-hidden="true">
-                    <defs><marker id="counter-merge-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" /></marker></defs>
-                    <path v-for="(path, index) in layout.paths" :key="index" :d="path" marker-end="url(#counter-merge-arrow)" />
-                  </svg>
-                  <order-receipt v-for="node in graph.nodes" :key="node.uuid" class="graph-receipt" compact
-                    :selected="node.uuid === selected" :order="node" :style="nodeStyle(node.uuid)" @click="openReceipt(node)" />
+              <p v-if="graph.edges.length" class="graph-hint">{{ $t('Drag the canvas background to move the graph.') }}</p>
+              <div v-if="graph.edges.length" ref="graphScroll" class="graph-scroll" :class="{ dragging: graphDragging }"
+                tabindex="0" :aria-label="$t('Merge relationships')" @pointerdown="graphPan.start" @pointermove="graphPan.move"
+                @pointerup="graphPan.end" @pointercancel="graphPan.end" @lostpointercapture="graphPan.end">
+                <div class="graph-frame" :style="graphFrameStyle">
+                  <div class="graph-canvas" :style="graphCanvasStyle">
+                    <svg class="edges" :width="layout.canvasWidth" :height="layout.canvasHeight" aria-hidden="true">
+                      <defs><marker id="counter-merge-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" /></marker></defs>
+                      <path v-for="(path, index) in layout.paths" :key="index" :d="path" marker-end="url(#counter-merge-arrow)" />
+                    </svg>
+                    <order-receipt v-for="node in linkedReceipts" :key="node.uuid" class="graph-receipt" compact
+                      :selected="node.uuid === selected" :expanded="expandedItems.has(node.uuid)" :order="node"
+                      :style="nodeStyle(node.uuid)" @click="openReceipt(node)">
+                      <div v-if="node.itemCount > 1" v-show="expandedItems.has(node.uuid)" :id="`graph-items-${node.uuid}`" class="graph-item-list">
+                        <order-items-detail v-if="expandedItems.has(node.uuid)" compact :order-uuid="node.uuid" :currency="node.currency" />
+                      </div>
+                      <button v-if="node.itemCount > 1" type="button" class="graph-items-toggle"
+                        :aria-expanded="expandedItems.has(node.uuid)" :aria-controls="`graph-items-${node.uuid}`"
+                        @click="toggleGraphItems(node.uuid)">
+                        {{ expandedItems.has(node.uuid) ? $t('Hide order items') : $t('Show all order items') }} · {{ node.itemCount }}
+                      </button>
+                    </order-receipt>
+                  </div>
+                </div>
+              </div>
+              <div v-if="layout.standalone.length" class="standalone-receipts">
+                <h3>{{ $t('Orders outside merges') }}</h3>
+                <div class="receipt-grid">
+                  <order-receipt v-for="node in layout.standalone" :key="node.uuid" :order="node"
+                    :selected="node.uuid === selected" @click="openReceipt(node)" />
                 </div>
               </div>
               <details v-if="graph.edges.length">
@@ -104,7 +126,7 @@
                 <button v-for="row in group.orders" :key="row.uuid" type="button" class="history-row" :class="{ cancelled: row.status === 'cancelled' }"
                   :aria-pressed="selected === row.uuid" @click="selectOrder(row.uuid)">
                   <time :datetime="row.createdAt">{{ date(row.createdAt) }}</time>
-                  <span>{{ $t(statusLabel(row.status)) }}</span>
+                  <order-status-badge :status="row.status" />
                   <strong>{{ money(row) }}</strong>
                 </button>
               </div>
@@ -120,6 +142,9 @@
       <detail-admin v-if="dialogOrder && dialogOpen" :id="dialogOrder" :key="dialogOrder" :entity-conf="orderConfig.entity || 'Order'"
         :fields="detailFields" :title="$t('Order details')" :editable="false">
         <template #actions><router-link :to="{ name: 'OrderDetail', params: { id: dialogOrder } }">{{ $t('Open full order page') }}</router-link></template>
+        <template #items="{ record }">
+          <order-items-detail v-if="record.currency" :order-uuid="dialogOrder" :currency="record.currency" />
+        </template>
       </detail-admin>
     </record-dialog>
   </section>
@@ -136,7 +161,9 @@ import DetailAdmin from '@/easyadmin/ui/vue/DetailAdmin.vue'
 import RecordDialog from '@/easyadmin/ui/vue/RecordDialog.vue'
 import OrderFilters from './OrderFilters.vue'
 import OrderReceipt from './OrderReceipt.vue'
-import { counterListQuery, counterRouteUuid, createLatestRequest, endpoint, formatAmount, groupHistory, mergeLayout, orderParams, statusLabel } from './counter-orders.mjs'
+import OrderItemsDetail from './OrderItemsDetail.vue'
+import OrderStatusBadge from './OrderStatusBadge.vue'
+import { counterListQuery, counterRouteUuid, createGraphPan, createLatestRequest, endpoint, formatAmount, graphFitScale, groupHistory, mergeLayout, orderParams } from './counter-orders.mjs'
 
 const route = useRoute()
 const router = useRouter()
@@ -172,7 +199,19 @@ const historyPage = ref(1)
 const historyMore = ref(false)
 const selected = ref('')
 const graph = ref(null)
+const expandedItems = ref(new Set())
 const graphScroll = ref(null)
+const graphViewportWidth = ref(0)
+const graphDragging = ref(false)
+const graphPan = createGraphPan(value => { graphDragging.value = value })
+watch(graphScroll, (pane, _, onCleanup) => {
+  graphPan.reset()
+  graphViewportWidth.value = pane?.clientWidth || 0
+  if (!pane || typeof ResizeObserver === 'undefined') return
+  const observer = new ResizeObserver(() => { graphViewportWidth.value = pane.clientWidth })
+  observer.observe(pane)
+  onCleanup(() => observer.disconnect())
+}, { flush: 'post' })
 const graphLoading = ref(false)
 const graphError = ref('')
 const dialogOpen = ref(false)
@@ -184,7 +223,18 @@ const receipts = computed(() => {
   if (current && !rows.includes(current)) rows[2] = current
   return rows.map(row => summaries.value.get(row.uuid) || row)
 })
-const layout = computed(() => mergeLayout(graph.value?.nodes || [], graph.value?.edges || []))
+const layout = computed(() => mergeLayout(graph.value?.nodes || [], graph.value?.edges || [], expandedItems.value))
+const graphScale = computed(() => graphFitScale(graphViewportWidth.value, layout.value.canvasWidth))
+const graphFrameStyle = computed(() => ({
+  width: `${Math.floor(layout.value.canvasWidth * graphScale.value)}px`,
+  height: `${Math.ceil(layout.value.canvasHeight * graphScale.value)}px`
+}))
+const graphCanvasStyle = computed(() => ({
+  width: `${layout.value.canvasWidth}px`,
+  height: `${layout.value.canvasHeight}px`,
+  transform: `scale(${graphScale.value})`
+}))
+const linkedReceipts = computed(() => (graph.value?.nodes || []).filter(node => layout.value.positions.has(node.uuid)))
 const orderIds = computed(() => new Map((graph.value?.nodes || []).map(node => [node.uuid, node.id])))
 const channels = Object.fromEntries(['stores', 'counters', 'active', 'history', 'graph'].map(key => [key, createLatestRequest()]))
 
@@ -237,6 +287,7 @@ function resetActive() {
   openFolders.value.clear()
   selected.value = ''
   graph.value = null
+  expandedItems.value.clear()
   dialogOpen.value = false
 }
 watch(() => route.name === routeName ? route.query.counter : undefined, value => {
@@ -294,8 +345,9 @@ function selectOrder(uuid) {
       const pane = graphScroll.value
       const node = layout.value.positions.get(uuid)
       if (selected.value !== uuid || !pane || !node) return
-      pane.scrollLeft = Math.max(0, node.x + layout.value.width + 20 - pane.clientWidth)
-      pane.scrollTop = Math.max(0, node.y + 110 - pane.clientHeight)
+      const scale = graphFitScale(pane.clientWidth, layout.value.canvasWidth)
+      pane.scrollLeft = Math.max(0, (node.x + layout.value.width + 20) * scale - pane.clientWidth)
+      pane.scrollTop = Math.max(0, (node.y + node.height + 14) * scale - pane.clientHeight)
     })
   })
 }
@@ -303,9 +355,13 @@ function openReceipt(row) {
   dialogOrder.value = row.uuid
   dialogOpen.value = true
 }
+function toggleGraphItems(uuid) {
+  if (expandedItems.value.has(uuid)) expandedItems.value.delete(uuid)
+  else expandedItems.value.add(uuid)
+}
 function nodeStyle(uuid) {
-  const { x, y } = layout.value.positions.get(uuid)
-  return { left: `${x}px`, top: `${y}px`, width: `${layout.value.width}px` }
+  const { x, y, height } = layout.value.positions.get(uuid)
+  return { left: `${x}px`, top: `${y}px`, width: `${layout.value.width}px`, height: `${height}px` }
 }
 const date = value => new Date(value).toLocaleString(getLocale())
 const money = row => formatAmount(row.totalAmount, row.currency, getLocale())
@@ -332,9 +388,9 @@ p { color: var(--text-secondary); }
 .counter-card small { color: var(--text-secondary); }
 .pager { justify-content: center; margin-top: 14px; }
 .detail-heading { margin: 10px 0 16px; }
-.workspace { display: grid; gap: 14px; align-items: start; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .with-history { grid-template-columns: minmax(0, 1fr) minmax(250px, 340px); }
-.main { display: grid; gap: 14px; min-width: 0; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
 .history { position: sticky; top: 8px; max-height: min(78vh, 850px); display: flex; flex-direction: column; min-height: 160px; }
 .history-heading h2 { margin: 0; }
 .history details { padding: 8px 0; max-height: 34vh; overflow: auto; }
@@ -348,12 +404,21 @@ summary { cursor: pointer; color: var(--text-secondary); margin: 6px 0; }
 .history-row { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; width: 100%; padding: 10px 7px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); color: inherit; cursor: pointer; text-align: left; font-size: 12px; }
 .history-row.cancelled { color: var(--text-secondary); background: var(--el-fill-color-dark); }
 .history-row[aria-pressed='true'] { box-shadow: inset 3px 0 var(--el-color-primary); outline: 1px solid var(--el-color-primary); outline-offset: -1px; }
-.graph-scroll { overflow: auto; max-height: 65vh; border-radius: 8px; border: 1px solid var(--border); background: radial-gradient(var(--border) 1px, transparent 1px) 0 0 / 16px 16px; }
-.graph-canvas { position: relative; }
+.graph-hint { margin: 0 0 8px; font-size: 12px; }
+.graph-scroll { overflow: auto; scrollbar-gutter: stable; max-width: 100%; max-height: 65vh; contain: inline-size; border-radius: 8px; border: 1px solid var(--border); background: radial-gradient(var(--border) 1px, transparent 1px) 0 0 / 16px 16px; cursor: grab; user-select: none; }
+.graph-scroll.dragging, .graph-scroll.dragging :deep(button) { cursor: grabbing; }
+.graph-frame { position: relative; overflow: clip; margin-inline: auto; }
+.graph-canvas { position: absolute; top: 0; left: 0; transform-origin: top left; }
+.standalone-receipts h3 { font-size: 13px; }
 .edges { position: absolute; pointer-events: none; color: var(--el-color-primary); }
 .edges > path { fill: none; stroke: currentColor; stroke-width: 2; }
 .edges marker path { fill: currentColor; }
-.graph-receipt { position: absolute; }
+.graph-receipt { position: absolute; grid-template-rows: 94px 26px minmax(0, 1fr); }
+.graph-receipt:not(:has(.graph-items-toggle)) { grid-template-rows: 1fr; }
+.graph-receipt:has(.graph-items-toggle[aria-expanded='true']) { grid-template-rows: 62px minmax(0, 1fr) 26px; }
+.graph-items-toggle { padding: 4px; border: 0; color: var(--el-color-primary); background: transparent; cursor: pointer; font-size: 12px; }
+.graph-items-toggle:focus-visible { outline-offset: -2px; }
+.graph-item-list { overflow: auto; margin-inline: 7px; border-top: 1px dashed var(--border); cursor: auto; user-select: text; }
 @media (max-width: 1050px) {
   .with-history { grid-template-columns: minmax(0, 1fr); }
   .history { position: fixed; top: 64px; bottom: 10px; right: 10px; z-index: 9; width: min(340px, calc(100vw - 20px)); max-height: none; box-shadow: 0 10px 32px #0003; }
