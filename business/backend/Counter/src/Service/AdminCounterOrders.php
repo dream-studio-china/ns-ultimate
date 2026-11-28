@@ -18,6 +18,10 @@ use Symfony\Component\HttpFoundation\InputBag;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
+/**
+ * @phpstan-type Page array{items: list<array<string, mixed>>, hasNext: bool}
+ * @phpstan-type MergeEdge array{source: string, target: string}
+ */
 final class AdminCounterOrders
 {
     private const PAGE_SIZE = 24;
@@ -25,6 +29,8 @@ final class AdminCounterOrders
 
     public function __construct(private readonly EntityManagerInterface $em) {}
 
+    /** @param InputBag<string> $input
+     * @return Page */
     public function stores(InputBag $input): array
     {
         $query = $this->em->createQueryBuilder()->select('s.uuid', 's.name', 's.code')->from(Store::class, 's')
@@ -34,6 +40,8 @@ final class AdminCounterOrders
         return $this->page($query, $input);
     }
 
+    /** @param InputBag<string> $input
+     * @return Page */
     public function counters(InputBag $input): array
     {
         $query = $this->em->createQueryBuilder()->select('c.uuid', 'c.name', 'c.code', 'c.enabled', 'c.storeUuid', 's.name AS storeName')
@@ -59,6 +67,8 @@ final class AdminCounterOrders
         return $this->page($query, $input);
     }
 
+    /** @param InputBag<string> $input
+     * @return Page */
     public function history(string $counterUuid, InputBag $input): array
     {
         $counter = $this->counter($counterUuid);
@@ -82,6 +92,7 @@ final class AdminCounterOrders
         return $page;
     }
 
+    /** @return array{nodes: list<array<string, mixed>>, edges: list<MergeEdge>, truncated: bool} */
     public function graph(string $counterUuid, string $orderUuid): array
     {
         $orderUuid = strtolower($orderUuid);
@@ -112,6 +123,7 @@ final class AdminCounterOrders
         $frontier = array_keys($seen);
         $edges = [];
         while ($frontier !== []) {
+            /** @var list<MergeEdge> $links */
             $links = $this->em->createQueryBuilder()->select('m.sourceOrderUuid AS source', 'm.targetOrderUuid AS target')
                 ->from(OrderMerge::class, 'm')
                 ->innerJoin(OrderStoreLifecycle::class, 'sourceScope', 'WITH', 'sourceScope.tradeOrderUuid = m.sourceOrderUuid AND sourceScope.storeUuid = :store')
@@ -151,6 +163,8 @@ final class AdminCounterOrders
             isset($existing[$edge['source']], $existing[$edge['target']]))), 'truncated' => $truncated];
     }
 
+    /** @param list<string> $uuids
+     * @return list<array<string, mixed>> */
     private function receipts(array $uuids): array
     {
         $orders = $this->em->createQueryBuilder()->select('o', 'item')->from(Order::class, 'o')
@@ -186,6 +200,7 @@ final class AdminCounterOrders
             ->where('l.id IS NOT NULL OR NOT EXISTS (SELECT other.id FROM '.OrderStoreLifecycle::class.' other WHERE other.tradeOrderUuid = o.uuid)');
     }
 
+    /** @param InputBag<string> $input */
     private function filterOrders(QueryBuilder $query, InputBag $input): void
     {
         $order = $this->text($input, 'order');
@@ -236,6 +251,7 @@ final class AdminCounterOrders
         }
     }
 
+    /** @param list<string> $fields */
     private function search(QueryBuilder $query, string $value, array $fields, string $parameter): void
     {
         if ($value === '') {
@@ -252,17 +268,22 @@ final class AdminCounterOrders
             ?? throw new NotFoundHttpException('Counter not found.');
     }
 
+    /** @param InputBag<string> $input
+     * @return Page */
     private function page(QueryBuilder $query, InputBag $input): array
     {
         $page = $input->getInt('page', 1);
         if ($page < 1 || $page > 1000000) {
             throw new BadRequestHttpException('Invalid page.');
         }
+        /** @var list<array<string, mixed>> $rows All callers select named scalar fields only. */
         $rows = $query->setFirstResult(($page - 1) * self::PAGE_SIZE)->setMaxResults(self::PAGE_SIZE + 1)->getQuery()->getArrayResult();
 
         return ['items' => array_slice($rows, 0, self::PAGE_SIZE), 'hasNext' => count($rows) > self::PAGE_SIZE];
     }
 
+    /** @param array<string, mixed> $row
+     * @return array<string, mixed> */
     private function summary(array $row): array
     {
         $row['createdAt'] = $row['createdAt']->format(DATE_ATOM);
@@ -274,6 +295,7 @@ final class AdminCounterOrders
         return $row;
     }
 
+    /** @param InputBag<string> $input */
     private function text(InputBag $input, string $key): string
     {
         $value = trim((string) $input->get($key, ''));
@@ -284,6 +306,7 @@ final class AdminCounterOrders
         return $value;
     }
 
+    /** @param InputBag<string> $input */
     private function uuid(InputBag $input, string $key): string
     {
         $value = $this->text($input, $key);
