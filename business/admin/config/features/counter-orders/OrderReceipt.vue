@@ -33,7 +33,7 @@ const remaining = computed(() => Math.max(0, (props.order.itemCount || 0) - prev
 .receipt-open:focus-visible { outline-offset: -3px; }
 .receipt::after { content: ''; position: absolute; inset: auto 0 0; height: 5px; background: linear-gradient(135deg, transparent 50%, var(--border) 50%) 0 0 / 10px 5px, linear-gradient(225deg, transparent 50%, var(--border) 50%) 0 0 / 10px 5px; pointer-events: none; }
 .receipt.selected { border-color: var(--order-line, var(--el-color-primary)); box-shadow: inset 0 0 0 1px var(--order-line, var(--el-color-primary)); }
-.receipt.cancelled { color: var(--text-secondary); background: var(--el-fill-color-dark); }
+.receipt.cancelled { color: var(--text-secondary); background: var(--surface-muted); }
 .receipt-head, .receipt-foot { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .receipt-middle { display: flex; min-width: 0; gap: 5px; color: var(--text-secondary); border-top: 1px dashed var(--border); padding-top: 6px; }
 .receipt-items { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

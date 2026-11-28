@@ -1,0 +1,28 @@
+.counter-orders {
+  --counter-accent-tint: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+/* Select dropdowns are teleported, so give them the same dark palette. */
+html[data-theme='dark'] :is(.counter-orders, .counter-orders-popper) {
+  color-scheme: dark;
+  --el-bg-color: var(--surface);
+  --el-bg-color-overlay: var(--surface);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-primary);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-text-color-placeholder: var(--text-secondary);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-fill-color: var(--control-hover);
+  --el-fill-color-light: var(--surface-muted);
+  --el-fill-color-blank: var(--surface);
+  --el-disabled-bg-color: var(--surface-muted);
+  --el-disabled-text-color: var(--text-secondary);
+  --el-disabled-border-color: var(--border);
+  --el-color-primary-light-8: color-mix(in srgb, var(--el-color-primary) 28%, var(--surface));
+  --el-color-primary-light-9: color-mix(in srgb, var(--el-color-primary) 14%, var(--surface));
+}
+
+html[data-theme='dark'] .counter-orders-popper {
+  --el-color-primary: var(--accent);
+}

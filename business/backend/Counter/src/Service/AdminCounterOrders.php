@@ -64,7 +64,40 @@ final class AdminCounterOrders
             }
         }
 
-        return $this->page($query, $input);
+        $page = $this->page($query, $input);
+        if ($page['items'] !== []) {
+            $totals = $this->currentUnpaidTotals(array_column($page['items'], 'uuid'));
+            foreach ($page['items'] as &$item) {
+                $item['unpaidTotals'] = $totals[$item['uuid']] ?? [];
+            }
+        }
+
+        return $page;
+    }
+
+    /** @param list<string> $counters
+     * @return array<string, list<array{currency: string, amount: int}>> */
+    private function currentUnpaidTotals(array $counters): array
+    {
+        $rows = $this->em->createQueryBuilder()
+            ->select('counter.uuid AS counterUuid', 'o.currency', 'SUM(o.totalAmount) AS amount')
+            ->from(OrderCounter::class, 'b')
+            ->innerJoin('b.counter', 'counter', 'WITH', 'b.storeUuid = counter.storeUuid')
+            ->innerJoin('b.counterSession', 'session', 'WITH', 'session.counter = counter.id AND session.endedAt IS NULL')
+            ->innerJoin(Order::class, 'o', 'WITH', 'o.uuid = b.tradeOrderUuid')
+            ->innerJoin(OrderStoreLifecycle::class, 'l', 'WITH', 'l.tradeOrderUuid = o.uuid AND l.storeUuid = b.storeUuid')
+            ->where('counter.uuid IN (:counters) AND o.status IN (:unpaid)')
+            ->andWhere('o.paymentStatus IS NULL OR o.paymentStatus NOT IN (:settled)')
+            ->setParameter('counters', $counters)
+            ->setParameter('unpaid', [Order::STATUS_DRAFT, Order::STATUS_PENDING, Order::STATUS_CONFIRMED])
+            ->setParameter('settled', ['paid', 'partial_refunded', 'refunded'])
+            ->groupBy('counter.uuid', 'o.currency')->orderBy('o.currency', 'ASC')->getQuery()->getArrayResult();
+
+        $totals = [];
+        foreach ($rows as $row) {
+            $totals[$row['counterUuid']][] = ['currency' => $row['currency'], 'amount' => (int) $row['amount']];
+        }
+        return $totals;
     }
 
     /** @param InputBag<string> $input
@@ -79,6 +112,9 @@ final class AdminCounterOrders
             ->setParameter('counter', $counter->getId())->setParameter('boundStore', $counter->getStoreUuid())
             ->orderBy('o.createdAt', 'DESC')->addOrderBy('o.id', 'DESC');
         $this->filterOrders($query, $input);
+        if ($input->getBoolean('terminalOnly')) {
+            $query->andWhere('m.id IS NULL');
+        }
         $page = $this->page($query, $input);
         $page['items'] = array_map($this->summary(...), $page['items']);
         if ($input->getInt('page', 1) === 1 && $page['items'] !== []) {
@@ -93,7 +129,7 @@ final class AdminCounterOrders
     }
 
     /** @return array{nodes: list<array<string, mixed>>, edges: list<MergeEdge>, truncated: bool} */
-    public function graph(string $counterUuid, string $orderUuid): array
+    public function graph(string $counterUuid, string $orderUuid, bool $chainOnly = false): array
     {
         $orderUuid = strtolower($orderUuid);
         $counter = $this->counter($counterUuid);
@@ -108,7 +144,7 @@ final class AdminCounterOrders
 
         $seen = [$orderUuid => true];
         $truncated = false;
-        if ($root['sessionId'] !== null) {
+        if (!$chainOnly && $root['sessionId'] !== null) {
             $sessionOrders = $this->boundOrders()->select('o.uuid')
                 ->andWhere('b.counter = :counter AND b.storeUuid = :store AND b.counterSession = :session AND o.uuid <> :order')
                 ->setParameter('counter', $counter->getId())->setParameter('store', $counter->getStoreUuid())

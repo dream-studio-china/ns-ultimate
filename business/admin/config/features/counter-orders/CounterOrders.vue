@@ -1,67 +1,71 @@
 <template>
   <section class="counter-orders">
-    <template v-if="route.query.counter !== undefined && !active">
-      <el-button text @click="back">{{ $t('Back') }} · {{ $t('Counter orders') }}</el-button>
-      <el-skeleton v-if="activeLoading" :rows="4" animated />
-      <el-empty v-else :description="activeError || $t('No matching counters')" />
-    </template>
-    <template v-else-if="!active">
-      <h1>{{ $t('Counter orders') }}</h1>
-      <p>{{ $t('Find a counter and trace its order history.') }}</p>
+    <div v-show="route.query.counter === undefined">
+      <header class="page-heading overview-heading">
+        <h1>{{ $t('Counter orders') }}</h1>
+        <p>{{ $t('Find a counter and trace its order history.') }}</p>
+      </header>
       <div class="panel controls">
         <div class="store-bar">
           <nav :aria-label="$t('Store')">
             <el-button v-for="store in tabs" :key="store.uuid" :type="storeUuid === store.uuid ? 'primary' : 'default'"
-              :aria-pressed="storeUuid === store.uuid" @click="pickStore(store)">{{ store.name }}</el-button>
+              size="small" :aria-pressed="storeUuid === store.uuid" @click="pickStore(store)">{{ store.name }}</el-button>
           </nav>
-          <el-select v-model="storeUuid" filterable remote clearable :remote-method="searchStores" :loading="storeLoading"
-            :placeholder="$t('Store name / UUID')" :aria-label="$t('Store name / UUID')" @change="chooseStore" @visible-change="refreshStoreOptions">
-            <el-option v-for="store in storeOptions" :key="store.uuid" :label="store.name" :value="store.uuid" />
-          </el-select>
+          <div class="quick-search">
+            <el-select v-model="storeUuid" filterable remote clearable popper-class="counter-orders-popper" :remote-method="searchStores" :loading="storeLoading"
+              :placeholder="$t('Store name / UUID')" :aria-label="$t('Store name / UUID')" @change="chooseStore" @visible-change="refreshStoreOptions">
+              <el-option v-for="store in storeOptions" :key="store.uuid" :label="store.name" :value="store.uuid" />
+            </el-select>
+            <el-input v-model.trim="counterSearch" clearable :placeholder="$t('Counter name / code / UUID')"
+              :aria-label="$t('Counter name / code / UUID')" @change="updateOverview(1)" />
+          </div>
         </div>
         <p v-if="storeError" role="alert">{{ storeError }}</p>
-        <el-input v-model.trim="counterSearch" clearable :placeholder="$t('Counter name / code / UUID')"
-          :aria-label="$t('Counter name / code / UUID')" @change="loadCounters(1)" />
-        <order-filters :filters="filters" @apply="applyFilters" />
+        <details class="overview-filters" :open="overviewFiltersOpen" @toggle="overviewFiltersOpen = $event.target.open">
+          <summary>{{ $t('Order filters') }}<span v-if="filterCount" class="filter-count">{{ filterCount }}</span></summary>
+          <order-filters :filters="filters" @apply="applyFilters" />
+        </details>
       </div>
       <p v-if="counterError" role="alert">{{ counterError }}</p>
       <div v-loading="counterLoading" class="counter-grid">
-        <button v-for="counter in counters" :key="counter.uuid" type="button" class="panel counter-card" @click="openCounter(counter)">
-          <strong>{{ counter.code }} <span aria-hidden="true">›</span></strong>
-          <span>{{ counter.name }}</span>
-          <small>{{ counter.storeName || counter.storeUuid }}<template v-if="!counter.enabled"> · {{ $t('Disabled') }}</template></small>
+        <button v-for="counter in counters" :key="counter.uuid" type="button" class="panel counter-card"
+          :class="{ 'has-unpaid': counter.unpaidTotals?.length }" @click="openCounter(counter)">
+          <span class="counter-card-heading">
+            <strong>{{ counter.code }}</strong>
+            <span class="counter-card-arrow" aria-hidden="true">›</span>
+          </span>
+          <span class="counter-name">{{ counter.name }}</span>
+          <small class="counter-store">{{ counter.storeName || counter.storeUuid }}<template v-if="!counter.enabled"> · {{ $t('Disabled') }}</template></small>
+          <span v-if="counter.unpaidTotals?.length" class="counter-unpaid">
+            <small>{{ $t('Unpaid amount') }}</small>
+            <span class="counter-amounts">
+              <strong v-for="total in counter.unpaidTotals" :key="total.currency">{{ formatAmount(total.amount, total.currency, getLocale()) }}</strong>
+            </span>
+          </span>
         </button>
       </div>
       <el-empty v-if="!counterLoading && !counterError && !counters.length" :description="$t('No matching counters')" />
       <div v-if="counterPage > 1 || countersMore" class="pager">
-        <el-button :disabled="counterLoading || counterPage === 1" @click="loadCounters(counterPage - 1)">{{ $t('Previous') }}</el-button>
+         <el-button :disabled="counterLoading || counterPage === 1" @click="updateOverview(counterPage - 1)">{{ $t('Previous') }}</el-button>
         <span>{{ counterPage }}</span>
-        <el-button :disabled="counterLoading || !countersMore" @click="loadCounters(counterPage + 1)">{{ $t('Next') }}</el-button>
+         <el-button :disabled="counterLoading || !countersMore" @click="updateOverview(counterPage + 1)">{{ $t('Next') }}</el-button>
       </div>
-    </template>
+    </div>
 
-    <template v-else>
-      <el-button text @click="back">{{ $t('Back') }} · {{ $t('Counter orders') }}</el-button>
-      <header class="detail-heading">
+    <template v-if="route.query.counter !== undefined && !active">
+      <el-skeleton v-if="activeLoading" :rows="4" animated />
+      <el-empty v-else :description="activeError || $t('No matching counters')" />
+    </template>
+    <template v-else-if="active">
+      <header class="page-heading detail-heading">
         <div><h1>{{ active.code }} · {{ active.storeName || active.storeUuid }}</h1><p>{{ active.name }}</p></div>
         <el-button type="primary" plain :aria-expanded="historyOpen" aria-controls="counter-order-history"
           @click="historyOpen = !historyOpen">{{ $t('Order history') }}</el-button>
       </header>
       <div class="workspace" :class="{ 'with-history': historyOpen }">
         <main class="main">
-          <section class="panel receipt-section">
-            <h2>{{ $t('Order receipts') }} <small>{{ $t('Newest first') }}</small></h2>
-            <p v-if="historyError && !historyOpen" role="alert">{{ historyError }}
-              <el-button text @click="loadHistory(1)">{{ $t('Retry') }}</el-button>
-            </p>
-            <div v-loading="historyLoading && !history.length" class="receipt-grid">
-              <order-receipt v-for="row in receipts" :key="row.uuid" :order="row" :selected="row.uuid === selected"
-                @click="openReceipt(row)" />
-            </div>
-            <el-empty v-if="!historyLoading && !historyError && !history.length" :description="$t('No matching orders')" />
-          </section>
-          <section v-if="selected" class="panel graph-section" v-loading="graphLoading">
-            <h2>{{ $t('Merge relationships') }} <small>{{ $t('Source orders above, merge results below') }}</small></h2>
+           <section v-if="selected" class="panel graph-section" v-loading="graphLoading">
+             <h2>{{ $t('Merge relationships') }} <small v-if="graph?.edges.length">{{ $t('Source orders above, merge results below') }}</small></h2>
             <p v-if="graphError" role="alert">{{ graphError }} <el-button text @click="selectOrder(selected)">{{ $t('Retry') }}</el-button></p>
             <template v-else-if="graph">
               <p v-if="graph.truncated" role="status">{{ $t('This graph is too large to show all related orders.') }}</p>
@@ -98,19 +102,23 @@
                   </div>
                 </div>
               </div>
-              <div v-if="layout.standalone.length" class="standalone-receipts">
-                <h3>{{ $t('Orders outside merges') }}</h3>
-                <div class="receipt-grid">
-                  <order-receipt v-for="node in layout.standalone" :key="node.uuid" :order="node"
-                    :selected="node.uuid === selected" @click="openReceipt(node)" />
-                </div>
-              </div>
               <details v-if="graph.edges.length">
                 <summary>{{ $t('Merge connections as text') }}</summary>
                 <ul><li v-for="edge in graph.edges" :key="edge.source">#{{ orderIds.get(edge.source) }} → #{{ orderIds.get(edge.target) }}</li></ul>
               </details>
             </template>
-          </section>
+           </section>
+           <section class="panel receipt-section">
+             <h2>{{ $t('Order receipts') }} <small>{{ $t('Newest first') }}</small></h2>
+             <p v-if="historyError && !historyOpen" role="alert">{{ historyError }}
+               <el-button text @click="loadHistory(historyRequestedPage)">{{ $t('Retry') }}</el-button>
+             </p>
+             <div v-loading="historyLoading && !history.length" class="receipt-grid">
+               <order-receipt v-for="row in receipts" :key="row.uuid" :order="row" :selected="row.uuid === selected"
+                 @click="openReceipt(row)" />
+             </div>
+             <el-empty v-if="!historyLoading && !historyError && !history.length" :description="$t('No matching orders')" />
+           </section>
         </main>
         <aside v-if="historyOpen" id="counter-order-history" class="panel history" :aria-label="$t('Order history')">
           <div class="history-heading"><h2>{{ $t('Order history') }}</h2><el-button text @click="historyOpen = false">{{ $t('Close') }}</el-button></div>
@@ -118,10 +126,14 @@
             <summary>{{ $t('Order filters') }}</summary>
             <order-filters :filters="historyFilters" @apply="applyHistoryFilters" />
           </details>
-          <div class="history-scroll" v-loading="historyLoading">
-            <p v-if="historyError" role="alert">{{ historyError }} <el-button text @click="loadHistory(history.length ? historyPage + 1 : 1)">{{ $t('Retry') }}</el-button></p>
+          <label class="history-grouping">
+            <input v-model="groupBySession" type="checkbox">
+            {{ $t('Group by counter session') }}
+          </label>
+          <div ref="historyScroll" class="history-scroll" v-loading="historyLoading">
+            <p v-if="historyError" role="alert">{{ historyError }} <el-button text @click="loadHistory(historyRequestedPage)">{{ $t('Retry') }}</el-button></p>
             <section v-for="group in historyGroups" :key="group.key" class="history-group">
-              <h3>
+              <h3 v-if="groupBySession">
                 <button type="button" class="history-folder" :aria-expanded="openFolders.has(group.key)"
                   :aria-controls="`counter-history-folder-${group.key || 'unassigned'}`" @click="toggleFolder(group.key)">
                   <el-icon aria-hidden="true"><ArrowDown v-if="openFolders.has(group.key)" /><ArrowRight v-else /></el-icon>
@@ -129,7 +141,9 @@
                   <span>{{ group.startedAt ? `${$t('Counter session')} · ${date(group.startedAt)}` : $t('Orders without a session') }}</span>
                 </button>
               </h3>
-              <div v-show="openFolders.has(group.key)" :id="`counter-history-folder-${group.key || 'unassigned'}`" class="history-folder-items">
+              <div v-show="!groupBySession || openFolders.has(group.key)"
+                :id="groupBySession ? `counter-history-folder-${group.key || 'unassigned'}` : undefined"
+                :class="{ 'history-folder-items': groupBySession }">
                 <button v-for="row in group.orders" :key="row.uuid" type="button" class="history-row" :class="{ cancelled: row.status === 'cancelled' }"
                   :aria-pressed="selected === row.uuid" @click="selectOrder(row.uuid)">
                   <time :datetime="row.createdAt">{{ date(row.createdAt) }}</time>
@@ -139,8 +153,12 @@
               </div>
             </section>
             <el-empty v-if="!history.length && !historyLoading && !historyError" :description="$t('No matching orders')" />
-            <el-button v-if="historyMore && !historyError" text :disabled="historyLoading" @click="loadHistory(historyPage + 1)">{{ $t('Load more') }}</el-button>
           </div>
+          <nav v-if="historyPage > 1 || historyMore" class="pager history-pager" :aria-label="$t('Order history')">
+            <el-button :disabled="historyLoading || historyPage === 1" @click="loadHistory(historyPage - 1)">{{ $t('Previous') }}</el-button>
+            <span aria-live="polite">{{ historyPage }}</span>
+            <el-button :disabled="historyLoading || !historyMore" @click="loadHistory(historyPage + 1)">{{ $t('Next') }}</el-button>
+          </nav>
         </aside>
       </div>
     </template>
@@ -170,39 +188,52 @@ import OrderFilters from './OrderFilters.vue'
 import OrderReceipt from './OrderReceipt.vue'
 import OrderItemsDetail from './OrderItemsDetail.vue'
 import OrderStatusBadge from './OrderStatusBadge.vue'
-import { counterListQuery, counterRouteUuid, createGraphPan, createLatestRequest, endpoint, formatAmount, graphFitScale, groupHistory, mergeLayout, orderParams } from './counter-orders.mjs'
+import './counter-orders-theme.css'
+import { counterRouteUuid, createGraphPan, createLatestRequest, endpoint, formatAmount, graphFitScale, groupHistory, mergeLayout, orderParams, readCounterOverview, writeCounterOverview } from './counter-orders.mjs'
 
 const route = useRoute()
 const router = useRouter()
 const routeName = 'CounterOrders'
+const overview = readCounterOverview(route.query)
 const orderConfig = admin.entities.Order
 // This explorer is read-only; the existing full page retains refund actions.
 const detailFields = orderConfig.detail.detail_display.filter(field => field?.property !== 'refundDetails')
-const storeUuid = ref('')
+const storeUuid = ref(overview.store)
 const stores = ref([])
 const recentStores = ref([])
 const storeLoading = ref(false)
 const storeError = ref('')
 const storeOptions = computed(() => [...new Map([...recentStores.value, ...stores.value].map(row => [row.uuid, row])).values()])
 const tabs = computed(() => [{ uuid: '', name: t('All stores') }, ...recentStores.value])
-const filters = ref({})
-const counterSearch = ref('')
+const filters = ref(overview.filters)
+const overviewFiltersOpen = ref(Object.keys(overview.filters).length > 0)
+const filterCount = computed(() => Object.keys(orderParams(filters.value)).length)
+const counterSearch = ref(overview.search)
 const counters = ref([])
-const counterPage = ref(1)
+const counterPage = ref(overview.page)
 const countersMore = ref(false)
 const counterLoading = ref(false)
 const counterError = ref('')
 const active = ref(null)
 const activeLoading = ref(false)
 const activeError = ref('')
-const historyOpen = ref(false)
+const historyOpen = ref(true)
 const history = ref([])
-const historyGroups = computed(() => groupHistory(history.value))
+const groupBySession = ref(false)
+const historyGroups = computed(() => groupHistory(history.value, groupBySession.value))
 const openFolders = ref(new Set())
+watch(groupBySession, grouped => {
+  if (grouped) {
+    const row = history.value.find(order => order.uuid === selected.value)
+    if (row) openFolders.value.add(row.sessionUuid || '')
+  }
+})
 const historyFilters = ref({})
 const historyLoading = ref(false)
 const historyError = ref('')
+const historyScroll = ref(null)
 const historyPage = ref(1)
+const historyRequestedPage = ref(1)
 const historyMore = ref(false)
 const selected = ref('')
 const graph = ref(null)
@@ -256,7 +287,7 @@ function load(channel, path, params, loading, error, apply) {
 function searchStores(q = '') {
   return load('stores', `${endpoint}/stores`, { q }, storeLoading, storeError, data => {
     stores.value = data.items
-    if (!q && !recentStores.value.length) recentStores.value = data.items.slice(0, 2)
+    if ((!q || q === storeUuid.value) && !recentStores.value.length) recentStores.value = data.items.slice(0, 2)
   })
 }
 function refreshStoreOptions(open) { if (open) searchStores() }
@@ -264,7 +295,7 @@ function chooseStore(uuid) { pickStore(storeOptions.value.find(row => row.uuid =
 function pickStore(store) {
   storeUuid.value = store?.uuid || ''
   if (store?.uuid && !recentStores.value.some(row => row.uuid === store.uuid)) recentStores.value = [...recentStores.value.slice(-2), store]
-  loadCounters(1)
+  updateOverview(1)
 }
 function loadCounters(page) {
   return load('counters', endpoint, { ...orderParams(filters.value), store: storeUuid.value, counter: counterSearch.value, page },
@@ -275,36 +306,66 @@ function loadCounters(page) {
     })
 }
 function applyFilters(next) {
-  filters.value = next
-  loadCounters(1)
+  updateOverview(1, next)
+}
+function updateOverview(page, nextFilters = filters.value) {
+  const query = writeCounterOverview(route.query, {
+    store: storeUuid.value,
+    search: counterSearch.value,
+    filters: nextFilters,
+    page
+  })
+  const target = { name: routeName, query, hash: route.hash }
+  if (router.resolve(target).fullPath === route.fullPath) return loadCounters(page)
+  return router.replace(target)
 }
 function openCounter(counter) {
-  router.push({ name: routeName, query: { ...route.query, counter: counter.uuid } })
-}
-function back() {
-  const target = { name: routeName, query: counterListQuery(route.query) }
-  if (router.options.history.state.back === router.resolve(target).fullPath) router.back()
-  else router.replace(target)
+  router.push({ name: routeName, query: { ...route.query, counter: counter.uuid }, hash: route.hash })
 }
 function resetActive() {
   channels.history.cancel()
-  channels.graph.cancel()
   active.value = null
-  historyOpen.value = false
-  history.value = []
-  openFolders.value.clear()
-  selected.value = ''
-  graph.value = null
-  expandedItems.value.clear()
+  historyOpen.value = true
+  resetHistory()
   dialogOpen.value = false
 }
-watch(() => route.name === routeName ? route.query.counter : undefined, value => {
+function resetHistory() {
+  history.value = []
+  historyPage.value = 1
+  historyMore.value = false
+  historyLoading.value = false
+  historyError.value = ''
+  openFolders.value.clear()
+  resetHistorySelection()
+}
+function resetHistorySelection() {
+  channels.graph.cancel()
+  selected.value = ''
+  graphLoading.value = false
+  graphError.value = ''
+  graph.value = null
+  expandedItems.value.clear()
+}
+watch(() => route.fullPath, () => {
   channels.active.cancel()
   resetActive()
   activeLoading.value = false
   activeError.value = ''
+  if (route.name !== routeName) return
+  const next = readCounterOverview(route.query)
+  storeUuid.value = next.store
+  counterSearch.value = next.search
+  if (JSON.stringify(filters.value) !== JSON.stringify(next.filters)) {
+    filters.value = next.filters
+    if (Object.keys(next.filters).length) overviewFiltersOpen.value = true
+  }
+  counterPage.value = next.page
+  const value = route.query.counter
   const uuid = counterRouteUuid(value)
-  if (!uuid) return
+  if (!uuid) {
+    if (value === undefined) loadCounters(next.page)
+    return
+  }
   const show = counter => {
     active.value = counter
     historyFilters.value = { ...filters.value }
@@ -319,6 +380,7 @@ watch(() => route.name === routeName ? route.query.counter : undefined, value =>
 }, { immediate: true })
 function applyHistoryFilters(next) {
   historyFilters.value = next
+  resetHistory()
   loadHistory(1)
 }
 function toggleFolder(key) {
@@ -326,20 +388,15 @@ function toggleFolder(key) {
   else openFolders.value.add(key)
 }
 function loadHistory(page) {
-  if (page === 1) {
-    channels.graph.cancel()
-    history.value = []
-    selected.value = ''
-    openFolders.value.clear()
-    graph.value = null
-    historyMore.value = false
-  }
-  return load('history', `${endpoint}/${active.value.uuid}/orders`, { ...orderParams(historyFilters.value), page },
+  historyRequestedPage.value = page
+  return load('history', `${endpoint}/${active.value.uuid}/orders`, { ...orderParams(historyFilters.value), terminalOnly: true, page },
     historyLoading, historyError, data => {
-      history.value = [...new Map([...history.value, ...data.items].map(row => [row.uuid, row])).values()]
+      history.value = data.items
       historyPage.value = page
       historyMore.value = data.hasNext
-      if (page === 1 && history.value.length) selectOrder(history.value[0].uuid)
+      if (historyScroll.value) historyScroll.value.scrollTop = 0
+      resetHistorySelection()
+      if (history.value.length) selectOrder(history.value[0].uuid)
     })
 }
 function selectOrder(uuid) {
@@ -347,7 +404,7 @@ function selectOrder(uuid) {
   const row = history.value.find(order => order.uuid === uuid)
   if (row) openFolders.value.add(row.sessionUuid || '')
   graph.value = null
-  return load('graph', `${endpoint}/${active.value.uuid}/orders/${uuid}/graph`, {}, graphLoading, graphError, data => {
+  return load('graph', `${endpoint}/${active.value.uuid}/orders/${uuid}/graph`, { chainOnly: true }, graphLoading, graphError, data => {
     graph.value = data
     nextTick(() => {
       const pane = graphScroll.value
@@ -373,62 +430,79 @@ function nodeStyle(uuid) {
 }
 const date = value => new Date(value).toLocaleString(getLocale())
 const money = row => formatAmount(row.totalAmount, row.currency, getLocale())
-onMounted(() => { searchStores(); loadCounters(1) })
+onMounted(() => {
+  searchStores(storeUuid.value)
+})
 onBeforeUnmount(() => Object.values(channels).forEach(channel => channel.cancel()))
 </script>
 
 <style scoped>
-.counter-orders { padding: clamp(12px, 2vw, 28px); color: var(--text-primary); }
-h1 { margin: 4px 0 8px; font-size: 25px; }
-h2 { margin: 0 0 12px; font-size: 17px; }
-h2 small { margin-left: 8px; color: var(--text-secondary); font-weight: 400; }
+.counter-orders { padding: clamp(10px, 1.4vw, 20px); color: var(--text-primary); container-type: inline-size; }
+.page-heading { margin-bottom: 10px; }
+.overview-heading { margin-bottom: 16px; }
+.page-heading p { margin: 3px 0 0; font-size: 13px; }
+h1 { margin: 0; font-size: clamp(18px, 2vw, 23px); overflow-wrap: anywhere; }
+h2 { margin: 0 0 8px; font-size: 15px; }
+h2 small { color: var(--text-secondary); font-weight: 400; }
 p { color: var(--text-secondary); }
-.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 15px; }
-.controls { display: grid; gap: 12px; margin: 16px 0; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+.controls { display: grid; gap: 12px; margin-bottom: 16px; padding: 14px; }
 .store-bar, .detail-heading, .history-heading, .pager { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .store-bar nav { display: flex; flex-wrap: wrap; gap: 5px; }
 .store-bar nav :deep(.el-button) { margin-left: 0; }
-.store-bar :deep(.el-select) { width: min(100%, 260px); }
-.counter-grid, .receipt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 185px), 1fr)); gap: 12px; }
-.counter-card { display: grid; gap: 7px; text-align: left; color: inherit; cursor: pointer; }
-.counter-card:hover { border-color: var(--el-color-primary); }
-.counter-card strong { display: flex; justify-content: space-between; font-size: 18px; }
-.counter-card small { color: var(--text-secondary); }
-.pager { justify-content: center; margin-top: 14px; }
-.detail-heading { margin: 10px 0 16px; }
-.workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
-.with-history { grid-template-columns: minmax(0, 1fr) minmax(250px, 340px); }
-.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
-.history { position: sticky; top: 8px; max-height: min(78vh, 850px); display: flex; flex-direction: column; min-height: 160px; }
+.quick-search { display: grid; flex: 1 1 340px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr)); gap: 8px; max-width: 520px; }
+.overview-filters > summary { margin: 0; }
+.overview-filters[open] > summary { margin-bottom: 8px; }
+.filter-count { margin-inline-start: 6px; padding: 1px 5px; border-radius: 5px; color: var(--accent); background: var(--counter-accent-tint); }
+.counter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 205px), 1fr)); grid-auto-rows: 1fr; gap: 14px; }
+.receipt-grid { display: grid; grid-template-columns: repeat(auto-fill, min(100%, 220px)); grid-auto-rows: 130px; gap: 10px; }
+.receipt-grid :deep(.receipt-open) { min-height: 0; }
+.counter-card { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; min-height: 154px; padding: 14px 16px; border-radius: 12px; font: inherit; text-align: left; color: var(--text-secondary); background: var(--surface-muted); cursor: pointer; overflow-wrap: anywhere; }
+.counter-card.has-unpaid { color: var(--text-primary); background: var(--counter-accent-tint); border-color: var(--accent); }
+.counter-card:hover { border-color: currentColor; }
+.counter-card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; font-size: 18px; line-height: 1.3; }
+.counter-card-arrow { flex: none; color: var(--text-secondary); }
+.counter-name { font-size: 14px; font-weight: 600; }
+.counter-store, .counter-unpaid small { color: var(--text-secondary); font-size: 12px; }
+.counter-unpaid { display: grid; gap: 3px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); color: var(--accent); }
+.counter-amounts { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 16px; font-variant-numeric: tabular-nums; }
+.pager { justify-content: center; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
+.with-history { grid-template-columns: minmax(0, 1fr) clamp(245px, 28%, 320px); }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+.history { position: sticky; top: 8px; max-height: min(82dvh, 850px); display: flex; flex-direction: column; min-height: 160px; }
 .history-heading h2 { margin: 0; }
 .history details { padding: 8px 0; max-height: 34vh; overflow: auto; }
+.history-grouping { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
 summary { cursor: pointer; color: var(--text-secondary); margin: 6px 0; }
 .history-scroll { overflow: auto; min-height: 65px; }
+.history-pager { flex-shrink: 0; margin-top: 8px; }
 .history-group h3 { margin: 0; font-size: 12px; }
-.history-folder { display: flex; align-items: center; gap: 6px; width: 100%; padding: 9px 7px; text-align: left; border: 0; border-radius: 5px; color: var(--text-secondary); background: var(--el-fill-color-light); cursor: pointer; }
-.history-folder:hover, .history-folder[aria-expanded='true'] { color: var(--text-primary); background: var(--el-fill-color); }
+.history-folder { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 7px; text-align: left; border: 0; border-radius: 5px; color: var(--text-secondary); background: var(--surface-muted); cursor: pointer; }
+.history-folder:hover, .history-folder[aria-expanded='true'] { color: var(--text-primary); background: var(--control-hover); }
 .history-folder .el-icon { flex: none; }
 .history-folder-items { margin: 3px 0 6px 15px; padding-left: 6px; border-left: 1px solid var(--border); }
-.history-row { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; width: 100%; padding: 10px 7px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); color: inherit; cursor: pointer; text-align: left; font-size: 12px; }
-.history-row.cancelled { color: var(--text-secondary); background: var(--el-fill-color-dark); }
-.history-row[aria-pressed='true'] { box-shadow: inset 3px 0 var(--el-color-primary); outline: 1px solid var(--el-color-primary); outline-offset: -1px; }
+.history-row { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; width: 100%; padding: 7px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); color: inherit; cursor: pointer; text-align: left; font-size: 12px; }
+.history-row.cancelled { color: var(--text-secondary); background: var(--surface-muted); }
+.history-row:hover { background: var(--control-hover); }
+.history-row[aria-pressed='true'] { background: var(--counter-accent-tint); box-shadow: inset 3px 0 var(--accent); }
+.counter-card:focus-visible, .history-row:focus-visible, .history-folder:focus-visible, .graph-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .graph-hint { margin: 0 0 8px; font-size: 12px; }
-.graph-scroll { overflow: auto; scrollbar-gutter: stable; max-width: 100%; max-height: 65vh; contain: inline-size; border-radius: 8px; border: 1px solid var(--border); background: radial-gradient(var(--border) 1px, transparent 1px) 0 0 / 16px 16px; cursor: grab; user-select: none; }
+.graph-scroll { overflow: auto; scrollbar-gutter: stable; max-width: 100%; max-height: 68dvh; contain: inline-size; border-radius: 8px; border: 1px solid var(--border); background: radial-gradient(var(--border) 1px, transparent 1px) 0 0 / 16px 16px, var(--surface-muted); cursor: grab; user-select: none; }
 .graph-scroll.dragging, .graph-scroll.dragging :deep(button) { cursor: grabbing; }
 .graph-frame { position: relative; overflow: clip; margin-inline: auto; }
 .graph-canvas { position: absolute; top: 0; left: 0; transform-origin: top left; }
-.standalone-receipts h3 { font-size: 13px; }
 .edges { position: absolute; pointer-events: none; }
 .edges > path { fill: none; stroke: var(--order-line); stroke-width: 2; }
 .edges marker path { fill: var(--order-line); }
 .graph-receipt { position: absolute; grid-template-rows: 94px 26px minmax(0, 1fr); }
 .graph-receipt:not(:has(.graph-items-toggle)) { grid-template-rows: 1fr; }
 .graph-receipt:has(.graph-items-toggle[aria-expanded='true']) { grid-template-rows: 62px minmax(0, 1fr) 26px; }
-.graph-items-toggle { padding: 4px; border: 0; color: var(--el-color-primary); background: transparent; cursor: pointer; font-size: 12px; }
+.graph-items-toggle { padding: 4px; border: 0; color: var(--accent); background: transparent; cursor: pointer; font-size: 12px; }
 .graph-items-toggle:focus-visible { outline-offset: -2px; }
 .graph-item-list { overflow: auto; margin-inline: 7px; border-top: 1px dashed var(--border); cursor: auto; user-select: text; }
-@media (max-width: 1050px) {
+@container (max-width: 700px) {
   .with-history { grid-template-columns: minmax(0, 1fr); }
-  .history { position: fixed; top: 64px; bottom: 10px; right: 10px; z-index: 9; width: min(340px, calc(100vw - 20px)); max-height: none; box-shadow: 0 10px 32px #0003; }
+  .history { position: static; max-height: 60vh; }
 }
 </style>
