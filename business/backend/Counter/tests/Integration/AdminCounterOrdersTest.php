@@ -16,6 +16,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use NsUltimate\Business\Counter\Entity\Counter;
 use NsUltimate\Business\Counter\Entity\CounterSession;
+use NsUltimate\Business\Counter\Entity\OrderCounter;
 use NsUltimate\Business\Counter\Entity\OrderMerge;
 use NsUltimate\Integration\Backend\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -110,5 +111,35 @@ final class AdminCounterOrdersTest extends KernelTestCase
         self::assertCount(13, $items);
         self::assertContains('Item 13', array_column($items, 'specificationTitle'));
         self::assertSame(250, $items[0]['unitPrice']);
+
+        // The original counter only has a paid order in its current session.
+        self::assertSame([], $get('', ['counter' => $counter->getUuid()])['items'][0]['unpaidTotals']);
+
+        $busy = (new Counter())->setStoreUuid($store->getUuid())->setCode('A02')->setName('Pickup');
+        $current = new CounterSession($busy);
+        foreach ([$busy, $current] as $entity) {
+            $em->persist($entity);
+        }
+        $em->flush();
+        $em->getConnection()->beginTransaction();
+        foreach ([
+            ['confirmed', null, 'CNY', 1200],
+            ['pending', 'paying', 'CNY', 350],
+            ['draft', null, 'USD', 0],
+            ['cancelled', null, 'CNY', 800],
+            ['merged', null, 'CNY', 900],
+            ['confirmed', 'paid', 'CNY', 1000],
+        ] as [$status, $payment, $currency, $amount]) {
+            $order = (new Order())->setStatus($status)->setPaymentStatus($payment)->setCurrency($currency)->setTotalAmount($amount);
+            $em->persist($order);
+            $em->persist(new OrderStoreLifecycle($order->getUuid(), $store->getUuid()));
+            $em->persist((new OrderCounter())->setCounter($busy)->setCounterSession($current)
+                ->setStoreUuid($store->getUuid())->setTradeOrderUuid($order->getUuid()));
+        }
+        $em->flush();
+        $em->getConnection()->commit();
+        $totals = [['currency' => 'CNY', 'amount' => 1550], ['currency' => 'USD', 'amount' => 0]];
+        self::assertSame($totals, $get('', ['counter' => $busy->getUuid()])['items'][0]['unpaidTotals']);
+        self::assertSame($totals, $get('', ['status' => 'cancelled', 'counter' => $busy->getUuid()])['items'][0]['unpaidTotals']);
     }
 }

@@ -26,10 +26,14 @@
       </div>
       <p v-if="counterError" role="alert">{{ counterError }}</p>
       <div v-loading="counterLoading" class="counter-grid">
-        <button v-for="counter in counters" :key="counter.uuid" type="button" class="panel counter-card" @click="openCounter(counter)">
-          <strong>{{ counter.code }} <span aria-hidden="true">›</span></strong>
-          <span>{{ counter.name }}</span>
-          <small>{{ counter.storeName || counter.storeUuid }}<template v-if="!counter.enabled"> · {{ $t('Disabled') }}</template></small>
+         <button v-for="counter in counters" :key="counter.uuid" type="button" class="panel counter-card"
+           :class="{ 'has-unpaid': counter.unpaidTotals?.length }" @click="openCounter(counter)">
+           <strong>{{ counter.code }} <span aria-hidden="true">›</span></strong>
+           <span>{{ counter.name }}</span>
+           <small>{{ counter.storeName || counter.storeUuid }}<template v-if="!counter.enabled"> · {{ $t('Disabled') }}</template></small>
+           <span v-if="counter.unpaidTotals?.length" class="counter-unpaid">
+             {{ $t('Unpaid amount') }} · {{ counter.unpaidTotals.map(total => formatAmount(total.amount, total.currency, getLocale())).join(' / ') }}
+           </span>
         </button>
       </div>
       <el-empty v-if="!counterLoading && !counterError && !counters.length" :description="$t('No matching counters')" />
@@ -298,13 +302,16 @@ function resetActive() {
   expandedItems.value.clear()
   dialogOpen.value = false
 }
-watch(() => route.name === routeName ? route.query.counter : undefined, value => {
+watch(() => route.name === routeName ? route.query.counter : undefined, (value, previous) => {
   channels.active.cancel()
   resetActive()
   activeLoading.value = false
   activeError.value = ''
   const uuid = counterRouteUuid(value)
-  if (!uuid) return
+  if (!uuid) {
+    if (value === undefined && counterRouteUuid(previous) && route.name === routeName) loadCounters(counterPage.value)
+    return
+  }
   const show = counter => {
     active.value = counter
     historyFilters.value = { ...filters.value }
@@ -390,10 +397,12 @@ p { color: var(--text-secondary); }
 .store-bar nav :deep(.el-button) { margin-left: 0; }
 .store-bar :deep(.el-select) { width: min(100%, 260px); }
 .counter-grid, .receipt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 185px), 1fr)); gap: 12px; }
-.counter-card { display: grid; gap: 7px; text-align: left; color: inherit; cursor: pointer; }
-.counter-card:hover { border-color: var(--el-color-primary); }
+.counter-card { display: grid; gap: 7px; align-content: start; text-align: left; color: var(--text-secondary); background: var(--el-fill-color-light); cursor: pointer; }
+.counter-card.has-unpaid { color: var(--text-primary); background: var(--el-color-primary-light-9); border-color: var(--el-color-primary); }
+.counter-card:hover { box-shadow: inset 0 0 0 1px currentColor; }
 .counter-card strong { display: flex; justify-content: space-between; font-size: 18px; }
 .counter-card small { color: var(--text-secondary); }
+.counter-unpaid { color: var(--el-color-primary); font-weight: 600; }
 .pager { justify-content: center; margin-top: 14px; }
 .detail-heading { margin: 10px 0 16px; }
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }

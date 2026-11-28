@@ -557,6 +557,7 @@ export default {
   'Fewer filters': '收起筛选',
   'More filters': '更多筛选',
   'No matching counters': '没有匹配的柜台',
+  'Unpaid amount': '未结金额',
   'Order history': '历史订单',
   'Order details': '订单详情',
   'Load more': '加载更多',
