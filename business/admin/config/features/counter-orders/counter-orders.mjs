@@ -32,12 +32,31 @@ const statusTones = {
   fulfilled: 'cyan',
   completed: 'emerald',
   cancelled: 'gray',
-  refunded: 'rose',
+  refunded: 'brick',
   merged: 'violet'
 }
 
 export function statusTone(status) {
   return Object.hasOwn(statusTones, status) ? statusTones[status] : 'slate'
+}
+
+function mergeChainTones(nodes, links) {
+  const statuses = new Map(nodes.map(({ uuid, status }) => [uuid, status]))
+  // A persisted merge source has at most one target.
+  const targets = new Map(links.map(({ source, target }) => [source, target]))
+  const tones = new Map()
+  for (const [source] of targets) {
+    const visited = new Set()
+    let end = source
+    while (targets.has(end) && !visited.has(end) && !tones.has(end)) {
+      visited.add(end)
+      end = targets.get(end)
+    }
+    const tone = tones.get(end) || statusTone(visited.has(end) ? undefined : statuses.get(end))
+    tones.set(end, tone)
+    for (const uuid of visited) tones.set(uuid, tone)
+  }
+  return tones
 }
 
 export function graphFitScale(viewportWidth, canvasWidth) {
@@ -141,6 +160,7 @@ export function mergeLayout(nodes, edges, expanded = new Set()) {
   const levels = new Map(nodes.map(node => [node.uuid, 0]))
   const outgoing = new Map(nodes.map(node => [node.uuid, []]))
   const links = edges.filter(({ source, target }) => pending.has(source) && pending.has(target))
+  const chainTones = mergeChainTones(nodes, links)
   for (const { source, target } of links) {
     outgoing.get(source).push(target)
     pending.set(target, pending.get(target) + 1)
@@ -205,7 +225,8 @@ export function mergeLayout(nodes, edges, expanded = new Set()) {
     return `M${x} ${y} V${mid} H${endX} V${endY}`
   })
   return {
-    positions, paths, width,
+    positions, paths, width, chainTones,
+    pathTones: links.map(({ source }) => chainTones.get(source)),
     standalone: nodes.filter(node => !linked.has(node.uuid)),
     canvasWidth: bodyWidth + 40 + 12 * lanes,
     canvasHeight: rows.size ? nextY - rowGap + 20 : height + 40
