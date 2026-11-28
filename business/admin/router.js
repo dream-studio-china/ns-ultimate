@@ -166,6 +166,12 @@ export default {
       },
       children: [
         ...r('Counter', t('Counters')),
+        {
+          path: 'counter-orders',
+          name: 'CounterOrders',
+          component: () => import('./config/features/counter-orders/CounterOrders.vue'),
+          meta: { title: t('Counter orders'), icon: 'el-icon-tickets' }
+        },
         ...r('OrderCounter', t('Order counter bindings'))
       ]
     }
