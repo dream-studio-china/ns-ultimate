@@ -40,6 +40,10 @@ final class CounterOrderMergeService
     {
         $this->em->getConnection()->beginTransaction();
         try {
+            $store = $this->storeContextResolver->resolve();
+            if ($store === null || $store->storeUuid !== $counter->getStoreUuid()) {
+                throw new \DomainException('The counter is not in the active store context.');
+            }
             $session = $this->sessions->activeSession($counter);
             if (!$session instanceof CounterSession) {
                 throw new \DomainException('There is no active session for this counter.');
@@ -47,7 +51,6 @@ final class CounterOrderMergeService
             $bindings = $this->em->getRepository(OrderCounter::class)->findBy(['counterSession' => $session], ['tradeOrderUuid' => 'ASC']);
             $orders = [];
             $items = [];
-            $eligibleUser = false;
             foreach ($bindings as $binding) {
                 $order = $this->em->getRepository(Order::class)->findOneBy(['uuid' => $binding->getTradeOrderUuid()]);
                 if (!$order instanceof Order) {
@@ -71,9 +74,6 @@ final class CounterOrderMergeService
                 if ($this->em->getRepository(OrderCounter::class)->count(['tradeOrderUuid' => $order->getUuid()]) !== 1) {
                     throw new \DomainException('Orders bound to multiple counters cannot be merged.');
                 }
-                if ($order->getUser()?->getId() === $user->getId()) {
-                    $eligibleUser = true;
-                }
                 $orders[$order->getUuid()] = $order;
                 foreach ($order->getItems() as $item) {
                     if (!$item instanceof OrderItem || $item->getSpecificationUuid() === null) {
@@ -82,18 +82,11 @@ final class CounterOrderMergeService
                     $items[] = ['specificationId' => $item->getSpecificationUuid(), 'quantity' => $item->getQuantity()];
                 }
             }
-            if (!$eligibleUser) {
-                throw new \DomainException('You must have an eligible unpaid order in this counter session to merge orders.');
-            }
             if ($orders === [] || $items === []) {
                 throw new \DomainException('There are no unpaid orders to merge.');
             }
             if (count($orders) < 2) {
                 throw new \DomainException('At least two unpaid orders are required to merge.');
-            }
-            $store = $this->storeContextResolver->resolve();
-            if ($store === null || $store->storeUuid !== $counter->getStoreUuid()) {
-                throw new \DomainException('The counter is not in the active store context.');
             }
             $calculation = $this->salesAvailabilityScope->forMerge(
                 fn () => $this->orders->calculatePrices($items, $store->currency, $store->storeCode),
