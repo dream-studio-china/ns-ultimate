@@ -8,6 +8,8 @@ Business code owns operational validation, DTOs, availability policy, command re
 
 ## Authentication and authorization
 
+`GET /api/v1/app/me/stores` lists the authenticated user's active memberships in active stores. The standard API envelope has `data: [{uuid, name, code, role}]`, sorted by store name and then code; an account without matching memberships receives `data: []`, including administrators. The caller cannot select another user. The endpoint is read-only and does not enroll users or imply permission to perform Store operations. The current Store Console is not switched to this endpoint by this addition.
+
 The operations routes below have the prefix `/api/v1/store/{storeUuid}/operations`. They require authenticated staff and the existing Store voter: active membership plus the corresponding permission for exactly that store. A membership role label is not a grant. Administrator handling follows that existing voter and does not remove the membership requirement. The backend checks each request; frontend permissions are only a UI snapshot. Existing Authorization caching/invalidation behavior still applies.
 
 | Operation | Permission |
