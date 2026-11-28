@@ -144,7 +144,8 @@ export function createLatestRequest() {
   }
 }
 
-export function groupHistory(rows) {
+export function groupHistory(rows, bySession = true) {
+  if (!bySession) return rows.length ? [{ key: 'all', orders: rows }] : []
   const groups = new Map()
   for (const row of rows) {
     const key = row.sessionUuid || ''

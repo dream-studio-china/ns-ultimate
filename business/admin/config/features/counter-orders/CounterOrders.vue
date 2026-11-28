@@ -56,7 +56,7 @@
           <section class="panel receipt-section">
             <h2>{{ $t('Order receipts') }} <small>{{ $t('Newest first') }}</small></h2>
             <p v-if="historyError && !historyOpen" role="alert">{{ historyError }}
-              <el-button text @click="loadHistory(1)">{{ $t('Retry') }}</el-button>
+              <el-button text @click="loadHistory(historyRequestedPage)">{{ $t('Retry') }}</el-button>
             </p>
             <div v-loading="historyLoading && !history.length" class="receipt-grid">
               <order-receipt v-for="row in receipts" :key="row.uuid" :order="row" :selected="row.uuid === selected"
@@ -122,10 +122,14 @@
             <summary>{{ $t('Order filters') }}</summary>
             <order-filters :filters="historyFilters" @apply="applyHistoryFilters" />
           </details>
-          <div class="history-scroll" v-loading="historyLoading">
-            <p v-if="historyError" role="alert">{{ historyError }} <el-button text @click="loadHistory(history.length ? historyPage + 1 : 1)">{{ $t('Retry') }}</el-button></p>
+          <label class="history-grouping">
+            <input v-model="groupBySession" type="checkbox">
+            {{ $t('Group by counter session') }}
+          </label>
+          <div ref="historyScroll" class="history-scroll" v-loading="historyLoading">
+            <p v-if="historyError" role="alert">{{ historyError }} <el-button text @click="loadHistory(historyRequestedPage)">{{ $t('Retry') }}</el-button></p>
             <section v-for="group in historyGroups" :key="group.key" class="history-group">
-              <h3>
+              <h3 v-if="groupBySession">
                 <button type="button" class="history-folder" :aria-expanded="openFolders.has(group.key)"
                   :aria-controls="`counter-history-folder-${group.key || 'unassigned'}`" @click="toggleFolder(group.key)">
                   <el-icon aria-hidden="true"><ArrowDown v-if="openFolders.has(group.key)" /><ArrowRight v-else /></el-icon>
@@ -133,7 +137,9 @@
                   <span>{{ group.startedAt ? `${$t('Counter session')} · ${date(group.startedAt)}` : $t('Orders without a session') }}</span>
                 </button>
               </h3>
-              <div v-show="openFolders.has(group.key)" :id="`counter-history-folder-${group.key || 'unassigned'}`" class="history-folder-items">
+              <div v-show="!groupBySession || openFolders.has(group.key)"
+                :id="groupBySession ? `counter-history-folder-${group.key || 'unassigned'}` : undefined"
+                :class="{ 'history-folder-items': groupBySession }">
                 <button v-for="row in group.orders" :key="row.uuid" type="button" class="history-row" :class="{ cancelled: row.status === 'cancelled' }"
                   :aria-pressed="selected === row.uuid" @click="selectOrder(row.uuid)">
                   <time :datetime="row.createdAt">{{ date(row.createdAt) }}</time>
@@ -143,8 +149,12 @@
               </div>
             </section>
             <el-empty v-if="!history.length && !historyLoading && !historyError" :description="$t('No matching orders')" />
-            <el-button v-if="historyMore && !historyError" text :disabled="historyLoading" @click="loadHistory(historyPage + 1)">{{ $t('Load more') }}</el-button>
           </div>
+          <nav v-if="historyPage > 1 || historyMore" class="pager history-pager" :aria-label="$t('Order history')">
+            <el-button :disabled="historyLoading || historyPage === 1" @click="loadHistory(historyPage - 1)">{{ $t('Previous') }}</el-button>
+            <span aria-live="polite">{{ historyPage }}</span>
+            <el-button :disabled="historyLoading || !historyMore" @click="loadHistory(historyPage + 1)">{{ $t('Next') }}</el-button>
+          </nav>
         </aside>
       </div>
     </template>
@@ -199,14 +209,23 @@ const counterError = ref('')
 const active = ref(null)
 const activeLoading = ref(false)
 const activeError = ref('')
-const historyOpen = ref(false)
+const historyOpen = ref(true)
 const history = ref([])
-const historyGroups = computed(() => groupHistory(history.value))
+const groupBySession = ref(false)
+const historyGroups = computed(() => groupHistory(history.value, groupBySession.value))
 const openFolders = ref(new Set())
+watch(groupBySession, grouped => {
+  if (grouped) {
+    const row = history.value.find(order => order.uuid === selected.value)
+    if (row) openFolders.value.add(row.sessionUuid || '')
+  }
+})
 const historyFilters = ref({})
 const historyLoading = ref(false)
 const historyError = ref('')
+const historyScroll = ref(null)
 const historyPage = ref(1)
+const historyRequestedPage = ref(1)
 const historyMore = ref(false)
 const selected = ref('')
 const graph = ref(null)
@@ -292,15 +311,27 @@ function back() {
 }
 function resetActive() {
   channels.history.cancel()
-  channels.graph.cancel()
   active.value = null
-  historyOpen.value = false
+  historyOpen.value = true
+  resetHistory()
+  dialogOpen.value = false
+}
+function resetHistory() {
   history.value = []
+  historyPage.value = 1
+  historyMore.value = false
+  historyLoading.value = false
+  historyError.value = ''
   openFolders.value.clear()
+  resetHistorySelection()
+}
+function resetHistorySelection() {
+  channels.graph.cancel()
   selected.value = ''
+  graphLoading.value = false
+  graphError.value = ''
   graph.value = null
   expandedItems.value.clear()
-  dialogOpen.value = false
 }
 watch(() => route.name === routeName ? route.query.counter : undefined, (value, previous) => {
   channels.active.cancel()
@@ -326,6 +357,7 @@ watch(() => route.name === routeName ? route.query.counter : undefined, (value, 
 }, { immediate: true })
 function applyHistoryFilters(next) {
   historyFilters.value = next
+  resetHistory()
   loadHistory(1)
 }
 function toggleFolder(key) {
@@ -333,20 +365,15 @@ function toggleFolder(key) {
   else openFolders.value.add(key)
 }
 function loadHistory(page) {
-  if (page === 1) {
-    channels.graph.cancel()
-    history.value = []
-    selected.value = ''
-    openFolders.value.clear()
-    graph.value = null
-    historyMore.value = false
-  }
-  return load('history', `${endpoint}/${active.value.uuid}/orders`, { ...orderParams(historyFilters.value), page },
+  historyRequestedPage.value = page
+  return load('history', `${endpoint}/${active.value.uuid}/orders`, { ...orderParams(historyFilters.value), terminalOnly: true, page },
     historyLoading, historyError, data => {
-      history.value = [...new Map([...history.value, ...data.items].map(row => [row.uuid, row])).values()]
+      history.value = data.items
       historyPage.value = page
       historyMore.value = data.hasNext
-      if (page === 1 && history.value.length) selectOrder(history.value[0].uuid)
+      if (historyScroll.value) historyScroll.value.scrollTop = 0
+      resetHistorySelection()
+      if (history.value.length) selectOrder(history.value[0].uuid)
     })
 }
 function selectOrder(uuid) {
@@ -354,7 +381,7 @@ function selectOrder(uuid) {
   const row = history.value.find(order => order.uuid === uuid)
   if (row) openFolders.value.add(row.sessionUuid || '')
   graph.value = null
-  return load('graph', `${endpoint}/${active.value.uuid}/orders/${uuid}/graph`, {}, graphLoading, graphError, data => {
+  return load('graph', `${endpoint}/${active.value.uuid}/orders/${uuid}/graph`, { chainOnly: true }, graphLoading, graphError, data => {
     graph.value = data
     nextTick(() => {
       const pane = graphScroll.value
@@ -411,8 +438,10 @@ p { color: var(--text-secondary); }
 .history { position: sticky; top: 8px; max-height: min(78vh, 850px); display: flex; flex-direction: column; min-height: 160px; }
 .history-heading h2 { margin: 0; }
 .history details { padding: 8px 0; max-height: 34vh; overflow: auto; }
+.history-grouping { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
 summary { cursor: pointer; color: var(--text-secondary); margin: 6px 0; }
 .history-scroll { overflow: auto; min-height: 65px; }
+.history-pager { flex-shrink: 0; margin-top: 8px; }
 .history-group h3 { margin: 0; font-size: 12px; }
 .history-folder { display: flex; align-items: center; gap: 6px; width: 100%; padding: 9px 7px; text-align: left; border: 0; border-radius: 5px; color: var(--text-secondary); background: var(--el-fill-color-light); cursor: pointer; }
 .history-folder:hover, .history-folder[aria-expanded='true'] { color: var(--text-primary); background: var(--el-fill-color); }
@@ -438,6 +467,6 @@ summary { cursor: pointer; color: var(--text-secondary); margin: 6px 0; }
 .graph-item-list { overflow: auto; margin-inline: 7px; border-top: 1px dashed var(--border); cursor: auto; user-select: text; }
 @media (max-width: 1050px) {
   .with-history { grid-template-columns: minmax(0, 1fr); }
-  .history { position: fixed; top: 64px; bottom: 10px; right: 10px; z-index: 9; width: min(340px, calc(100vw - 20px)); max-height: none; box-shadow: 0 10px 32px #0003; }
+  .history { position: static; max-height: 60vh; }
 }
 </style>

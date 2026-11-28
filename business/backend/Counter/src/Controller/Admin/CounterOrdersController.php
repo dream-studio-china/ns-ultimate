@@ -35,8 +35,8 @@ final class CounterOrdersController
     }
 
     #[Route('/{counter}/orders/{order}/graph', name: 'graph', methods: ['GET'])]
-    public function graph(string $counter, string $order): JsonResponse
+    public function graph(string $counter, string $order, Request $request): JsonResponse
     {
-        return new JsonResponse($this->orders->graph($counter, $order));
+        return new JsonResponse($this->orders->graph($counter, $order, $request->query->getBoolean('chainOnly')));
     }
 }

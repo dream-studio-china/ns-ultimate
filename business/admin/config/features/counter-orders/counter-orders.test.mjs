@@ -61,6 +61,8 @@ test('serializes combined filters with an exclusive end date', () => {
 test('joins history across pages by session without losing row order', () => {
   const rows = [{ uuid: 'a', sessionUuid: 's1' }, { uuid: 'b', sessionUuid: 's2' }, { uuid: 'c', sessionUuid: 's1' }, { uuid: 'd', sessionUuid: null }]
   assert.deepEqual(groupHistory(rows).map(group => group.orders.map(row => row.uuid)), [['a', 'c'], ['b'], ['d']])
+  assert.deepEqual(groupHistory(rows, false).map(group => group.orders.map(row => row.uuid)), [['a', 'b', 'c', 'd']])
+  assert.deepEqual(groupHistory([], false), [])
 })
 
 test('lays out each merge generation and preserves standalone receipts', () => {

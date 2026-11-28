@@ -95,6 +95,10 @@ final class AdminCounterOrdersTest extends KernelTestCase
         self::assertSame([$source->getUuid()], array_column($get($path, ['anonymous' => 'no'])['items'], 'uuid'));
         self::assertSame([], $get($path, ['before' => '2000-01-01T00:00:00Z'])['items']);
         self::assertSame([$target->getUuid(), $middle->getUuid(), $source->getUuid()], array_column($get($path, ['merged' => 'yes'])['items'], 'uuid'));
+        $terminal = $get($path, ['terminalOnly' => 'true']);
+        self::assertSame([$legacy->getUuid(), $other->getUuid(), $standalone->getUuid(), $target->getUuid()], array_column($terminal['items'], 'uuid'));
+        $mergedTerminals = $get($path, ['terminalOnly' => 'true', 'merged' => 'yes']);
+        self::assertSame([$target->getUuid()], array_column($mergedTerminals['items'], 'uuid'));
         $graph = $get($path.'/'.$source->getUuid().'/graph');
         self::assertSame([$standalone->getUuid(), $target->getUuid(), $middle->getUuid(), $source->getUuid()], array_column($graph['nodes'], 'uuid'));
         self::assertCount(2, $graph['edges']);
@@ -103,6 +107,12 @@ final class AdminCounterOrdersTest extends KernelTestCase
         self::assertSame([['name' => 'Coffee', 'quantity' => 2]], $graph['nodes'][3]['items']);
         self::assertFalse($graph['truncated']);
         self::assertSame([$legacy->getUuid()], array_column($get($path.'/'.$legacy->getUuid().'/graph')['nodes'], 'uuid'));
+        $chain = $get($path.'/'.$target->getUuid().'/graph', ['chainOnly' => 'true']);
+        self::assertSame([$target->getUuid(), $middle->getUuid(), $source->getUuid()], array_column($chain['nodes'], 'uuid'));
+        self::assertCount(2, $chain['edges']);
+        $isolated = $get($path.'/'.$standalone->getUuid().'/graph', ['chainOnly' => 'true']);
+        self::assertSame([$standalone->getUuid()], array_column($isolated['nodes'], 'uuid'));
+        self::assertSame([], $isolated['edges']);
 
         $itemsPath = '/api/v1/manage/orders/'.$standalone->getUuid().'/items';
         $response = self::$kernel->handle(Request::create($itemsPath, 'GET', [], [], [], $headers));
@@ -141,5 +151,26 @@ final class AdminCounterOrdersTest extends KernelTestCase
         $totals = [['currency' => 'CNY', 'amount' => 1550], ['currency' => 'USD', 'amount' => 0]];
         self::assertSame($totals, $get('', ['counter' => $busy->getUuid()])['items'][0]['unpaidTotals']);
         self::assertSame($totals, $get('', ['status' => 'cancelled', 'counter' => $busy->getUuid()])['items'][0]['unpaidTotals']);
+
+        $busy = $em->find(Counter::class, $busy->getId());
+        $current = $em->find(CounterSession::class, $current->getId());
+        $em->getConnection()->beginTransaction();
+        for ($index = 0; $index < 24; ++$index) {
+            $order = (new Order())->setStatus(Order::STATUS_COMPLETED);
+            $em->persist($order);
+            $em->persist(new OrderStoreLifecycle($order->getUuid(), $store->getUuid()));
+            $em->persist((new OrderCounter())->setCounter($busy)->setCounterSession($current)
+                ->setStoreUuid($store->getUuid())->setTradeOrderUuid($order->getUuid()));
+        }
+        $em->flush();
+        $em->getConnection()->commit();
+        $busyPath = '/'.$busy->getUuid().'/orders';
+        $firstPage = $get($busyPath, ['terminalOnly' => 'true', 'page' => 1]);
+        $secondPage = $get($busyPath, ['terminalOnly' => 'true', 'page' => 2]);
+        self::assertCount(24, $firstPage['items']);
+        self::assertTrue($firstPage['hasNext']);
+        self::assertCount(6, $secondPage['items']);
+        self::assertFalse($secondPage['hasNext']);
+        self::assertSame([], array_intersect(array_column($firstPage['items'], 'uuid'), array_column($secondPage['items'], 'uuid')));
     }
 }

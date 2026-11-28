@@ -112,6 +112,9 @@ final class AdminCounterOrders
             ->setParameter('counter', $counter->getId())->setParameter('boundStore', $counter->getStoreUuid())
             ->orderBy('o.createdAt', 'DESC')->addOrderBy('o.id', 'DESC');
         $this->filterOrders($query, $input);
+        if ($input->getBoolean('terminalOnly')) {
+            $query->andWhere('m.id IS NULL');
+        }
         $page = $this->page($query, $input);
         $page['items'] = array_map($this->summary(...), $page['items']);
         if ($input->getInt('page', 1) === 1 && $page['items'] !== []) {
@@ -126,7 +129,7 @@ final class AdminCounterOrders
     }
 
     /** @return array{nodes: list<array<string, mixed>>, edges: list<MergeEdge>, truncated: bool} */
-    public function graph(string $counterUuid, string $orderUuid): array
+    public function graph(string $counterUuid, string $orderUuid, bool $chainOnly = false): array
     {
         $orderUuid = strtolower($orderUuid);
         $counter = $this->counter($counterUuid);
@@ -141,7 +144,7 @@ final class AdminCounterOrders
 
         $seen = [$orderUuid => true];
         $truncated = false;
-        if ($root['sessionId'] !== null) {
+        if (!$chainOnly && $root['sessionId'] !== null) {
             $sessionOrders = $this->boundOrders()->select('o.uuid')
                 ->andWhere('b.counter = :counter AND b.storeUuid = :store AND b.counterSession = :session AND o.uuid <> :order')
                 ->setParameter('counter', $counter->getId())->setParameter('store', $counter->getStoreUuid())

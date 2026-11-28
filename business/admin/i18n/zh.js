@@ -559,6 +559,7 @@ export default {
   'No matching counters': '没有匹配的柜台',
   'Unpaid amount': '未结金额',
   'Order history': '历史订单',
+  'Group by counter session': '按柜台会话分组',
   'Order details': '订单详情',
   'Load more': '加载更多',
   'Merged': '已合并',
